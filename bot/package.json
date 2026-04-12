@@ -1,0 +1,22 @@
+{
+  "name": "travelbot-bot",
+  "version": "1.0.0",
+  "description": "TravelBot WhatsApp Bot — Webhook receiver and message handler",
+  "main": "src/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.js",
+    "start": "tsx src/index.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "dotenv": "^16.3.1",
+    "sequelize": "^6.35.2",
+    "pg": "^8.11.3",
+    "pg-hstore": "^2.3.4",
+    "axios": "^1.6.2",
+    "bullmq": "^5.1.1",
+    "ioredis": "^5.3.2",
+    "uuid": "^9.0.0",
+    "tsx": "^4.20.6"
+  }
+}
