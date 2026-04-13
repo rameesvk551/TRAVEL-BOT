@@ -1,72 +1,75 @@
-// FILE: /frontend/src/pages/Payments.jsx
-
 import { useQuery } from '@tanstack/react-query';
-import client from '../api/client';
-import { formatCurrency, formatDate, getStatusBadgeClass } from '../utils/formatters';
-import PaymentBadge from '../components/PaymentBadge';
 import { CreditCardIcon } from '@heroicons/react/24/outline';
+import client from '../api/client';
+import { formatCurrency, formatDate } from '../utils/formatters';
+import PaymentBadge from '../components/PaymentBadge';
 
 export default function Payments() {
   const { data, isLoading } = useQuery({
     queryKey: ['all-bookings-for-payments'],
-    queryFn: () => client.get('/bookings', { params: { pageSize: 100 } }).then((r) => r.data),
+    queryFn: () => client.get('/bookings', { params: { pageSize: 100 } }).then((response) => response.data),
   });
 
   const bookings = data?.data?.data || [];
 
   return (
-    <div className="p-6">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-white">Payments</h1>
-          <p className="text-sm text-surface-400 mt-0.5">Track all payment status</p>
-        </div>
-      </div>
+    <div className="w-full space-y-5">
+      <section>
+        <p className="eyebrow">Collections</p>
+        <h1 className="mt-2 text-5xl font-extrabold tracking-tight text-slate-950">Payments</h1>
+        <p className="mt-2 text-sm text-slate-500">Track deposits, balances, and payment status across every active booking.</p>
+      </section>
 
-      <div className="glass-card overflow-hidden">
-        <table className="w-full">
-          <thead>
-            <tr className="border-b border-surface-700/50">
-              <th className="text-left px-4 py-3 text-xs font-semibold text-surface-400 uppercase">Booking</th>
-              <th className="text-left px-4 py-3 text-xs font-semibold text-surface-400 uppercase">Customer</th>
-              <th className="text-left px-4 py-3 text-xs font-semibold text-surface-400 uppercase">Total</th>
-              <th className="text-left px-4 py-3 text-xs font-semibold text-surface-400 uppercase">Paid</th>
-              <th className="text-left px-4 py-3 text-xs font-semibold text-surface-400 uppercase">Balance</th>
-              <th className="text-left px-4 py-3 text-xs font-semibold text-surface-400 uppercase">Status</th>
-              <th className="text-left px-4 py-3 text-xs font-semibold text-surface-400 uppercase">Travel</th>
-            </tr>
-          </thead>
-          <tbody>
-            {isLoading ? (
-              Array.from({ length: 5 }).map((_, i) => (
-                <tr key={i} className="border-b border-surface-700/20 animate-pulse">
-                  {Array.from({ length: 7 }).map((_, j) => (
-                    <td key={j} className="px-4 py-3"><div className="h-4 bg-surface-700/30 rounded" /></td>
-                  ))}
-                </tr>
-              ))
-            ) : bookings.length === 0 ? (
+      <div className="overflow-hidden rounded-[32px] border border-white/80 bg-white shadow-[0_22px_70px_-48px_rgba(15,23,42,0.45)]">
+        <div className="border-b border-slate-100 px-6 py-5">
+          <h2 className="text-xl font-extrabold text-slate-950">Payment overview</h2>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-left">
+            <thead className="bg-slate-50/80">
               <tr>
-                <td colSpan={7} className="px-4 py-12 text-center text-surface-500">
-                  <CreditCardIcon className="w-8 h-8 mx-auto mb-2 text-surface-600" />
-                  No payments yet
-                </td>
+                {['Booking', 'Customer', 'Total', 'Paid', 'Balance', 'Status', 'Travel'].map((heading) => (
+                  <th key={heading} className="px-6 py-4 text-[11px] font-bold uppercase tracking-[0.2em] text-slate-500">
+                    {heading}
+                  </th>
+                ))}
               </tr>
-            ) : (
-              bookings.map((booking) => (
-                <tr key={booking.id} className="border-b border-surface-700/20 hover:bg-surface-800/30 transition-colors">
-                  <td className="px-4 py-3 text-sm font-medium text-white">{booking.bookingRef}</td>
-                  <td className="px-4 py-3 text-sm text-surface-300">{booking.customer?.name || '—'}</td>
-                  <td className="px-4 py-3 text-sm text-white font-medium">{formatCurrency(booking.totalAmount)}</td>
-                  <td className="px-4 py-3 text-sm text-green-400">{formatCurrency(booking.advancePaid)}</td>
-                  <td className="px-4 py-3 text-sm text-amber-400">{formatCurrency(booking.totalAmount - booking.advancePaid)}</td>
-                  <td className="px-4 py-3"><PaymentBadge status={booking.status} /></td>
-                  <td className="px-4 py-3 text-xs text-surface-400">{formatDate(booking.travelDate)}</td>
+            </thead>
+            <tbody>
+              {isLoading ? (
+                Array.from({ length: 6 }).map((_, row) => (
+                  <tr key={row} className="border-t border-slate-100">
+                    {Array.from({ length: 7 }).map((_, cell) => (
+                      <td key={cell} className="px-6 py-4">
+                        <div className="h-4 animate-pulse rounded bg-slate-100" />
+                      </td>
+                    ))}
+                  </tr>
+                ))
+              ) : bookings.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="px-6 py-16 text-center text-sm text-slate-500">
+                    <CreditCardIcon className="mx-auto mb-3 h-8 w-8 text-slate-300" />
+                    No payment records yet.
+                  </td>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+              ) : (
+                bookings.map((booking) => (
+                  <tr key={booking.id} className="border-t border-slate-100 transition hover:bg-slate-50/70">
+                    <td className="px-6 py-4 text-sm font-bold text-slate-950">{booking.bookingRef}</td>
+                    <td className="px-6 py-4 text-sm text-slate-600">{booking.customer?.name || '—'}</td>
+                    <td className="px-6 py-4 text-sm font-semibold text-slate-900">{formatCurrency(booking.totalAmount)}</td>
+                    <td className="px-6 py-4 text-sm font-semibold text-emerald-700">{formatCurrency(booking.advancePaid)}</td>
+                    <td className="px-6 py-4 text-sm font-semibold text-amber-700">{formatCurrency(booking.totalAmount - booking.advancePaid)}</td>
+                    <td className="px-6 py-4"><PaymentBadge status={booking.status} /></td>
+                    <td className="px-6 py-4 text-sm text-slate-500">{formatDate(booking.travelDate)}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );

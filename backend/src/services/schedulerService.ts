@@ -273,6 +273,21 @@ function startWorker() {
   return { reminderWorker, chatFollowUpWorker };
 }
 
+function getFollowUpJobId(customerId, agencyId, slot) {
+  return `chat-followup-${agencyId}-${customerId}-${slot}`;
+}
+
+function composeFollowUpMessage(payload, slot, packageName) {
+  const destination = payload.destination || 'your trip';
+  const packageText = packageName ? ` ${packageName} is still available to review.` : '';
+
+  if (slot === '10m') {
+    return `Hi again! Just checking if you had any questions about ${destination}.${packageText} I can show the best options again or connect you to an agent. Reply STOP to opt out.`;
+  }
+
+  return `Hello! Still interested in ${destination}${payload.datesLabel ? ` for ${payload.datesLabel}` : ''}? If you want, I can help you review the package again and our team can hold the latest available rate. Reply STOP to opt out.`;
+}
+
 module.exports = {
   scheduleBookingReminders,
   cancelBookingReminders,

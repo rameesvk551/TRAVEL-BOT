@@ -3,8 +3,8 @@
 const packageRepository = require('../repositories/packageRepository');
 
 const ALLOWED_UPDATE_FIELDS = [
-  'name', 'duration', 'destinations', 'inclusions', 'exclusions',
-  'basePrice', 'imageUrl', 'itinerary', 'isActive',
+  'name', 'category', 'duration', 'destinations', 'inclusions', 'exclusions',
+  'basePrice', 'imageUrl', 'summary', 'brochureUrl', 'brochureFileName', 'itinerary', 'isActive',
 ];
 
 /**

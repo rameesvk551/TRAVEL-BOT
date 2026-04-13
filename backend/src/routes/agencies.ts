@@ -29,6 +29,11 @@ const marketingOsCallbackSchema = z.object({
   errorMessage: z.string().optional(),
 });
 
+const marketingOsCompleteSchema = z.object({
+  code: z.string().min(1, 'Authorization code is required'),
+  sessionToken: z.string().min(1, 'Session token is required'),
+});
+
 /**
  * GET /api/agencies/me - Get current agency details
  */
@@ -45,6 +50,17 @@ router.get('/me/whatsapp-connection', authenticate, agencyController.getWhatsApp
 router.post('/me/whatsapp-connection/connect', authenticate, requireRole('ADMIN'), agencyController.createWhatsAppConnectSession);
 
 /**
+ * POST /api/agencies/me/whatsapp-connection/complete - Complete provider embedded signup
+ */
+router.post(
+  '/me/whatsapp-connection/complete',
+  authenticate,
+  requireRole('ADMIN'),
+  validateBody(marketingOsCompleteSchema),
+  agencyController.completeWhatsAppConnectSession
+);
+
+/**
  * PATCH /api/agencies/me - Update agency settings (ADMIN only)
  */
 router.patch('/me', authenticate, requireRole('ADMIN'), validateBody(updateAgencySchema), agencyController.updateMe);
@@ -54,7 +70,6 @@ router.patch('/me', authenticate, requireRole('ADMIN'), validateBody(updateAgenc
  */
 router.post(
   '/whatsapp/marketing-os/callback',
-  validateBody(marketingOsCallbackSchema),
   agencyController.handleMarketingOsCallback
 );
 

@@ -10,6 +10,7 @@ const errorHandler = require('./middleware/errorHandler');
 const { registerApiRoutes } = require('./routes');
 
 const app = express();
+app.set('trust proxy', 1);
 
 // Global middleware
 app.use(helmet());
@@ -23,7 +24,12 @@ app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 
 // Parse JSON for all routes EXCEPT payment webhook (needs raw body)
 app.use('/api/payments/webhook', express.raw({ type: 'application/json' }));
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({
+  limit: '10mb',
+  verify: (req, res, buf) => {
+    req.rawBody = buf;
+  },
+}));
 app.use(express.urlencoded({ extended: true }));
 
 // Rate limit all API routes

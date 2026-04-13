@@ -47,6 +47,11 @@ module.exports = (sequelize) => {
       defaultValue: 'NOT_CONNECTED',
       comment: 'Partner onboarding status for the agency WhatsApp channel',
     },
+    marketingOsTenantId: {
+      type: DataTypes.STRING(255),
+      allowNull: true,
+      comment: 'Marketing OS tenant slug used for embedded signup orchestration',
+    },
     whatsappChannelId: {
       type: DataTypes.STRING(255),
       allowNull: true,

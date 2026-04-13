@@ -1,228 +1,18 @@
 {
-  "version": "7.1",
+  "version": "7.2",
   "data_api_version": "3.0",
   "routing_model": {
-    "WELCOME": ["TRIP_PLANNER"],
-    "TRIP_PLANNER": ["PACKAGE_PICKER"],
-    "PACKAGE_PICKER": ["PACKAGE_DETAIL"],
-    "PACKAGE_DETAIL": ["CONTACT_PREFERENCE"],
-    "CONTACT_PREFERENCE": ["FINAL_SUBMIT"],
-    "FINAL_SUBMIT": []
+    "PACKAGE_SELECTOR": []
   },
   "screens": [
     {
-      "id": "WELCOME",
-      "title": "TripBot Demo",
-      "layout": {
-        "type": "SingleColumnLayout",
-        "children": [
-          {
-            "type": "Form",
-            "name": "welcome_form",
-            "children": [
-              {
-                "type": "TextHeading",
-                "text": "Plan your next trip in WhatsApp"
-              },
-              {
-                "type": "TextBody",
-                "text": "This is a full demo Flow with dummy travel data. You can test destination, budget, travel style, package selection, and handoff intent."
-              },
-              {
-                "type": "TextCaption",
-                "text": "Demo company: TravelCo Holidays"
-              },
-              {
-                "type": "Footer",
-                "label": "Start Planning",
-                "on-click-action": {
-                  "name": "navigate",
-                  "next": {
-                    "type": "screen",
-                    "name": "TRIP_PLANNER"
-                  },
-                  "payload": {
-                    "source": "whatsapp_demo_flow",
-                    "agency_name": "TravelCo Holidays"
-                  }
-                }
-              }
-            ]
-          }
-        ]
-      }
-    },
-    {
-      "id": "TRIP_PLANNER",
-      "title": "Trip Planner",
+      "id": "PACKAGE_SELECTOR",
+      "title": "Choose Package",
+      "terminal": true,
       "data": {
-        "source": {
+        "category_label": {
           "type": "string",
-          "__example__": "whatsapp_demo_flow"
-        },
-        "agency_name": {
-          "type": "string",
-          "__example__": "TravelCo Holidays"
-        },
-        "destination_options": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "properties": {
-              "id": { "type": "string" },
-              "title": { "type": "string" }
-            }
-          },
-          "__example__": [
-            { "id": "Goa", "title": "Goa" },
-            { "id": "Bali", "title": "Bali" },
-            { "id": "Paris", "title": "Paris" },
-            { "id": "Dubai", "title": "Dubai" }
-          ]
-        },
-        "budget_options": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "properties": {
-              "id": { "type": "string" },
-              "title": { "type": "string" }
-            }
-          },
-          "__example__": [
-            { "id": "<50k", "title": "<50k" },
-            { "id": "50k-1L", "title": "50k-1L" },
-            { "id": "1L-2L", "title": "1L-2L" },
-            { "id": "Flexible", "title": "Flexible" }
-          ]
-        },
-        "date_options": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "properties": {
-              "id": { "type": "string" },
-              "title": { "type": "string" }
-            }
-          },
-          "__example__": [
-            { "id": "In 1-2 Months", "title": "In 1-2 Months" },
-            { "id": "Summer 2026", "title": "Summer 2026" },
-            { "id": "Flexible", "title": "Flexible" },
-            { "id": "Skip Dates", "title": "Skip Dates" }
-          ]
-        },
-        "travel_type_options": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "properties": {
-              "id": { "type": "string" },
-              "title": { "type": "string" }
-            }
-          },
-          "__example__": [
-            { "id": "Solo", "title": "Solo" },
-            { "id": "Couple", "title": "Couple" },
-            { "id": "Family", "title": "Family" },
-            { "id": "Friends", "title": "Friends" }
-          ]
-        }
-      },
-      "layout": {
-        "type": "SingleColumnLayout",
-        "children": [
-          {
-            "type": "Form",
-            "name": "trip_planner_form",
-            "children": [
-              {
-                "type": "TextHeading",
-                "text": "Tell us what kind of trip you want"
-              },
-              {
-                "type": "TextBody",
-                "text": "Choose your preferences and we will show demo package matches next."
-              },
-              {
-                "type": "Dropdown",
-                "label": "Destination",
-                "name": "destination",
-                "data-source": "${data.destination_options}",
-                "required": true
-              },
-              {
-                "type": "Dropdown",
-                "label": "Budget per person",
-                "name": "budget",
-                "data-source": "${data.budget_options}",
-                "required": true
-              },
-              {
-                "type": "Dropdown",
-                "label": "Travel dates",
-                "name": "dates",
-                "data-source": "${data.date_options}",
-                "required": true
-              },
-              {
-                "type": "Dropdown",
-                "label": "Travel type",
-                "name": "travel_type",
-                "data-source": "${data.travel_type_options}",
-                "required": true
-              },
-              {
-                "type": "Footer",
-                "label": "See Packages",
-                "on-click-action": {
-                  "name": "navigate",
-                  "next": {
-                    "type": "screen",
-                    "name": "PACKAGE_PICKER"
-                  },
-                  "payload": {
-                    "source": "${data.source}",
-                    "agency_name": "${data.agency_name}",
-                    "destination": "${form.destination}",
-                    "budget": "${form.budget}",
-                    "dates": "${form.dates}",
-                    "travel_type": "${form.travel_type}"
-                  }
-                }
-              }
-            ]
-          }
-        ]
-      }
-    },
-    {
-      "id": "PACKAGE_PICKER",
-      "title": "Top Packages",
-      "data": {
-        "source": {
-          "type": "string",
-          "__example__": "whatsapp_demo_flow"
-        },
-        "agency_name": {
-          "type": "string",
-          "__example__": "TravelCo Holidays"
-        },
-        "destination": {
-          "type": "string",
-          "__example__": "Bali"
-        },
-        "budget": {
-          "type": "string",
-          "__example__": "50k-1L"
-        },
-        "dates": {
-          "type": "string",
-          "__example__": "Summer 2026"
-        },
-        "travel_type": {
-          "type": "string",
-          "__example__": "Family"
+          "__example__": "Domestic"
         },
         "package_options": {
           "type": "array",
@@ -230,13 +20,27 @@
             "type": "object",
             "properties": {
               "id": { "type": "string" },
-              "title": { "type": "string" }
+              "title": { "type": "string" },
+              "description": { "type": "string" },
+              "metadata": { "type": "string" },
+              "image": { "type": "string" }
             }
           },
           "__example__": [
-            { "id": "Beach Bliss Bali", "title": "Beach Bliss Bali - INR 25,000 - 3N/4D" },
-            { "id": "Paris Romantic Escape", "title": "Paris Romantic Escape - INR 49,999 - 4N/5D" },
-            { "id": "Himachal Family Trip", "title": "Himachal Family Trip - INR 18,999 - 5N/6D" }
+            {
+              "id": "pkg_goa_01",
+              "title": "Goa Bliss Escape",
+              "description": "₹24,999 • 3 Nights 4 Days\nBeach stay, breakfast, transfers, and sunset cruise.",
+              "metadata": "Domestic",
+              "image": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+yh8cAAAAASUVORK5CYII="
+            },
+            {
+              "id": "pkg_bali_01",
+              "title": "Bali Romance",
+              "description": "₹68,999 • 5 Nights 6 Days\nResort stay, island tours, and curated couple moments.",
+              "metadata": "International",
+              "image": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+yh8cAAAAASUVORK5CYII="
+            }
           ]
         }
       },
@@ -245,339 +49,32 @@
         "children": [
           {
             "type": "Form",
-            "name": "package_picker_form",
+            "name": "package_selector_form",
             "children": [
               {
                 "type": "TextHeading",
-                "text": "Dummy package matches"
+                "text": "${data.category_label} Packages"
               },
               {
                 "type": "TextBody",
-                "text": "Destination: ${data.destination}\nBudget: ${data.budget}\nTravel Type: ${data.travel_type}\nDates: ${data.dates}"
+                "text": "Choose one package to continue in WhatsApp chat."
               },
               {
-                "type": "TextBody",
-                "text": "1. Beach Bliss Bali - INR 25,000 - All-inclusive resort, breakfast, pool. Popular.\n2. Paris Romantic Escape - INR 49,999 - Eiffel tour, city stay, breakfast. Trending.\n3. Himachal Family Trip - INR 18,999 - Mountains, temples, culture. Family favorite."
-              },
-              {
-                "type": "Dropdown",
-                "label": "Choose a package",
-                "name": "selected_package",
+                "type": "RadioButtonsGroup",
+                "label": "Available Packages",
+                "name": "packageId",
+                "description": "Each card shows image, price, duration, and a short summary.",
                 "data-source": "${data.package_options}",
+                "media-size": "large",
                 "required": true
               },
               {
                 "type": "Footer",
-                "label": "View Details",
+                "label": "View Package",
                 "on-click-action": {
-                  "name": "navigate",
-                  "next": {
-                    "type": "screen",
-                    "name": "PACKAGE_DETAIL"
-                  },
+                  "name": "complete",
                   "payload": {
-                    "source": "${data.source}",
-                    "agency_name": "${data.agency_name}",
-                    "destination": "${data.destination}",
-                    "budget": "${data.budget}",
-                    "dates": "${data.dates}",
-                    "travel_type": "${data.travel_type}",
-                    "selected_package": "${form.selected_package}"
-                  }
-                }
-              }
-            ]
-          }
-        ]
-      }
-    },
-    {
-      "id": "PACKAGE_DETAIL",
-      "title": "Package Details",
-      "data": {
-        "source": {
-          "type": "string",
-          "__example__": "whatsapp_demo_flow"
-        },
-        "agency_name": {
-          "type": "string",
-          "__example__": "TravelCo Holidays"
-        },
-        "destination": {
-          "type": "string",
-          "__example__": "Bali"
-        },
-        "budget": {
-          "type": "string",
-          "__example__": "50k-1L"
-        },
-        "dates": {
-          "type": "string",
-          "__example__": "Summer 2026"
-        },
-        "travel_type": {
-          "type": "string",
-          "__example__": "Family"
-        },
-        "selected_package": {
-          "type": "string",
-          "__example__": "Beach Bliss Bali"
-        },
-        "next_action_options": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "properties": {
-              "id": { "type": "string" },
-              "title": { "type": "string" }
-            }
-          },
-          "__example__": [
-            { "id": "show_packages", "title": "Show packages in chat" },
-            { "id": "book_now", "title": "Book now" },
-            { "id": "talk_to_agent", "title": "Talk to agent" },
-            { "id": "my_bookings", "title": "My bookings" }
-          ]
-        }
-      },
-      "layout": {
-        "type": "SingleColumnLayout",
-        "children": [
-          {
-            "type": "Form",
-            "name": "package_detail_form",
-            "children": [
-              {
-                "type": "TextHeading",
-                "text": "Selected package"
-              },
-              {
-                "type": "TextBody",
-                "text": "You picked: ${data.selected_package}"
-              },
-              {
-                "type": "TextBody",
-                "text": "Beach Bliss Bali - Day 1 arrival and resort check-in, Day 2 beach and water sports, Day 3 temple tour, Day 4 checkout. Includes flights, hotel, breakfast, airport transfers. Popular with 150+ travelers."
-              },
-              {
-                "type": "TextBody",
-                "text": "Paris Romantic Escape - 4 nights city stay, Eiffel visit, breakfast, guided tour. Trending among couples. Limited-time discount available in this demo."
-              },
-              {
-                "type": "TextBody",
-                "text": "Himachal Family Trip - 5 nights mountain holiday, local sightseeing, family-friendly hotel, breakfast, transfers. Best value family package in this demo set."
-              },
-              {
-                "type": "Dropdown",
-                "label": "What do you want next?",
-                "name": "next_action",
-                "data-source": "${data.next_action_options}",
-                "required": true
-              },
-              {
-                "type": "Footer",
-                "label": "Continue",
-                "on-click-action": {
-                  "name": "navigate",
-                  "next": {
-                    "type": "screen",
-                    "name": "CONTACT_PREFERENCE"
-                  },
-                  "payload": {
-                    "source": "${data.source}",
-                    "agency_name": "${data.agency_name}",
-                    "destination": "${data.destination}",
-                    "budget": "${data.budget}",
-                    "dates": "${data.dates}",
-                    "travel_type": "${data.travel_type}",
-                    "selected_package": "${data.selected_package}",
-                    "next_action": "${form.next_action}"
-                  }
-                }
-              }
-            ]
-          }
-        ]
-      }
-    },
-    {
-      "id": "CONTACT_PREFERENCE",
-      "title": "Follow-up Preference",
-      "data": {
-        "source": {
-          "type": "string",
-          "__example__": "whatsapp_demo_flow"
-        },
-        "agency_name": {
-          "type": "string",
-          "__example__": "TravelCo Holidays"
-        },
-        "destination": {
-          "type": "string",
-          "__example__": "Bali"
-        },
-        "budget": {
-          "type": "string",
-          "__example__": "50k-1L"
-        },
-        "dates": {
-          "type": "string",
-          "__example__": "Summer 2026"
-        },
-        "travel_type": {
-          "type": "string",
-          "__example__": "Family"
-        },
-        "selected_package": {
-          "type": "string",
-          "__example__": "Beach Bliss Bali"
-        },
-        "next_action": {
-          "type": "string",
-          "__example__": "book_now"
-        },
-        "followup_options": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "properties": {
-              "id": { "type": "string" },
-              "title": { "type": "string" }
-            }
-          },
-          "__example__": [
-            { "id": "whatsapp_only", "title": "Send updates in WhatsApp" },
-            { "id": "agent_callback", "title": "Ask agent to call me" },
-            { "id": "email_quote", "title": "Send quote later" }
-          ]
-        }
-      },
-      "layout": {
-        "type": "SingleColumnLayout",
-        "children": [
-          {
-            "type": "Form",
-            "name": "contact_preference_form",
-            "children": [
-              {
-                "type": "TextHeading",
-                "text": "Final step before submit"
-              },
-              {
-                "type": "TextBody",
-                "text": "Package: ${data.selected_package}\nRequested action: ${data.next_action}"
-              },
-              {
-                "type": "Dropdown",
-                "label": "Preferred follow-up",
-                "name": "followup_preference",
-                "data-source": "${data.followup_options}",
-                "required": true
-              },
-              {
-                "type": "Footer",
-                "label": "Review Request",
-                "on-click-action": {
-                  "name": "navigate",
-                  "next": {
-                    "type": "screen",
-                    "name": "FINAL_SUBMIT"
-                  },
-                  "payload": {
-                    "source": "${data.source}",
-                    "agency_name": "${data.agency_name}",
-                    "destination": "${data.destination}",
-                    "budget": "${data.budget}",
-                    "dates": "${data.dates}",
-                    "travel_type": "${data.travel_type}",
-                    "selected_package": "${data.selected_package}",
-                    "next_action": "${data.next_action}",
-                    "followup_preference": "${form.followup_preference}"
-                  }
-                }
-              }
-            ]
-          }
-        ]
-      }
-    },
-    {
-      "id": "FINAL_SUBMIT",
-      "title": "Submit Request",
-      "terminal": true,
-      "data": {
-        "source": {
-          "type": "string",
-          "__example__": "whatsapp_demo_flow"
-        },
-        "agency_name": {
-          "type": "string",
-          "__example__": "TravelCo Holidays"
-        },
-        "destination": {
-          "type": "string",
-          "__example__": "Bali"
-        },
-        "budget": {
-          "type": "string",
-          "__example__": "50k-1L"
-        },
-        "dates": {
-          "type": "string",
-          "__example__": "Summer 2026"
-        },
-        "travel_type": {
-          "type": "string",
-          "__example__": "Family"
-        },
-        "selected_package": {
-          "type": "string",
-          "__example__": "Beach Bliss Bali"
-        },
-        "next_action": {
-          "type": "string",
-          "__example__": "book_now"
-        },
-        "followup_preference": {
-          "type": "string",
-          "__example__": "agent_callback"
-        }
-      },
-      "layout": {
-        "type": "SingleColumnLayout",
-        "children": [
-          {
-            "type": "Form",
-            "name": "final_submit_form",
-            "children": [
-              {
-                "type": "TextHeading",
-                "text": "Review your demo request"
-              },
-              {
-                "type": "TextBody",
-                "text": "Agency: ${data.agency_name}\nDestination: ${data.destination}\nBudget: ${data.budget}\nDates: ${data.dates}\nTravel Type: ${data.travel_type}\nSelected Package: ${data.selected_package}\nNext Action: ${data.next_action}\nFollow-up: ${data.followup_preference}"
-              },
-              {
-                "type": "TextCaption",
-                "text": "Submit this and TripBot will continue in WhatsApp chat with the payload above."
-              },
-              {
-                "type": "Footer",
-                "label": "Submit to WhatsApp",
-                "on-click-action": {
-                  "name": "data_exchange",
-                  "payload": {
-                    "source": "${data.source}",
-                    "agency_name": "${data.agency_name}",
-                    "destination": "${data.destination}",
-                    "budget": "${data.budget}",
-                    "dates": "${data.dates}",
-                    "travel_type": "${data.travel_type}",
-                    "selected_package": "${data.selected_package}",
-                    "intent": "${data.next_action}",
-                    "next_action": "${data.next_action}",
-                    "followup_preference": "${data.followup_preference}"
+                    "packageId": "${form.packageId}"
                   }
                 }
               }

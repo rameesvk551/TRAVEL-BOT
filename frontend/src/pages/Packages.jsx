@@ -1,10 +1,8 @@
-// FILE: /frontend/src/pages/Packages.jsx
-
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { packagesApi } from '../api/packagesApi';
-import PackageCard from '../components/PackageCard';
 import { PlusIcon } from '@heroicons/react/24/outline';
+import { packagesApi } from '../api/packagesApi';
+import { formatCurrency } from '../utils/formatters';
 
 export default function Packages() {
   const navigate = useNavigate();
@@ -22,49 +20,80 @@ export default function Packages() {
   const packages = data?.data || [];
 
   return (
-    <div className="p-6">
-      <div className="flex items-center justify-between mb-6">
+    <div className="w-full space-y-4">
+      <section className="flex items-end justify-between border-b border-slate-200 pb-4">
         <div>
-          <h1 className="text-2xl font-bold text-white">Packages</h1>
-          <p className="text-sm text-surface-400 mt-0.5">{packages.length} travel packages</p>
+          <h1 className="text-[28px] font-semibold tracking-tight text-slate-950">Packages</h1>
+          <p className="text-sm text-slate-500">Maintain the itinerary catalog used for quoting and chat flows.</p>
         </div>
-        <button onClick={() => navigate('/packages/new')} className="btn-primary">
-          <PlusIcon className="w-4 h-4" />
+        <button type="button" onClick={() => navigate('/packages/new')} className="shell-button-primary">
+          <PlusIcon className="h-4 w-4" />
           New Package
         </button>
-      </div>
+      </section>
 
-      {isLoading ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="glass-card h-72 animate-pulse">
-              <div className="h-40 bg-surface-700/30" />
-              <div className="p-4 space-y-2">
-                <div className="h-4 bg-surface-700/30 rounded w-2/3" />
-                <div className="h-3 bg-surface-700/20 rounded w-1/2" />
-              </div>
-            </div>
-          ))}
+      <div className="rounded-[12px] border border-slate-200 bg-white">
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-left">
+            <thead className="bg-slate-50">
+              <tr>
+                {['Package', 'Category', 'Destinations', 'Duration', 'Price', 'Status', 'Actions'].map((heading) => (
+                  <th key={heading} className="px-4 py-3 text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">
+                    {heading}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {isLoading ? (
+                Array.from({ length: 6 }).map((_, index) => (
+                  <tr key={index}>
+                    {Array.from({ length: 7 }).map((_, cell) => (
+                      <td key={cell} className="px-4 py-4">
+                        <div className="h-4 animate-pulse rounded bg-slate-100" />
+                      </td>
+                    ))}
+                  </tr>
+                ))
+              ) : packages.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="px-4 py-8 text-sm text-slate-500">No packages created yet.</td>
+                </tr>
+              ) : (
+                packages.map((pkg) => (
+                  <tr key={pkg.id}>
+                    <td className="px-4 py-4">
+                      <p className="text-sm font-medium text-slate-900">{pkg.name}</p>
+                      {pkg.summary ? <p className="mt-1 text-sm text-slate-500">{pkg.summary}</p> : null}
+                    </td>
+                    <td className="px-4 py-4 text-sm text-slate-600">{pkg.category || '—'}</td>
+                    <td className="px-4 py-4 text-sm text-slate-600">{pkg.destinations?.join(', ') || '—'}</td>
+                    <td className="px-4 py-4 text-sm text-slate-600">{pkg.duration || '—'}</td>
+                    <td className="px-4 py-4 text-sm font-medium text-slate-900">{formatCurrency(pkg.basePrice)}</td>
+                    <td className="px-4 py-4">
+                      <span className={`badge ${pkg.isActive ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>
+                        {pkg.isActive ? 'Active' : 'Inactive'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-4">
+                      <div className="flex gap-2">
+                        <button type="button" onClick={() => navigate(`/packages/${pkg.id}/edit`)} className="shell-button-secondary">Edit</button>
+                        <button
+                          type="button"
+                          onClick={() => deleteMutation.mutate(pkg.id)}
+                          className="rounded-[10px] bg-slate-100 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-200"
+                        >
+                          {pkg.isActive ? 'Deactivate' : 'Activate'}
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
         </div>
-      ) : packages.length === 0 ? (
-        <div className="glass-card p-12 text-center">
-          <p className="text-surface-500 mb-4">No packages created yet</p>
-          <button onClick={() => navigate('/packages/new')} className="btn-primary">
-            Create your first package
-          </button>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {packages.map((pkg) => (
-            <PackageCard
-              key={pkg.id}
-              pkg={pkg}
-              onEdit={() => navigate(`/packages/${pkg.id}/edit`)}
-              onDelete={() => deleteMutation.mutate(pkg.id)}
-            />
-          ))}
-        </div>
-      )}
+      </div>
     </div>
   );
 }

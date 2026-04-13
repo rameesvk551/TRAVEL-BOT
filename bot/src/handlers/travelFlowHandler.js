@@ -1,64 +1,34 @@
+const http = require('http');
+const https = require('https');
 const path = require('path');
 const { Op } = require('sequelize');
-const { Package, Booking, Lead } = require(path.resolve(__dirname, '../../../backend/src/models'));
-const whatsappService = require(path.resolve(__dirname, '../../../backend/src/services/whatsappService'));
-const leadService = require(path.resolve(__dirname, '../../../backend/src/services/leadService'));
-const schedulerService = require(path.resolve(__dirname, '../../../backend/src/services/schedulerService'));
+const {
+  Package,
+  Booking,
+  Lead,
+  Customer,
+} = require(path.resolve(__dirname, '../../../backend/src/models/index.ts'));
+const whatsappService = require(path.resolve(__dirname, '../../../backend/src/services/whatsappService.ts'));
+const leadService = require(path.resolve(__dirname, '../../../backend/src/services/leadService.ts'));
 const { updateSession } = require('../utils/sessionManager');
 
 const STEPS = {
   MENU: 'MENU',
-  PLAN_DESTINATION: 'PLAN_DESTINATION',
-  PLAN_DESTINATION_MORE: 'PLAN_DESTINATION_MORE',
-  PLAN_BUDGET: 'PLAN_BUDGET',
-  PLAN_DATES: 'PLAN_DATES',
-  PLAN_TRAVEL_TYPE: 'PLAN_TRAVEL_TYPE',
-  SHOWING_PACKAGES: 'SHOWING_PACKAGES',
+  CATEGORY_PACKAGES: 'CATEGORY_PACKAGES',
   PACKAGE_DETAIL: 'PACKAGE_DETAIL',
-  MY_BOOKINGS: 'MY_BOOKINGS',
+  ENQUIRY_NAME: 'ENQUIRY_NAME',
+  ENQUIRY_PLACE: 'ENQUIRY_PLACE',
+  ENQUIRY_ADDRESS: 'ENQUIRY_ADDRESS',
+  ENQUIRY_DATE: 'ENQUIRY_DATE',
+  ENQUIRY_TRAVELLERS: 'ENQUIRY_TRAVELLERS',
+  ENQUIRY_NOTES: 'ENQUIRY_NOTES',
+  COMPLETE: 'COMPLETE',
 };
 
-const MENU_ROWS = [
-  { id: 'menu_plan_trip', title: 'Plan a Trip', description: 'Build a trip in 4 taps' },
-  { id: 'menu_view_deals', title: 'View Top Deals', description: 'See curated packages' },
-  { id: 'menu_my_bookings', title: 'My Bookings', description: 'Check booking status' },
-  { id: 'menu_talk_agent', title: 'Talk to Agent', description: 'Connect to a specialist' },
-];
-
-const DESTINATION_ROWS = [
-  { id: 'dest_goa', title: 'Goa', description: 'Beach stays & nightlife', value: 'Goa', emoji: '🏖️' },
-  { id: 'dest_bali', title: 'Bali', description: 'Island escapes & resorts', value: 'Bali', emoji: '🏝️' },
-  { id: 'dest_paris', title: 'Paris', description: 'Romantic city breaks', value: 'Paris', emoji: '🗼' },
-  { id: 'dest_more', title: 'Other Destinations', description: 'See more destinations', value: 'MORE' },
-];
-
-const EXTRA_DESTINATION_ROWS = [
-  { id: 'dest_dubai', title: 'Dubai', description: 'Luxury, shopping, desert', value: 'Dubai', emoji: '🌆' },
-  { id: 'dest_himachal', title: 'Himachal', description: 'Mountains & family trips', value: 'Himachal', emoji: '🏔️' },
-  { id: 'dest_kashmir', title: 'Kashmir', description: 'Scenic valleys & houseboats', value: 'Kashmir', emoji: '🌄' },
-  { id: 'dest_thailand', title: 'Thailand', description: 'Beaches & nightlife', value: 'Thailand', emoji: '🌴' },
-];
-
-const BUDGET_ROWS = [
-  { id: 'budget_under_50k', title: '<₹50k', description: 'Budget-friendly picks', label: '<₹50k', min: 0, max: 50000 },
-  { id: 'budget_50k_1l', title: '₹50k–1L', description: 'Most popular range', label: '₹50k–1L', min: 50000, max: 100000 },
-  { id: 'budget_1l_2l', title: '₹1L–2L', description: 'Premium trips', label: '₹1L–2L', min: 100000, max: 200000 },
-  { id: 'budget_flexible', title: 'Flexible', description: 'Show best matches', label: 'Flexible', min: null, max: null },
-];
-
-const DATE_ROWS = [
-  { id: 'date_next_2_months', title: 'In 1-2 Months', description: 'Near-term travel', label: 'In 1-2 Months' },
-  { id: 'date_summer_2026', title: 'Summer 2026', description: 'Peak season ideas', label: 'Summer 2026' },
-  { id: 'date_flexible', title: 'Flexible', description: 'Open to any dates', label: 'Flexible' },
-  { id: 'date_skip', title: 'Skip Dates', description: 'Continue without dates', label: 'Flexible dates' },
-];
-
-const TRAVEL_TYPE_ROWS = [
-  { id: 'type_solo', title: 'Solo', description: 'Just for me', label: 'Solo', travellers: 1 },
-  { id: 'type_couple', title: 'Couple', description: 'Romantic getaways', label: 'Couple', travellers: 2 },
-  { id: 'type_family', title: 'Family', description: 'Comfort-first trips', label: 'Family', travellers: 4 },
-  { id: 'type_friends', title: 'Friends', description: 'Fun group trips', label: 'Friends', travellers: 4 },
-];
+const FLOW_FIRST_SCREEN_ID = process.env.WHATSAPP_TRIP_FLOW_FIRST_SCREEN_ID || 'PACKAGE_SELECTOR';
+const FLOW_CTA = process.env.WHATSAPP_TRIP_FLOW_CTA || 'View Packages';
+const FLOW_PLACEHOLDER_IMAGE = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+yh8cAAAAASUVORK5CYII=';
+const imageCache = new Map();
 
 function normalizeText(value = '') {
   return String(value || '').trim();
@@ -72,193 +42,80 @@ function getContext(customer, agency) {
   return { customerId: customer.id, agencyId: agency.id };
 }
 
+function escapeMarkdown(text = '') {
+  return String(text || '').replace(/\*/g, '').trim();
+}
+
+function formatCurrency(amountPaise) {
+  const amount = Number(amountPaise || 0) / 100;
+  return `₹${Math.round(amount).toLocaleString('en-IN')}`;
+}
+
+function normalizeCategory(value = '') {
+  const normalized = lower(value);
+  if (normalized === 'domestic') return 'DOMESTIC';
+  if (normalized === 'international') return 'INTERNATIONAL';
+  return null;
+}
+
+function categoryLabel(value = '') {
+  return normalizeCategory(value) === 'INTERNATIONAL' ? 'International' : 'Domestic';
+}
+
+function inferPackageCategory(pkg) {
+  const explicit = normalizeCategory(pkg?.category);
+  if (explicit) return explicit;
+
+  const searchable = [
+    pkg?.name,
+    pkg?.summary,
+    ...(Array.isArray(pkg?.destinations) ? pkg.destinations : []),
+    ...(Array.isArray(pkg?.inclusions) ? pkg.inclusions : []),
+  ].join(' ').toLowerCase();
+
+  const domesticKeywords = [
+    'india', 'goa', 'kerala', 'munnar', 'alleppey', 'kochi', 'cochin', 'kovalam',
+    'himachal', 'manali', 'shimla', 'kashmir', 'srinagar', 'gulmarg', 'pahalgam',
+    'jaipur', 'udaipur', 'leh', 'ladakh', 'andaman', 'lakshadweep', 'delhi', 'mumbai',
+  ];
+
+  return domesticKeywords.some((keyword) => searchable.includes(keyword))
+    ? 'DOMESTIC'
+    : 'INTERNATIONAL';
+}
+
+function packageMatchesCategory(pkg, category) {
+  const normalized = normalizeCategory(category);
+  if (!normalized) return true;
+  return inferPackageCategory(pkg) === normalized;
+}
+
 function getProfile(session) {
+  const enquiry = session.collectedData?.enquiryDraft || {};
+
   return {
-    navigationStack: Array.isArray(session.collectedData?.navigationStack)
-      ? session.collectedData.navigationStack
-      : [],
-    destination: session.collectedData?.destination || null,
-    destinationEmoji: session.collectedData?.destinationEmoji || '',
-    budgetLabel: session.collectedData?.budgetLabel || null,
-    budgetMin: session.collectedData?.budgetMin ?? null,
-    budgetMax: session.collectedData?.budgetMax ?? null,
-    datesLabel: session.collectedData?.datesLabel || null,
-    travelType: session.collectedData?.travelType || null,
-    travellers: session.collectedData?.travellers || null,
+    packageCategory: session.collectedData?.packageCategory || null,
     packageResults: Array.isArray(session.collectedData?.packageResults)
       ? session.collectedData.packageResults
       : [],
     selectedPackageId: session.collectedData?.selectedPackageId || null,
-    followUpOptOut: !!session.collectedData?.followUpOptOut,
     activeLeadId: session.collectedData?.activeLeadId || null,
+    enquiryDraft: {
+      name: enquiry.name || '',
+      place: enquiry.place || '',
+      address: enquiry.address || '',
+      travelDate: enquiry.travelDate || '',
+      travellers: enquiry.travellers || null,
+      notes: enquiry.notes || '',
+    },
   };
 }
 
-function buildNavRows(includeBack = true) {
-  const rows = [{ id: 'global_main_menu', title: 'Main Menu', description: 'Start over anytime' }];
-  if (includeBack) {
-    rows.unshift({ id: 'global_go_back', title: 'Go Back', description: 'Return to previous step' });
-  }
-  return rows;
-}
-
-function listSections(rows, includeBack = true) {
-  return [
-    { title: 'Options', rows },
-    { title: 'Navigation', rows: buildNavRows(includeBack) },
-  ];
-}
-
-function escapeMarkdown(text = '') {
-  return String(text).replace(/\*/g, '');
-}
-
-function formatCurrency(amountPaise) {
-  return `₹${Math.round(amountPaise / 100).toLocaleString('en-IN')}`;
-}
-
-function matchesAnyKeyword(haystack, keywords) {
-  return keywords.some((keyword) => haystack.includes(keyword));
-}
-
-function getTravelKeywords(travelType) {
-  const maps = {
-    Solo: ['solo', 'adventure', 'backpack', 'explore'],
-    Couple: ['couple', 'honeymoon', 'romantic', 'escape'],
-    Family: ['family', 'kids', 'child', 'parents', 'comfort'],
-    Friends: ['friends', 'group', 'party', 'adventure'],
-  };
-  return maps[travelType] || [];
-}
-
-function scorePackage(pkg, profile, bookingCount) {
-  let score = 0;
-  const destinations = (pkg.destinations || []).map((item) => lower(item));
-  const name = lower(pkg.name);
-  const duration = lower(pkg.duration);
-  const itinerary = JSON.stringify(pkg.itinerary || []).toLowerCase();
-  const inclusions = JSON.stringify(pkg.inclusions || []).toLowerCase();
-  const searchable = [name, duration, itinerary, inclusions, ...destinations].join(' ');
-
-  if (profile.destination) {
-    const destination = lower(profile.destination);
-    if (destinations.includes(destination)) score += 60;
-    else if (searchable.includes(destination)) score += 40;
-  } else {
-    score += 20;
-  }
-
-  if (profile.budgetMin !== null || profile.budgetMax !== null) {
-    if ((profile.budgetMin === null || pkg.basePrice / 100 >= profile.budgetMin)
-      && (profile.budgetMax === null || pkg.basePrice / 100 <= profile.budgetMax)) {
-      score += 30;
-    } else if (profile.budgetMax && pkg.basePrice / 100 <= profile.budgetMax * 1.2) {
-      score += 10;
-    }
-  } else {
-    score += 10;
-  }
-
-  if (profile.travelType) {
-    const keywords = getTravelKeywords(profile.travelType);
-    if (matchesAnyKeyword(searchable, keywords)) {
-      score += 18;
-    }
-  }
-
-  if (pkg.imageUrl) score += 4;
-  score += Math.min(bookingCount * 2, 20);
-  return score;
-}
-
-function getPackageBadge(pkg, profile, bookingCount) {
-  if (bookingCount >= 5) return '🔥 Popular';
-  if (profile.travelType === 'Family') return '⭐ Family Favorite';
-  if (profile.travelType === 'Couple') return '💞 Couple Pick';
-  if (profile.travelType === 'Solo') return '🧭 Explorer Pick';
-  if (profile.budgetMax && pkg.basePrice / 100 <= profile.budgetMax * 0.7) return '💸 Best Value';
-  return '🌟 Staff Pick';
-}
-
-function summarizePackage(pkg, profile, bookingCount) {
-  const highlights = [];
-  const inclusions = Array.isArray(pkg.inclusions) ? pkg.inclusions.slice(0, 2) : [];
-  if (inclusions.length) highlights.push(...inclusions.map((item) => escapeMarkdown(item)));
-  else if (pkg.destinations?.length) highlights.push(...pkg.destinations.slice(0, 2));
-
-  const badge = getPackageBadge(pkg, profile, bookingCount);
-  const proof = bookingCount > 0 ? ` · ★ ${bookingCount} booked` : '';
-
-  return {
-    heading: `*${escapeMarkdown(pkg.name)}* - ${formatCurrency(pkg.basePrice)} (${pkg.duration || 'Custom'})`,
-    detail: `${highlights.join(', ') || 'Curated travel package'}. ${badge}${proof}`,
-  };
-}
-
-async function findPackagesForProfile(agencyId, profile, limit = 3) {
-  const packages = await Package.findAll({
-    where: { agencyId, isActive: true },
-    order: [['createdAt', 'DESC']],
-    limit: 30,
-  });
-
-  if (packages.length === 0) {
-    return [];
-  }
-
-  const withCounts = await Promise.all(packages.map(async (pkg) => {
-    const bookingCount = await Booking.count({
-      where: { agencyId, packageId: pkg.id, status: { [Op.in]: ['PENDING', 'CONFIRMED', 'COMPLETED'] } },
-    });
-
-    return {
-      pkg,
-      bookingCount,
-      score: scorePackage(pkg, profile, bookingCount),
-    };
-  }));
-
-  return withCounts
-    .sort((a, b) => {
-      if (b.score !== a.score) return b.score - a.score;
-      if (b.bookingCount !== a.bookingCount) return b.bookingCount - a.bookingCount;
-      return new Date(b.pkg.createdAt) - new Date(a.pkg.createdAt);
-    })
-    .slice(0, limit);
-}
-
-async function sendList(customer, agency, payload) {
-  const ctx = getContext(customer, agency);
-  return whatsappService.sendListMessage(
-    customer.phone,
-    payload.body,
-    payload.buttonText || 'Choose',
-    payload.sections,
-    ctx,
-    { headerText: payload.headerText, footerText: payload.footerText }
-  );
-}
-
-async function transitionTo(session, nextStep, updates = {}, options = {}) {
-  const profile = getProfile(session);
-  const currentStep = session.currentStep || STEPS.MENU;
-  const nextStack = Array.isArray(options.stack)
-    ? options.stack
-    : [...profile.navigationStack];
-
-  if (options.clearStack) {
-    nextStack.length = 0;
-  } else if (options.rememberCurrent !== false && currentStep && currentStep !== nextStep) {
-    nextStack.push(currentStep);
-  }
-
+async function transitionTo(session, nextStep, collectedData = {}) {
   await updateSession(session, {
     currentStep: nextStep,
-    failedAttempts: options.resetFailedAttempts === false ? session.failedAttempts : 0,
-    collectedData: {
-      ...updates,
-      navigationStack: nextStack,
-    },
+    failedAttempts: 0,
+    collectedData,
   });
 }
 
@@ -268,136 +125,306 @@ async function incrementFailedAttempt(session) {
   });
 }
 
-async function sendInvalidChoice(session, customer, agency) {
+async function sendInvalidChoice(session, customer, agency, fallback = null) {
   await incrementFailedAttempt(session);
-  const message = 'Sorry, I did not get that. Please pick one of the options below or tap Main Menu to start over.';
-  await whatsappService.sendTextMessage(customer.phone, message, getContext(customer, agency));
+  await whatsappService.sendTextMessage(
+    customer.phone,
+    'Please use one of the options shown in WhatsApp so I can continue smoothly.',
+    getContext(customer, agency)
+  );
+
+  if (fallback) {
+    return fallback();
+  }
+
   return renderCurrentStep(session, customer, agency, { resendOnly: true });
 }
 
-function parseByRows(text, rows) {
-  const normalized = lower(text);
-  if (!normalized) return null;
-
-  const byNumber = rows.find((row, index) => normalized === String(index + 1));
-  if (byNumber) return byNumber.id;
-
-  const byTitle = rows.find((row) => {
-    const title = lower(row.title);
-    return normalized === title || normalized.includes(title);
-  });
-
-  return byTitle?.id || null;
+function firstName(customer) {
+  const name = normalizeText(customer?.name);
+  if (!name) return 'there';
+  return name.split(/\s+/)[0];
 }
 
-function resolveAction(incoming, rows = []) {
-  const actionId = normalizeText(incoming?.actionId || '');
-  if (actionId) return actionId;
-  return parseByRows(incoming?.text, rows);
+function buildHighlights(pkg) {
+  const highlights = Array.isArray(pkg?.inclusions) && pkg.inclusions.length
+    ? pkg.inclusions.slice(0, 4)
+    : Array.isArray(pkg?.itinerary) && pkg.itinerary.length
+      ? pkg.itinerary.slice(0, 4).map((day) => day.title || day.description).filter(Boolean)
+      : Array.isArray(pkg?.destinations) && pkg.destinations.length
+        ? pkg.destinations.slice(0, 4)
+        : ['Hotel stay', 'Sightseeing', 'Curated support'];
+
+  return highlights.map((item) => `• ${escapeMarkdown(item)}`).join('\n');
 }
 
-function buildProfileSummary(profile) {
-  const parts = [];
-  if (profile.destination) parts.push(`Destination: ${profile.destination}`);
-  if (profile.budgetLabel) parts.push(`Budget: ${profile.budgetLabel}`);
-  if (profile.travelType) parts.push(`Travel Type: ${profile.travelType}`);
-  if (profile.datesLabel) parts.push(`Dates: ${profile.datesLabel}`);
-  return parts.join(', ');
+function buildShortDescription(pkg) {
+  const summary = escapeMarkdown(pkg?.summary || '');
+  if (summary) return summary.slice(0, 180);
+
+  if (Array.isArray(pkg?.inclusions) && pkg.inclusions.length) {
+    return escapeMarkdown(pkg.inclusions.slice(0, 3).join(', ')).slice(0, 180);
+  }
+
+  return 'Curated holiday package with handpicked stays and experiences.';
+}
+
+function buildPackageCaption(pkg) {
+  return [
+    `🌴 ${escapeMarkdown(pkg.name)}`,
+    '',
+    `💰 ${formatCurrency(pkg.basePrice)}`,
+    `📅 ${escapeMarkdown(pkg.duration || 'Custom itinerary')}`,
+    '',
+    buildShortDescription(pkg),
+    '',
+    '✨ Highlights:',
+    buildHighlights(pkg),
+  ].join('\n');
+}
+
+function buildPackageActionsFallbackText(pkg, agency) {
+  const lines = [
+    'Choose what you want to do next:',
+    '1. Enquiry',
+    `2. Call Now (${agency.phone || agency.whatsappNumber})`,
+  ];
+
+  if (pkg?.brochureUrl) {
+    lines.push('3. Download Itinerary');
+    lines.push('4. Back to Packages');
+  } else {
+    lines.push('3. Back to Packages');
+  }
+
+  lines.push('');
+  lines.push('Reply with the number of your choice.');
+  return lines.join('\n');
+}
+
+function buildPackageListSections(category, packages) {
+  return [
+    {
+      title: 'Options',
+      rows: packages.map(({ pkg }) => ({
+        id: `pkg_pick:${pkg.id}`,
+        title: escapeMarkdown(pkg.name).slice(0, 24) || 'Travel Package',
+        description: `${formatCurrency(pkg.basePrice)} • ${escapeMarkdown(pkg.duration || 'Custom itinerary')}`.slice(0, 72),
+      })),
+    },
+    {
+      title: 'Navigation',
+      rows: [
+        { id: 'global_go_back', title: 'Go Back', description: 'Return to previous step' },
+        { id: 'global_main_menu', title: 'Main Menu', description: 'Start over anytime' },
+      ],
+    },
+  ];
+}
+
+function safePdfName(pkg) {
+  const base = normalizeText(pkg?.brochureFileName)
+    || `${normalizeText(pkg?.name || 'package').replace(/[^\w\-]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '')}.pdf`;
+  return base.toLowerCase().endsWith('.pdf') ? base : `${base}.pdf`;
 }
 
 function isMetaTripFlowConfigured() {
   return !!process.env.WHATSAPP_TRIP_FLOW_ID;
 }
 
-function pickFirstValue(source, keys) {
-  for (const key of keys) {
-    const value = source?.[key];
-    if (value !== undefined && value !== null && String(value).trim() !== '') {
-      return value;
-    }
-  }
-  return null;
+function normalizeFlowImageUrl(imageUrl = '') {
+  const url = normalizeText(imageUrl);
+  if (!url) return '';
+
+  const isCloudinarySvg = url.includes('res.cloudinary.com')
+    && url.includes('/image/upload/')
+    && /\.svg(?:\?|$)/i.test(url);
+
+  if (!isCloudinarySvg) return url;
+
+  return url
+    .replace('/image/upload/', '/image/upload/f_png/')
+    .replace(/\.svg(\?|$)/i, '.png$1');
 }
 
-function normalizeBudgetSelection(rawBudget) {
-  const value = String(rawBudget || '').trim();
-  if (!value) return null;
+function fetchBuffer(url, redirects = 3) {
+  return new Promise((resolve, reject) => {
+    let parsed;
+    try {
+      parsed = new URL(url);
+    } catch (err) {
+      reject(err);
+      return;
+    }
 
-  const lookup = BUDGET_ROWS.find((row) => {
-    const normalizedTitle = lower(row.title);
-    const normalizedLabel = lower(row.label);
-    const normalizedValue = lower(value);
-    return normalizedValue === normalizedTitle || normalizedValue === normalizedLabel;
+    const client = parsed.protocol === 'http:' ? http : https;
+    const req = client.get(parsed, (res) => {
+      if (res.statusCode && [301, 302, 303, 307, 308].includes(res.statusCode)) {
+        res.resume();
+        if (redirects <= 0 || !res.headers.location) {
+          reject(new Error('Too many redirects while fetching flow image'));
+          return;
+        }
+        const nextUrl = new URL(res.headers.location, parsed).toString();
+        fetchBuffer(nextUrl, redirects - 1).then(resolve).catch(reject);
+        return;
+      }
+
+      if (res.statusCode !== 200) {
+        res.resume();
+        reject(new Error(`Image request failed with status ${res.statusCode}`));
+        return;
+      }
+
+      const contentType = String(res.headers['content-type'] || '').toLowerCase();
+      if (contentType.includes('svg')) {
+        res.resume();
+        reject(new Error('SVG images are not supported in WhatsApp Flow package cards'));
+        return;
+      }
+
+      const chunks = [];
+      let size = 0;
+      res.on('data', (chunk) => {
+        size += chunk.length;
+        if (size > 900 * 1024) {
+          req.destroy(new Error('Image too large for WhatsApp Flow payload'));
+          return;
+        }
+        chunks.push(chunk);
+      });
+      res.on('end', () => resolve(Buffer.concat(chunks)));
+      res.on('error', reject);
+    });
+
+    req.on('error', reject);
+  });
+}
+
+async function getFlowBase64Image(imageUrl) {
+  const normalized = normalizeFlowImageUrl(imageUrl);
+  if (!normalized) return FLOW_PLACEHOLDER_IMAGE;
+
+  if (imageCache.has(normalized)) {
+    return imageCache.get(normalized);
+  }
+
+  try {
+    const buffer = await fetchBuffer(normalized);
+    const encoded = buffer.length ? buffer.toString('base64') : FLOW_PLACEHOLDER_IMAGE;
+    imageCache.set(normalized, encoded);
+    return encoded;
+  } catch (err) {
+    console.warn('[TravelFlow] Could not embed package image in flow:', err.message);
+    imageCache.set(normalized, FLOW_PLACEHOLDER_IMAGE);
+    return FLOW_PLACEHOLDER_IMAGE;
+  }
+}
+
+async function findPackagesForCategory(agencyId, category, limit = 5) {
+  const packages = await Package.findAll({
+    where: {
+      agencyId,
+      isActive: true,
+    },
+    order: [['createdAt', 'DESC']],
+    limit: 20,
   });
 
-  if (lookup) {
-    return {
-      budgetLabel: lookup.label,
-      budgetMin: lookup.min,
-      budgetMax: lookup.max,
-    };
-  }
+  const filtered = packages.filter((pkg) => packageMatchesCategory(pkg, category));
+  if (filtered.length === 0) return [];
 
-  return {
-    budgetLabel: value,
-    budgetMin: null,
-    budgetMax: null,
-  };
+  const withCounts = await Promise.all(filtered.map(async (pkg) => ({
+    pkg,
+    bookingCount: await Booking.count({
+      where: {
+        agencyId,
+        packageId: pkg.id,
+        status: { [Op.in]: ['PENDING', 'CONFIRMED', 'COMPLETED'] },
+      },
+    }),
+  })));
+
+  return withCounts
+    .sort((a, b) => {
+      if (b.bookingCount !== a.bookingCount) return b.bookingCount - a.bookingCount;
+      return new Date(b.pkg.createdAt) - new Date(a.pkg.createdAt);
+    })
+    .slice(0, limit);
 }
 
-async function ensureLead(session, customer, agency, extra = {}) {
+async function buildFlowPackageOptions(packages) {
+  return Promise.all(packages.map(async ({ pkg }) => ({
+    id: pkg.id,
+    title: escapeMarkdown(pkg.name).slice(0, 30) || 'Travel Package',
+    description: `${formatCurrency(pkg.basePrice)} • ${escapeMarkdown(pkg.duration || 'Custom itinerary')}\n${buildShortDescription(pkg)}`.slice(0, 300),
+    metadata: escapeMarkdown(categoryLabel(inferPackageCategory(pkg))).slice(0, 20),
+    image: await getFlowBase64Image(pkg.imageUrl),
+  })));
+}
+
+async function findActiveLead(session, customer, agency) {
   const profile = getProfile(session);
-  let lead = null;
 
   if (profile.activeLeadId) {
-    lead = await Lead.findOne({ where: { id: profile.activeLeadId, agencyId: agency.id } });
+    const existing = await Lead.findOne({
+      where: { id: profile.activeLeadId, agencyId: agency.id },
+    });
+    if (existing) return existing;
   }
 
-  if (!lead) {
-    lead = await Lead.findOne({
-      where: {
-        customerId: customer.id,
-        agencyId: agency.id,
-        status: { [Op.in]: ['NEW', 'CONTACTED', 'QUOTED', 'NEGOTIATING'] },
-      },
-      order: [['createdAt', 'DESC']],
+  const latest = await Lead.findOne({
+    where: {
+      customerId: customer.id,
+      agencyId: agency.id,
+      status: { [Op.in]: ['NEW', 'CONTACTED', 'QUOTED', 'NEGOTIATING'] },
+    },
+    order: [['createdAt', 'DESC']],
+  });
+
+  if (latest) {
+    await updateSession(session, {
+      collectedData: { activeLeadId: latest.id },
     });
   }
 
-  const leadPayload = {
-    destination: profile.destination,
-    travelDates: profile.datesLabel === 'Flexible dates' ? null : profile.datesLabel,
-    travellers: profile.travellers || null,
-    budgetPerPerson: profile.budgetMax ? profile.budgetMax * 100 : null,
-    packageId: extra.packageId || profile.selectedPackageId || null,
-    status: extra.status || 'NEW',
-    notes: [
-      'Collected via guided WhatsApp flow',
-      profile.travelType ? `Travel Type: ${profile.travelType}` : null,
-      profile.datesLabel ? `Dates: ${profile.datesLabel}` : null,
-      extra.note || null,
-    ].filter(Boolean).join(' | '),
-  };
+  return latest;
+}
+
+async function ensureLead(session, customer, agency, extra = {}) {
+  let lead = await findActiveLead(session, customer, agency);
+  const profile = getProfile(session);
+  const pkg = profile.selectedPackageId
+    ? await Package.findOne({ where: { id: profile.selectedPackageId, agencyId: agency.id } })
+    : null;
+
+  const notes = [
+    extra.notes || null,
+    extra.note || null,
+  ].filter(Boolean).join(' | ');
 
   if (!lead) {
     lead = await leadService.createLead({
       customerId: customer.id,
-      destination: leadPayload.destination,
-      travelDates: leadPayload.travelDates,
-      travellers: leadPayload.travellers,
-      budgetPerPerson: leadPayload.budgetPerPerson,
-      notes: leadPayload.notes,
+      packageId: extra.packageId || pkg?.id || null,
+      destination: extra.destination || pkg?.destinations?.[0] || null,
+      travelDates: extra.travelDates || null,
+      travellers: extra.travellers || null,
+      status: extra.status || 'NEW',
+      notes: notes || 'Lead created from WhatsApp sales funnel',
     }, agency.id);
+  } else {
+    const updates = {
+      packageId: extra.packageId || pkg?.id || lead.packageId || null,
+      destination: extra.destination || lead.destination || pkg?.destinations?.[0] || null,
+      travelDates: extra.travelDates || lead.travelDates || null,
+      travellers: extra.travellers || lead.travellers || null,
+      budgetPerPerson: extra.budgetPerPerson || lead.budgetPerPerson || null,
+      status: extra.status || lead.status || 'NEW',
+      notes: [lead.notes, notes].filter(Boolean).join(' | '),
+    };
+    lead = await leadService.updateLead(lead.id, agency.id, updates);
   }
-
-  const updates = { ...leadPayload };
-  if (!updates.destination) delete updates.destination;
-  if (!updates.travelDates) delete updates.travelDates;
-  if (!updates.travellers) delete updates.travellers;
-  if (!updates.budgetPerPerson) delete updates.budgetPerPerson;
-  if (!updates.packageId) delete updates.packageId;
-
-  lead = await leadService.updateLead(lead.id, agency.id, updates);
 
   if (!lead.assignedAgentId) {
     const agent = await leadService.findLeastBusyAgent(agency.id);
@@ -413,708 +440,620 @@ async function ensureLead(session, customer, agency, extra = {}) {
   return lead;
 }
 
-async function scheduleFollowUps(session, customer, agency, overrides = {}) {
-  const profile = getProfile(session);
-  if (profile.followUpOptOut) return;
-
-  try {
-    await schedulerService.scheduleChatFollowUps({
-      customerId: customer.id,
-      agencyId: agency.id,
-      phone: customer.phone,
-      customerName: customer.name || '',
-      destination: overrides.destination || profile.destination,
-      budgetLabel: profile.budgetLabel,
-      travelType: profile.travelType,
-      datesLabel: profile.datesLabel,
-      packageName: overrides.packageName || null,
-      packageId: overrides.packageId || profile.selectedPackageId || null,
-    });
-  } catch (err) {
-    console.warn('[TravelFlow] Could not schedule follow-ups:', err.message);
-  }
+function buildProfileSummary(profile) {
+  const parts = [];
+  if (profile.packageCategory) parts.push(`Category: ${categoryLabel(profile.packageCategory)}`);
+  if (profile.selectedPackageId) parts.push('Package selected');
+  if (profile.enquiryDraft.place) parts.push(`Place: ${profile.enquiryDraft.place}`);
+  if (profile.enquiryDraft.travelDate) parts.push(`Date: ${profile.enquiryDraft.travelDate}`);
+  if (profile.enquiryDraft.travellers) parts.push(`Travellers: ${profile.enquiryDraft.travellers}`);
+  return parts.join(', ');
 }
 
-async function handleFlowSubmission(session, incoming, customer, agency, deps) {
-  const response = incoming?.flowResponse || {};
-  const destination = pickFirstValue(response, ['destination', 'destination_name', 'trip_destination']);
-  const datesLabel = pickFirstValue(response, ['dates', 'travel_dates', 'date_window']) || 'Flexible dates';
-  const travelType = pickFirstValue(response, ['travel_type', 'travelType', 'traveler_type', 'who_travels']);
-  const budgetRaw = pickFirstValue(response, ['budget', 'budget_range', 'budget_label']);
-  const selectedPackage = pickFirstValue(response, ['selected_package', 'package_name']);
-  const intent = lower(pickFirstValue(response, ['intent', 'next_action', 'next_step', 'request_type']) || 'show_packages');
-  const budget = normalizeBudgetSelection(budgetRaw);
-  const travelTypeMeta = TRAVEL_TYPE_ROWS.find((row) => lower(row.label) === lower(travelType));
-
-  await transitionTo(session, STEPS.SHOWING_PACKAGES, {
-    destination: destination || getProfile(session).destination,
-    datesLabel,
-    travelType: travelTypeMeta?.label || travelType || getProfile(session).travelType,
-    travellers: travelTypeMeta?.travellers || getProfile(session).travellers || null,
-    budgetLabel: budget?.budgetLabel || getProfile(session).budgetLabel,
-    budgetMin: budget ? budget.budgetMin : getProfile(session).budgetMin,
-    budgetMax: budget ? budget.budgetMax : getProfile(session).budgetMax,
-    selectedPackageName: selectedPackage || null,
-  }, { rememberCurrent: true });
-
-  if (intent.includes('agent')) {
-    await ensureLead(session, customer, agency, { note: 'Customer completed trip flow and requested an agent' });
-    return deps.handoffToAgent(session, customer, agency, 'Customer completed WhatsApp Flow and requested an agent');
-  }
-
-  if (intent.includes('booking')) {
-    return showMyBookings(session, customer, agency, { rememberCurrent: false });
-  }
-
-  if (intent.includes('book_now') || intent.includes('book now')) {
-    await ensureLead(session, customer, agency, {
-      status: 'QUOTED',
-      note: selectedPackage
-        ? `Customer completed WhatsApp Flow and requested booking for ${selectedPackage}`
-        : 'Customer completed WhatsApp Flow and requested booking',
-    });
-    return deps.handoffToAgent(
-      session,
-      customer,
-      agency,
-      selectedPackage
-        ? `Customer completed WhatsApp Flow and wants to book ${selectedPackage}`
-        : 'Customer completed WhatsApp Flow and wants to book'
-    );
-  }
-
-  return showTripSummaryAndPackages(session, customer, agency);
-}
-
-async function showMainMenu(session, customer, agency, options = {}) {
-  const firstName = customer.name ? customer.name.split(' ')[0] : 'there';
-  const profile = getProfile(session);
-
-  await transitionTo(session, STEPS.MENU, {}, {
-    clearStack: true,
-    rememberCurrent: false,
-  });
-
+async function createFreshGreetingLead(session, customer) {
   await updateSession(session, {
+    isHandedOff: false,
+    handedOffAt: null,
+    handedOffToId: null,
+    currentStep: STEPS.MENU,
+    failedAttempts: 0,
     collectedData: {
-      destination: null,
-      destinationEmoji: '',
-      budgetLabel: null,
-      budgetMin: null,
-      budgetMax: null,
-      datesLabel: null,
-      travelType: null,
-      travellers: null,
+      packageCategory: null,
       packageResults: [],
       selectedPackageId: null,
-      activeLeadId: profile.activeLeadId,
-      followUpOptOut: profile.followUpOptOut,
-      navigationStack: [],
+      enquiryDraft: {},
     },
   });
 
-  return sendList(customer, agency, {
-    headerText: 'TripBot',
-    body: options.body || `👋 Hi ${firstName}! I'm TripBot for ${agency.name}. How can I help you today?`,
-    buttonText: 'Open Menu',
-    sections: [{ title: 'Main Menu', rows: MENU_ROWS }],
-    footerText: 'Choose one option to continue.',
-  });
-}
-
-async function showDestinationStep(session, customer, agency, options = {}) {
-  if (!options.resendOnly) {
-    await transitionTo(session, STEPS.PLAN_DESTINATION, {
-      destination: null,
-      destinationEmoji: '',
-      budgetLabel: null,
-      budgetMin: null,
-      budgetMax: null,
-      datesLabel: null,
-      travelType: null,
-      travellers: null,
-      packageResults: [],
-      selectedPackageId: null,
-    }, { rememberCurrent: options.rememberCurrent });
-  }
-
-  if (isMetaTripFlowConfigured()) {
-    return whatsappService.sendFlowMessage(
-      customer.phone,
-      'Open the guided trip planner to choose destination, budget, dates, and travel type in one interactive flow.',
-      {
-        flowId: process.env.WHATSAPP_TRIP_FLOW_ID,
-        firstScreenId: process.env.WHATSAPP_TRIP_FLOW_FIRST_SCREEN_ID || 'TRIP_PLANNER',
-        flowCta: process.env.WHATSAPP_TRIP_FLOW_CTA || 'Plan Trip',
-        flowToken: `trip-${customer.id}-${Date.now()}`,
-        data: {
-          customer_name: customer.name || '',
-          agency_name: agency.name || '',
-        },
+  if (customer?.name) {
+    await updateSession(session, {
+      collectedData: {
+        enquiryDraft: { name: customer.name },
       },
-      getContext(customer, agency),
-      {
-        headerText: 'Trip Planner',
-        footerText: 'If the flow does not open, I will continue here in chat.',
-      }
-    );
+    });
   }
-
-  return sendList(customer, agency, {
-    headerText: 'Plan a Trip',
-    body: 'Great! Which destination are you interested in?',
-    buttonText: 'Destinations',
-    sections: listSections(DESTINATION_ROWS.map(({ id, title, description }) => ({ id, title, description })), true),
-    footerText: 'Tap a destination below.',
-  });
 }
 
-async function showMoreDestinationsStep(session, customer, agency, options = {}) {
-  if (!options.resendOnly) {
-    await transitionTo(session, STEPS.PLAN_DESTINATION_MORE, {}, { rememberCurrent: options.rememberCurrent });
-  }
-
-  return sendList(customer, agency, {
-    headerText: 'More Destinations',
-    body: 'Here are a few more destinations you can explore.',
-    buttonText: 'More Options',
-    sections: listSections(EXTRA_DESTINATION_ROWS.map(({ id, title, description }) => ({ id, title, description })), true),
-    footerText: 'Pick one to continue.',
+async function showMainMenu(session, customer, agency) {
+  await transitionTo(session, STEPS.MENU, {
+    packageCategory: null,
+    packageResults: [],
+    selectedPackageId: null,
+    enquiryDraft: customer.name ? { name: customer.name } : {},
   });
+
+  const greeting = [
+    `Hi ${firstName(customer)} 👋`,
+    `Welcome to ${agency.name} ✈️`,
+    'We offer Honeymoon 💕 & Family Tour Packages.',
+    '',
+    'How can I help you today?',
+  ].join('\n');
+
+  return whatsappService.sendButtonsMessage(
+    customer.phone,
+    greeting,
+    [
+      { id: 'menu_domestic', title: 'Domestic' },
+      { id: 'menu_international', title: 'International' },
+    ],
+    getContext(customer, agency),
+    {
+      footerText: 'Reply Hi anytime to restart.',
+    }
+  );
 }
 
-async function showBudgetStep(session, customer, agency, options = {}) {
-  if (!options.resendOnly) {
-    await transitionTo(session, STEPS.PLAN_BUDGET, {}, { rememberCurrent: options.rememberCurrent });
-  }
+async function showPackageListFallback(session, customer, agency, category, packages) {
+  await whatsappService.sendTextMessage(
+    customer.phone,
+    `Browse our best ${categoryLabel(category)} packages 👇`,
+    getContext(customer, agency)
+  );
 
-  return sendList(customer, agency, {
-    headerText: 'Budget',
-    body: 'What is your budget per person?',
-    buttonText: 'Budget Range',
-    sections: listSections(BUDGET_ROWS.map(({ id, title, description }) => ({ id, title, description })), true),
-    footerText: 'Choose the closest range.',
-  });
+  await whatsappService.sendListMessage(
+    customer.phone,
+    'Tap a package below to view details.',
+    'Select Package',
+    buildPackageListSections(category, packages),
+    getContext(customer, agency),
+    {
+      headerText: `${categoryLabel(category)} Packages`,
+      footerText: 'Tap a package to continue.',
+    }
+  );
 }
 
-async function showDatesStep(session, customer, agency, options = {}) {
-  if (!options.resendOnly) {
-    await transitionTo(session, STEPS.PLAN_DATES, {}, { rememberCurrent: options.rememberCurrent });
-  }
+async function openPackageFlow(session, customer, agency, category) {
+  const normalizedCategory = normalizeCategory(category);
+  const packages = await findPackagesForCategory(agency.id, normalizedCategory, 5);
 
-  return sendList(customer, agency, {
-    headerText: 'Travel Dates',
-    body: 'Any travel dates in mind?',
-    buttonText: 'Dates',
-    sections: listSections(DATE_ROWS.map(({ id, title, description }) => ({ id, title, description })), true),
-    footerText: 'Dates are optional.',
-  });
-}
-
-async function showTravelTypeStep(session, customer, agency, options = {}) {
-  if (!options.resendOnly) {
-    await transitionTo(session, STEPS.PLAN_TRAVEL_TYPE, {}, { rememberCurrent: options.rememberCurrent });
-  }
-
-  return sendList(customer, agency, {
-    headerText: 'Travel Type',
-    body: "Who's traveling with you?",
-    buttonText: 'Travel Type',
-    sections: listSections(TRAVEL_TYPE_ROWS.map(({ id, title, description }) => ({ id, title, description })), true),
-    footerText: 'Pick the best fit.',
-  });
-}
-
-async function showPackageList(session, customer, agency, options = {}) {
-  const profile = getProfile(session);
-  const packages = options.packages || await findPackagesForProfile(agency.id, profile, 3);
-
-  await transitionTo(session, STEPS.SHOWING_PACKAGES, {
-    packageResults: packages.map((entry) => entry.pkg.id),
-  }, {
-    rememberCurrent: options.rememberCurrent,
+  await transitionTo(session, STEPS.CATEGORY_PACKAGES, {
+    packageCategory: normalizedCategory,
+    packageResults: packages.map(({ pkg }) => pkg.id),
+    selectedPackageId: null,
   });
 
   if (packages.length === 0) {
     await whatsappService.sendTextMessage(
       customer.phone,
-      'I could not find a close match right now. Tap Talk to Agent and we will curate options for you.',
+      `We do not have active ${categoryLabel(normalizedCategory).toLowerCase()} packages right now. Our expert can still curate options for you.`,
       getContext(customer, agency)
     );
-
-    return sendList(customer, agency, {
-      headerText: 'No Exact Match',
-      body: 'Would you like more help with this trip?',
-      buttonText: 'Choose',
-      sections: listSections([
-        { id: 'menu_plan_trip', title: 'Try Again', description: 'Restart trip planning' },
-        { id: 'menu_talk_agent', title: 'Talk to Agent', description: 'Get custom recommendations' },
-      ], true),
-      footerText: 'We can suggest more options.',
-    });
+    return;
   }
 
-  const introLine = profile.destination
-    ? `👍 Great! Here are top ${profile.travelType || ''} packages for ${profile.destination}${profile.budgetLabel ? ` under ${profile.budgetLabel}` : ''}.`
-      .replace(/\s+/g, ' ')
-      .trim()
-    : '🔥 Here are the top deals our travelers are checking out right now.';
+  if (!isMetaTripFlowConfigured()) {
+    return showPackageListFallback(session, customer, agency, normalizedCategory, packages);
+  }
 
-  const lines = packages.map((entry, index) => {
-    const summary = summarizePackage(entry.pkg, profile, entry.bookingCount);
-    return `${index + 1}. ${summary.heading}\n${summary.detail}`;
-  }).join('\n\n');
-
-  await whatsappService.sendTextMessage(
+  const packageOptions = await buildFlowPackageOptions(packages);
+  return whatsappService.sendFlowMessage(
     customer.phone,
-    `${introLine}\n\n${lines}\n\nPrices can change with availability, so the best time to ask for details is now.`,
-    getContext(customer, agency)
+    `Browse our best ${categoryLabel(normalizedCategory)} packages 👇`,
+    {
+      flowId: process.env.WHATSAPP_TRIP_FLOW_ID,
+      firstScreenId: FLOW_FIRST_SCREEN_ID,
+      flowCta: FLOW_CTA,
+      flowToken: `pkg-${customer.id}-${Date.now()}`,
+      data: {
+        category_label: categoryLabel(normalizedCategory),
+        package_options: packageOptions,
+      },
+    },
+    getContext(customer, agency),
+    {
+      headerText: `${categoryLabel(normalizedCategory)} Packages`,
+      footerText: 'Reply LIST if the flow does not open.',
+    }
   );
-
-  await scheduleFollowUps(session, customer, agency, {
-    packageName: packages[0]?.pkg?.name || null,
-    packageId: packages[0]?.pkg?.id || null,
-  });
-
-  return sendList(customer, agency, {
-    headerText: 'Top Packages',
-    body: 'Tap a package below to view full details.',
-    buttonText: 'View Details',
-    sections: listSections(packages.map((entry, index) => ({
-      id: `pkg_view:${entry.pkg.id}`,
-      title: `View Details #${index + 1}`,
-      description: `${formatCurrency(entry.pkg.basePrice)} · ${entry.pkg.duration || 'Custom'}`,
-    })), true),
-    footerText: 'You can also go back or return to the main menu.',
-  });
 }
 
-async function showPackageDetail(session, customer, agency, packageId, options = {}) {
-  const pkg = await Package.findOne({ where: { id: packageId, agencyId: agency.id } });
-  if (!pkg) {
-    return sendInvalidChoice(session, customer, agency);
+async function sendPackageActions(customer, agency, pkg) {
+  const context = getContext(customer, agency);
+  const rows = [
+    { id: 'action_enquire', title: 'Enquiry', description: 'Share your trip details in chat' },
+    { id: 'action_call_now', title: 'Call Now', description: `Call ${agency.phone}`.slice(0, 72) },
+  ];
+
+  if (pkg.brochureUrl) {
+    rows.push({ id: 'action_download_itinerary', title: 'Download Itinerary', description: 'Get the PDF brochure' });
   }
 
-  const bookingCount = await Booking.count({
-    where: { agencyId: agency.id, packageId: pkg.id, status: { [Op.in]: ['PENDING', 'CONFIRMED', 'COMPLETED'] } },
+  rows.push({ id: 'action_back_packages', title: 'Back to Packages', description: 'Browse more options' });
+
+  if (pkg.brochureUrl) {
+    await whatsappService.sendTextMessage(
+      customer.phone,
+      buildPackageActionsFallbackText(pkg, agency),
+      context
+    );
+
+    return whatsappService.sendListMessage(
+      customer.phone,
+      'Choose what you want to do next.',
+      'Choose Action',
+      [{ title: 'Package Actions', rows }],
+      context,
+      {
+        footerText: 'Select PDF from this menu.',
+      }
+    );
+  }
+
+  return whatsappService.sendButtonsMessage(
+    customer.phone,
+    buildPackageActionsFallbackText(pkg, agency),
+    [
+      { id: 'action_enquire', title: 'Enquiry' },
+      { id: 'action_call_now', title: 'Call Now' },
+      { id: 'action_back_packages', title: 'Back to Packages' },
+    ],
+    context
+  );
+}
+
+async function showPackageDetail(session, customer, agency, packageId) {
+  const pkg = await Package.findOne({
+    where: { id: packageId, agencyId: agency.id, isActive: true },
   });
+
+  if (!pkg) {
+    return sendInvalidChoice(session, customer, agency, () => openPackageFlow(session, customer, agency, getProfile(session).packageCategory));
+  }
 
   await transitionTo(session, STEPS.PACKAGE_DETAIL, {
     selectedPackageId: pkg.id,
-  }, {
-    rememberCurrent: options.rememberCurrent,
   });
 
-  await whatsappService.sendTextMessage(
-    customer.phone,
-    `Great choice! Here are the details for *${escapeMarkdown(pkg.name)}* (${formatCurrency(pkg.basePrice)}).`,
-    getContext(customer, agency)
-  );
+  const detailMessage = buildPackageCaption(pkg);
+  const buttons = [
+    { id: 'action_enquire', title: 'Enquiry' },
+    { id: 'action_call_now', title: 'Call Now' },
+  ];
+  const options = {
+    footerText: pkg.brochureUrl ? 'Reply PDF or BACK.' : 'Reply BACK.',
+  };
+  const context = getContext(customer, agency);
 
   if (pkg.imageUrl) {
-    await whatsappService.sendImageMessage(
+    const interactiveMedia = await whatsappService.sendMediaButtonsMessage(
+      customer.phone,
+      detailMessage,
+      pkg.imageUrl,
+      buttons,
+      context,
+      options
+    );
+
+    if (interactiveMedia?.status !== 'FAILED') {
+      return interactiveMedia;
+    }
+
+    const imageMessage = await whatsappService.sendImageMessage(
       customer.phone,
       pkg.imageUrl,
-      `${escapeMarkdown(pkg.name)} · ${pkg.duration || 'Curated itinerary'}`,
-      getContext(customer, agency)
-    );
-  }
-
-  const itinerary = Array.isArray(pkg.itinerary) && pkg.itinerary.length > 0
-    ? pkg.itinerary.slice(0, 4).map((day) => `• Day ${day.day}: ${escapeMarkdown(day.title || day.description || 'Planned activities')}`).join('\n')
-    : '• Day 1: Arrival and check-in\n• Day 2: Signature sightseeing\n• Day 3: Free time or add-ons\n• Final Day: Checkout';
-
-  const inclusions = Array.isArray(pkg.inclusions) && pkg.inclusions.length > 0
-    ? pkg.inclusions.slice(0, 4).map((item) => `✓ ${escapeMarkdown(item)}`).join('\n')
-    : '✓ Hotel stay\n✓ Daily breakfast\n✓ Local transfers';
-
-  const proofLine = bookingCount > 0
-    ? `⭐ ${bookingCount} travelers have booked this package already.`
-    : '🌟 This is one of our most-clicked curated trips right now.';
-
-  const urgencyLine = '🏷️ Prices can move with availability, so an agent can help lock the latest rate today.';
-
-  await whatsappService.sendTextMessage(
-    customer.phone,
-    `*${escapeMarkdown(pkg.name)}* - ${formatCurrency(pkg.basePrice)} (${pkg.duration || 'Custom'})\n\n*Itinerary*\n${itinerary}\n\n*Includes*\n${inclusions}\n\n${proofLine}\n${urgencyLine}`,
-    getContext(customer, agency)
-  );
-
-  await scheduleFollowUps(session, customer, agency, {
-    packageName: pkg.name,
-    packageId: pkg.id,
-  });
-
-  return sendList(customer, agency, {
-    headerText: 'Next Step',
-    body: 'What would you like to do next?',
-    buttonText: 'Choose',
-    sections: listSections([
-      { id: 'detail_book_now', title: 'Book Now', description: 'Get this trip reserved' },
-      { id: 'menu_talk_agent', title: 'Talk to Agent', description: 'Ask questions or customize' },
-      { id: 'detail_more_packages', title: 'More Packages', description: 'See more options' },
-    ], true),
-    footerText: 'Pick the next action.',
-  });
-}
-
-async function showMyBookings(session, customer, agency, options = {}) {
-  const bookings = await Booking.findAll({
-    where: { customerId: customer.id, agencyId: agency.id },
-    include: [{ model: Package, as: 'package', attributes: ['name'] }],
-    order: [['createdAt', 'DESC']],
-    limit: 3,
-  });
-
-  await transitionTo(session, STEPS.MY_BOOKINGS, {}, {
-    rememberCurrent: options.rememberCurrent,
-  });
-
-  if (bookings.length === 0) {
-    await whatsappService.sendTextMessage(
-      customer.phone,
-      'I could not find a booking on this WhatsApp number yet. I can help you plan a trip or connect you with an agent.',
-      getContext(customer, agency)
+      detailMessage,
+      context
     );
 
-    return sendList(customer, agency, {
-      headerText: 'No Bookings Found',
-      body: 'What would you like to do next?',
-      buttonText: 'Choose',
-      sections: listSections([
-        { id: 'menu_plan_trip', title: 'Plan a Trip', description: 'Start a new enquiry' },
-        { id: 'menu_talk_agent', title: 'Talk to Agent', description: 'Get personal help' },
-      ], true),
-      footerText: 'You can always return to the main menu.',
-    });
+    if (imageMessage?.status !== 'FAILED') {
+      return whatsappService.sendButtonsMessage(
+        customer.phone,
+        'Choose what you want to do next.',
+        buttons,
+        context,
+        options
+      );
+    }
   }
 
-  const summary = bookings.map((booking, index) => {
-    const travelDate = booking.travelDate
-      ? new Date(booking.travelDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
-      : 'Date TBD';
-    return `${index + 1}. *${escapeMarkdown(booking.package?.name || booking.bookingRef)}*\nRef ${booking.bookingRef} · ${booking.status} · ${travelDate}`;
-  }).join('\n\n');
-
-  await whatsappService.sendTextMessage(
+  return whatsappService.sendButtonsMessage(
     customer.phone,
-    `Here are your latest bookings:\n\n${summary}`,
-    getContext(customer, agency)
+    detailMessage,
+    buttons,
+    context,
+    options
   );
-
-  return sendList(customer, agency, {
-    headerText: 'Need Help?',
-    body: 'Need help with a booking?',
-    buttonText: 'Choose',
-    sections: listSections([
-      { id: 'menu_talk_agent', title: 'Talk to Agent', description: 'Get booking help now' },
-    ], true),
-    footerText: 'We can help with changes, payments, or updates.',
-  });
 }
 
-async function showTripSummaryAndPackages(session, customer, agency) {
+async function handleFlowSubmission(session, incoming, customer, agency) {
+  const response = incoming?.flowResponse || {};
+  const packageId = normalizeText(
+    response.packageId
+    || response.package_id
+    || response.selected_package
+    || response.selectedPackage
+  );
+
+  if (!packageId) {
+    return sendInvalidChoice(session, customer, agency, () => openPackageFlow(session, customer, agency, getProfile(session).packageCategory));
+  }
+
+  return showPackageDetail(session, customer, agency, packageId);
+}
+
+async function startEnquiry(session, customer, agency) {
   const profile = getProfile(session);
-  const summary = `${profile.travelType || 'Custom'} trip to ${profile.destination || 'your destination'}${profile.budgetLabel ? ` under ${profile.budgetLabel}` : ''}`;
-  await whatsappService.sendTextMessage(
+  const selectedPackageId = profile.selectedPackageId;
+
+  if (!selectedPackageId) {
+    return sendInvalidChoice(session, customer, agency, () => openPackageFlow(session, customer, agency, profile.packageCategory));
+  }
+
+  await transitionTo(session, STEPS.ENQUIRY_NAME, {
+    enquiryDraft: {
+      ...profile.enquiryDraft,
+      name: profile.enquiryDraft.name || customer.name || '',
+    },
+  });
+
+  return whatsappService.sendTextMessage(
     customer.phone,
-    `👍 Perfect, ${summary}. Finding the best matches now...`,
+    'Great choice. I will take your enquiry in chat.\n\nPlease share your full name.',
     getContext(customer, agency)
   );
-  return showPackageList(session, customer, agency, { rememberCurrent: true });
 }
 
-async function handleBookNow(session, customer, agency, handoffToAgent) {
+async function finalizeEnquiry(session, customer, agency) {
+  const profile = getProfile(session);
+  const enquiry = profile.enquiryDraft;
+  const pkg = profile.selectedPackageId
+    ? await Package.findOne({ where: { id: profile.selectedPackageId, agencyId: agency.id } })
+    : null;
+
+  if (enquiry.name) {
+    await Customer.update(
+      { name: enquiry.name },
+      { where: { id: customer.id } }
+    );
+  }
+
+  const notes = [
+    'Lead captured from WhatsApp package enquiry funnel',
+    pkg?.name ? `Package: ${pkg.name}` : null,
+    enquiry.place ? `Place: ${enquiry.place}` : null,
+    enquiry.address ? `Address: ${enquiry.address}` : null,
+    enquiry.notes ? `Other details: ${enquiry.notes}` : null,
+  ].filter(Boolean).join(' | ');
+
+  const lead = await ensureLead(session, customer, agency, {
+    packageId: pkg?.id || null,
+    destination: enquiry.place || pkg?.destinations?.[0] || null,
+    travelDates: enquiry.travelDate || null,
+    travellers: enquiry.travellers || null,
+    status: 'NEW',
+    notes,
+  });
+
+  await updateSession(session, {
+    currentStep: STEPS.COMPLETE,
+    collectedData: {
+      activeLeadId: lead.id,
+    },
+  });
+
+  return whatsappService.sendTextMessage(
+    customer.phone,
+    `Thanks ${escapeMarkdown(enquiry.name || firstName(customer))} 🙌\nOur travel expert will contact you shortly.`,
+    getContext(customer, agency)
+  );
+}
+
+async function handleEnquiryStep(session, incoming, customer, agency) {
+  const text = normalizeText(incoming?.text);
+  const profile = getProfile(session);
+  const enquiry = { ...profile.enquiryDraft };
+
+  switch (session.currentStep) {
+    case STEPS.ENQUIRY_NAME: {
+      const name = text.replace(/[^\w\s.'-]/g, '').trim();
+      if (name.length < 2) {
+        return whatsappService.sendTextMessage(
+          customer.phone,
+          'Please share a valid full name.',
+          getContext(customer, agency)
+        );
+      }
+
+      enquiry.name = name;
+      await transitionTo(session, STEPS.ENQUIRY_PLACE, { enquiryDraft: enquiry });
+      return whatsappService.sendTextMessage(
+        customer.phone,
+        'Please share your city or place.',
+        getContext(customer, agency)
+      );
+    }
+
+    case STEPS.ENQUIRY_PLACE: {
+      if (text.length < 2) {
+        return whatsappService.sendTextMessage(
+          customer.phone,
+          'Please share your city or place so our expert can plan from the right departure point.',
+          getContext(customer, agency)
+        );
+      }
+
+      enquiry.place = text;
+      await transitionTo(session, STEPS.ENQUIRY_ADDRESS, { enquiryDraft: enquiry });
+      return whatsappService.sendTextMessage(
+        customer.phone,
+        'Please share your address.',
+        getContext(customer, agency)
+      );
+    }
+
+    case STEPS.ENQUIRY_ADDRESS: {
+      if (text.length < 5) {
+        return whatsappService.sendTextMessage(
+          customer.phone,
+          'Please share a complete address.',
+          getContext(customer, agency)
+        );
+      }
+
+      enquiry.address = text;
+      await transitionTo(session, STEPS.ENQUIRY_DATE, { enquiryDraft: enquiry });
+      return whatsappService.sendTextMessage(
+        customer.phone,
+        'When are you planning to travel? Please share the date or travel month.',
+        getContext(customer, agency)
+      );
+    }
+
+    case STEPS.ENQUIRY_DATE: {
+      if (text.length < 3) {
+        return whatsappService.sendTextMessage(
+          customer.phone,
+          'Please share an expected travel date or month.',
+          getContext(customer, agency)
+        );
+      }
+
+      enquiry.travelDate = text;
+      await transitionTo(session, STEPS.ENQUIRY_TRAVELLERS, { enquiryDraft: enquiry });
+      return whatsappService.sendTextMessage(
+        customer.phone,
+        'How many people will be travelling?',
+        getContext(customer, agency)
+      );
+    }
+
+    case STEPS.ENQUIRY_TRAVELLERS: {
+      const match = text.match(/\d+/);
+      const travellers = match ? parseInt(match[0], 10) : NaN;
+      if (Number.isNaN(travellers) || travellers < 1 || travellers > 50) {
+        return whatsappService.sendTextMessage(
+          customer.phone,
+          'Please send a valid traveller count between 1 and 50.',
+          getContext(customer, agency)
+        );
+      }
+
+      enquiry.travellers = travellers;
+      await transitionTo(session, STEPS.ENQUIRY_NOTES, { enquiryDraft: enquiry });
+      return whatsappService.sendTextMessage(
+        customer.phone,
+        'Any other details to share, like honeymoon, family trip, hotel preference, or special request?\n\nReply "skip" if none.',
+        getContext(customer, agency)
+      );
+    }
+
+    case STEPS.ENQUIRY_NOTES: {
+      enquiry.notes = ['skip', 'no', 'none', 'na', 'n/a'].includes(lower(text)) ? '' : text;
+      await transitionTo(session, STEPS.COMPLETE, { enquiryDraft: enquiry });
+      return finalizeEnquiry(session, customer, agency);
+    }
+
+    default:
+      return showMainMenu(session, customer, agency);
+  }
+}
+
+async function sendCallNow(session, customer, agency) {
   const profile = getProfile(session);
   const pkg = profile.selectedPackageId
     ? await Package.findOne({ where: { id: profile.selectedPackageId, agencyId: agency.id } })
     : null;
 
-  await ensureLead(session, customer, agency, {
-    packageId: pkg?.id || null,
-    status: 'QUOTED',
-    note: pkg ? `Customer tapped Book Now for ${pkg.name}` : 'Customer tapped Book Now',
-  });
-
-  return handoffToAgent(
-    session,
-    customer,
-    agency,
-    pkg ? `Book Now requested for ${pkg.name}` : 'Book Now requested'
-  );
-}
-
-async function goBack(session, customer, agency) {
-  const profile = getProfile(session);
-  const stack = [...profile.navigationStack];
-  const previousStep = stack.pop();
-
-  if (!previousStep) {
-    return showMainMenu(session, customer, agency);
-  }
-
-  await updateSession(session, {
-    currentStep: previousStep,
-    failedAttempts: 0,
-    collectedData: { navigationStack: stack },
-  });
-
-  return renderCurrentStep(session, customer, agency, { resendOnly: true });
-}
-
-async function renderCurrentStep(session, customer, agency, options = {}) {
-  switch (session.currentStep) {
-    case STEPS.MENU:
-    case 'NEW':
-    case 'COMPLETE':
-      return showMainMenu(session, customer, agency, options);
-    case STEPS.PLAN_DESTINATION:
-      return showDestinationStep(session, customer, agency, { resendOnly: true });
-    case STEPS.PLAN_DESTINATION_MORE:
-      return showMoreDestinationsStep(session, customer, agency, { resendOnly: true });
-    case STEPS.PLAN_BUDGET:
-      return showBudgetStep(session, customer, agency, { resendOnly: true });
-    case STEPS.PLAN_DATES:
-      return showDatesStep(session, customer, agency, { resendOnly: true });
-    case STEPS.PLAN_TRAVEL_TYPE:
-      return showTravelTypeStep(session, customer, agency, { resendOnly: true });
-    case STEPS.SHOWING_PACKAGES:
-      return showPackageList(session, customer, agency, { rememberCurrent: false });
-    case STEPS.PACKAGE_DETAIL:
-      return showPackageDetail(session, customer, agency, getProfile(session).selectedPackageId, { rememberCurrent: false });
-    case STEPS.MY_BOOKINGS:
-      return showMyBookings(session, customer, agency, { rememberCurrent: false });
-    default:
-      return showMainMenu(session, customer, agency);
-  }
-}
-
-async function handleMenuSelection(session, incoming, customer, agency, deps) {
-  const action = resolveAction(incoming, MENU_ROWS);
-
-  if (!action && session.currentStep === 'NEW') {
-    return showMainMenu(session, customer, agency);
-  }
-
-  switch (action) {
-    case 'menu_plan_trip':
-      await whatsappService.sendTextMessage(customer.phone, 'Let’s build your trip in a few quick taps.', getContext(customer, agency));
-      return showDestinationStep(session, customer, agency, { rememberCurrent: false });
-    case 'menu_view_deals':
-    case 'followup_view_packages':
-      await whatsappService.sendTextMessage(customer.phone, 'Here are the top deals travelers are viewing right now.', getContext(customer, agency));
-      return showPackageList(session, customer, agency, { rememberCurrent: false });
-    case 'menu_my_bookings':
-      return showMyBookings(session, customer, agency, { rememberCurrent: false });
-    case 'menu_talk_agent':
-      await ensureLead(session, customer, agency, { note: 'User requested agent from main menu' });
-      return deps.handoffToAgent(session, customer, agency, 'Customer requested agent from main menu');
-    default:
-      return sendInvalidChoice(session, customer, agency);
-  }
-}
-
-async function handleDestinationSelection(session, incoming, customer, agency) {
-  const rows = session.currentStep === STEPS.PLAN_DESTINATION_MORE ? EXTRA_DESTINATION_ROWS : DESTINATION_ROWS;
-  const action = resolveAction(incoming, rows);
-  const picked = rows.find((row) => row.id === action);
-
-  if (!picked) {
-    return sendInvalidChoice(session, customer, agency);
-  }
-
-  if (picked.id === 'dest_more') {
-    return showMoreDestinationsStep(session, customer, agency, { rememberCurrent: true });
-  }
-
-  await transitionTo(session, STEPS.PLAN_BUDGET, {
-    destination: picked.value,
-    destinationEmoji: picked.emoji,
-  }, { rememberCurrent: true });
-
   await whatsappService.sendTextMessage(
     customer.phone,
-    `${picked.emoji || '👍'} ${picked.value} it is!`,
+    `📞 Call us: ${agency.phone || agency.whatsappNumber}`,
     getContext(customer, agency)
   );
 
-  return showBudgetStep(session, customer, agency, { resendOnly: true });
-}
-
-async function handleBudgetSelection(session, incoming, customer, agency) {
-  const action = resolveAction(incoming, BUDGET_ROWS);
-  const picked = BUDGET_ROWS.find((row) => row.id === action);
-
-  if (!picked) {
-    return sendInvalidChoice(session, customer, agency);
+  if (pkg) {
+    return sendPackageActions(customer, agency, pkg);
   }
-
-  await transitionTo(session, STEPS.PLAN_DATES, {
-    budgetLabel: picked.label,
-    budgetMin: picked.min,
-    budgetMax: picked.max,
-  }, { rememberCurrent: true });
-
-  await whatsappService.sendTextMessage(customer.phone, `👍 ${picked.label} noted.`, getContext(customer, agency));
-  return showDatesStep(session, customer, agency, { resendOnly: true });
 }
 
-async function handleDatesSelection(session, incoming, customer, agency) {
-  const action = resolveAction(incoming, DATE_ROWS);
-  const picked = DATE_ROWS.find((row) => row.id === action);
-
-  if (!picked) {
-    return sendInvalidChoice(session, customer, agency);
-  }
-
-  await transitionTo(session, STEPS.PLAN_TRAVEL_TYPE, {
-    datesLabel: picked.label,
-  }, { rememberCurrent: true });
-
-  await whatsappService.sendTextMessage(customer.phone, `👍 ${picked.label} works.`, getContext(customer, agency));
-  return showTravelTypeStep(session, customer, agency, { resendOnly: true });
-}
-
-async function handleTravelTypeSelection(session, incoming, customer, agency) {
-  const action = resolveAction(incoming, TRAVEL_TYPE_ROWS);
-  const picked = TRAVEL_TYPE_ROWS.find((row) => row.id === action);
-
-  if (!picked) {
-    return sendInvalidChoice(session, customer, agency);
-  }
-
-  await transitionTo(session, STEPS.SHOWING_PACKAGES, {
-    travelType: picked.label,
-    travellers: picked.travellers,
-  }, { rememberCurrent: true });
-
-  return showTripSummaryAndPackages(session, customer, agency);
-}
-
-async function handlePackageListSelection(session, incoming, customer, agency) {
+async function sendItinerary(session, customer, agency) {
   const profile = getProfile(session);
-  const actionId = normalizeText(incoming?.actionId || '');
-  const text = lower(incoming?.text);
+  const pkg = profile.selectedPackageId
+    ? await Package.findOne({ where: { id: profile.selectedPackageId, agencyId: agency.id } })
+    : null;
 
-  if (actionId.startsWith('pkg_view:')) {
-    return showPackageDetail(session, customer, agency, actionId.split(':')[1], { rememberCurrent: true });
-  }
-
-  if (/^\d+$/.test(text)) {
-    const index = parseInt(text, 10) - 1;
-    const packageId = profile.packageResults[index];
-    if (packageId) {
-      return showPackageDetail(session, customer, agency, packageId, { rememberCurrent: true });
-    }
-  }
-
-  const detailNumberMatch = text.match(/(\d+)/);
-  if (detailNumberMatch) {
-    const index = parseInt(detailNumberMatch[1], 10) - 1;
-    const packageId = profile.packageResults[index];
-    if (packageId) {
-      return showPackageDetail(session, customer, agency, packageId, { rememberCurrent: true });
-    }
-  }
-
-  return sendInvalidChoice(session, customer, agency);
-}
-
-async function handlePackageDetailSelection(session, incoming, customer, agency, deps) {
-  const actionId = normalizeText(incoming?.actionId || '');
-  const text = lower(incoming?.text);
-
-  if (actionId === 'detail_book_now' || text === 'book now' || text === 'book') {
-    return handleBookNow(session, customer, agency, deps.handoffToAgent);
-  }
-
-  if (actionId === 'detail_more_packages' || text.includes('more package')) {
-    return showPackageList(session, customer, agency, { rememberCurrent: false });
-  }
-
-  if (actionId === 'menu_talk_agent' || text.includes('agent')) {
-    await ensureLead(session, customer, agency, { note: 'User requested agent from package detail' });
-    return deps.handoffToAgent(session, customer, agency, 'Customer requested agent from package detail');
-  }
-
-  return sendInvalidChoice(session, customer, agency);
-}
-
-async function handleBookingsSelection(session, incoming, customer, agency, deps) {
-  const actionId = normalizeText(incoming?.actionId || '');
-  const text = lower(incoming?.text);
-
-  if (actionId === 'menu_talk_agent' || text.includes('agent')) {
-    return deps.handoffToAgent(session, customer, agency, 'Customer requested help with booking');
-  }
-
-  if (actionId === 'menu_plan_trip' || text.includes('plan')) {
-    return showDestinationStep(session, customer, agency, { rememberCurrent: false });
-  }
-
-  return sendInvalidChoice(session, customer, agency);
-}
-
-async function handleTravelFlow(session, incoming, customer, agency, deps) {
-  const actionId = normalizeText(incoming?.actionId || '');
-  const text = lower(incoming?.text);
-
-  if (actionId === 'flow_submission' || incoming?.flowResponse) {
-    return handleFlowSubmission(session, incoming, customer, agency, deps);
-  }
-
-  if (actionId === 'global_stop' || ['stop', 'unsubscribe'].includes(text)) {
-    await schedulerService.cancelChatFollowUps(customer.id, agency.id).catch(() => {});
-    await updateSession(session, {
-      collectedData: { followUpOptOut: true },
-    });
-    return whatsappService.sendTextMessage(
+  if (!pkg?.brochureUrl) {
+    await whatsappService.sendTextMessage(
       customer.phone,
-      'You will not receive follow-up nudges from me anymore. Reply MENU anytime if you want to continue.',
+      'The itinerary PDF is not available for this package yet. Please choose Enquiry and our team will share it with you.',
       getContext(customer, agency)
     );
+    return sendPackageActions(customer, agency, pkg || {});
   }
 
-  if (actionId === 'global_main_menu' || ['main menu', 'menu', 'start over'].includes(text)) {
-    return showMainMenu(session, customer, agency);
-  }
+  await whatsappService.sendDocumentMessage(
+    customer.phone,
+    pkg.brochureUrl,
+    safePdfName(pkg),
+    `${escapeMarkdown(pkg.name)} itinerary`,
+    getContext(customer, agency)
+  );
 
-  if (actionId === 'global_go_back' || text === 'back' || text === 'go back') {
-    return goBack(session, customer, agency);
-  }
+  return sendPackageActions(customer, agency, pkg);
+}
 
-  if (actionId === 'followup_view_packages' || text === 'view packages') {
-    return showPackageList(session, customer, agency, { rememberCurrent: false });
-  }
-
-  if (actionId === 'menu_talk_agent' || text === 'talk to agent') {
-    await ensureLead(session, customer, agency, { note: 'User requested an agent' });
-    return deps.handoffToAgent(session, customer, agency, 'Customer requested agent');
-  }
-
+async function renderCurrentStep(session, customer, agency) {
   switch (session.currentStep) {
     case 'NEW':
-    case 'COMPLETE':
     case STEPS.MENU:
-      return handleMenuSelection(session, incoming, customer, agency, deps);
-    case STEPS.PLAN_DESTINATION:
-    case STEPS.PLAN_DESTINATION_MORE:
-      return handleDestinationSelection(session, incoming, customer, agency);
-    case STEPS.PLAN_BUDGET:
-      return handleBudgetSelection(session, incoming, customer, agency);
-    case STEPS.PLAN_DATES:
-      return handleDatesSelection(session, incoming, customer, agency);
-    case STEPS.PLAN_TRAVEL_TYPE:
-      return handleTravelTypeSelection(session, incoming, customer, agency);
-    case STEPS.SHOWING_PACKAGES:
-      return handlePackageListSelection(session, incoming, customer, agency);
+    case STEPS.COMPLETE:
+      return showMainMenu(session, customer, agency);
+    case STEPS.CATEGORY_PACKAGES:
+      return openPackageFlow(session, customer, agency, getProfile(session).packageCategory || 'DOMESTIC');
     case STEPS.PACKAGE_DETAIL:
-      return handlePackageDetailSelection(session, incoming, customer, agency, deps);
-    case STEPS.MY_BOOKINGS:
-      return handleBookingsSelection(session, incoming, customer, agency, deps);
+      return showPackageDetail(session, customer, agency, getProfile(session).selectedPackageId);
+    case STEPS.ENQUIRY_NAME:
+      return whatsappService.sendTextMessage(customer.phone, 'Please share your full name.', getContext(customer, agency));
+    case STEPS.ENQUIRY_PLACE:
+      return whatsappService.sendTextMessage(customer.phone, 'Please share your city or place.', getContext(customer, agency));
+    case STEPS.ENQUIRY_ADDRESS:
+      return whatsappService.sendTextMessage(customer.phone, 'Please share your address.', getContext(customer, agency));
+    case STEPS.ENQUIRY_DATE:
+      return whatsappService.sendTextMessage(customer.phone, 'When are you planning to travel?', getContext(customer, agency));
+    case STEPS.ENQUIRY_TRAVELLERS:
+      return whatsappService.sendTextMessage(customer.phone, 'How many people will be travelling?', getContext(customer, agency));
+    case STEPS.ENQUIRY_NOTES:
+      return whatsappService.sendTextMessage(customer.phone, 'Any other details to share? Reply "skip" if none.', getContext(customer, agency));
     default:
       return showMainMenu(session, customer, agency);
   }
+}
+
+function isCategoryAction(actionId, text) {
+  return actionId === 'menu_domestic'
+    || actionId === 'menu_international'
+    || text === 'domestic'
+    || text === 'domestic packages'
+    || text === 'international'
+    || text === 'international packages';
+}
+
+function resolveCategory(actionId, text) {
+  if (actionId === 'menu_international' || text.includes('international')) return 'INTERNATIONAL';
+  return 'DOMESTIC';
+}
+
+async function handleCategoryPackageReply(session, customer, agency, text) {
+  return sendInvalidChoice(session, customer, agency, () => openPackageFlow(session, customer, agency, getProfile(session).packageCategory || 'DOMESTIC'));
+}
+
+async function handlePackageDetailReply(session, customer, agency, actionId, text) {
+  const profile = getProfile(session);
+  const pkg = profile.selectedPackageId
+    ? await Package.findOne({ where: { id: profile.selectedPackageId, agencyId: agency.id } })
+    : null;
+
+  if (actionId === 'action_enquire' || text === 'enquiry' || text === 'enquire now' || text === 'enquire' || text === '1') {
+    return startEnquiry(session, customer, agency);
+  }
+
+  if (actionId === 'action_call_now' || text === 'call now' || text === '2') {
+    return sendCallNow(session, customer, agency);
+  }
+
+  if (actionId === 'action_download_itinerary' || text === 'download itinerary' || text === 'pdf' || (pkg?.brochureUrl && text === '3')) {
+    return sendItinerary(session, customer, agency);
+  }
+
+  if (
+    actionId === 'action_back_packages'
+    || text === 'back to packages'
+    || (!pkg?.brochureUrl && text === '3')
+    || (pkg?.brochureUrl && text === '4')
+    || text === 'back'
+  ) {
+    return openPackageFlow(session, customer, agency, profile.packageCategory || 'DOMESTIC');
+  }
+
+  return sendInvalidChoice(session, customer, agency, () => showPackageDetail(session, customer, agency, profile.selectedPackageId));
+}
+
+async function handleTravelFlow(session, incoming, customer, agency) {
+  const actionId = normalizeText(incoming?.actionId || '');
+  const text = lower(incoming?.text);
+  const profile = getProfile(session);
+
+  if (actionId === 'global_main_menu') {
+    return showMainMenu(session, customer, agency);
+  }
+
+  if (actionId === 'global_go_back') {
+    return showMainMenu(session, customer, agency);
+  }
+
+  if (actionId === 'flow_submission' || incoming?.flowResponse) {
+    return handleFlowSubmission(session, incoming, customer, agency);
+  }
+
+  if (text === 'menu' || text === 'main menu' || text === 'start over') {
+    return showMainMenu(session, customer, agency);
+  }
+
+  if (isCategoryAction(actionId, text)) {
+    return openPackageFlow(session, customer, agency, resolveCategory(actionId, text));
+  }
+
+  if (session.currentStep === STEPS.CATEGORY_PACKAGES && ['list', 'show list', 'package list', 'packages list'].includes(text)) {
+    const packages = await findPackagesForCategory(agency.id, profile.packageCategory || 'DOMESTIC', 5);
+    return showPackageListFallback(session, customer, agency, profile.packageCategory || 'DOMESTIC', packages);
+  }
+
+  if (actionId === 'action_back_packages' || text === 'back to packages' || text === 'view packages') {
+    return openPackageFlow(session, customer, agency, profile.packageCategory || 'DOMESTIC');
+  }
+
+  if (actionId === 'pkg_pick:' || actionId.startsWith('pkg_pick:')) {
+    return showPackageDetail(session, customer, agency, actionId.split(':')[1]);
+  }
+
+  if (session.currentStep === STEPS.CATEGORY_PACKAGES) {
+    return handleCategoryPackageReply(session, customer, agency, text);
+  }
+
+  if (session.currentStep === STEPS.PACKAGE_DETAIL) {
+    return handlePackageDetailReply(session, customer, agency, actionId, text);
+  }
+
+  if ([
+    STEPS.ENQUIRY_NAME,
+    STEPS.ENQUIRY_PLACE,
+    STEPS.ENQUIRY_ADDRESS,
+    STEPS.ENQUIRY_DATE,
+    STEPS.ENQUIRY_TRAVELLERS,
+    STEPS.ENQUIRY_NOTES,
+  ].includes(session.currentStep)) {
+    if (text === 'back') {
+      return showPackageDetail(session, customer, agency, profile.selectedPackageId);
+    }
+    return handleEnquiryStep(session, incoming, customer, agency);
+  }
+
+  if (session.currentStep === 'NEW' || session.currentStep === STEPS.MENU || session.currentStep === STEPS.COMPLETE) {
+    return showMainMenu(session, customer, agency);
+  }
+
+  return sendInvalidChoice(session, customer, agency);
 }
 
 module.exports = {
@@ -1123,4 +1062,5 @@ module.exports = {
   renderCurrentStep,
   buildProfileSummary,
   ensureLead,
+  createFreshGreetingLead,
 };

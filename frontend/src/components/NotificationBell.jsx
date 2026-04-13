@@ -14,11 +14,11 @@ export default function NotificationBell() {
     <div className="relative">
       <button
         onClick={() => setOpen(!open)}
-        className="relative p-2 text-surface-400 hover:text-white transition-colors"
+        className="relative flex h-10 w-10 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
       >
-        <BellIcon className="w-6 h-6" />
+        <BellIcon className="h-5 w-5" />
         {unreadCount > 0 && (
-          <span className="absolute -top-0.5 -right-0.5 w-5 h-5 bg-red-500 rounded-full text-[10px] font-bold text-white flex items-center justify-center animate-pulse-soft">
+          <span className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-500 px-1 text-[9px] font-bold text-white">
             {unreadCount > 9 ? '9+' : unreadCount}
           </span>
         )}
@@ -27,13 +27,13 @@ export default function NotificationBell() {
       {open && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 top-full mt-2 w-80 bg-surface-800 border border-surface-700/50 rounded-2xl shadow-2xl z-50 overflow-hidden animate-slide-up">
-            <div className="flex items-center justify-between p-4 border-b border-surface-700/50">
-              <h4 className="text-sm font-semibold text-white">Notifications</h4>
+          <div className="absolute right-0 top-full z-50 mt-2 w-80 overflow-hidden rounded-[18px] border border-slate-200 bg-white shadow-[0_16px_30px_-24px_rgba(15,23,42,0.22)] animate-slide-up">
+            <div className="flex items-center justify-between border-b border-slate-100 p-4">
+              <h4 className="text-sm font-semibold text-slate-900">Notifications</h4>
               {unreadCount > 0 && (
                 <button
                   onClick={clearNotifications}
-                  className="text-xs text-brand-400 hover:text-brand-300"
+                  className="text-xs font-semibold text-[#0d6a5f] hover:text-[#0b5d54]"
                 >
                   Clear all
                 </button>
@@ -41,18 +41,18 @@ export default function NotificationBell() {
             </div>
             <div className="max-h-80 overflow-y-auto">
               {notifications.length === 0 ? (
-                <div className="p-6 text-center text-surface-500 text-sm">
+                <div className="p-6 text-center text-sm text-slate-500">
                   No notifications
                 </div>
               ) : (
                 notifications.map((notif) => (
                   <div
                     key={notif.id}
-                    className="p-3 border-b border-surface-700/30 hover:bg-surface-700/20 transition-colors"
+                    className="border-b border-slate-100 p-4 transition-colors hover:bg-slate-50"
                   >
-                    <p className="text-sm text-white">{notif.title}</p>
-                    <p className="text-xs text-surface-400 mt-0.5">{notif.message}</p>
-                    <p className="text-[10px] text-surface-500 mt-1">
+                    <p className="text-sm font-semibold text-slate-900">{notif.title}</p>
+                    <p className="mt-1 text-xs text-slate-500">{notif.message}</p>
+                    <p className="mt-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
                       {timeAgo(notif.timestamp)}
                     </p>
                   </div>

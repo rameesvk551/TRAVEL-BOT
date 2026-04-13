@@ -3,6 +3,7 @@
 
 const { Op } = require('sequelize');
 const { Lead, Customer, Agent, Package, Message, Booking } = require('../models');
+const { normalizePhone, isValidIndianPhone } = require('../utils/phoneUtils');
 
 /**
  * Lists leads for an agency with filtering and pagination.
@@ -94,27 +95,99 @@ async function getLeadById(leadId, agencyId) {
  * @param {string} agencyId - Agency ID
  * @returns {Promise<object>} Created lead
  */
-async function createLead(data, agencyId) {
-  const { customerId, destination, travelDates, travellers, budgetPerPerson, notes } = data;
-
-  // Verify customer belongs to agency
-  const customer = await Customer.findOne({ where: { id: customerId, agencyId } });
-  if (!customer) {
-    throw Object.assign(new Error('Customer not found'), { statusCode: 404, code: 'CUSTOMER_NOT_FOUND' });
+async function resolveCustomer(data, agencyId) {
+  if (data.customerId) {
+    const customer = await Customer.findOne({ where: { id: data.customerId, agencyId } });
+    if (!customer) {
+      throw Object.assign(new Error('Customer not found'), { statusCode: 404, code: 'CUSTOMER_NOT_FOUND' });
+    }
+    return customer;
   }
 
-  const lead = await Lead.create({
-    customerId,
-    agencyId,
+  const rawPhone = String(data.customerPhone || '').trim();
+  if (!rawPhone) {
+    throw Object.assign(new Error('Customer phone is required'), { statusCode: 400, code: 'CUSTOMER_PHONE_REQUIRED' });
+  }
+
+  const phone = normalizePhone(rawPhone);
+  if (!isValidIndianPhone(phone)) {
+    throw Object.assign(new Error('Invalid customer phone'), { statusCode: 400, code: 'INVALID_CUSTOMER_PHONE' });
+  }
+
+  const customerName = String(data.customerName || '').trim() || null;
+  const customerSource = String(data.customerSource || 'manual').trim() || 'manual';
+
+  const [customer, created] = await Customer.findOrCreate({
+    where: { agencyId, phone },
+    defaults: {
+      agencyId,
+      phone,
+      name: customerName,
+      source: customerSource,
+    },
+  });
+
+  if (!created) {
+    const customerUpdates = {};
+    if (customerName && customer.name !== customerName) customerUpdates.name = customerName;
+    if (!customer.source && customerSource) customerUpdates.source = customerSource;
+
+    if (Object.keys(customerUpdates).length > 0) {
+      await customer.update(customerUpdates);
+    }
+  }
+
+  return customer;
+}
+
+async function createLead(data, agencyId) {
+  const {
     destination,
     travelDates,
     travellers,
     budgetPerPerson,
     notes,
-    status: 'NEW',
+    assignedAgentId,
+    packageId,
+    lostReason,
+    travelStart,
+    travelEnd,
+    status = 'NEW',
+  } = data;
+
+  const customer = await resolveCustomer(data, agencyId);
+
+  if (assignedAgentId) {
+    const agent = await Agent.findOne({ where: { id: assignedAgentId, agencyId } });
+    if (!agent) {
+      throw Object.assign(new Error('Assigned agent not found'), { statusCode: 404, code: 'AGENT_NOT_FOUND' });
+    }
+  }
+
+  if (packageId) {
+    const pkg = await Package.findOne({ where: { id: packageId, agencyId } });
+    if (!pkg) {
+      throw Object.assign(new Error('Package not found'), { statusCode: 404, code: 'PACKAGE_NOT_FOUND' });
+    }
+  }
+
+  const lead = await Lead.create({
+    customerId: customer.id,
+    agencyId,
+    assignedAgentId: assignedAgentId || null,
+    destination,
+    travelDates,
+    travellers,
+    budgetPerPerson,
+    packageId: packageId || null,
+    notes,
+    lostReason,
+    travelStart,
+    travelEnd,
+    status,
   });
 
-  return lead;
+  return getLeadById(lead.id, agencyId);
 }
 
 /**

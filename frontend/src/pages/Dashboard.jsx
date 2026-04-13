@@ -1,182 +1,138 @@
-// FILE: /frontend/src/pages/Dashboard.jsx
-
-import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useAnalyticsSummary } from '../hooks/useAnalytics';
 import { useLiveMessages } from '../hooks/useMessages';
-import { useUiStore } from '../store/uiStore';
-import StatsCard from '../components/StatsCard';
-import LeadPipeline from '../components/LeadPipeline';
-import ChatPanel from '../components/ChatPanel';
-import NotificationBell from '../components/NotificationBell';
-import { formatCurrency, timeAgo, truncate, formatPhone } from '../utils/formatters';
-import {
-  UserGroupIcon,
-  ChatBubbleLeftEllipsisIcon,
-  CalendarDaysIcon,
-  BanknotesIcon,
-  ExclamationTriangleIcon,
-} from '@heroicons/react/24/outline';
+import { useBookings } from '../hooks/useBookings';
+import { formatDate, formatTime, timeAgo, truncate } from '../utils/formatters';
+import { getStatusTone } from '../components/uiHelpers';
 
-export default function Dashboard() {
-  const { data: analyticsData } = useAnalyticsSummary();
-  const { data: liveData } = useLiveMessages();
-  const { chatPanelOpen, activeChatCustomerId, openChat, closeChat } = useUiStore();
-
-  const analytics = analyticsData?.data || {};
-  const liveMessages = liveData?.data || [];
-  const [selectedLead, setSelectedLead] = useState(null);
-
+function MetricCard({ label, value, note }) {
   return (
-    <div className="flex h-full">
-      {/* Main scrollable content */}
-      <div className="flex-1 overflow-y-auto">
-        {/* Header */}
-        <div className="sticky top-0 z-10 bg-surface-950/80 backdrop-blur-xl border-b border-surface-700/30">
-          <div className="flex items-center justify-between px-6 py-4">
-            <div>
-              <h1 className="text-2xl font-bold text-white">Dashboard</h1>
-              <p className="text-sm text-surface-400 mt-0.5">Overview of your travel business</p>
-            </div>
-            <NotificationBell />
-          </div>
-        </div>
-
-        <div className="p-6 space-y-6">
-          {/* Stats Row */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <StatsCard
-              title="Today's Leads"
-              value={analytics.newLeadsToday || 0}
-              subtitle={`${analytics.totalLeads || 0} total`}
-              icon={UserGroupIcon}
-              color="blue"
-            />
-            <StatsCard
-              title="Pending Quotes"
-              value={analytics.leadsByStatus?.find?.((l) => l.status === 'QUOTED')?.count || 0}
-              icon={ChatBubbleLeftEllipsisIcon}
-              color="amber"
-            />
-            <StatsCard
-              title="This Month Bookings"
-              value={analytics.confirmedBookings || 0}
-              subtitle={`${analytics.conversionRate || 0}% conversion`}
-              icon={CalendarDaysIcon}
-              color="green"
-            />
-            <StatsCard
-              title="This Month Revenue"
-              value={formatCurrency(analytics.totalRevenue || 0)}
-              subtitle={`${analytics.pendingPayments || 0} pending`}
-              icon={BanknotesIcon}
-              color="purple"
-            />
-          </div>
-
-          {/* Lead Pipeline */}
-          <div>
-            <h2 className="text-lg font-semibold text-white mb-4">Lead Pipeline</h2>
-            <LeadPipeline onLeadClick={(lead) => {
-              setSelectedLead(lead);
-              if (lead.customer) {
-                openChat(lead.customer.id);
-              }
-            }} />
-          </div>
-
-          {/* Action Needed */}
-          <div>
-            <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-              <ExclamationTriangleIcon className="w-5 h-5 text-amber-400" />
-              Action Needed
-            </h2>
-            <div className="glass-card p-4">
-              <div className="space-y-3">
-                <ActionItem
-                  title="Unassigned leads"
-                  description="2 leads waiting for assignment"
-                  action="Assign"
-                  color="amber"
-                />
-                <ActionItem
-                  title="Pending payment links"
-                  description="1 confirmed booking without payment request"
-                  action="Send Link"
-                  color="blue"
-                />
-                <ActionItem
-                  title="Active handoffs"
-                  description="No agents handling transferred conversations"
-                  action="View"
-                  color="red"
-                />
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Right sidebar — Live messages */}
-      <div className="hidden xl:flex flex-col w-[320px] border-l border-surface-700/30 bg-surface-900/50">
-        <div className="px-4 py-4 border-b border-surface-700/30">
-          <h3 className="text-sm font-semibold text-white">Live Messages</h3>
-          <p className="text-xs text-surface-400 mt-0.5">Recent incoming</p>
-        </div>
-        <div className="flex-1 overflow-y-auto">
-          {liveMessages.length === 0 ? (
-            <div className="flex items-center justify-center h-40 text-surface-500 text-sm">
-              No recent messages
-            </div>
-          ) : (
-            liveMessages.map((msg) => (
-              <div
-                key={msg.id}
-                onClick={() => openChat(msg.customerId)}
-                className="px-4 py-3 border-b border-surface-700/20 hover:bg-surface-800/30 cursor-pointer transition-colors"
-              >
-                <div className="flex items-center justify-between mb-1">
-                  <p className="text-sm font-medium text-white">
-                    {msg.customer?.name || formatPhone(msg.customer?.phone)}
-                  </p>
-                  <span className="text-[10px] text-surface-500">{timeAgo(msg.timestamp)}</span>
-                </div>
-                <p className="text-xs text-surface-400">{truncate(msg.content, 60)}</p>
-              </div>
-            ))
-          )}
-        </div>
-      </div>
-
-      {/* Chat panel slide-over */}
-      {chatPanelOpen && activeChatCustomerId && (
-        <ChatPanel
-          customerId={activeChatCustomerId}
-          customerName={selectedLead?.customer?.name}
-          customerPhone={selectedLead?.customer?.phone}
-          isHandedOff={false}
-          onClose={closeChat}
-        />
-      )}
+    <div className="rounded-[12px] border border-slate-200 bg-white p-4">
+      <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">{label}</p>
+      <p className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">{value}</p>
+      <p className="mt-1 text-sm text-slate-500">{note}</p>
     </div>
   );
 }
 
-function ActionItem({ title, description, action, color }) {
-  const colorMap = {
-    amber: 'text-amber-400 bg-amber-500/10 hover:bg-amber-500/20',
-    blue: 'text-blue-400 bg-blue-500/10 hover:bg-blue-500/20',
-    red: 'text-red-400 bg-red-500/10 hover:bg-red-500/20',
-  };
+function statusCount(leadsByStatus, key) {
+  return Number(leadsByStatus?.find((item) => item.status === key)?.count || 0);
+}
+
+export default function Dashboard() {
+  const { data: analyticsResponse } = useAnalyticsSummary();
+  const { data: liveResponse } = useLiveMessages();
+  const { data: bookingsResponse } = useBookings({ pageSize: 6 });
+
+  const analytics = analyticsResponse?.data || {};
+  const liveMessages = liveResponse?.data || [];
+  const bookings = bookingsResponse?.data?.data || [];
+  const leadsByStatus = analytics.leadsByStatus || [];
 
   return (
-    <div className="flex items-center justify-between py-2">
-      <div>
-        <p className="text-sm font-medium text-white">{title}</p>
-        <p className="text-xs text-surface-400">{description}</p>
-      </div>
-      <button className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${colorMap[color]}`}>
-        {action}
-      </button>
+    <div className="w-full space-y-4">
+      <section className="flex flex-col gap-2 border-b border-slate-200 pb-4">
+        <h1 className="text-[28px] font-semibold tracking-tight text-slate-950">Dashboard</h1>
+        <p className="text-sm text-slate-500">Daily operating view for live conversations, pipeline movement, and upcoming departures.</p>
+      </section>
+
+      <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <MetricCard label="New Leads" value={analytics.newLeadsToday || 0} note="Created today" />
+        <MetricCard label="Conversion" value={`${analytics.conversionRate || 0}%`} note="Lead to booking" />
+        <MetricCard label="Confirmed Bookings" value={analytics.confirmedBookings || 0} note="Active departures" />
+        <MetricCard label="Revenue" value={`Rs ${(analytics.totalRevenue || 0) / 100 >= 1 ? ((analytics.totalRevenue || 0) / 100).toLocaleString('en-IN') : '0'}`} note="Total confirmed" />
+      </section>
+
+      <section className="grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
+        <div className="rounded-[12px] border border-slate-200 bg-white">
+          <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+            <div>
+              <h2 className="text-sm font-semibold text-slate-950">Recent Conversations</h2>
+              <p className="text-xs text-slate-500">Latest inbound WhatsApp messages</p>
+            </div>
+            <Link to="/leads" className="text-sm font-medium text-[#0f766e]">Open inbox</Link>
+          </div>
+
+          <div className="divide-y divide-slate-100">
+            {liveMessages.length === 0 ? (
+              <div className="px-4 py-8 text-sm text-slate-500">No recent inbound messages.</div>
+            ) : (
+              liveMessages.slice(0, 6).map((message) => (
+                <div key={message.id} className="grid gap-2 px-4 py-3 md:grid-cols-[180px_minmax(0,1fr)_90px] md:items-center">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-slate-900">{message.customer?.name || 'Guest lead'}</p>
+                    <p className="mt-0.5 text-xs text-slate-500">{timeAgo(message.timestamp)}</p>
+                  </div>
+                  <p className="truncate text-sm text-slate-600">{truncate(message.content, 110)}</p>
+                  <p className="text-right text-xs text-slate-400">{formatTime(message.timestamp)}</p>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        <div className="rounded-[12px] border border-slate-200 bg-white">
+          <div className="border-b border-slate-200 px-4 py-3">
+            <h2 className="text-sm font-semibold text-slate-950">Pipeline Snapshot</h2>
+            <p className="text-xs text-slate-500">Current lead distribution</p>
+          </div>
+
+          <div className="space-y-3 px-4 py-4">
+            {[
+              ['NEW', 'New inquiry'],
+              ['CONTACTED', 'Qualification'],
+              ['QUOTED', 'Proposal sent'],
+              ['NEGOTIATING', 'Negotiating'],
+              ['BOOKED', 'Booked'],
+            ].map(([key, label]) => (
+              <div key={key} className="flex items-center justify-between rounded-[10px] bg-slate-50 px-3 py-2.5">
+                <span className="text-sm text-slate-600">{label}</span>
+                <span className={`badge ${getStatusTone(key)}`}>{statusCount(leadsByStatus, key)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="rounded-[12px] border border-slate-200 bg-white">
+        <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+          <div>
+            <h2 className="text-sm font-semibold text-slate-950">Upcoming Departures</h2>
+            <p className="text-xs text-slate-500">Bookings ordered by travel date</p>
+          </div>
+          <Link to="/payments" className="text-sm font-medium text-[#0f766e]">View payments</Link>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-left">
+            <thead className="bg-slate-50">
+              <tr>
+                {['Traveler', 'Trip', 'Travel date', 'Status'].map((heading) => (
+                  <th key={heading} className="px-4 py-3 text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">
+                    {heading}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {bookings.length === 0 ? (
+                <tr>
+                  <td colSpan={4} className="px-4 py-8 text-sm text-slate-500">No upcoming bookings found.</td>
+                </tr>
+              ) : (
+                bookings.map((booking) => (
+                  <tr key={booking.id}>
+                    <td className="px-4 py-3 text-sm font-medium text-slate-900">{booking.customer?.name || booking.bookingRef}</td>
+                    <td className="px-4 py-3 text-sm text-slate-600">{booking.package?.name || 'Custom itinerary'}</td>
+                    <td className="px-4 py-3 text-sm text-slate-600">{formatDate(booking.travelDate)}</td>
+                    <td className="px-4 py-3"><span className={`badge ${getStatusTone(booking.status)}`}>{booking.status}</span></td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
     </div>
   );
 }

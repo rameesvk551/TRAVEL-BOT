@@ -10,12 +10,23 @@ const validateBody = require('../middleware/validateBody');
 const router = Router();
 
 const createLeadSchema = z.object({
-  customerId: z.string().uuid(),
+  customerId: z.string().uuid().optional(),
+  customerName: z.string().min(2).optional(),
+  customerPhone: z.string().min(10).optional(),
+  customerSource: z.string().optional(),
   destination: z.string().optional(),
   travelDates: z.string().optional(),
   travellers: z.number().int().min(1).max(50).optional(),
   budgetPerPerson: z.number().int().min(0).optional(),
+  assignedAgentId: z.string().uuid().nullable().optional(),
+  packageId: z.string().uuid().nullable().optional(),
+  status: z.enum(['NEW', 'CONTACTED', 'QUOTED', 'NEGOTIATING', 'BOOKED', 'LOST', 'CANCELLED']).optional(),
+  lostReason: z.string().optional(),
   notes: z.string().optional(),
+  travelStart: z.string().datetime().optional(),
+  travelEnd: z.string().datetime().optional(),
+}).refine((data) => data.customerId || data.customerPhone, {
+  message: 'Either customerId or customerPhone is required',
 });
 
 const updateLeadSchema = z.object({
@@ -28,6 +39,8 @@ const updateLeadSchema = z.object({
   packageId: z.string().uuid().nullable().optional(),
   notes: z.string().optional(),
   lostReason: z.string().optional(),
+  travelStart: z.string().datetime().nullable().optional(),
+  travelEnd: z.string().datetime().nullable().optional(),
 });
 
 /**

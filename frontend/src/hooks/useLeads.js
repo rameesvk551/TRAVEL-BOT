@@ -18,6 +18,17 @@ export function useLead(id) {
   });
 }
 
+export function useCreateLead() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data) => leadsApi.create(data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['leads'] });
+      qc.invalidateQueries({ queryKey: ['lead'] });
+    },
+  });
+}
+
 export function useUpdateLead() {
   const qc = useQueryClient();
   return useMutation({

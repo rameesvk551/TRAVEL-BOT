@@ -23,6 +23,11 @@ module.exports = (sequelize) => {
       type: DataTypes.STRING(255),
       allowNull: false,
     },
+    category: {
+      type: DataTypes.STRING(32),
+      allowNull: true,
+      comment: 'DOMESTIC or INTERNATIONAL for WhatsApp browsing',
+    },
     duration: {
       type: DataTypes.STRING(100),
       allowNull: true,
@@ -51,6 +56,21 @@ module.exports = (sequelize) => {
     imageUrl: {
       type: DataTypes.STRING(1000),
       allowNull: true,
+    },
+    summary: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+      comment: 'Short WhatsApp-friendly package summary',
+    },
+    brochureUrl: {
+      type: DataTypes.STRING(1000),
+      allowNull: true,
+      comment: 'Public PDF brochure URL',
+    },
+    brochureFileName: {
+      type: DataTypes.STRING(255),
+      allowNull: true,
+      comment: 'Preferred brochure filename for WhatsApp document sends',
     },
     itinerary: {
       type: DataTypes.JSONB,

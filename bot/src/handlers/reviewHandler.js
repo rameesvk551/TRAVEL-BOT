@@ -2,7 +2,7 @@
 // DEPS: none (uses shared models)
 
 const path = require('path');
-const whatsappService = require(path.resolve(__dirname, '../../../backend/src/services/whatsappService'));
+const whatsappService = require(path.resolve(__dirname, '../../../backend/src/services/whatsappService.ts'));
 const { updateSession } = require('../utils/sessionManager');
 
 /**

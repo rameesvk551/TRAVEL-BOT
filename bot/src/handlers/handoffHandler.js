@@ -2,11 +2,11 @@
 // DEPS: none (uses shared models)
 
 const path = require('path');
-const { Agent, Message, BotSession } = require(path.resolve(__dirname, '../../../backend/src/models'));
+const { Agent, Message, BotSession } = require(path.resolve(__dirname, '../../../backend/src/models/index.ts'));
 const { Op } = require('sequelize');
 const { updateSession } = require('../utils/sessionManager');
 const templates = require('../utils/messageTemplates');
-const whatsappService = require(path.resolve(__dirname, '../../../backend/src/services/whatsappService'));
+const whatsappService = require(path.resolve(__dirname, '../../../backend/src/services/whatsappService.ts'));
 
 // Keywords that trigger handoff
 const HANDOFF_KEYWORDS = [
@@ -87,20 +87,27 @@ async function handoffToAgent(session, customer, agency, reason) {
     assignedAgent = agentLoads[0].agent;
   }
 
-  // Update session
-  await updateSession(session, {
-    isHandedOff: true,
-    handedOffAt: new Date(),
-    handedOffToId: assignedAgent?.id || null,
-    currentStep: 'HANDOFF',
-  });
-
   if (!assignedAgent) {
-    // No agent available
+    // No agent available, so keep the conversation with the bot instead of trapping it in handoff mode.
+    await updateSession(session, {
+      isHandedOff: false,
+      handedOffAt: null,
+      handedOffToId: null,
+      currentStep: 'MENU',
+    });
+
     const response = templates.noAgentAvailable(agency.phone, lang);
     await whatsappService.sendTextMessage(customer.phone, response, ctx);
     return;
   }
+
+  // Update session only after an agent is actually assigned.
+  await updateSession(session, {
+    isHandedOff: true,
+    handedOffAt: new Date(),
+    handedOffToId: assignedAgent.id,
+    currentStep: 'HANDOFF',
+  });
 
   // Notify customer
   const data = session.collectedData || {};

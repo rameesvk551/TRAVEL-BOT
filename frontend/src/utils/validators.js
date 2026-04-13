@@ -20,11 +20,15 @@ export const registerSchema = z.object({
 
 export const packageSchema = z.object({
   name: z.string().min(2, 'Package name is required'),
+  category: z.enum(['DOMESTIC', 'INTERNATIONAL']).optional(),
   duration: z.string().optional(),
   destinations: z.string().optional(),
   basePrice: z.string().min(1, 'Price is required'),
+  summary: z.string().optional(),
   inclusions: z.string().optional(),
   exclusions: z.string().optional(),
+  itinerary: z.string().optional(),
+  brochureUrl: z.string().optional(),
 });
 
 export const bookingSchema = z.object({

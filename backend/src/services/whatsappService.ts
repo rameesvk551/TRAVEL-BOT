@@ -1,5 +1,6 @@
 const axios = require('axios');
 const { Agency, Message } = require('../models');
+const marketingOsPartnerService = require('./marketingOsPartnerService');
 
 const interaktClient = axios.create({
   baseURL: process.env.INTERAKT_BASE_URL || 'https://api.interakt.ai/v1/public',
@@ -47,7 +48,11 @@ async function createOutboundMessage(context, payload) {
 }
 
 async function markMessageSent(message, response) {
-  const waMessageId = response?.data?.messages?.[0]?.id || response?.data?.id || null;
+  const waMessageId = response?.data?.messages?.[0]?.id
+    || response?.data?.id
+    || response?.data?.data?.messageId
+    || response?.data?.messageId
+    || null;
   if (waMessageId) {
     await message.update({ waMessageId });
   }
@@ -65,16 +70,18 @@ async function resolveAgencyChannel(context = {}) {
     return {
       provider: 'SELF_HOSTED',
       phoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID || null,
+      marketingOsTenantId: null,
     };
   }
 
   const agency = await Agency.findByPk(context.agencyId, {
-    attributes: ['id', 'whatsappProvider', 'whatsappPhoneNumberId'],
+    attributes: ['id', 'whatsappProvider', 'whatsappPhoneNumberId', 'marketingOsTenantId'],
   });
 
   return {
     provider: agency?.whatsappProvider || 'SELF_HOSTED',
     phoneNumberId: agency?.whatsappPhoneNumberId || process.env.WHATSAPP_PHONE_NUMBER_ID || null,
+    marketingOsTenantId: agency?.marketingOsTenantId || null,
   };
 }
 
@@ -89,6 +96,56 @@ async function sendViaMeta(phone, payload, phoneNumberId) {
     to: toMetaRecipient(phone),
     ...payload,
   });
+}
+
+function canUseMarketingOs(channel = {}) {
+  return channel?.provider === 'MARKETING_OS' && !!channel?.marketingOsTenantId;
+}
+
+async function sendViaMarketingOs(phone, payload, tenantId) {
+  const idempotencyKey = `travelbot-${tenantId}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  const tenantToken = await marketingOsPartnerService.getTenantToken(tenantId);
+  let data;
+
+  if (payload.type === 'template') {
+    data = await marketingOsPartnerService.sendTenantWhatsAppMessage(tenantToken, {
+      tenantId,
+      to: toMetaRecipient(phone),
+      body: `[Template: ${payload.templateName}]`,
+      templateName: payload.templateName,
+      language: payload.languageCode || 'en',
+      variables: payload.variables || {},
+      idempotencyKey,
+    });
+  } else if (payload.type === 'interactive') {
+    data = await marketingOsPartnerService.sendTenantWhatsAppInteractive(tenantToken, {
+      tenantId,
+      to: toMetaRecipient(phone),
+      recipientPhone: toMetaRecipient(phone),
+      interactiveContent: payload.interactiveContent,
+      idempotencyKey,
+    });
+  } else if (payload.type === 'media') {
+    data = await marketingOsPartnerService.sendTenantWhatsAppMedia(tenantToken, {
+      tenantId,
+      to: toMetaRecipient(phone),
+      recipientPhone: toMetaRecipient(phone),
+      mediaUrl: payload.mediaUrl,
+      caption: payload.caption,
+      mediaType: payload.mediaType || 'image',
+      mimeType: payload.mimeType,
+      idempotencyKey,
+    });
+  } else {
+    data = await marketingOsPartnerService.sendTenantWhatsAppMessage(tenantToken, {
+      tenantId,
+      to: toMetaRecipient(phone),
+      body: payload.text,
+      idempotencyKey,
+    });
+  }
+
+  return { data };
 }
 
 function renderButtonsFallback(body, buttons, options = {}) {
@@ -109,6 +166,23 @@ function renderListFallback(body, sections, options = {}) {
   return `${header}${body}\n\n${sectionText}${footer}`.trim();
 }
 
+function normalizeImageUrlForWhatsApp(imageUrl) {
+  const url = String(imageUrl || '').trim();
+  if (!url) return url;
+
+  const isCloudinarySvg = url.includes('res.cloudinary.com')
+    && url.includes('/image/upload/')
+    && /\.svg(?:\?|$)/i.test(url);
+
+  if (!isCloudinarySvg) {
+    return url;
+  }
+
+  return url
+    .replace('/image/upload/', '/image/upload/f_png/')
+    .replace(/\.svg(\?|$)/i, '.png$1');
+}
+
 async function sendTextMessage(phone, content, context) {
   const message = await createOutboundMessage(context, {
     content,
@@ -117,6 +191,14 @@ async function sendTextMessage(phone, content, context) {
 
   try {
     const channel = await resolveAgencyChannel(context);
+
+    if (canUseMarketingOs(channel)) {
+      const response = await sendViaMarketingOs(phone, {
+        type: 'text',
+        text: content,
+      }, channel.marketingOsTenantId);
+      return markMessageSent(message, response);
+    }
 
     if (canUseCloudApi(channel.phoneNumberId)) {
       const response = await sendViaMeta(phone, {
@@ -146,6 +228,32 @@ async function sendTextMessage(phone, content, context) {
 async function sendButtonsMessage(phone, body, buttons, context, options = {}) {
   const fallbackContent = renderButtonsFallback(body, buttons, options);
   const channel = await resolveAgencyChannel(context);
+
+  if (canUseMarketingOs(channel)) {
+    const message = await createOutboundMessage(context, {
+      content: fallbackContent,
+      type: 'TEXT',
+    });
+
+    try {
+      const response = await sendViaMarketingOs(phone, {
+        type: 'interactive',
+        interactiveContent: {
+          type: 'BUTTON',
+          header: options.headerText,
+          body,
+          footer: options.footerText,
+          buttons: buttons.slice(0, 3).map((button) => ({
+            id: button.id,
+            title: button.title,
+          })),
+        },
+      }, channel.marketingOsTenantId);
+      return markMessageSent(message, response);
+    } catch (err) {
+      return markMessageFailed(message, 'sendButtonsMessage', err);
+    }
+  }
 
   if (!canUseCloudApi(channel.phoneNumberId)) {
     return sendTextMessage(phone, fallbackContent, context);
@@ -182,9 +290,114 @@ async function sendButtonsMessage(phone, body, buttons, context, options = {}) {
   }
 }
 
+async function sendMediaButtonsMessage(phone, body, imageUrl, buttons, context, options = {}) {
+  const normalizedImageUrl = normalizeImageUrlForWhatsApp(imageUrl);
+
+  if (!normalizedImageUrl) {
+    return sendButtonsMessage(phone, body, buttons, context, options);
+  }
+
+  const fallbackContent = `${renderButtonsFallback(body, buttons, options)}\n${normalizedImageUrl}`.trim();
+  const channel = await resolveAgencyChannel(context);
+
+  if (canUseMarketingOs(channel)) {
+    const message = await createOutboundMessage(context, {
+      content: fallbackContent,
+      type: 'IMAGE',
+    });
+
+    try {
+      const response = await sendViaMarketingOs(phone, {
+        type: 'interactive',
+        interactiveContent: {
+          type: 'BUTTON',
+          header: {
+            type: 'image',
+            imageUrl: normalizedImageUrl,
+          },
+          body,
+          footer: options.footerText,
+          buttons: buttons.slice(0, 3).map((button) => ({
+            id: button.id,
+            title: button.title,
+          })),
+        },
+      }, channel.marketingOsTenantId);
+      return markMessageSent(message, response);
+    } catch (err) {
+      return markMessageFailed(message, 'sendMediaButtonsMessage', err);
+    }
+  }
+
+  if (!canUseCloudApi(channel.phoneNumberId)) {
+    return sendTextMessage(phone, fallbackContent, context);
+  }
+
+  const message = await createOutboundMessage(context, {
+    content: fallbackContent,
+    type: 'IMAGE',
+  });
+
+  try {
+    const response = await sendViaMeta(phone, {
+      type: 'interactive',
+      interactive: {
+        type: 'button',
+        header: {
+          type: 'image',
+          image: {
+            link: normalizedImageUrl,
+          },
+        },
+        body: { text: body },
+        footer: options.footerText ? { text: options.footerText } : undefined,
+        action: {
+          buttons: buttons.slice(0, 3).map((button) => ({
+            type: 'reply',
+            reply: {
+              id: button.id,
+              title: button.title,
+            },
+          })),
+        },
+      },
+    }, channel.phoneNumberId);
+
+    return markMessageSent(message, response);
+  } catch (err) {
+    return markMessageFailed(message, 'sendMediaButtonsMessage', err);
+  }
+}
+
 async function sendListMessage(phone, body, buttonText, sections, context, options = {}) {
   const fallbackContent = renderListFallback(body, sections, options);
   const channel = await resolveAgencyChannel(context);
+
+  if (canUseMarketingOs(channel)) {
+    const message = await createOutboundMessage(context, {
+      content: fallbackContent,
+      type: 'TEXT',
+    });
+
+    try {
+      const response = await sendViaMarketingOs(phone, {
+        type: 'interactive',
+        interactiveContent: {
+          type: 'LIST',
+          header: options.headerText,
+          body,
+          footer: options.footerText,
+          sections,
+          action: {
+            button: buttonText,
+          },
+        },
+      }, channel.marketingOsTenantId);
+      return markMessageSent(message, response);
+    } catch (err) {
+      return markMessageFailed(message, 'sendListMessage', err);
+    }
+  }
 
   if (!canUseCloudApi(channel.phoneNumberId)) {
     return sendTextMessage(phone, fallbackContent, context);
@@ -217,8 +430,29 @@ async function sendListMessage(phone, body, buttonText, sections, context, optio
 }
 
 async function sendImageMessage(phone, imageUrl, caption, context) {
-  const fallbackContent = caption ? `${caption}\n${imageUrl}` : imageUrl;
+  const normalizedImageUrl = normalizeImageUrlForWhatsApp(imageUrl);
+  const fallbackContent = caption ? `${caption}\n${normalizedImageUrl}` : normalizedImageUrl;
   const channel = await resolveAgencyChannel(context);
+
+  if (canUseMarketingOs(channel)) {
+    const message = await createOutboundMessage(context, {
+      content: fallbackContent,
+      type: 'IMAGE',
+    });
+
+    try {
+      const response = await sendViaMarketingOs(phone, {
+        type: 'media',
+        mediaUrl: normalizedImageUrl,
+        caption,
+        mediaType: 'image',
+        mimeType: 'image/jpeg',
+      }, channel.marketingOsTenantId);
+      return markMessageSent(message, response);
+    } catch (err) {
+      return markMessageFailed(message, 'sendImageMessage', err);
+    }
+  }
 
   if (!canUseCloudApi(channel.phoneNumberId)) {
     return sendTextMessage(phone, fallbackContent, context);
@@ -233,7 +467,7 @@ async function sendImageMessage(phone, imageUrl, caption, context) {
     const response = await sendViaMeta(phone, {
       type: 'image',
       image: {
-        link: imageUrl,
+        link: normalizedImageUrl,
         caption: caption || undefined,
       },
     }, channel.phoneNumberId);
@@ -241,6 +475,57 @@ async function sendImageMessage(phone, imageUrl, caption, context) {
     return markMessageSent(message, response);
   } catch (err) {
     return markMessageFailed(message, 'sendImageMessage', err);
+  }
+}
+
+async function sendDocumentMessage(phone, documentUrl, filename, caption, context) {
+  const url = String(documentUrl || '').trim();
+  const safeFilename = String(filename || 'brochure.pdf').trim() || 'brochure.pdf';
+  const fallbackContent = [caption, safeFilename, url].filter(Boolean).join('\n');
+  const channel = await resolveAgencyChannel(context);
+
+  if (canUseMarketingOs(channel)) {
+    const message = await createOutboundMessage(context, {
+      content: fallbackContent,
+      type: 'DOCUMENT',
+    });
+
+    try {
+      const response = await sendViaMarketingOs(phone, {
+        type: 'media',
+        mediaUrl: url,
+        caption,
+        mediaType: 'document',
+        mimeType: 'application/pdf',
+      }, channel.marketingOsTenantId);
+      return markMessageSent(message, response);
+    } catch (err) {
+      return markMessageFailed(message, 'sendDocumentMessage', err);
+    }
+  }
+
+  if (!canUseCloudApi(channel.phoneNumberId)) {
+    return sendTextMessage(phone, fallbackContent, context);
+  }
+
+  const message = await createOutboundMessage(context, {
+    content: fallbackContent,
+    type: 'DOCUMENT',
+  });
+
+  try {
+    const response = await sendViaMeta(phone, {
+      type: 'document',
+      document: {
+        link: url,
+        filename: safeFilename,
+        caption: caption || undefined,
+      },
+    }, channel.phoneNumberId);
+
+    return markMessageSent(message, response);
+  } catch (err) {
+    return markMessageFailed(message, 'sendDocumentMessage', err);
   }
 }
 
@@ -258,6 +543,49 @@ async function sendFlowMessage(phone, body, flowConfig, context, options = {}) {
 
   const fallbackContent = `${options.headerText ? `*${options.headerText}*\n` : ''}${body}\n\n${flowCta || 'Continue'}${options.footerText ? `\n${options.footerText}` : ''}`.trim();
   const channel = await resolveAgencyChannel(context);
+
+  if (canUseMarketingOs(channel) && (flowId || flowName)) {
+    const message = await createOutboundMessage(context, {
+      content: fallbackContent,
+      type: 'TEXT',
+    });
+
+    try {
+      const parameters = {
+        flow_message_version: '3',
+        flow_cta: flowCta || 'Continue',
+        mode: flowMode,
+        flow_token: flowToken || `trip-flow-${Date.now()}`,
+        flow_action: action,
+      };
+
+      if (flowId) parameters.flow_id = flowId;
+      if (flowName) parameters.flow_name = flowName;
+      if (action === 'navigate' && (firstScreenId || (data && Object.keys(data).length))) {
+        parameters.flow_action_payload = {};
+        if (firstScreenId) parameters.flow_action_payload.screen = firstScreenId;
+        if (data && Object.keys(data).length) parameters.flow_action_payload.data = data;
+      }
+
+      const response = await sendViaMarketingOs(phone, {
+        type: 'interactive',
+        interactiveContent: {
+          type: 'FLOW',
+          header: options.headerText,
+          body,
+          footer: options.footerText,
+          action: {
+            name: 'flow',
+            parameters,
+          },
+        },
+      }, channel.marketingOsTenantId);
+
+      return markMessageSent(message, response);
+    } catch (err) {
+      return markMessageFailed(message, 'sendFlowMessage', err);
+    }
+  }
 
   if (!canUseCloudApi(channel.phoneNumberId) || (!flowId && !flowName)) {
     return sendTextMessage(phone, fallbackContent, context);
@@ -307,6 +635,31 @@ async function sendFlowMessage(phone, body, flowConfig, context, options = {}) {
 
 async function sendTemplateMessage(phone, templateName, variables, context) {
   const content = `[Template: ${templateName}] ${variables.join(', ')}`;
+  const channel = await resolveAgencyChannel(context);
+
+  if (canUseMarketingOs(channel)) {
+    const message = await createOutboundMessage(context, {
+      content,
+      type: 'TEMPLATE',
+      templateName,
+    });
+
+    try {
+      const response = await sendViaMarketingOs(phone, {
+        type: 'template',
+        templateName,
+        languageCode: 'en',
+        variables: variables.reduce((acc, value, index) => {
+          acc[String(index + 1)] = value;
+          return acc;
+        }, {}),
+      }, channel.marketingOsTenantId);
+
+      return markMessageSent(message, response);
+    } catch (err) {
+      return markMessageFailed(message, 'sendTemplateMessage', err);
+    }
+  }
 
   if (!process.env.INTERAKT_API_KEY) {
     return sendTextMessage(phone, content, context);
@@ -363,8 +716,10 @@ async function updateMessageStatus(waMessageId, newStatus) {
 module.exports = {
   sendTextMessage,
   sendButtonsMessage,
+  sendMediaButtonsMessage,
   sendListMessage,
   sendImageMessage,
+  sendDocumentMessage,
   sendFlowMessage,
   sendTemplateMessage,
   sendFallbackMessage,

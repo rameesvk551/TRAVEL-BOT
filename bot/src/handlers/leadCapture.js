@@ -2,12 +2,12 @@
 // DEPS: none (uses shared models)
 
 const path = require('path');
-const { Customer } = require(path.resolve(__dirname, '../../../backend/src/models'));
+const { Customer } = require(path.resolve(__dirname, '../../../backend/src/models/index.ts'));
 const { updateSession } = require('../utils/sessionManager');
 const { detectLanguage } = require('../utils/languageDetect');
 const templates = require('../utils/messageTemplates');
-const whatsappService = require(path.resolve(__dirname, '../../../backend/src/services/whatsappService'));
-const leadService = require(path.resolve(__dirname, '../../../backend/src/services/leadService'));
+const whatsappService = require(path.resolve(__dirname, '../../../backend/src/services/whatsappService.ts'));
+const leadService = require(path.resolve(__dirname, '../../../backend/src/services/leadService.ts'));
 
 /**
  * Multi-step lead capture state machine.

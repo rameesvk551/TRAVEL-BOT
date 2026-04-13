@@ -1,136 +1,578 @@
-// FILE: /frontend/src/pages/Leads.jsx
+import { useEffect, useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import {
+  AdjustmentsHorizontalIcon,
+  EllipsisVerticalIcon,
+  PaperAirplaneIcon,
+  PhoneIcon,
+  PlusIcon,
+  UserCircleIcon,
+  XMarkIcon,
+} from '@heroicons/react/24/outline';
+import client from '../api/client';
+import { useCreateLead, useLead, useLeads, useUpdateLead } from '../hooks/useLeads';
+import { useMessages, useSendMessage } from '../hooks/useMessages';
+import { formatDate, formatDateTime, formatPhone, formatTime, timeAgo } from '../utils/formatters';
+import { getInitials, getStatusTone } from '../components/uiHelpers';
 
-import { useState } from 'react';
-import { useLeads } from '../hooks/useLeads';
-import { formatCurrency, formatDate, getStatusBadgeClass, formatPhone } from '../utils/formatters';
-import { MagnifyingGlassIcon, FunnelIcon } from '@heroicons/react/24/outline';
+const STATUS_OPTIONS = ['NEW', 'CONTACTED', 'QUOTED', 'NEGOTIATING', 'BOOKED', 'LOST', 'CANCELLED'];
 
-export default function Leads() {
-  const [filters, setFilters] = useState({ page: 1, pageSize: 20, status: '', search: '' });
-  const { data, isLoading } = useLeads(filters);
+const EMPTY_CREATE_FORM = {
+  customerName: '',
+  customerPhone: '',
+  destination: '',
+  travelDates: '',
+  travellers: '2',
+  budget: '',
+  assignedAgentId: '',
+  notes: '',
+};
 
-  const leads = data?.data?.data || [];
-  const total = data?.data?.total || 0;
+const EMPTY_EDIT_FORM = {
+  status: 'NEW',
+  assignedAgentId: '',
+  destination: '',
+  travelDates: '',
+  travellers: '',
+  budget: '',
+  notes: '',
+  lostReason: '',
+};
 
-  const statuses = ['', 'NEW', 'CONTACTED', 'QUOTED', 'NEGOTIATING', 'BOOKED', 'LOST', 'CANCELLED'];
+function toBudgetPaise(value) {
+  const numeric = Number(String(value || '').replace(/[^\d.]/g, ''));
+  if (!numeric) return undefined;
+  return Math.round(numeric * 100);
+}
+
+function fromBudgetPaise(value) {
+  if (!value) return '';
+  return String(Math.round(value / 100));
+}
+
+function Field({ label, children }) {
+  return (
+    <label className="block">
+      <span className="mb-2 block text-xs font-bold uppercase tracking-[0.18em] text-slate-500">{label}</span>
+      {children}
+    </label>
+  );
+}
+
+function InfoRow({ icon: Icon, label, value }) {
+  return (
+    <div className="flex items-start gap-3 py-2">
+      {Icon ? <Icon className="mt-0.5 h-4 w-4 text-slate-400" /> : null}
+      <div>
+        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">{label}</p>
+        <p className="mt-1 text-sm text-slate-700">{value}</p>
+      </div>
+    </div>
+  );
+}
+
+function MessageBubble({ message }) {
+  const incoming = message.direction === 'IN';
 
   return (
-    <div className="p-6">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-white">Leads</h1>
-          <p className="text-sm text-surface-400 mt-0.5">{total} total leads</p>
+    <div className={`flex ${incoming ? 'justify-start' : 'justify-end'}`}>
+      <div
+        className={`max-w-[720px] rounded-[16px] px-4 py-3 text-[15px] leading-7 ${
+          incoming
+            ? 'border border-slate-200 bg-white text-slate-700'
+            : 'bg-[#0f766e] text-white'
+        }`}
+      >
+        <p className="whitespace-pre-wrap break-words">{message.content}</p>
+        <p className={`mt-2 text-[11px] font-medium ${incoming ? 'text-slate-400' : 'text-emerald-100/85'}`}>
+          {formatTime(message.timestamp)}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function ConversationRow({ lead, selected, onSelect }) {
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      className={`w-full rounded-[14px] border px-4 py-3 text-left transition ${
+        selected
+          ? 'border-[#99ddd2] bg-[#f7fffd]'
+          : 'border-transparent bg-transparent hover:border-slate-200 hover:bg-slate-50'
+      }`}
+    >
+      <div className="flex items-start gap-3">
+        <div className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[linear-gradient(135deg,#34b6aa,#0f766e)] text-sm font-bold text-white">
+          {getInitials(lead.customer?.name, 'TR')}
+          <span className={`absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-white ${lead.status === 'BOOKED' ? 'bg-emerald-400' : 'bg-slate-300'}`} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center justify-between gap-2">
+            <p className="truncate text-sm font-semibold text-slate-900">{lead.customer?.name || 'Unnamed lead'}</p>
+            <p className="shrink-0 text-[11px] font-medium text-slate-400">{timeAgo(lead.updatedAt || lead.createdAt)}</p>
+          </div>
+          <p className="mt-1 truncate text-sm text-slate-500">{lead.destination || 'Trip details pending'}</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <span className={`badge ${getStatusTone(lead.status)}`}>{lead.status}</span>
+            {lead.package?.name ? (
+              <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-600">
+                {lead.package.name}
+              </span>
+            ) : null}
+          </div>
         </div>
       </div>
+    </button>
+  );
+}
 
-      {/* Filters */}
-      <div className="flex flex-wrap items-center gap-3 mb-6">
-        <div className="relative flex-1 min-w-[200px] max-w-sm">
-          <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-surface-500" />
-          <input
-            type="text"
-            placeholder="Search by name or phone..."
-            value={filters.search}
-            onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value, page: 1 }))}
-            className="input-field pl-10 text-sm"
-          />
-        </div>
+export default function Leads() {
+  const [filters, setFilters] = useState({ page: 1, pageSize: 50, status: '', search: '' });
+  const [selectedLeadId, setSelectedLeadId] = useState(null);
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [createForm, setCreateForm] = useState(EMPTY_CREATE_FORM);
+  const [editForm, setEditForm] = useState(EMPTY_EDIT_FORM);
+  const [draftMessage, setDraftMessage] = useState('');
 
-        <div className="flex items-center gap-2">
-          <FunnelIcon className="w-4 h-4 text-surface-500" />
-          {statuses.map((status) => (
-            <button
-              key={status || 'all'}
-              onClick={() => setFilters((f) => ({ ...f, status, page: 1 }))}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                filters.status === status
-                  ? 'bg-brand-600/20 text-brand-400 border border-brand-500/30'
-                  : 'bg-surface-800/50 text-surface-400 hover:text-white border border-transparent'
-              }`}
-            >
-              {status || 'All'}
-            </button>
-          ))}
-        </div>
-      </div>
+  const leadsQuery = useLeads(filters);
+  const leadRows = leadsQuery.data?.data?.data || [];
 
-      {/* Table */}
-      <div className="glass-card overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-surface-700/50">
-                <th className="text-left px-4 py-3 text-xs font-semibold text-surface-400 uppercase">Customer</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-surface-400 uppercase">Destination</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-surface-400 uppercase">Dates</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-surface-400 uppercase">Budget</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-surface-400 uppercase">Agent</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-surface-400 uppercase">Status</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-surface-400 uppercase">Created</th>
-              </tr>
-            </thead>
-            <tbody>
-              {isLoading ? (
-                Array.from({ length: 5 }).map((_, i) => (
-                  <tr key={i} className="border-b border-surface-700/20 animate-pulse">
-                    {Array.from({ length: 7 }).map((_, j) => (
-                      <td key={j} className="px-4 py-3"><div className="h-4 bg-surface-700/30 rounded" /></td>
-                    ))}
-                  </tr>
-                ))
-              ) : leads.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="px-4 py-12 text-center text-surface-500">No leads found</td>
-                </tr>
-              ) : (
-                leads.map((lead) => (
-                  <tr key={lead.id} className="border-b border-surface-700/20 hover:bg-surface-800/30 transition-colors cursor-pointer">
-                    <td className="px-4 py-3">
-                      <p className="text-sm font-medium text-white">{lead.customer?.name || '—'}</p>
-                      <p className="text-xs text-surface-400">{formatPhone(lead.customer?.phone)}</p>
-                    </td>
-                    <td className="px-4 py-3 text-sm text-surface-300">{lead.destination || '—'}</td>
-                    <td className="px-4 py-3 text-sm text-surface-300">{lead.travelDates || '—'}</td>
-                    <td className="px-4 py-3 text-sm text-surface-300">
-                      {lead.budgetPerPerson ? `${formatCurrency(lead.budgetPerPerson)}/pp` : '—'}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-surface-300">{lead.assignedAgent?.name || '—'}</td>
-                    <td className="px-4 py-3">
-                      <span className={`badge ${getStatusBadgeClass(lead.status)}`}>{lead.status}</span>
-                    </td>
-                    <td className="px-4 py-3 text-xs text-surface-400">{formatDate(lead.createdAt)}</td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+  const createLead = useCreateLead();
+  const updateLead = useUpdateLead();
+  const activeLeadQuery = useLead(selectedLeadId);
+  const activeLead = activeLeadQuery.data?.data;
+  const customerId = activeLead?.customer?.id;
+  const messagesQuery = useMessages(customerId, { limit: 50 });
+  const sendMessage = useSendMessage();
 
-        {/* Pagination */}
-        {total > filters.pageSize && (
-          <div className="flex items-center justify-between px-4 py-3 border-t border-surface-700/50">
-            <p className="text-xs text-surface-400">
-              Page {filters.page} of {Math.ceil(total / filters.pageSize)}
-            </p>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setFilters((f) => ({ ...f, page: f.page - 1 }))}
-                disabled={filters.page <= 1}
-                className="btn-ghost text-xs disabled:opacity-30"
-              >
-                Previous
-              </button>
-              <button
-                onClick={() => setFilters((f) => ({ ...f, page: f.page + 1 }))}
-                disabled={filters.page >= Math.ceil(total / filters.pageSize)}
-                className="btn-ghost text-xs disabled:opacity-30"
-              >
-                Next
+  const { data: agentsResponse } = useQuery({
+    queryKey: ['agents'],
+    queryFn: () => client.get('/agents').then((response) => response.data),
+  });
+
+  const agents = agentsResponse?.data || [];
+  const messages = messagesQuery.data?.data || activeLead?.messages || [];
+
+  useEffect(() => {
+    if (!leadRows.length) {
+      setSelectedLeadId(null);
+      return;
+    }
+
+    const visible = leadRows.some((lead) => lead.id === selectedLeadId);
+    if (!selectedLeadId || !visible) {
+      setSelectedLeadId(leadRows[0].id);
+    }
+  }, [leadRows, selectedLeadId]);
+
+  useEffect(() => {
+    if (!activeLead) return;
+
+    setEditForm({
+      status: activeLead.status || 'NEW',
+      assignedAgentId: activeLead.assignedAgentId || '',
+      destination: activeLead.destination || '',
+      travelDates: activeLead.travelDates || '',
+      travellers: activeLead.travellers ? String(activeLead.travellers) : '',
+      budget: fromBudgetPaise(activeLead.budgetPerPerson),
+      notes: activeLead.notes || '',
+      lostReason: activeLead.lostReason || '',
+    });
+  }, [activeLead]);
+
+  const quickFacts = useMemo(() => {
+    if (!activeLead) return [];
+    return [
+      activeLead.destination || 'Destination not yet defined',
+      activeLead.travelDates || 'Dates flexible',
+      activeLead.travellers ? `${activeLead.travellers} travelers` : 'Traveler count pending',
+      activeLead.package?.name || 'Custom itinerary',
+    ];
+  }, [activeLead]);
+
+  async function handleSaveLead(event) {
+    event.preventDefault();
+    if (!selectedLeadId) return;
+
+    await updateLead.mutateAsync({
+      id: selectedLeadId,
+      data: {
+        status: editForm.status,
+        assignedAgentId: editForm.assignedAgentId || null,
+        destination: editForm.destination.trim() || null,
+        travelDates: editForm.travelDates.trim() || null,
+        travellers: editForm.travellers ? Number(editForm.travellers) : null,
+        budgetPerPerson: toBudgetPaise(editForm.budget) || null,
+        notes: editForm.notes.trim() || null,
+        lostReason: editForm.lostReason.trim() || null,
+      },
+    });
+  }
+
+  async function handleSendMessage(event) {
+    event.preventDefault();
+    if (!customerId || !draftMessage.trim()) return;
+
+    await sendMessage.mutateAsync({
+      customerId,
+      content: draftMessage.trim(),
+    });
+    setDraftMessage('');
+  }
+
+  async function handleCreateLead(event) {
+    event.preventDefault();
+
+    const payload = {
+      customerName: createForm.customerName.trim(),
+      customerPhone: createForm.customerPhone.trim(),
+      destination: createForm.destination.trim() || undefined,
+      travelDates: createForm.travelDates.trim() || undefined,
+      travellers: createForm.travellers ? Number(createForm.travellers) : undefined,
+      budgetPerPerson: toBudgetPaise(createForm.budget),
+      assignedAgentId: createForm.assignedAgentId || undefined,
+      notes: createForm.notes.trim() || undefined,
+    };
+
+    const result = await createLead.mutateAsync(payload);
+    setCreateForm(EMPTY_CREATE_FORM);
+    setIsCreateOpen(false);
+    setSelectedLeadId(result?.data?.id || null);
+  }
+
+  return (
+    <div className="w-full">
+      <section className="grid min-h-[calc(100vh-6.25rem)] overflow-hidden rounded-[16px] border border-slate-200 bg-white xl:grid-cols-[320px_minmax(0,1fr)_320px]">
+        <aside className="border-b border-slate-200 bg-[#fbfcfd] xl:border-b-0 xl:border-r">
+          <div className="border-b border-slate-200 px-5 py-4">
+            <div className="flex items-center justify-between">
+              <h1 className="text-[20px] font-bold tracking-tight text-slate-950">Inbox</h1>
+              <button type="button" className="rounded-[10px] p-2 text-slate-400 transition hover:bg-white hover:text-slate-700">
+                <AdjustmentsHorizontalIcon className="h-5 w-5" />
               </button>
             </div>
+            <p className="mt-1 text-sm text-slate-500">{leadRows.length} active conversations</p>
           </div>
-        )}
-      </div>
+
+          <div className="hide-scrollbar max-h-[calc(100vh-14rem)] space-y-2 overflow-y-auto p-3">
+            {leadsQuery.isLoading ? (
+              Array.from({ length: 5 }).map((_, index) => (
+                <div key={index} className="h-24 animate-pulse rounded-[14px] bg-slate-100" />
+              ))
+            ) : leadRows.length === 0 ? (
+              <div className="rounded-[14px] border border-dashed border-slate-200 p-6 text-sm text-slate-500">
+                No conversations found.
+              </div>
+            ) : (
+              leadRows.map((lead) => (
+                <ConversationRow
+                  key={lead.id}
+                  lead={lead}
+                  selected={lead.id === selectedLeadId}
+                  onSelect={() => setSelectedLeadId(lead.id)}
+                />
+              ))
+            )}
+          </div>
+
+          <div className="border-t border-slate-200 p-3">
+            <button type="button" onClick={() => setIsCreateOpen(true)} className="shell-button-primary w-full">
+              <PlusIcon className="h-4 w-4" />
+              New Lead
+            </button>
+          </div>
+        </aside>
+
+        <div className="flex min-h-[calc(100vh-6.25rem)] flex-col border-b border-slate-200 xl:border-b-0 xl:border-r">
+          <header className="flex items-center justify-between gap-4 border-b border-slate-200 px-5 py-4">
+            {!activeLead ? (
+              <div className="text-sm text-slate-500">Select a conversation to begin.</div>
+            ) : (
+              <>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[linear-gradient(135deg,#34b6aa,#0f766e)] text-sm font-bold text-white">
+                      {getInitials(activeLead.customer?.name, 'TR')}
+                    </div>
+                    <div className="min-w-0">
+                      <h2 className="truncate text-[18px] font-semibold text-slate-950">{activeLead.customer?.name || 'Lead'}</h2>
+                      <p className="mt-1 text-xs font-bold uppercase tracking-[0.18em] text-slate-500">
+                        Status: <span className="text-slate-700">{activeLead.status}</span>
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex shrink-0 items-center gap-2">
+                  <button type="button" className="shell-button-secondary">CRM Notes</button>
+                  <button type="button" className="shell-button-primary">Create Booking</button>
+                  <button type="button" className="rounded-[10px] p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700">
+                    <EllipsisVerticalIcon className="h-5 w-5" />
+                  </button>
+                </div>
+              </>
+            )}
+          </header>
+
+          <div className="hide-scrollbar flex-1 overflow-y-auto bg-[#fcfcfd] px-5 py-5">
+            {!activeLead ? (
+              <div className="flex h-full items-center justify-center text-sm text-slate-500">
+                No conversation selected.
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="flex justify-center">
+                  <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-medium text-slate-500">
+                    {formatDate(activeLead.createdAt)}
+                  </span>
+                </div>
+
+                {messages.length === 0 ? (
+                  <div className="rounded-[14px] border border-slate-200 bg-white p-6 text-sm text-slate-500">
+                    No WhatsApp messages yet for this lead.
+                  </div>
+                ) : (
+                  messages.map((message) => (
+                    <MessageBubble key={message.id} message={message} />
+                  ))
+                )}
+              </div>
+            )}
+          </div>
+
+          <footer className="border-t border-slate-200 bg-white px-5 py-4">
+            <form onSubmit={handleSendMessage} className="flex items-center gap-3 rounded-[14px] border border-slate-200 bg-slate-50 px-3 py-2">
+              <input
+                type="text"
+                value={draftMessage}
+                onChange={(event) => setDraftMessage(event.target.value)}
+                placeholder={activeLead ? `Type a message to ${activeLead.customer?.name || 'this lead'}...` : 'Select a conversation to send messages'}
+                disabled={!activeLead || sendMessage.isPending}
+                className="flex-1 bg-transparent px-1 py-2 text-sm text-slate-900 outline-none placeholder:text-slate-400 disabled:cursor-not-allowed"
+              />
+              <button
+                type="submit"
+                disabled={!activeLead || !draftMessage.trim() || sendMessage.isPending}
+                className="flex h-10 w-10 items-center justify-center rounded-[12px] bg-[#0f766e] text-white transition hover:bg-[#0b5d54] disabled:cursor-not-allowed disabled:bg-slate-300"
+              >
+                <PaperAirplaneIcon className="h-4 w-4" />
+              </button>
+            </form>
+          </footer>
+        </div>
+
+        <aside className="hidden bg-white xl:flex xl:flex-col">
+          {!activeLead ? (
+            <div className="flex h-full items-center justify-center px-6 text-center text-sm text-slate-500">
+              Client profile appears here after you select a lead.
+            </div>
+          ) : (
+            <div className="hide-scrollbar flex h-full flex-col overflow-y-auto px-5 py-5">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.22em] text-slate-400">Client</p>
+                <h3 className="mt-3 text-[18px] font-semibold text-slate-950">{activeLead.customer?.name || 'Traveler'}</h3>
+                <p className="mt-3 text-sm leading-7 text-slate-500">
+                  {activeLead.notes || 'Use this panel for concise client context, not decorative filler.'}
+                </p>
+              </div>
+
+              <div className="mt-6 border-t border-slate-200 pt-5">
+                <p className="text-xs font-bold uppercase tracking-[0.22em] text-slate-400">Details</p>
+                <div className="mt-3 space-y-1">
+                  <InfoRow icon={PhoneIcon} label="Phone" value={formatPhone(activeLead.customer?.phone) || 'Phone pending'} />
+                  <InfoRow icon={UserCircleIcon} label="Owner" value={activeLead.assignedAgent?.name || 'Unassigned concierge'} />
+                  <InfoRow label="Created" value={formatDateTime(activeLead.createdAt)} />
+                </div>
+              </div>
+
+              <div className="mt-6 border-t border-slate-200 pt-5">
+                <p className="text-xs font-bold uppercase tracking-[0.22em] text-slate-400">Trip Brief</p>
+                <div className="mt-3 space-y-3">
+                  {quickFacts.map((item) => (
+                    <div key={item} className="rounded-[12px] border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+                      {item}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <form onSubmit={handleSaveLead} className="mt-6 space-y-4 border-t border-slate-200 pt-5">
+                <Field label="Status">
+                  <select
+                    value={editForm.status}
+                    onChange={(event) => setEditForm((current) => ({ ...current, status: event.target.value }))}
+                    className="shell-input-rect"
+                  >
+                    {STATUS_OPTIONS.map((status) => (
+                      <option key={status} value={status}>{status}</option>
+                    ))}
+                  </select>
+                </Field>
+
+                <Field label="Assigned agent">
+                  <select
+                    value={editForm.assignedAgentId}
+                    onChange={(event) => setEditForm((current) => ({ ...current, assignedAgentId: event.target.value }))}
+                    className="shell-input-rect"
+                  >
+                    <option value="">Unassigned</option>
+                    {agents.map((agent) => (
+                      <option key={agent.id} value={agent.id}>{agent.name}</option>
+                    ))}
+                  </select>
+                </Field>
+
+                <Field label="Destination">
+                  <input
+                    type="text"
+                    value={editForm.destination}
+                    onChange={(event) => setEditForm((current) => ({ ...current, destination: event.target.value }))}
+                    className="shell-input-rect"
+                  />
+                </Field>
+
+                <Field label="Travel dates">
+                  <input
+                    type="text"
+                    value={editForm.travelDates}
+                    onChange={(event) => setEditForm((current) => ({ ...current, travelDates: event.target.value }))}
+                    className="shell-input-rect"
+                  />
+                </Field>
+
+                <Field label="Budget per person">
+                  <input
+                    type="number"
+                    value={editForm.budget}
+                    onChange={(event) => setEditForm((current) => ({ ...current, budget: event.target.value }))}
+                    className="shell-input-rect"
+                  />
+                </Field>
+
+                <Field label="Notes">
+                  <textarea
+                    rows="5"
+                    value={editForm.notes}
+                    onChange={(event) => setEditForm((current) => ({ ...current, notes: event.target.value }))}
+                    className="shell-input-rect rounded-[14px]"
+                  />
+                </Field>
+
+                <button type="submit" disabled={updateLead.isPending} className="shell-button-primary w-full">
+                  {updateLead.isPending ? 'Saving...' : 'Save changes'}
+                </button>
+              </form>
+            </div>
+          )}
+        </aside>
+      </section>
+
+      {isCreateOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-2xl rounded-[18px] border border-slate-200 bg-white p-6 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.35)]">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.22em] text-slate-400">New Lead</p>
+                <h2 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">Create manual inquiry</h2>
+              </div>
+              <button type="button" onClick={() => setIsCreateOpen(false)} className="rounded-[10px] p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700">
+                <XMarkIcon className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateLead} className="mt-6 space-y-4">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="Customer name">
+                  <input
+                    required
+                    value={createForm.customerName}
+                    onChange={(event) => setCreateForm((current) => ({ ...current, customerName: event.target.value }))}
+                    className="shell-input-rect"
+                  />
+                </Field>
+
+                <Field label="Customer phone">
+                  <input
+                    required
+                    value={createForm.customerPhone}
+                    onChange={(event) => setCreateForm((current) => ({ ...current, customerPhone: event.target.value }))}
+                    className="shell-input-rect"
+                  />
+                </Field>
+
+                <Field label="Destination">
+                  <input
+                    value={createForm.destination}
+                    onChange={(event) => setCreateForm((current) => ({ ...current, destination: event.target.value }))}
+                    className="shell-input-rect"
+                  />
+                </Field>
+
+                <Field label="Travel dates">
+                  <input
+                    value={createForm.travelDates}
+                    onChange={(event) => setCreateForm((current) => ({ ...current, travelDates: event.target.value }))}
+                    className="shell-input-rect"
+                  />
+                </Field>
+
+                <Field label="Travelers">
+                  <input
+                    type="number"
+                    min="1"
+                    value={createForm.travellers}
+                    onChange={(event) => setCreateForm((current) => ({ ...current, travellers: event.target.value }))}
+                    className="shell-input-rect"
+                  />
+                </Field>
+
+                <Field label="Budget per person">
+                  <input
+                    type="number"
+                    min="0"
+                    value={createForm.budget}
+                    onChange={(event) => setCreateForm((current) => ({ ...current, budget: event.target.value }))}
+                    className="shell-input-rect"
+                  />
+                </Field>
+
+                <Field label="Assign agent">
+                  <select
+                    value={createForm.assignedAgentId}
+                    onChange={(event) => setCreateForm((current) => ({ ...current, assignedAgentId: event.target.value }))}
+                    className="shell-input-rect"
+                  >
+                    <option value="">Leave unassigned</option>
+                    {agents.map((agent) => (
+                      <option key={agent.id} value={agent.id}>{agent.name}</option>
+                    ))}
+                  </select>
+                </Field>
+              </div>
+
+              <Field label="Notes">
+                <textarea
+                  rows="4"
+                  value={createForm.notes}
+                  onChange={(event) => setCreateForm((current) => ({ ...current, notes: event.target.value }))}
+                  className="shell-input-rect rounded-[14px]"
+                />
+              </Field>
+
+              <div className="flex justify-end gap-3 pt-2">
+                <button type="button" onClick={() => setIsCreateOpen(false)} className="shell-button-secondary">
+                  Cancel
+                </button>
+                <button type="submit" disabled={createLead.isPending} className="shell-button-primary">
+                  {createLead.isPending ? 'Creating...' : 'Create lead'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

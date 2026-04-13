@@ -13,4 +13,9 @@ export const packagesApi = {
     formData.append('image', file);
     return client.post('/packages/upload-image', formData).then((r) => r.data);
   },
+  uploadBrochure: (file) => {
+    const formData = new FormData();
+    formData.append('brochure', file);
+    return client.post('/packages/upload-brochure', formData).then((r) => r.data);
+  },
 };

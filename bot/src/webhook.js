@@ -4,12 +4,12 @@
 
 const crypto = require('crypto');
 const path = require('path');
-const { Agency, Message } = require(path.resolve(__dirname, '../../backend/src/models'));
-const whatsappService = require(path.resolve(__dirname, '../../backend/src/services/whatsappService'));
-const schedulerService = require(path.resolve(__dirname, '../../backend/src/services/schedulerService'));
+const { Agency, Message } = require(path.resolve(__dirname, '../../backend/src/models/index.ts'));
+const whatsappService = require(path.resolve(__dirname, '../../backend/src/services/whatsappService.ts'));
+const schedulerService = require(path.resolve(__dirname, '../../backend/src/services/schedulerService.ts'));
 const { loadOrCreateSession } = require('./utils/sessionManager');
 const { routeMessage } = require('./botRouter');
-const { normalizePhone } = require(path.resolve(__dirname, '../../backend/src/utils/phoneUtils'));
+const { normalizePhone } = require(path.resolve(__dirname, '../../backend/src/utils/phoneUtils.ts'));
 
 /**
  * GET /webhook — Meta verification challenge.

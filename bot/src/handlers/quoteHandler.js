@@ -1,6 +1,6 @@
 const path = require('path');
-const { Package } = require(path.resolve(__dirname, '../../../backend/src/models'));
-const whatsappService = require(path.resolve(__dirname, '../../../backend/src/services/whatsappService'));
+const { Package } = require(path.resolve(__dirname, '../../../backend/src/models/index.ts'));
+const whatsappService = require(path.resolve(__dirname, '../../../backend/src/services/whatsappService.ts'));
 const { updateSession } = require('../utils/sessionManager');
 
 async function sendQuote(session, customer, agency, packageId) {

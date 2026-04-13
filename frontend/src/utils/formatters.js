@@ -3,12 +3,12 @@
 /**
  * Formats paise to Indian Rupee display string.
  * @param {number} paise - Amount in paise
- * @returns {string} Formatted currency e.g. "₹1,500"
+ * @returns {string} Formatted currency e.g. "Rs 1,500"
  */
 export function formatCurrency(paise) {
-  if (!paise && paise !== 0) return '₹0';
+  if (!paise && paise !== 0) return 'Rs 0';
   const rupees = paise / 100;
-  return `₹${rupees.toLocaleString('en-IN')}`;
+  return `Rs ${rupees.toLocaleString('en-IN')}`;
 }
 
 /**
@@ -18,7 +18,7 @@ export function formatCurrency(paise) {
  * @returns {string} Formatted date
  */
 export function formatDate(date, options = {}) {
-  if (!date) return '—';
+  if (!date) return '-';
   return new Date(date).toLocaleDateString('en-IN', {
     timeZone: 'Asia/Kolkata',
     day: 'numeric',
@@ -34,7 +34,7 @@ export function formatDate(date, options = {}) {
  * @returns {string} e.g. "15 Dec 2026, 2:30 PM"
  */
 export function formatDateTime(date) {
-  if (!date) return '—';
+  if (!date) return '-';
   return new Date(date).toLocaleString('en-IN', {
     timeZone: 'Asia/Kolkata',
     day: 'numeric',

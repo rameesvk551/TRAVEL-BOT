@@ -2,7 +2,7 @@
 // DEPS: sequelize (shared from backend)
 
 const path = require('path');
-const modelsPath = path.resolve(__dirname, '../../../backend/src/models');
+const modelsPath = path.resolve(__dirname, '../../../backend/src/models/index.ts');
 const { BotSession, Customer, Agency } = require(modelsPath);
 
 /**

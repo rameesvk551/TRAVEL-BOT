@@ -28,14 +28,41 @@ const upload = multer({
   },
 });
 
+const brochureUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 10 * 1024 * 1024,
+  },
+  fileFilter: (_req, file, cb) => {
+    const allowedMimeTypes = new Set([
+      'application/pdf',
+      'application/x-pdf',
+    ]);
+
+    if (!allowedMimeTypes.has(file.mimetype)) {
+      cb(Object.assign(new Error('Only PDF files are allowed'), {
+        statusCode: 400,
+        code: 'INVALID_FILE_TYPE',
+      }));
+      return;
+    }
+
+    cb(null, true);
+  },
+});
+
 const packageSchema = z.object({
   name: z.string().min(2),
+  category: z.enum(['DOMESTIC', 'INTERNATIONAL']).optional().nullable(),
   duration: z.string().optional(),
   destinations: z.array(z.string()).optional(),
   inclusions: z.array(z.string()).optional(),
   exclusions: z.array(z.string()).optional(),
   basePrice: z.number().int().min(1, 'Price must be positive (in paise)'),
   imageUrl: z.string().url().optional().nullable(),
+  summary: z.string().max(2000).optional().nullable(),
+  brochureUrl: z.string().url().optional().nullable(),
+  brochureFileName: z.string().max(255).optional().nullable(),
   itinerary: z.array(z.object({
     day: z.number().int(),
     title: z.string(),
@@ -54,6 +81,11 @@ router.get('/', authenticate, packageController.list);
  * POST /api/packages/upload-image - Upload package image to Cloudinary (ADMIN only)
  */
 router.post('/upload-image', authenticate, requireRole('ADMIN'), upload.single('image'), packageController.uploadImage);
+
+/**
+ * POST /api/packages/upload-brochure - Upload package brochure PDF to Cloudinary (ADMIN only)
+ */
+router.post('/upload-brochure', authenticate, requireRole('ADMIN'), brochureUpload.single('brochure'), packageController.uploadBrochure);
 
 /**
  * GET /api/packages/:id - Get package by ID

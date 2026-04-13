@@ -70,6 +70,35 @@ async function uploadImage(req, res, next) {
   }
 }
 
+async function uploadBrochure(req, res, next) {
+  try {
+    if (!req.file) {
+      throw Object.assign(new Error('Brochure file is required'), {
+        statusCode: 400,
+        code: 'MISSING_FILE',
+      });
+    }
+
+    const uploaded = await mediaService.uploadPackageBrochure(
+      req.file.buffer,
+      req.agency.id,
+      req.file.originalname
+    );
+
+    res.status(201).json({
+      success: true,
+      data: {
+        url: uploaded.secureUrl,
+        publicId: uploaded.publicId,
+        fileName: uploaded.originalFilename,
+      },
+      message: 'Brochure uploaded',
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   list,
   getById,
@@ -77,4 +106,5 @@ module.exports = {
   update,
   deactivate,
   uploadImage,
+  uploadBrochure,
 };
