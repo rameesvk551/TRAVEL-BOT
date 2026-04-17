@@ -40,6 +40,11 @@ module.exports = (sequelize) => {
       type: DataTypes.ENUM('ADMIN', 'AGENT'),
       defaultValue: 'AGENT',
     },
+    permissions: {
+      type: DataTypes.JSONB,
+      allowNull: false,
+      defaultValue: [],
+    },
     isOnline: {
       type: DataTypes.BOOLEAN,
       defaultValue: false,

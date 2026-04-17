@@ -13,7 +13,6 @@ import Payments from './pages/Payments';
 import Analytics from './pages/Analytics';
 import Settings from './pages/Settings';
 import Sidebar from './components/Sidebar';
-import AppTopbar from './components/AppTopbar';
 
 /**
  * Protected route wrapper — redirects to login if not authenticated.
@@ -29,11 +28,10 @@ function ProtectedRoute({ children }) {
  */
 function AppLayout({ children }) {
   return (
-    <div className="min-h-screen bg-[#f3f6fb] text-slate-900">
+    <div className="flex h-screen overflow-hidden bg-slate-100 text-slate-900">
       <Sidebar />
-      <AppTopbar />
-      <main className="min-h-screen px-3 pb-5 pt-18 sm:px-4 lg:pl-[274px] lg:pr-4">
-        <div className="page-enter">{children}</div>
+      <main className="flex-1 overflow-y-auto bg-slate-100 lg:pl-[252px]">
+        <div className="page-enter min-h-full p-4 md:p-6">{children}</div>
       </main>
     </div>
   );

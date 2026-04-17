@@ -5,7 +5,7 @@ const { DataTypes } = require('sequelize');
 
 /**
  * Lead model — a customer enquiry progressing through the sales pipeline.
- * Status: NEW → CONTACTED → QUOTED → NEGOTIATING → BOOKED | LOST | CANCELLED
+ * Status: JUST_CONTACTED → NEW → ENQUIRY → CONTACTED → QUOTED → NEGOTIATING → BOOKED | LOST | CANCELLED
  * @param {import('sequelize').Sequelize} sequelize
  */
 module.exports = (sequelize) => {
@@ -57,8 +57,13 @@ module.exports = (sequelize) => {
       type: DataTypes.UUID,
       allowNull: true,
     },
+    interest: {
+      type: DataTypes.STRING(50),
+      allowNull: true,
+      comment: 'Travel interest selected by the customer, e.g. DOMESTIC or INTERNATIONAL',
+    },
     status: {
-      type: DataTypes.ENUM('NEW', 'CONTACTED', 'QUOTED', 'NEGOTIATING', 'BOOKED', 'LOST', 'CANCELLED'),
+      type: DataTypes.ENUM('JUST_CONTACTED', 'NEW', 'ENQUIRY', 'CONTACTED', 'QUOTED', 'NEGOTIATING', 'BOOKED', 'LOST', 'CANCELLED'),
       defaultValue: 'NEW',
     },
     lostReason: {
@@ -68,6 +73,23 @@ module.exports = (sequelize) => {
     notes: {
       type: DataTypes.TEXT,
       allowNull: true,
+    },
+    source: {
+      type: DataTypes.STRING(100),
+      allowNull: true,
+      defaultValue: 'whatsapp_organic',
+      comment: 'Lead origin: whatsapp_organic, instagram_ad, facebook_ad, referral, qr_code, website, manual',
+    },
+    referralCodeId: {
+      type: DataTypes.UUID,
+      allowNull: true,
+      comment: 'FK to ReferralCode if lead came from referral',
+    },
+    leadScore: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      defaultValue: 0,
+      comment: 'Predicted conversion score 0-100',
     },
   }, {
     tableName: 'leads',

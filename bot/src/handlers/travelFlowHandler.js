@@ -7,6 +7,7 @@ const {
   Booking,
   Lead,
   Customer,
+  Agent,
 } = require(path.resolve(__dirname, '../../../backend/src/models/index.ts'));
 const whatsappService = require(path.resolve(__dirname, '../../../backend/src/services/whatsappService.ts'));
 const leadService = require(path.resolve(__dirname, '../../../backend/src/services/leadService.ts'));
@@ -27,7 +28,11 @@ const STEPS = {
 
 const FLOW_FIRST_SCREEN_ID = process.env.WHATSAPP_TRIP_FLOW_FIRST_SCREEN_ID || 'PACKAGE_SELECTOR';
 const FLOW_CTA = process.env.WHATSAPP_TRIP_FLOW_CTA || 'View Packages';
+const FLOW_ENQUIRY_ID = normalizeText(process.env.WHATSAPP_TRIP_ENQUIRY_FLOW_ID || '');
+const FLOW_ENQUIRY_FIRST_SCREEN_ID = process.env.WHATSAPP_TRIP_FLOW_ENQUIRY_FIRST_SCREEN_ID || 'ENQUIRY_FORM';
+const FLOW_ENQUIRY_CTA = process.env.WHATSAPP_TRIP_FLOW_ENQUIRY_CTA || 'Share Enquiry';
 const FLOW_PLACEHOLDER_IMAGE = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+yh8cAAAAASUVORK5CYII=';
+const FLOW_IMAGE_TRANSFORM = 'w_400,h_300,c_fill,f_jpg,q_auto';
 const imageCache = new Map();
 
 function normalizeText(value = '') {
@@ -42,6 +47,15 @@ function getContext(customer, agency) {
   return { customerId: customer.id, agencyId: agency.id };
 }
 
+function logFlowEvent(event, customer, agency, payload = {}) {
+  console.log(`[TravelFlow] ${event}`, {
+    customerId: customer?.id || null,
+    customerPhone: customer?.phone || null,
+    agencyId: agency?.id || null,
+    ...payload,
+  });
+}
+
 function escapeMarkdown(text = '') {
   return String(text || '').replace(/\*/g, '').trim();
 }
@@ -49,6 +63,13 @@ function escapeMarkdown(text = '') {
 function formatCurrency(amountPaise) {
   const amount = Number(amountPaise || 0) / 100;
   return `₹${Math.round(amount).toLocaleString('en-IN')}`;
+}
+
+function parseBudgetPaise(value = '') {
+  const cleaned = String(value || '').replace(/[₹,\s]|rs\.?/gi, '').trim();
+  const amount = parseInt(cleaned, 10);
+  if (Number.isNaN(amount) || amount <= 0) return null;
+  return amount * 100;
 }
 
 function normalizeCategory(value = '') {
@@ -106,6 +127,7 @@ function getProfile(session) {
       address: enquiry.address || '',
       travelDate: enquiry.travelDate || '',
       travellers: enquiry.travellers || null,
+      budgetPerPerson: enquiry.budgetPerPerson || null,
       notes: enquiry.notes || '',
     },
   };
@@ -228,23 +250,53 @@ function safePdfName(pkg) {
   return base.toLowerCase().endsWith('.pdf') ? base : `${base}.pdf`;
 }
 
-function isMetaTripFlowConfigured() {
-  return !!process.env.WHATSAPP_TRIP_FLOW_ID;
+function getAgencyTripFlowId(agency) {
+  return normalizeText(agency?.whatsappTripFlowId)
+    || normalizeText(process.env.WHATSAPP_TRIP_FLOW_ID);
 }
 
-function normalizeFlowImageUrl(imageUrl = '') {
+function isMetaTripFlowConfigured(agency) {
+  return !!getAgencyTripFlowId(agency);
+}
+
+function toAbsoluteFlowImageUrl(imageUrl = '') {
   const url = normalizeText(imageUrl);
   if (!url) return '';
 
-  const isCloudinarySvg = url.includes('res.cloudinary.com')
-    && url.includes('/image/upload/')
-    && /\.svg(?:\?|$)/i.test(url);
+  if (url.startsWith('data:image/')) return url;
 
-  if (!isCloudinarySvg) return url;
+  if (url.startsWith('/uploads/')) {
+    const baseUrl = normalizeText(process.env.BASE_URL);
+    if (!baseUrl) return '';
+    return `${baseUrl.replace(/\/$/, '')}${url}`;
+  }
 
-  return url
-    .replace('/image/upload/', '/image/upload/f_png/')
-    .replace(/\.svg(\?|$)/i, '.png$1');
+  if (url.startsWith('http://') || url.startsWith('https://')) {
+    return url;
+  }
+
+  const cloudName = normalizeText(process.env.CLOUDINARY_CLOUD_NAME);
+  if (cloudName) {
+    return `https://res.cloudinary.com/${cloudName}/image/upload/${url.replace(/^\/+/, '')}`;
+  }
+
+  return '';
+}
+
+function addCloudinaryTransform(url) {
+  if (!url.includes('res.cloudinary.com') || !url.includes('/image/upload/')) {
+    return url;
+  }
+
+  // Always inject our transform so Flow card images stay lightweight and compatible.
+  return url.replace('/image/upload/', `/image/upload/${FLOW_IMAGE_TRANSFORM}/`);
+}
+
+function normalizeFlowImageUrl(imageUrl = '') {
+  const url = toAbsoluteFlowImageUrl(imageUrl);
+  if (!url) return '';
+  if (url.startsWith('data:image/')) return url;
+  return addCloudinaryTransform(url);
 }
 
 function fetchBuffer(url, redirects = 3) {
@@ -276,18 +328,11 @@ function fetchBuffer(url, redirects = 3) {
         return;
       }
 
-      const contentType = String(res.headers['content-type'] || '').toLowerCase();
-      if (contentType.includes('svg')) {
-        res.resume();
-        reject(new Error('SVG images are not supported in WhatsApp Flow package cards'));
-        return;
-      }
-
       const chunks = [];
       let size = 0;
       res.on('data', (chunk) => {
         size += chunk.length;
-        if (size > 900 * 1024) {
+        if (size > 2 * 1024 * 1024) {
           req.destroy(new Error('Image too large for WhatsApp Flow payload'));
           return;
         }
@@ -307,6 +352,13 @@ async function getFlowBase64Image(imageUrl) {
 
   if (imageCache.has(normalized)) {
     return imageCache.get(normalized);
+  }
+
+  if (normalized.startsWith('data:image/')) {
+    const [, payload = ''] = normalized.split(',', 2);
+    const inlinePayload = payload || FLOW_PLACEHOLDER_IMAGE;
+    imageCache.set(normalized, inlinePayload);
+    return inlinePayload;
   }
 
   try {
@@ -377,7 +429,7 @@ async function findActiveLead(session, customer, agency) {
     where: {
       customerId: customer.id,
       agencyId: agency.id,
-      status: { [Op.in]: ['NEW', 'CONTACTED', 'QUOTED', 'NEGOTIATING'] },
+      status: { [Op.in]: ['JUST_CONTACTED', 'NEW', 'ENQUIRY', 'CONTACTED', 'QUOTED', 'NEGOTIATING'] },
     },
     order: [['createdAt', 'DESC']],
   });
@@ -410,17 +462,24 @@ async function ensureLead(session, customer, agency, extra = {}) {
       destination: extra.destination || pkg?.destinations?.[0] || null,
       travelDates: extra.travelDates || null,
       travellers: extra.travellers || null,
+      budgetPerPerson: extra.budgetPerPerson || null,
+      interest: extra.interest || null,
       status: extra.status || 'NEW',
       notes: notes || 'Lead created from WhatsApp sales funnel',
     }, agency.id);
   } else {
+    const nextStatus = extra.preserveExistingStatus
+      ? lead.status || 'NEW'
+      : (extra.status || lead.status || 'NEW');
+
     const updates = {
       packageId: extra.packageId || pkg?.id || lead.packageId || null,
       destination: extra.destination || lead.destination || pkg?.destinations?.[0] || null,
       travelDates: extra.travelDates || lead.travelDates || null,
       travellers: extra.travellers || lead.travellers || null,
       budgetPerPerson: extra.budgetPerPerson || lead.budgetPerPerson || null,
-      status: extra.status || lead.status || 'NEW',
+      interest: extra.interest || lead.interest || null,
+      status: nextStatus,
       notes: [lead.notes, notes].filter(Boolean).join(' | '),
     };
     lead = await leadService.updateLead(lead.id, agency.id, updates);
@@ -490,13 +549,19 @@ async function showMainMenu(session, customer, agency) {
     'How can I help you today?',
   ].join('\n');
 
+  const buttons = [
+    { id: 'menu_domestic', title: 'Domestic' },
+    { id: 'menu_international', title: 'International' },
+  ];
+
+  if (agency.whatsappCatalogId) {
+    buttons.push({ id: 'menu_catalog', title: '🛒 Shop Catalog' });
+  }
+
   return whatsappService.sendButtonsMessage(
     customer.phone,
     greeting,
-    [
-      { id: 'menu_domestic', title: 'Domestic' },
-      { id: 'menu_international', title: 'International' },
-    ],
+    buttons,
     getContext(customer, agency),
     {
       footerText: 'Reply Hi anytime to restart.',
@@ -528,6 +593,11 @@ async function openPackageFlow(session, customer, agency, category) {
   const normalizedCategory = normalizeCategory(category);
   const packages = await findPackagesForCategory(agency.id, normalizedCategory, 5);
 
+  await ensureLead(session, customer, agency, {
+    interest: normalizedCategory,
+    notes: `Category selected: ${categoryLabel(normalizedCategory)}`,
+  });
+
   await transitionTo(session, STEPS.CATEGORY_PACKAGES, {
     packageCategory: normalizedCategory,
     packageResults: packages.map(({ pkg }) => pkg.id),
@@ -543,19 +613,19 @@ async function openPackageFlow(session, customer, agency, category) {
     return;
   }
 
-  if (!isMetaTripFlowConfigured()) {
+  if (!isMetaTripFlowConfigured(agency)) {
     return showPackageListFallback(session, customer, agency, normalizedCategory, packages);
   }
 
   const packageOptions = await buildFlowPackageOptions(packages);
-  return whatsappService.sendFlowMessage(
+  const flowResponse = await whatsappService.sendFlowMessage(
     customer.phone,
     `Browse our best ${categoryLabel(normalizedCategory)} packages 👇`,
     {
-      flowId: process.env.WHATSAPP_TRIP_FLOW_ID,
+      flowId: getAgencyTripFlowId(agency),
       firstScreenId: FLOW_FIRST_SCREEN_ID,
       flowCta: FLOW_CTA,
-      flowToken: `pkg-${customer.id}-${Date.now()}`,
+      flowToken: `pkg|${agency.id}|${normalizedCategory || 'DOMESTIC'}|${customer.id}|${Date.now()}`,
       data: {
         category_label: categoryLabel(normalizedCategory),
         package_options: packageOptions,
@@ -567,12 +637,18 @@ async function openPackageFlow(session, customer, agency, category) {
       footerText: 'Reply LIST if the flow does not open.',
     }
   );
+
+  if (flowResponse?.status === 'FAILED') {
+    return showPackageListFallback(session, customer, agency, normalizedCategory, packages);
+  }
+
+  return flowResponse;
 }
 
 async function sendPackageActions(customer, agency, pkg) {
   const context = getContext(customer, agency);
   const rows = [
-    { id: 'action_enquire', title: 'Enquiry', description: 'Share your trip details in chat' },
+    { id: 'action_enquire', title: 'Enquiry', description: 'Share your trip details in flow' },
     { id: 'action_call_now', title: 'Call Now', description: `Call ${agency.phone}`.slice(0, 72) },
   ];
 
@@ -614,16 +690,51 @@ async function sendPackageActions(customer, agency, pkg) {
 }
 
 async function showPackageDetail(session, customer, agency, packageId) {
+  const profile = getProfile(session);
+  const normalizedPackageId = normalizeText(packageId);
+  const offeredPackageIds = Array.isArray(profile.packageResults)
+    ? profile.packageResults.map((id) => normalizeText(id)).filter(Boolean)
+    : [];
+  const isKnownPackage = offeredPackageIds.length === 0 || offeredPackageIds.includes(normalizedPackageId);
+
+  if (!normalizedPackageId || !isKnownPackage) {
+    logFlowEvent('package_detail_invalid_selection', customer, agency, {
+      step: session?.currentStep || null,
+      selectedPackageId: normalizedPackageId || null,
+      offeredPackageIds,
+    });
+    return sendInvalidChoice(session, customer, agency, () => openPackageFlow(session, customer, agency, profile.packageCategory));
+  }
+
   const pkg = await Package.findOne({
-    where: { id: packageId, agencyId: agency.id, isActive: true },
+    where: { id: normalizedPackageId, agencyId: agency.id, isActive: true },
   });
 
   if (!pkg) {
+    logFlowEvent('package_detail_not_found', customer, agency, {
+      step: session?.currentStep || null,
+      selectedPackageId: normalizedPackageId,
+      offeredPackageIds,
+    });
     return sendInvalidChoice(session, customer, agency, () => openPackageFlow(session, customer, agency, getProfile(session).packageCategory));
   }
 
+  logFlowEvent('package_detail_opened', customer, agency, {
+    step: session?.currentStep || null,
+    packageId: pkg.id,
+    packageName: pkg.name,
+    packageCategory: profile.packageCategory || null,
+  });
+
+  await ensureLead(session, customer, agency, {
+    packageId: pkg.id,
+    destination: pkg?.destinations?.[0] || null,
+    notes: `Package selected: ${pkg.name}`,
+  });
+
   await transitionTo(session, STEPS.PACKAGE_DETAIL, {
     selectedPackageId: pkg.id,
+    selectedPackageName: pkg.name,
   });
 
   const detailMessage = buildPackageCaption(pkg);
@@ -678,19 +789,193 @@ async function showPackageDetail(session, customer, agency, packageId) {
 }
 
 async function handleFlowSubmission(session, incoming, customer, agency) {
-  const response = incoming?.flowResponse || {};
+  const rawResponse = incoming?.flowResponse || {};
+  const response = typeof rawResponse === 'string'
+    ? (() => {
+        try {
+          return JSON.parse(rawResponse);
+        } catch {
+          return {};
+        }
+      })()
+    : rawResponse;
+
+  const formResponse = response.package_selector_form && typeof response.package_selector_form === 'object'
+    ? response.package_selector_form
+    : response.packageSelectorForm && typeof response.packageSelectorForm === 'object'
+      ? response.packageSelectorForm
+      : {};
+
+  const enquiryFormResponse = response.enquiry_form && typeof response.enquiry_form === 'object'
+    ? response.enquiry_form
+    : response.enquiryForm && typeof response.enquiryForm === 'object'
+      ? response.enquiryForm
+      : {};
+
   const packageId = normalizeText(
     response.packageId
     || response.package_id
     || response.selected_package
     || response.selectedPackage
+    || formResponse.packageId
+    || formResponse.package_id
+    || formResponse.selected_package
+    || formResponse.selectedPackage
+    || enquiryFormResponse.packageId
+    || enquiryFormResponse.package_id
+    || enquiryFormResponse.selected_package
+    || enquiryFormResponse.selectedPackage
   );
+
+  const enquiryPayload = {
+    name: normalizeText(
+      response.name
+      || response.fullName
+      || response.full_name
+      || enquiryFormResponse.name
+      || enquiryFormResponse.fullName
+      || enquiryFormResponse.full_name
+    ),
+    place: normalizeText(
+      response.place
+      || response.city
+      || response.location
+      || enquiryFormResponse.place
+      || enquiryFormResponse.city
+      || enquiryFormResponse.location
+    ),
+    travelDate: normalizeText(
+      response.travelDate
+      || response.travel_date
+      || response.travelMonth
+      || enquiryFormResponse.travelDate
+      || enquiryFormResponse.travel_date
+      || enquiryFormResponse.travelMonth
+    ),
+    travellers: normalizeText(
+      response.travellers
+      || response.travelers
+      || response.travellerCount
+      || response.travelerCount
+      || enquiryFormResponse.travellers
+      || enquiryFormResponse.travelers
+      || enquiryFormResponse.travellerCount
+      || enquiryFormResponse.travelerCount
+    ),
+    budgetPerPerson: normalizeText(
+      response.budget
+      || response.budgetPerPerson
+      || response.budget_per_person
+      || enquiryFormResponse.budget
+      || enquiryFormResponse.budgetPerPerson
+      || enquiryFormResponse.budget_per_person
+    ),
+    notes: normalizeText(
+      response.notes
+      || response.otherDetails
+      || response.other_details
+      || enquiryFormResponse.notes
+      || enquiryFormResponse.otherDetails
+      || enquiryFormResponse.other_details
+    ),
+  };
+
+  const travellerMatch = enquiryPayload.travellers.match(/\d+/);
+  const travellers = travellerMatch ? parseInt(travellerMatch[0], 10) : NaN;
+  const budgetPerPerson = parseBudgetPaise(enquiryPayload.budgetPerPerson);
+  const hasFlowEnquiryFields = !!(enquiryPayload.name || enquiryPayload.place || enquiryPayload.travelDate || enquiryPayload.travellers || enquiryPayload.notes);
+
+  logFlowEvent('flow_submission_received', customer, agency, {
+    step: session?.currentStep || null,
+    selectedPackageId: packageId || null,
+    flowName: normalizeText(incoming?.flowName || ''),
+    hasFlowEnquiryFields,
+  });
 
   if (!packageId) {
     return sendInvalidChoice(session, customer, agency, () => openPackageFlow(session, customer, agency, getProfile(session).packageCategory));
   }
 
+  if (hasFlowEnquiryFields) {
+    if (!enquiryPayload.name || enquiryPayload.name.length < 2 || !enquiryPayload.travelDate || enquiryPayload.travelDate.length < 3 || Number.isNaN(travellers) || travellers < 1 || travellers > 50 || !budgetPerPerson) {
+      await whatsappService.sendTextMessage(
+        customer.phone,
+        'Please submit valid enquiry details in the form. Name, travel date, travellers, and budget are required.',
+        getContext(customer, agency)
+      );
+      return showPackageDetail(session, customer, agency, packageId);
+    }
+
+    await transitionTo(session, STEPS.COMPLETE, {
+      selectedPackageId: packageId,
+      enquiryDraft: {
+        ...getProfile(session).enquiryDraft,
+        name: enquiryPayload.name,
+        travelDate: enquiryPayload.travelDate,
+        travellers,
+        budgetPerPerson,
+        notes: enquiryPayload.notes,
+      },
+    });
+
+    return finalizeEnquiry(session, customer, agency);
+  }
+
   return showPackageDetail(session, customer, agency, packageId);
+}
+
+async function openEnquiryFlow(session, customer, agency) {
+  const profile = getProfile(session);
+  const selectedPackageId = profile.selectedPackageId;
+
+  if (!selectedPackageId) {
+    return sendInvalidChoice(session, customer, agency, () => openPackageFlow(session, customer, agency, profile.packageCategory));
+  }
+
+  if (!isMetaTripFlowConfigured(agency)) {
+    return startEnquiry(session, customer, agency);
+  }
+
+  const pkg = await Package.findOne({ where: { id: selectedPackageId, agencyId: agency.id, isActive: true } });
+  if (!pkg) {
+    return sendInvalidChoice(session, customer, agency, () => openPackageFlow(session, customer, agency, profile.packageCategory));
+  }
+
+  await ensureLead(session, customer, agency, {
+    status: 'ENQUIRY',
+    packageId: pkg.id,
+    destination: pkg?.destinations?.[0] || null,
+    notes: `Enquiry started for package: ${pkg.name}`,
+  });
+
+  const flowResponse = await whatsappService.sendFlowMessage(
+    customer.phone,
+    `Share your enquiry details for ${escapeMarkdown(pkg.name)} 👇`,
+    {
+      flowId: FLOW_ENQUIRY_ID || getAgencyTripFlowId(agency),
+      firstScreenId: FLOW_ENQUIRY_FIRST_SCREEN_ID,
+      flowCta: FLOW_ENQUIRY_CTA,
+      flowToken: `enq|${agency.id}|${selectedPackageId}|${customer.id}|${Date.now()}`,
+      data: {
+        package_id: pkg.id,
+        package_name: escapeMarkdown(pkg.name),
+        package_summary: `${formatCurrency(pkg.basePrice)} • ${escapeMarkdown(pkg.duration || 'Custom itinerary')}`.slice(0, 80),
+        customer_name: normalizeText(customer.name || profile.enquiryDraft.name || ''),
+        budget_hint: 'Please share your budget per person in ₹',
+      },
+    },
+    getContext(customer, agency),
+    {
+      headerText: 'Quick Enquiry',
+      footerText: 'Fill details in flow and submit.',
+    }
+  );
+
+  if (flowResponse?.status === 'FAILED') {
+    return startEnquiry(session, customer, agency);
+  }
+
+  return flowResponse;
 }
 
 async function startEnquiry(session, customer, agency) {
@@ -700,6 +985,19 @@ async function startEnquiry(session, customer, agency) {
   if (!selectedPackageId) {
     return sendInvalidChoice(session, customer, agency, () => openPackageFlow(session, customer, agency, profile.packageCategory));
   }
+
+  const pkg = await Package.findOne({ where: { id: selectedPackageId, agencyId: agency.id, isActive: true } });
+
+  if (!pkg) {
+    return sendInvalidChoice(session, customer, agency, () => openPackageFlow(session, customer, agency, profile.packageCategory));
+  }
+
+  await ensureLead(session, customer, agency, {
+    status: 'ENQUIRY',
+    packageId: pkg.id,
+    destination: pkg?.destinations?.[0] || null,
+    notes: `Enquiry started for package: ${pkg.name}`,
+  });
 
   await transitionTo(session, STEPS.ENQUIRY_NAME, {
     enquiryDraft: {
@@ -713,6 +1011,56 @@ async function startEnquiry(session, customer, agency) {
     'Great choice. I will take your enquiry in chat.\n\nPlease share your full name.',
     getContext(customer, agency)
   );
+}
+
+async function notifyAgentOfNewEnquiry(lead, customer, agency, pkg, enquiry) {
+  if (!lead?.assignedAgentId) {
+    return; // No agent assigned, skip notification
+  }
+
+  const assignedAgent = await Agent.findOne({
+    where: { id: lead.assignedAgentId, agencyId: agency.id },
+  });
+
+  if (!assignedAgent?.phone) {
+    return; // Agent has no phone number
+  }
+
+  const budgetText = enquiry.budgetPerPerson
+    ? `₹${Math.round(Number(enquiry.budgetPerPerson) / 100).toLocaleString('en-IN')}`
+    : 'Not shared yet';
+
+  const agentNotification = [
+    '🔥 New Enquiry',
+    '',
+    `Name: ${customer?.name || 'Unknown'}`,
+    `Phone: ${customer?.phone || 'Unknown'}`,
+    `Package: ${pkg?.name || 'Not selected'}`,
+    `📍 ${enquiry.travelDate ? `Date: ${enquiry.travelDate}` : 'Date: Not shared yet'}`,
+    `👥 People: ${enquiry.travellers || 'Not shared yet'}`,
+    `💰 Budget: ${budgetText}`,
+    enquiry.notes ? `📝 Notes: ${enquiry.notes}` : '',
+    '',
+    'Take action:',
+  ].filter(Boolean).join('\n');
+
+  await whatsappService.sendButtonsMessage(
+    assignedAgent.phone,
+    agentNotification,
+    [
+      { id: `lead_call:${lead.id}`, title: '📞 Call Now' },
+      { id: `lead_contacted:${lead.id}`, title: '✅ Mark as Contacted' },
+      { id: `lead_booked:${lead.id}`, title: '🎉 Mark as Booked' },
+    ],
+    { customerId: lead.customerId, agencyId: agency.id },
+    { footerText: 'Reply NOTE: <text> to add a note.' }
+  );
+
+  logFlowEvent('agent_notified_of_enquiry', customer, agency, {
+    leadId: lead.id,
+    agentId: assignedAgent.id,
+    packageName: pkg?.name || null,
+  });
 }
 
 async function finalizeEnquiry(session, customer, agency) {
@@ -732,17 +1080,19 @@ async function finalizeEnquiry(session, customer, agency) {
   const notes = [
     'Lead captured from WhatsApp package enquiry funnel',
     pkg?.name ? `Package: ${pkg.name}` : null,
-    enquiry.place ? `Place: ${enquiry.place}` : null,
-    enquiry.address ? `Address: ${enquiry.address}` : null,
+    enquiry.travelDate ? `Travel date: ${enquiry.travelDate}` : null,
+    enquiry.travellers ? `Travellers: ${enquiry.travellers}` : null,
+    enquiry.budgetPerPerson ? `Budget per person: ₹${Math.round(Number(enquiry.budgetPerPerson) / 100).toLocaleString('en-IN')}` : null,
     enquiry.notes ? `Other details: ${enquiry.notes}` : null,
   ].filter(Boolean).join(' | ');
 
   const lead = await ensureLead(session, customer, agency, {
     packageId: pkg?.id || null,
-    destination: enquiry.place || pkg?.destinations?.[0] || null,
+    destination: pkg?.destinations?.[0] || null,
     travelDates: enquiry.travelDate || null,
     travellers: enquiry.travellers || null,
-    status: 'NEW',
+    budgetPerPerson: enquiry.budgetPerPerson || null,
+    status: 'ENQUIRY',
     notes,
   });
 
@@ -751,6 +1101,11 @@ async function finalizeEnquiry(session, customer, agency) {
     collectedData: {
       activeLeadId: lead.id,
     },
+  });
+
+  // Notify the assigned agent about the new enquiry
+  await notifyAgentOfNewEnquiry(lead, customer, agency, pkg, enquiry).catch((err) => {
+    console.warn('[TravelFlow] Could not notify agent of enquiry:', err.message);
   });
 
   return whatsappService.sendTextMessage(
@@ -780,63 +1135,62 @@ async function handleEnquiryStep(session, incoming, customer, agency) {
       await transitionTo(session, STEPS.ENQUIRY_PLACE, { enquiryDraft: enquiry });
       return whatsappService.sendTextMessage(
         customer.phone,
-        'Please share your city or place.',
+        'Please share your travel date or month.',
         getContext(customer, agency)
       );
     }
 
     case STEPS.ENQUIRY_PLACE: {
-      if (text.length < 2) {
-        return whatsappService.sendTextMessage(
-          customer.phone,
-          'Please share your city or place so our expert can plan from the right departure point.',
-          getContext(customer, agency)
-        );
-      }
-
-      enquiry.place = text;
-      await transitionTo(session, STEPS.ENQUIRY_ADDRESS, { enquiryDraft: enquiry });
-      return whatsappService.sendTextMessage(
-        customer.phone,
-        'Please share your address.',
-        getContext(customer, agency)
-      );
-    }
-
-    case STEPS.ENQUIRY_ADDRESS: {
-      if (text.length < 5) {
-        return whatsappService.sendTextMessage(
-          customer.phone,
-          'Please share a complete address.',
-          getContext(customer, agency)
-        );
-      }
-
-      enquiry.address = text;
-      await transitionTo(session, STEPS.ENQUIRY_DATE, { enquiryDraft: enquiry });
-      return whatsappService.sendTextMessage(
-        customer.phone,
-        'When are you planning to travel? Please share the date or travel month.',
-        getContext(customer, agency)
-      );
-    }
-
-    case STEPS.ENQUIRY_DATE: {
       if (text.length < 3) {
         return whatsappService.sendTextMessage(
           customer.phone,
-          'Please share an expected travel date or month.',
+          'Please share your travel date or month.',
           getContext(customer, agency)
         );
       }
 
       enquiry.travelDate = text;
-      await transitionTo(session, STEPS.ENQUIRY_TRAVELLERS, { enquiryDraft: enquiry });
+      await transitionTo(session, STEPS.ENQUIRY_ADDRESS, { enquiryDraft: enquiry });
       return whatsappService.sendTextMessage(
         customer.phone,
         'How many people will be travelling?',
         getContext(customer, agency)
       );
+    }
+
+    case STEPS.ENQUIRY_ADDRESS: {
+      const match = text.match(/\d+/);
+      const travellers = match ? parseInt(match[0], 10) : NaN;
+      if (Number.isNaN(travellers) || travellers < 1 || travellers > 50) {
+        return whatsappService.sendTextMessage(
+          customer.phone,
+          'Please send a valid traveller count between 1 and 50.',
+          getContext(customer, agency)
+        );
+      }
+
+      enquiry.travellers = travellers;
+      await transitionTo(session, STEPS.ENQUIRY_DATE, { enquiryDraft: enquiry });
+      return whatsappService.sendTextMessage(
+        customer.phone,
+        'What is your budget per person? You can reply in rupees, for example 25000.',
+        getContext(customer, agency)
+      );
+    }
+
+    case STEPS.ENQUIRY_DATE: {
+      const budgetPerPerson = parseBudgetPaise(text);
+      if (!budgetPerPerson) {
+        return whatsappService.sendTextMessage(
+          customer.phone,
+          'Please enter a valid budget amount in ₹.',
+          getContext(customer, agency)
+        );
+      }
+
+      enquiry.budgetPerPerson = budgetPerPerson;
+      await transitionTo(session, STEPS.COMPLETE, { enquiryDraft: enquiry });
+      return finalizeEnquiry(session, customer, agency);
     }
 
     case STEPS.ENQUIRY_TRAVELLERS: {
@@ -851,10 +1205,10 @@ async function handleEnquiryStep(session, incoming, customer, agency) {
       }
 
       enquiry.travellers = travellers;
-      await transitionTo(session, STEPS.ENQUIRY_NOTES, { enquiryDraft: enquiry });
+      await transitionTo(session, STEPS.ENQUIRY_DATE, { enquiryDraft: enquiry });
       return whatsappService.sendTextMessage(
         customer.phone,
-        'Any other details to share, like honeymoon, family trip, hotel preference, or special request?\n\nReply "skip" if none.',
+        'What is your budget per person? You can reply in rupees, for example 25000.',
         getContext(customer, agency)
       );
     }
@@ -876,11 +1230,53 @@ async function sendCallNow(session, customer, agency) {
     ? await Package.findOne({ where: { id: profile.selectedPackageId, agencyId: agency.id } })
     : null;
 
+  const lead = await ensureLead(session, customer, agency, {
+    status: 'ENQUIRY',
+    packageId: pkg?.id || null,
+    destination: pkg?.destinations?.[0] || null,
+    notes: `Call Now clicked for ${pkg?.name || 'selected package'}`,
+  });
+
   await whatsappService.sendTextMessage(
     customer.phone,
     `📞 Call us: ${agency.phone || agency.whatsappNumber}`,
     getContext(customer, agency)
   );
+
+  if (lead?.assignedAgentId) {
+    const assignedAgent = await Agent.findOne({
+      where: { id: lead.assignedAgentId, agencyId: agency.id },
+    });
+    if (assignedAgent?.phone) {
+      const budgetText = profile.enquiryDraft.budgetPerPerson
+        ? `₹${Math.round(Number(profile.enquiryDraft.budgetPerPerson) / 100).toLocaleString('en-IN')}`
+        : 'Not shared yet';
+      const agentMsg = [
+        '🔥 Call Now Intent',
+        '',
+        `Name: ${customer.name || firstName(customer)}`,
+        `Phone: ${customer.phone}`,
+        `Package: ${pkg?.name || 'Not selected'}`,
+        `Date: ${profile.enquiryDraft.travelDate || 'Not shared yet'}`,
+        `People: ${profile.enquiryDraft.travellers || 'Not shared yet'}`,
+        `Budget: ${budgetText}`,
+        '',
+        'Reply NOTE: <text> to add a note.',
+      ].join('\n');
+
+      await whatsappService.sendButtonsMessage(
+        assignedAgent.phone,
+        agentMsg,
+        [
+          { id: `lead_call:${lead.id}`, title: 'Call Now' },
+          { id: `lead_contacted:${lead.id}`, title: 'Mark as Contacted' },
+          { id: `lead_booked:${lead.id}`, title: 'Mark as Booked' },
+        ],
+        getContext(customer, agency),
+        { footerText: 'Reply NOTE: ... to add a note.' }
+      );
+    }
+  }
 
   if (pkg) {
     return sendPackageActions(customer, agency, pkg);
@@ -926,11 +1322,11 @@ async function renderCurrentStep(session, customer, agency) {
     case STEPS.ENQUIRY_NAME:
       return whatsappService.sendTextMessage(customer.phone, 'Please share your full name.', getContext(customer, agency));
     case STEPS.ENQUIRY_PLACE:
-      return whatsappService.sendTextMessage(customer.phone, 'Please share your city or place.', getContext(customer, agency));
+      return whatsappService.sendTextMessage(customer.phone, 'Please share your travel date or month.', getContext(customer, agency));
     case STEPS.ENQUIRY_ADDRESS:
-      return whatsappService.sendTextMessage(customer.phone, 'Please share your address.', getContext(customer, agency));
+      return whatsappService.sendTextMessage(customer.phone, 'How many people will be travelling?', getContext(customer, agency));
     case STEPS.ENQUIRY_DATE:
-      return whatsappService.sendTextMessage(customer.phone, 'When are you planning to travel?', getContext(customer, agency));
+      return whatsappService.sendTextMessage(customer.phone, 'What is your budget per person?', getContext(customer, agency));
     case STEPS.ENQUIRY_TRAVELLERS:
       return whatsappService.sendTextMessage(customer.phone, 'How many people will be travelling?', getContext(customer, agency));
     case STEPS.ENQUIRY_NOTES:
@@ -965,7 +1361,7 @@ async function handlePackageDetailReply(session, customer, agency, actionId, tex
     : null;
 
   if (actionId === 'action_enquire' || text === 'enquiry' || text === 'enquire now' || text === 'enquire' || text === '1') {
-    return startEnquiry(session, customer, agency);
+    return openEnquiryFlow(session, customer, agency);
   }
 
   if (actionId === 'action_call_now' || text === 'call now' || text === '2') {
@@ -1014,6 +1410,19 @@ async function handleTravelFlow(session, incoming, customer, agency) {
     return openPackageFlow(session, customer, agency, resolveCategory(actionId, text));
   }
 
+  if (actionId === 'menu_catalog' || text === 'catalog' || text === 'shop') {
+    if (agency.whatsappCatalogId) {
+      const allPackages = await Package.findAll({ where: { agencyId: agency.id, isActive: true }, limit: 30 });
+      return whatsappService.sendCatalogMessage(
+        customer.phone,
+        'Browse our full packages directly in WhatsApp! Tap below to open our store and check out your cart.',
+        agency.whatsappCatalogId,
+        allPackages.map(pkg => pkg.id),
+        getContext(customer, agency)
+      );
+    }
+  }
+
   if (session.currentStep === STEPS.CATEGORY_PACKAGES && ['list', 'show list', 'package list', 'packages list'].includes(text)) {
     const packages = await findPackagesForCategory(agency.id, profile.packageCategory || 'DOMESTIC', 5);
     return showPackageListFallback(session, customer, agency, profile.packageCategory || 'DOMESTIC', packages);
@@ -1024,7 +1433,13 @@ async function handleTravelFlow(session, incoming, customer, agency) {
   }
 
   if (actionId === 'pkg_pick:' || actionId.startsWith('pkg_pick:')) {
-    return showPackageDetail(session, customer, agency, actionId.split(':')[1]);
+    const selectedPackageId = normalizeText(actionId.split(':')[1]);
+    logFlowEvent('list_package_selected', customer, agency, {
+      step: session?.currentStep || null,
+      actionId,
+      selectedPackageId: selectedPackageId || null,
+    });
+    return showPackageDetail(session, customer, agency, selectedPackageId);
   }
 
   if (session.currentStep === STEPS.CATEGORY_PACKAGES) {

@@ -7,7 +7,9 @@ const multer = require('multer');
 const packageController = require('../controllers/packageController');
 const authenticate = require('../middleware/authenticate');
 const requireRole = require('../middleware/requireRole');
+const requirePermission = require('../middleware/requirePermission');
 const validateBody = require('../middleware/validateBody');
+const { PERMISSIONS } = require('../constants/permissions');
 
 const router = Router();
 
@@ -75,36 +77,36 @@ const packageSchema = z.object({
 /**
  * GET /api/packages - List all packages
  */
-router.get('/', authenticate, packageController.list);
+router.get('/', authenticate, requirePermission(PERMISSIONS.PACKAGES_VIEW), packageController.list);
 
 /**
  * POST /api/packages/upload-image - Upload package image to Cloudinary (ADMIN only)
  */
-router.post('/upload-image', authenticate, requireRole('ADMIN'), upload.single('image'), packageController.uploadImage);
+router.post('/upload-image', authenticate, requireRole('ADMIN'), requirePermission(PERMISSIONS.PACKAGES_MANAGE), upload.single('image'), packageController.uploadImage);
 
 /**
  * POST /api/packages/upload-brochure - Upload package brochure PDF to Cloudinary (ADMIN only)
  */
-router.post('/upload-brochure', authenticate, requireRole('ADMIN'), brochureUpload.single('brochure'), packageController.uploadBrochure);
+router.post('/upload-brochure', authenticate, requireRole('ADMIN'), requirePermission(PERMISSIONS.PACKAGES_MANAGE), brochureUpload.single('brochure'), packageController.uploadBrochure);
 
 /**
  * GET /api/packages/:id - Get package by ID
  */
-router.get('/:id', authenticate, packageController.getById);
+router.get('/:id', authenticate, requirePermission(PERMISSIONS.PACKAGES_VIEW), packageController.getById);
 
 /**
  * POST /api/packages - Create a package (ADMIN only)
  */
-router.post('/', authenticate, requireRole('ADMIN'), validateBody(packageSchema), packageController.create);
+router.post('/', authenticate, requireRole('ADMIN'), requirePermission(PERMISSIONS.PACKAGES_MANAGE), validateBody(packageSchema), packageController.create);
 
 /**
  * PATCH /api/packages/:id - Update a package (ADMIN only)
  */
-router.patch('/:id', authenticate, requireRole('ADMIN'), validateBody(packageSchema.partial()), packageController.update);
+router.patch('/:id', authenticate, requireRole('ADMIN'), requirePermission(PERMISSIONS.PACKAGES_MANAGE), validateBody(packageSchema.partial()), packageController.update);
 
 /**
  * DELETE /api/packages/:id - Deactivate a package (ADMIN only)
  */
-router.delete('/:id', authenticate, requireRole('ADMIN'), packageController.deactivate);
+router.delete('/:id', authenticate, requireRole('ADMIN'), requirePermission(PERMISSIONS.PACKAGES_MANAGE), packageController.deactivate);
 
 module.exports = router;

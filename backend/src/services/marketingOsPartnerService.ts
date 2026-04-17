@@ -25,11 +25,13 @@ function getPartnerClient() {
 }
 
 function getTenantClient(tenantToken) {
+  ensureConfigured();
   return axios.create({
     baseURL: PARTNER_API_BASE_URL,
     timeout: 20000,
     headers: {
       'Content-Type': 'application/json',
+      'x-api-key': PARTNER_API_KEY,
       Authorization: `Bearer ${tenantToken}`,
     },
   });
@@ -107,6 +109,12 @@ async function sendTenantWhatsAppMedia(tenantToken, payload) {
   return response.data;
 }
 
+async function sendTenantWhatsAppReadTyping(tenantToken, payload) {
+  const client = getTenantClient(tenantToken);
+  const response = await client.post('/whatsapp/messages/read-typing', payload);
+  return response.data;
+}
+
 module.exports = {
   findTenantByEmail,
   createTenant,
@@ -117,4 +125,5 @@ module.exports = {
   sendTenantWhatsAppMessage,
   sendTenantWhatsAppInteractive,
   sendTenantWhatsAppMedia,
+  sendTenantWhatsAppReadTyping,
 };

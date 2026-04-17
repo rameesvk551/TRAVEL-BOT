@@ -6,6 +6,7 @@ const { updateSession } = require('./utils/sessionManager');
 
 const RESET_TO_MENU_KEYWORDS = new Set([
   'hi',
+  'gi',
   'hii',
   'hiii',
   'hello',
@@ -61,6 +62,13 @@ async function routeMessage(session, incoming, customer, agency) {
       await forwardToAgent(session, messageText, customer, agency);
       return;
     }
+  }
+
+  // Handle Meta Commerce cart orders first
+  if (incoming.type === 'ORDER') {
+    const { handleOrder } = require('./handlers/orderHandler');
+    await handleOrder(session, incoming, customer, agency);
+    return;
   }
 
   // Interactive WhatsApp replies should reach the flow handler first so CTA clicks

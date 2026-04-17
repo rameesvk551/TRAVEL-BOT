@@ -55,6 +55,11 @@ async function migrate() {
     allowNull: true,
   });
 
+  await ensureColumn('agencies', 'whatsapp_catalog_id', {
+    type: Sequelize.STRING(255),
+    allowNull: true,
+  });
+
   await ensureColumn('agencies', 'whatsapp_connection_error', {
     type: Sequelize.TEXT,
     allowNull: true,

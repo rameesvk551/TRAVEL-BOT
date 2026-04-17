@@ -7,6 +7,7 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const { Agency, Agent, RefreshToken } = require('../models');
 const { normalizePhone } = require('../utils/phoneUtils');
+const { ALL_PERMISSIONS } = require('../constants/permissions');
 
 const ACCESS_TOKEN_EXPIRY = '15m';
 const REFRESH_TOKEN_EXPIRY_DAYS = 7;
@@ -81,6 +82,7 @@ async function register(data) {
     email: agentEmail.toLowerCase(),
     passwordHash,
     role: 'ADMIN',
+    permissions: ALL_PERMISSIONS,
     lastSeenAt: new Date(),
   });
 

@@ -10,13 +10,15 @@ import {
   CalendarDaysIcon,
   UsersIcon,
   CubeIcon,
-  CreditCardIcon,
   ChartBarIcon,
   Cog6ToothIcon,
   ArrowRightOnRectangleIcon,
   SignalIcon,
   SignalSlashIcon,
   PlusIcon,
+  MegaphoneIcon,
+  QueueListIcon,
+  StarIcon,
 } from '@heroicons/react/24/outline';
 import client from '../api/client';
 import { getInitials } from './uiHelpers';
@@ -24,15 +26,20 @@ import { getInitials } from './uiHelpers';
 const navItems = [
   { to: '/', icon: HomeIcon, label: 'Dashboard' },
   { to: '/leads', icon: UserGroupIcon, label: 'Inbox' },
-  { to: '/bookings', icon: CalendarDaysIcon, label: 'Pipeline' },
+  { to: '/bookings', icon: CalendarDaysIcon, label: 'Leads' },
   { to: '/customers', icon: UsersIcon, label: 'Clients' },
   { to: '/settings', icon: Cog6ToothIcon, label: 'Settings' },
 ];
 
 const utilityItems = [
   { to: '/packages', icon: CubeIcon, label: 'Packages' },
-  { to: '/payments', icon: CreditCardIcon, label: 'Payments' },
   { to: '/analytics', icon: ChartBarIcon, label: 'Analytics' },
+];
+
+const marketingItems = [
+  { to: '/templates', icon: QueueListIcon, label: 'Templates' },
+  { to: '/campaigns', icon: MegaphoneIcon, label: 'Campaigns' },
+  { to: '/reviews', icon: StarIcon, label: 'Reviews' },
 ];
 
 export default function Sidebar() {
@@ -110,6 +117,33 @@ export default function Sidebar() {
         </div>
         <nav className="mt-2 space-y-1">
           {utilityItems.map(({ to, icon: Icon, label }) => {
+            const active = location.pathname.startsWith(to);
+
+            return (
+              <NavLink
+                key={to}
+                to={to}
+                onClick={() => {
+                  if (window.innerWidth < 1024) toggleSidebar();
+                }}
+                className={`flex items-center gap-3 rounded-[10px] px-3 py-2.5 text-sm font-medium transition ${
+                  active
+                    ? 'bg-slate-100 text-[#0d6a5f]'
+                    : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
+                }`}
+              >
+                <Icon className="h-5 w-5 shrink-0" />
+                <span>{label}</span>
+              </NavLink>
+            );
+          })}
+        </nav>
+
+        <div className="mt-6 px-3">
+          <p className="eyebrow">Marketing</p>
+        </div>
+        <nav className="mt-2 space-y-1">
+          {marketingItems.map(({ to, icon: Icon, label }) => {
             const active = location.pathname.startsWith(to);
 
             return (

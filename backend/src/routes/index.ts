@@ -7,6 +7,14 @@ const packageRoutes = require('./packages');
 const paymentRoutes = require('./payments');
 const messageRoutes = require('./messages');
 const analyticsRoutes = require('./analytics');
+const whatsappRoutes = require('./whatsapp');
+
+// Marketing routes
+const templateRoutes = require('./templates');
+const campaignRoutes = require('./campaigns');
+const dripRoutes = require('./drips');
+const referralRoutes = require('./referrals');
+const reviewRoutes = require('./reviews');
 
 function registerApiRoutes(app) {
   app.use('/api/auth', authRoutes);
@@ -18,6 +26,14 @@ function registerApiRoutes(app) {
   app.use('/api/payments', paymentRoutes);
   app.use('/api/messages', messageRoutes);
   app.use('/api/analytics', analyticsRoutes);
+  app.use('/api/whatsapp', whatsappRoutes);
+
+  // Marketing routes
+  app.use('/api/templates', templateRoutes);
+  app.use('/api/campaigns', campaignRoutes);
+  app.use('/api/drips', dripRoutes);
+  app.use('/api/referrals', referralRoutes);
+  app.use('/api/reviews', reviewRoutes);
 }
 
 module.exports = {

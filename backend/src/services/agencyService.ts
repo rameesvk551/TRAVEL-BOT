@@ -58,6 +58,13 @@ function serializeWhatsAppConnection(agency) {
     connectUrl: null,
     canLaunchEmbeddedSignup,
     marketingOsTenantId: agency.marketingOsTenantId || null,
+    tripFlow: {
+      id: agency.whatsappTripFlowId || null,
+      name: agency.whatsappTripFlowName || null,
+      status: agency.whatsappTripFlowStatus || null,
+      errorMessage: agency.whatsappTripFlowError || null,
+      lastSyncedAt: agency.whatsappTripFlowLastSyncedAt || null,
+    },
   };
 }
 
@@ -233,6 +240,15 @@ async function updateCurrentAgency(agencyId, updates) {
   const payload = { ...updates };
   if (payload.razorpayKeySecret) {
     payload.razorpayKeySecret = encrypt(payload.razorpayKeySecret);
+  }
+
+  if (
+    Object.prototype.hasOwnProperty.call(payload, 'whatsappTripFlowId')
+    || Object.prototype.hasOwnProperty.call(payload, 'whatsappTripFlowName')
+    || Object.prototype.hasOwnProperty.call(payload, 'whatsappTripFlowStatus')
+    || Object.prototype.hasOwnProperty.call(payload, 'whatsappTripFlowError')
+  ) {
+    payload.whatsappTripFlowLastSyncedAt = new Date();
   }
 
   const agency = await agencyRepository.updateById(agencyId, payload);

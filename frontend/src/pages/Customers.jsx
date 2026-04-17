@@ -10,15 +10,37 @@ function buildCustomers(leads) {
   leads.forEach((lead) => {
     if (!lead.customer) return;
     const existing = map.get(lead.customer.id);
-    if (!existing || new Date(lead.updatedAt || lead.createdAt) > new Date(existing.latestLead.updatedAt || existing.latestLead.createdAt)) {
+    const isBooked = lead.status === 'BOOKED';
+    if (!existing) {
       map.set(lead.customer.id, {
         ...lead.customer,
+        isClient: isBooked,
         latestLead: lead,
+        latestBookedLead: isBooked ? lead : null,
       });
+      return;
     }
+
+    const latestLead = new Date(lead.updatedAt || lead.createdAt) > new Date(existing.latestLead.updatedAt || existing.latestLead.createdAt)
+      ? lead
+      : existing.latestLead;
+    const latestBookedLead = isBooked
+      ? (!existing.latestBookedLead || new Date(lead.updatedAt || lead.createdAt) > new Date(existing.latestBookedLead.updatedAt || existing.latestBookedLead.createdAt)
+        ? lead
+        : existing.latestBookedLead)
+      : existing.latestBookedLead;
+
+    map.set(lead.customer.id, {
+      ...existing,
+      isClient: existing.isClient || isBooked,
+      latestLead,
+      latestBookedLead,
+    });
   });
 
-  return Array.from(map.values()).sort((a, b) => new Date(b.latestLead.updatedAt || b.latestLead.createdAt) - new Date(a.latestLead.updatedAt || a.latestLead.createdAt));
+  return Array.from(map.values())
+    .filter((customer) => customer.isClient)
+    .sort((a, b) => new Date(b.latestBookedLead?.updatedAt || b.latestBookedLead?.createdAt) - new Date(a.latestBookedLead?.updatedAt || a.latestBookedLead?.createdAt));
 }
 
 export default function Customers() {
@@ -37,7 +59,7 @@ export default function Customers() {
   }, [customers, selectedCustomerId]);
 
   const selectedCustomer = customers.find((customer) => customer.id === selectedCustomerId) || null;
-  const latestLead = selectedCustomer?.latestLead;
+  const latestLead = selectedCustomer?.latestBookedLead || selectedCustomer?.latestLead;
   const { data: messagesResponse } = useMessages(selectedCustomer?.id, { limit: 20 });
   const messages = messagesResponse?.data || [];
 
@@ -47,14 +69,14 @@ export default function Customers() {
         <aside className="rounded-[12px] border border-slate-200 bg-white">
           <div className="border-b border-slate-200 px-4 py-3">
             <h1 className="text-[20px] font-semibold tracking-tight text-slate-950">Clients</h1>
-            <p className="text-sm text-slate-500">Traveler records and latest activity</p>
+            <p className="text-sm text-slate-500">Traveler records that have been booked</p>
           </div>
 
           <div className="hide-scrollbar max-h-[760px] space-y-1 overflow-y-auto p-2">
             {isLoading ? (
               Array.from({ length: 6 }).map((_, index) => <div key={index} className="h-16 animate-pulse rounded-[10px] bg-slate-100" />)
             ) : customers.length === 0 ? (
-              <div className="p-4 text-sm text-slate-500">No customer profiles yet.</div>
+              <div className="p-4 text-sm text-slate-500">No booked clients yet.</div>
             ) : (
               customers.map((customer) => (
                 <button
@@ -66,7 +88,7 @@ export default function Customers() {
                   }`}
                 >
                   <p className="text-sm font-medium text-slate-900">{customer.name || 'Traveler'}</p>
-                  <p className="mt-1 text-sm text-slate-500">{customer.latestLead?.destination || 'Destination pending'}</p>
+                  <p className="mt-1 text-sm text-slate-500">{customer.latestBookedLead?.destination || 'Destination pending'}</p>
                 </button>
               ))
             )}
@@ -74,13 +96,13 @@ export default function Customers() {
         </aside>
 
         {!selectedCustomer ? (
-          <div className="rounded-[12px] border border-slate-200 bg-white p-8 text-sm text-slate-500">Select a client to view details.</div>
+          <div className="rounded-[12px] border border-slate-200 bg-white p-8 text-sm text-slate-500">Select a booked client to view details.</div>
         ) : (
           <div className="space-y-4">
             <section className="rounded-[12px] border border-slate-200 bg-white px-5 py-4">
               <h1 className="text-[24px] font-semibold tracking-tight text-slate-950">{selectedCustomer.name || 'Traveler'}</h1>
               <div className="mt-3 flex flex-wrap items-center gap-2">
-                <span className={`badge ${getStatusTone(latestLead?.status)}`}>{latestLead?.status || 'NEW'}</span>
+                <span className={`badge ${getStatusTone(latestLead?.status)}`}>{latestLead?.status || 'BOOKED'}</span>
                 <span className="text-sm text-slate-500">{latestLead?.destination || 'Trip brief pending'}</span>
               </div>
             </section>

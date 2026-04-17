@@ -3,10 +3,13 @@ import { useNavigate } from 'react-router-dom';
 import { PlusIcon } from '@heroicons/react/24/outline';
 import { packagesApi } from '../api/packagesApi';
 import { formatCurrency } from '../utils/formatters';
+import { useAuthStore } from '../store/authStore';
 
 export default function Packages() {
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const agentRole = useAuthStore((state) => state.agent?.role);
+  const canManagePackages = agentRole === 'ADMIN';
   const { data, isLoading } = useQuery({
     queryKey: ['packages'],
     queryFn: () => packagesApi.list(),
@@ -26,11 +29,19 @@ export default function Packages() {
           <h1 className="text-[28px] font-semibold tracking-tight text-slate-950">Packages</h1>
           <p className="text-sm text-slate-500">Maintain the itinerary catalog used for quoting and chat flows.</p>
         </div>
-        <button type="button" onClick={() => navigate('/packages/new')} className="shell-button-primary">
-          <PlusIcon className="h-4 w-4" />
-          New Package
-        </button>
+        {canManagePackages ? (
+          <button type="button" onClick={() => navigate('/packages/new')} className="shell-button-primary">
+            <PlusIcon className="h-4 w-4" />
+            New Package
+          </button>
+        ) : null}
       </section>
+
+      {!canManagePackages ? (
+        <div className="rounded-[12px] border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          Your account can view packages, but only ADMIN users can create, edit, or deactivate them.
+        </div>
+      ) : null}
 
       <div className="rounded-[12px] border border-slate-200 bg-white">
         <div className="overflow-x-auto">
@@ -76,16 +87,20 @@ export default function Packages() {
                       </span>
                     </td>
                     <td className="px-4 py-4">
-                      <div className="flex gap-2">
-                        <button type="button" onClick={() => navigate(`/packages/${pkg.id}/edit`)} className="shell-button-secondary">Edit</button>
-                        <button
-                          type="button"
-                          onClick={() => deleteMutation.mutate(pkg.id)}
-                          className="rounded-[10px] bg-slate-100 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-200"
-                        >
-                          {pkg.isActive ? 'Deactivate' : 'Activate'}
-                        </button>
-                      </div>
+                      {canManagePackages ? (
+                        <div className="flex gap-2">
+                          <button type="button" onClick={() => navigate(`/packages/${pkg.id}/edit`)} className="shell-button-secondary">Edit</button>
+                          <button
+                            type="button"
+                            onClick={() => deleteMutation.mutate(pkg.id)}
+                            className="rounded-[10px] bg-slate-100 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-200"
+                          >
+                            {pkg.isActive ? 'Deactivate' : 'Activate'}
+                          </button>
+                        </div>
+                      ) : (
+                        <span className="text-xs font-medium text-slate-400">View only</span>
+                      )}
                     </td>
                   </tr>
                 ))

@@ -11,11 +11,18 @@ async function list(req, res, next) {
 
 async function create(req, res, next) {
   try {
-    const agent = await agentService.createAgent(req.body, req.agency.id);
-    res.status(201).json({ success: true, data: agent, message: 'Agent created' });
+    const result = await agentService.createAgent(req.body, req.agency.id, req.agent, req.agency);
+    res.status(201).json({ success: true, data: result, message: 'Agent created' });
   } catch (err) {
     next(err);
   }
+}
+
+async function permissionCatalog(_req, res) {
+  res.json({
+    success: true,
+    data: agentService.ALL_PERMISSIONS,
+  });
 }
 
 async function update(req, res, next) {
@@ -44,4 +51,5 @@ module.exports = {
   create,
   update,
   updateStatus,
+  permissionCatalog,
 };

@@ -72,6 +72,31 @@ module.exports = (sequelize) => {
       allowNull: true,
       comment: 'Display phone number returned by the provider',
     },
+    whatsappTripFlowId: {
+      type: DataTypes.STRING(255),
+      allowNull: true,
+      comment: 'Meta WhatsApp Flow ID used for trip/package selection for this agency',
+    },
+    whatsappTripFlowName: {
+      type: DataTypes.STRING(255),
+      allowNull: true,
+      comment: 'Last known Meta WhatsApp Flow name for this agency',
+    },
+    whatsappTripFlowStatus: {
+      type: DataTypes.STRING(50),
+      allowNull: true,
+      comment: 'Trip flow lifecycle state such as DRAFT or PUBLISHED',
+    },
+    whatsappTripFlowError: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+      comment: 'Last publish or validation error reported for the trip flow',
+    },
+    whatsappTripFlowLastSyncedAt: {
+      type: DataTypes.DATE,
+      allowNull: true,
+      comment: 'Last time trip flow metadata was updated for this agency',
+    },
     whatsappConnectionError: {
       type: DataTypes.TEXT,
       allowNull: true,
@@ -99,6 +124,16 @@ module.exports = (sequelize) => {
     plan: {
       type: DataTypes.ENUM('FREE', 'STARTER', 'PRO'),
       defaultValue: 'FREE',
+    },
+    googleReviewLink: {
+      type: DataTypes.STRING(255),
+      allowNull: true,
+      comment: 'Google review link for post-trip review redirection',
+    },
+    whatsappCatalogId: {
+      type: DataTypes.STRING(255),
+      allowNull: true,
+      comment: 'Meta Commerce Catalog ID for Native WhatsApp E-Commerce',
     },
     isActive: {
       type: DataTypes.BOOLEAN,

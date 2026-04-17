@@ -146,8 +146,22 @@ async function handleLeadCapture(session, messageText, customer, agency) {
       }
 
       await updateSession(session, {
-        currentStep: 'CONFIRMING',
+        currentStep: 'COLLECTING_SOURCE',
         collectedData: { budget: budget.toLocaleString('en-IN') },
+      });
+
+      const response = lang === 'ML'
+        ? 'നിങ്ങൾ ഞങ്ങളെക്കുറിച്ച് എങ്ങനെ അറിഞ്ഞു? (ഉദാഹരണത്തിന്: ഇൻസ്റ്റാഗ്രാം, സുഹൃത്ത്, ഫേസ്ബുക്ക്)'
+        : 'How did you hear about us? (e.g., Instagram, Friend, Facebook, Website)';
+      await whatsappService.sendTextMessage(customer.phone, response, ctx);
+      return response;
+    }
+
+    // ========== STEP: COLLECTING_SOURCE ==========
+    case 'COLLECTING_SOURCE': {
+      await updateSession(session, {
+        currentStep: 'CONFIRMING',
+        collectedData: { source: text },
       });
 
       const data = {
@@ -155,7 +169,8 @@ async function handleLeadCapture(session, messageText, customer, agency) {
         destination: session.collectedData.destination,
         dates: session.collectedData.dates,
         travellers: session.collectedData.travellers,
-        budget: budget.toLocaleString('en-IN'),
+        budget: session.collectedData.budget,
+        source: text,
       };
 
       const response = templates.confirmSummary(data, lang);
@@ -168,9 +183,15 @@ async function handleLeadCapture(session, messageText, customer, agency) {
       const upper = text.toUpperCase().trim();
 
       if (upper === 'YES' || upper === 'Y' || upper === 'CONFIRM' || upper === 'OK') {
-        // Create lead in DB
         const data = session.collectedData;
         const budgetPaise = parseInt(String(data.budget).replace(/[,\s]/g, ''), 10) * 100;
+
+        let source = 'whatsapp_organic';
+        const rawSourceUpper = (data.source || '').toUpperCase();
+        if (rawSourceUpper.includes('INSTA')) source = 'instagram_ad';
+        else if (rawSourceUpper.includes('FACEBOOK') || rawSourceUpper.includes('FB')) source = 'facebook_ad';
+        else if (rawSourceUpper.includes('FRIEND') || rawSourceUpper.includes('REF')) source = 'referral';
+        else if (rawSourceUpper.includes('WEB')) source = 'website';
 
         const lead = await leadService.createLead({
           customerId: customer.id,
@@ -178,8 +199,20 @@ async function handleLeadCapture(session, messageText, customer, agency) {
           travelDates: data.dates,
           travellers: data.travellers,
           budgetPerPerson: budgetPaise,
-          notes: `Collected via WhatsApp bot`,
+          source: source,
+          notes: `Collected via WhatsApp bot. Source input: ${data.source}`,
         }, agency.id);
+
+        // Try to find a referral code if they said "referred by CODE"
+        const refMatch = rawSourceUpper.match(/[A-Z0-9]{6,10}/);
+        if (refMatch && source === 'referral') {
+           const referralService = require(path.resolve(__dirname, '../../../backend/src/services/referralService.ts'));
+           await referralService.applyReferralCode(refMatch[0], lead.id, agency.id).catch(() => {});
+        }
+
+        // Auto enroll in drip sequences
+        const dripService = require(path.resolve(__dirname, '../../../backend/src/services/dripService.ts'));
+        await dripService.autoEnroll('LEAD_CREATED', customer.id, lead.id, agency.id, data.destination).catch(() => {});
 
         // Assign to least-busy agent
         const agent = await leadService.findLeastBusyAgent(agency.id);

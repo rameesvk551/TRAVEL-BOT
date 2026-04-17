@@ -1,0 +1,106 @@
+{
+  "version": "7.2",
+  "data_api_version": "3.0",
+  "routing_model": {
+    "ENQUIRY_FORM": []
+  },
+  "screens": [
+    {
+      "id": "ENQUIRY_FORM",
+      "title": "Package Enquiry",
+      "terminal": true,
+      "data": {
+        "package_id": {
+          "type": "string",
+          "__example__": "pkg_goa_01"
+        },
+        "package_name": {
+          "type": "string",
+          "__example__": "Goa Bliss Escape"
+        },
+        "package_summary": {
+          "type": "string",
+          "__example__": "INR 24,999 • 3 Nights 4 Days"
+        },
+        "customer_name": {
+          "type": "string",
+          "__example__": "Rahul Sharma"
+        }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "Form",
+            "name": "enquiry_form",
+            "children": [
+              {
+                "type": "TextHeading",
+                "text": "${data.package_name}"
+              },
+              {
+                "type": "TextBody",
+                "text": "${data.package_summary}"
+              },
+              {
+                "type": "TextInput",
+                "label": "Full Name",
+                "name": "name",
+                "required": true,
+                "input-type": "text",
+                "helper-text": "Enter your full name"
+              },
+              {
+                "type": "TextInput",
+                "label": "Travel Date or Month",
+                "name": "travelDate",
+                "required": true,
+                "input-type": "text",
+                "helper-text": "Example: 20 May 2026 or June 2026"
+              },
+              {
+                "type": "TextInput",
+                "label": "Travellers",
+                "name": "travellers",
+                "required": true,
+                "input-type": "number",
+                "helper-text": "Total travellers (1 to 50)"
+              },
+              {
+                "type": "TextInput",
+                "label": "Budget per Person",
+                "name": "budget",
+                "required": true,
+                "input-type": "number",
+                "helper-text": "Approximate budget per person in rupees"
+              },
+              {
+                "type": "TextInput",
+                "label": "Other Details (Optional)",
+                "name": "notes",
+                "required": false,
+                "input-type": "text",
+                "helper-text": "Honeymoon, family, hotel preference, etc."
+              },
+              {
+                "type": "Footer",
+                "label": "Submit Enquiry",
+                "on-click-action": {
+                  "name": "complete",
+                  "payload": {
+                    "packageId": "${data.package_id}",
+                    "name": "${form.name}",
+                    "travelDate": "${form.travelDate}",
+                    "travellers": "${form.travellers}",
+                    "budget": "${form.budget}",
+                    "notes": "${form.notes}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

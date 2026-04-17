@@ -4,11 +4,13 @@
 
 const crypto = require('crypto');
 const path = require('path');
-const { Agency, Message } = require(path.resolve(__dirname, '../../backend/src/models/index.ts'));
+const { Agency, Agent, Message } = require(path.resolve(__dirname, '../../backend/src/models/index.ts'));
 const whatsappService = require(path.resolve(__dirname, '../../backend/src/services/whatsappService.ts'));
 const schedulerService = require(path.resolve(__dirname, '../../backend/src/services/schedulerService.ts'));
 const { loadOrCreateSession } = require('./utils/sessionManager');
 const { routeMessage } = require('./botRouter');
+const { handleAgentLeadAction } = require('./handlers/agentLeadHandler');
+const { ensureLead } = require('./handlers/travelFlowHandler');
 const { normalizePhone } = require(path.resolve(__dirname, '../../backend/src/utils/phoneUtils.ts'));
 
 /**
@@ -67,7 +69,11 @@ async function handleIncoming(req, res) {
     }
 
     // Extract messages from webhook payload
-    const entries = body.entry || [];
+    const entries = Array.isArray(body.entry) ? body.entry : [];
+    if (!entries.length) {
+      console.warn('[Webhook] No entry array found in incoming payload');
+      return;
+    }
     for (const entry of entries) {
       const changes = entry.changes || [];
       for (const change of changes) {
@@ -113,6 +119,25 @@ async function processMessage(msg, metadata) {
   // Find agency by WhatsApp number
   const agency = await Agency.findOne({
     where: { whatsappNumber: toPhone },
+    // Keep attributes minimal to tolerate partial production schemas.
+    attributes: [
+      'id',
+      'name',
+      'phone',
+      'email',
+      'whatsappNumber',
+      'whatsappProvider',
+      'whatsappChannelId',
+      'whatsappBusinessAccountId',
+      'whatsappPhoneNumberId',
+      'whatsappDisplayPhoneNumber',
+      'whatsappTripFlowId',
+      'whatsappTripFlowName',
+      'whatsappTripFlowStatus',
+      'whatsappCatalogId',
+      'marketingOsTenantId',
+      'isActive',
+    ],
   });
 
   if (!agency) {
@@ -120,8 +145,31 @@ async function processMessage(msg, metadata) {
     return;
   }
 
+  const agent = await Agent.findOne({
+    where: { agencyId: agency.id, phone: fromPhone },
+    attributes: ['id', 'name', 'phone', 'email', 'agencyId'],
+  });
+
+  if (agent) {
+    await handleAgentLeadAction({ agent, agency, incoming }).catch((err) => {
+      console.error('[Webhook] Error processing agent action:', err.message);
+    });
+    return;
+  }
+
   // Load or create session + customer
   const { session, customer } = await loadOrCreateSession(fromPhone, agency.id);
+
+  const profileName = msg?.contacts?.[0]?.profile?.name || msg?.profile?.name || '';
+  if (profileName && profileName !== customer.name) {
+    await customer.update({ name: profileName });
+  }
+
+  await ensureLead(session, customer, agency, {
+    status: 'JUST_CONTACTED',
+    notes: 'First WhatsApp message received',
+    preserveExistingStatus: true,
+  });
 
   try {
     await schedulerService.cancelChatFollowUps(customer.id, agency.id);
@@ -143,6 +191,16 @@ async function processMessage(msg, metadata) {
 
   // Process through bot with full fallback protection
   try {
+    await whatsappService.sendTypingIndicator(
+      customer.phone,
+      waMessageId,
+      { customerId: customer.id, agencyId: agency.id }
+    );
+    await whatsappService.sendProcessingPlaceholder(
+      customer.phone,
+      { customerId: customer.id, agencyId: agency.id }
+    );
+    await whatsappService.waitForReplyPacing({ customerId: customer.id, agencyId: agency.id });
     await routeMessage(session, incoming, customer, agency);
   } catch (err) {
     console.error('[Webhook] Bot processing error:', err.message);
@@ -161,6 +219,15 @@ async function processMessage(msg, metadata) {
 }
 
 function extractIncoming(msg) {
+  if (msg.type === 'order' || msg.order) {
+    return {
+      text: msg.order?.text || 'Submitted a cart order',
+      actionId: 'order_submitted',
+      type: 'ORDER',
+      order: msg.order,
+    };
+  }
+
   const interactive = msg.interactive || {};
 
   if (interactive.button_reply) {

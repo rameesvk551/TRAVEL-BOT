@@ -146,6 +146,7 @@ async function createLead(data, agencyId) {
     travelDates,
     travellers,
     budgetPerPerson,
+    interest,
     notes,
     assignedAgentId,
     packageId,
@@ -179,6 +180,7 @@ async function createLead(data, agencyId) {
     travelDates,
     travellers,
     budgetPerPerson,
+    interest,
     packageId: packageId || null,
     notes,
     lostReason,
@@ -206,7 +208,7 @@ async function updateLead(leadId, agencyId, updates) {
   const allowedFields = [
     'status', 'assignedAgentId', 'destination', 'travelDates',
     'travellers', 'budgetPerPerson', 'packageId', 'notes', 'lostReason',
-    'travelStart', 'travelEnd',
+    'travelStart', 'travelEnd', 'interest',
   ];
 
   const filtered = {};
@@ -251,7 +253,7 @@ async function findLeastBusyAgent(agencyId) {
       const count = await Lead.count({
         where: {
           assignedAgentId: agent.id,
-          status: { [Op.in]: ['NEW', 'CONTACTED', 'QUOTED', 'NEGOTIATING'] },
+          status: { [Op.in]: ['JUST_CONTACTED', 'NEW', 'ENQUIRY', 'CONTACTED', 'QUOTED', 'NEGOTIATING'] },
         },
       });
       return { agent, count };

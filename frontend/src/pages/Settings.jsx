@@ -108,6 +108,8 @@ export default function Settings() {
   const [form, setForm] = useState({
     name: agency?.name || '',
     phone: agency?.phone || '',
+    googleReviewLink: agency?.googleReviewLink || '',
+    whatsappCatalogId: agency?.whatsappCatalogId || '',
     razorpayKeyId: '',
     razorpayKeySecret: '',
     webhookSecret: '',
@@ -177,6 +179,8 @@ export default function Settings() {
     const data = {};
     if (form.name !== agency?.name) data.name = form.name;
     if (form.phone !== agency?.phone) data.phone = form.phone;
+    if (form.googleReviewLink !== agency?.googleReviewLink) data.googleReviewLink = form.googleReviewLink;
+    if (form.whatsappCatalogId !== agency?.whatsappCatalogId) data.whatsappCatalogId = form.whatsappCatalogId;
     if (form.razorpayKeyId) data.razorpayKeyId = form.razorpayKeyId;
     if (form.razorpayKeySecret) data.razorpayKeySecret = form.razorpayKeySecret;
     if (form.webhookSecret) data.webhookSecret = form.webhookSecret;
@@ -270,6 +274,10 @@ export default function Settings() {
                 <input value={form.phone} onChange={(event) => update('phone', event.target.value)} className="shell-input-rect" />
               </Field>
 
+              <Field label="Google Review Link" hint="Sent by the bot when customers give 4 or 5 star ratings.">
+                <input value={form.googleReviewLink} onChange={(event) => update('googleReviewLink', event.target.value)} placeholder="https://g.page/r/your-agency/review" className="shell-input-rect" />
+              </Field>
+
               <Field label="WhatsApp number" hint="This updates automatically after your provider connection is approved.">
                 <input value={whatsappNumber} disabled className="shell-input-rect cursor-not-allowed opacity-60" />
               </Field>
@@ -324,6 +332,16 @@ export default function Settings() {
               <div className="shell-panel-soft p-4">
                 <p className="eyebrow">Meta Phone Number ID</p>
                 <p className="mt-2 break-all text-sm font-semibold text-slate-900">{connection?.phoneNumberId || 'Waiting for provider sync'}</p>
+              </div>
+              <div className="shell-panel-soft p-4">
+                <p className="eyebrow">Meta Commerce Catalog ID</p>
+                <p className="mt-2 text-xs text-slate-500 mb-2">Required for native WhatsApp e-commerce (product catalogs and cart checkout). Get this from Meta Commerce Manager.</p>
+                <input 
+                  value={form.whatsappCatalogId} 
+                  onChange={(event) => update('whatsappCatalogId', event.target.value)} 
+                  placeholder="e.g. 1029384756" 
+                  className="shell-input-rect bg-white" 
+                />
               </div>
             </div>
 

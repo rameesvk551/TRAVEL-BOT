@@ -15,6 +15,24 @@ function canUseCloudApi(phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID) {
   return !!(process.env.WHATSAPP_CLOUD_API_TOKEN && phoneNumberId);
 }
 
+function isTypingIndicatorEnabled() {
+  return String(process.env.WHATSAPP_TYPING_ENABLED || 'true').toLowerCase() !== 'false';
+}
+
+function getSimulatedTypingDelayMs() {
+  const value = Number(process.env.WHATSAPP_SIMULATED_TYPING_DELAY_MS || 1200);
+  if (!Number.isFinite(value) || value < 0) return 1200;
+  return Math.min(value, 5000);
+}
+
+function isProcessingPlaceholderEnabled() {
+  return String(process.env.WHATSAPP_PROCESSING_PLACEHOLDER_ENABLED || 'true').toLowerCase() !== 'false';
+}
+
+function getProcessingPlaceholderText() {
+  return String(process.env.WHATSAPP_PROCESSING_PLACEHOLDER_TEXT || 'Checking packages for you, one moment...').trim();
+}
+
 function getMetaClient(phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID) {
   if (!canUseCloudApi(phoneNumberId)) return null;
 
@@ -51,7 +69,9 @@ async function markMessageSent(message, response) {
   const waMessageId = response?.data?.messages?.[0]?.id
     || response?.data?.id
     || response?.data?.data?.messageId
+    || response?.data?.data?.providerMessageId
     || response?.data?.messageId
+    || response?.data?.providerMessageId
     || null;
   if (waMessageId) {
     await message.update({ waMessageId });
@@ -98,8 +118,88 @@ async function sendViaMeta(phone, payload, phoneNumberId) {
   });
 }
 
+async function sendTypingIndicator(phone, incomingWaMessageId, context = {}) {
+  if (!isTypingIndicatorEnabled()) return null;
+
+  const messageId = String(incomingWaMessageId || '').trim();
+  if (!messageId) return null;
+
+  try {
+    const channel = await resolveAgencyChannel(context);
+
+    if (canUseMarketingOs(channel) && channel.marketingOsTenantId) {
+      const tenantToken = await marketingOsPartnerService.getTenantToken(channel.marketingOsTenantId);
+      return await marketingOsPartnerService.sendTenantWhatsAppReadTyping(tenantToken, {
+        tenantId: channel.marketingOsTenantId,
+        to: toMetaRecipient(phone),
+        messageId,
+      });
+    }
+
+    if (!canUseCloudApi(channel.phoneNumberId)) return null;
+
+    return await sendViaMeta(phone, {
+      status: 'read',
+      message_id: messageId,
+      typing_indicator: {
+        type: 'text',
+      },
+    }, channel.phoneNumberId);
+  } catch (err) {
+    console.warn('[WhatsAppService] sendTypingIndicator error:', err.response?.data || err.message);
+    return null;
+  }
+}
+
+async function waitForReplyPacing(context = {}) {
+  if (!isTypingIndicatorEnabled()) return;
+
+  try {
+    const channel = await resolveAgencyChannel(context);
+
+    // Marketing OS currently does not expose native typing indicator controls,
+    // so we pause briefly to emulate human response pacing.
+    if (canUseMarketingOs(channel)) {
+      const delayMs = getSimulatedTypingDelayMs();
+      if (delayMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
+    }
+  } catch (err) {
+    console.warn('[WhatsAppService] waitForReplyPacing error:', err.response?.data || err.message);
+  }
+}
+
+async function sendProcessingPlaceholder(phone, context = {}) {
+  if (!isProcessingPlaceholderEnabled()) return null;
+
+  try {
+    const channel = await resolveAgencyChannel(context);
+    if (!canUseMarketingOs(channel)) return null;
+
+    const text = getProcessingPlaceholderText();
+    if (!text) return null;
+
+    return sendTextMessage(phone, text, context);
+  } catch (err) {
+    console.warn('[WhatsAppService] sendProcessingPlaceholder error:', err.response?.data || err.message);
+    return null;
+  }
+}
+
 function canUseMarketingOs(channel = {}) {
   return channel?.provider === 'MARKETING_OS' && !!channel?.marketingOsTenantId;
+}
+
+function ensureMarketingOsSuccess(data, scope) {
+  if (data?.success === false) {
+    const error = Object.assign(new Error(data?.error || `${scope} failed`), {
+      response: { data },
+    });
+    throw error;
+  }
+
+  return data;
 }
 
 async function sendViaMarketingOs(phone, payload, tenantId) {
@@ -145,6 +245,7 @@ async function sendViaMarketingOs(phone, payload, tenantId) {
     });
   }
 
+  ensureMarketingOsSuccess(data, `Marketing OS ${payload.type || 'message'} send`);
   return { data };
 }
 
@@ -695,6 +796,73 @@ async function sendFallbackMessage(phone, agencyPhone, context) {
   return sendTextMessage(phone, content, context);
 }
 
+async function sendCatalogMessage(phone, body, catalogId, productIds, context, options = {}) {
+  const fallbackContent = `${options.headerText ? `*${options.headerText}*\n` : ''}${body}\n\n*Check out our Catalog inside WhatsApp!*${options.footerText ? `\n${options.footerText}` : ''}`.trim();
+  const channel = await resolveAgencyChannel(context);
+
+  if (!catalogId || !productIds || productIds.length === 0) {
+    return sendTextMessage(phone, fallbackContent, context);
+  }
+
+  const message = await createOutboundMessage(context, {
+    content: fallbackContent,
+    type: 'TEXT', // Internal fallback representation since we don't have a CATALOG type
+  });
+
+  const sections = [
+    {
+      title: 'Our Packages',
+      product_items: productIds.slice(0, 30).map((id) => ({ product_retailer_id: String(id) })),
+    },
+  ];
+
+  if (canUseMarketingOs(channel)) {
+    try {
+      const response = await sendViaMarketingOs(phone, {
+        type: 'interactive',
+        interactiveContent: {
+          type: 'PRODUCT_LIST',
+          header: options.headerText,
+          body,
+          footer: options.footerText,
+          action: {
+            catalog_id: catalogId,
+            sections,
+          },
+        },
+      }, channel.marketingOsTenantId);
+
+      return markMessageSent(message, response);
+    } catch (err) {
+      return markMessageFailed(message, 'sendCatalogMessage', err);
+    }
+  }
+
+  if (!canUseCloudApi(channel.phoneNumberId)) {
+    return sendTextMessage(phone, fallbackContent, context);
+  }
+
+  try {
+    const response = await sendViaMeta(phone, {
+      type: 'interactive',
+      interactive: {
+        type: 'product_list',
+        header: options.headerText ? { type: 'text', text: options.headerText } : undefined,
+        body: { text: body },
+        footer: options.footerText ? { text: options.footerText } : undefined,
+        action: {
+          catalog_id: catalogId,
+          sections,
+        },
+      },
+    }, channel.phoneNumberId);
+
+    return markMessageSent(message, response);
+  } catch (err) {
+    return markMessageFailed(message, 'sendCatalogMessage', err);
+  }
+}
+
 async function updateMessageStatus(waMessageId, newStatus) {
   if (!waMessageId) return;
 
@@ -714,6 +882,9 @@ async function updateMessageStatus(waMessageId, newStatus) {
 }
 
 module.exports = {
+  sendTypingIndicator,
+  waitForReplyPacing,
+  sendProcessingPlaceholder,
   sendTextMessage,
   sendButtonsMessage,
   sendMediaButtonsMessage,
@@ -722,6 +893,7 @@ module.exports = {
   sendDocumentMessage,
   sendFlowMessage,
   sendTemplateMessage,
+  sendCatalogMessage,
   sendFallbackMessage,
   updateMessageStatus,
 };

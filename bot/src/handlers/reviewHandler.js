@@ -16,34 +16,60 @@ async function handleReview(session, messageText, customer, agency) {
   const ctx = { customerId: customer.id, agencyId: agency.id };
   const text = messageText.trim();
 
-  // Try to extract star rating
-  const ratingMatch = text.match(/[1-5]/);
+  // Try to extract star rating if in REVIEW step
+  if (session.currentStep === 'REVIEW') {
+    const ratingMatch = text.match(/[1-5]/);
 
-  if (ratingMatch) {
-    const rating = parseInt(ratingMatch[0], 10);
-    let response;
+    if (ratingMatch) {
+      const rating = parseInt(ratingMatch[0], 10);
+      
+      const reviewService = require(path.resolve(__dirname, '../../../backend/src/services/reviewService.ts'));
+      await reviewService.saveReview({
+        agencyId: agency.id,
+        customerId: customer.id,
+        rating
+      }).catch(console.error);
 
-    if (rating >= 4) {
-      response = `Thank you for the amazing ${rating}-star rating! ⭐ We're thrilled you had a wonderful trip! 🎉\n\nWould you like to plan your next adventure with us?`;
-    } else if (rating >= 3) {
-      response = `Thank you for your ${rating}-star feedback! We appreciate your honesty and will work to make your next trip even better. 💪`;
-    } else {
-      response = `We're sorry your experience wasn't up to expectations. 😔 Your feedback matters to us. Our team will reach out to you to understand how we can improve.`;
+      if (rating >= 4) {
+        const response = `Thank you for the amazing ${rating}-star rating! ⭐ We're thrilled you had a wonderful trip! 🎉\n\nCould you write a short 1-2 sentence review for us?`;
+        await whatsappService.sendTextMessage(customer.phone, response, ctx);
+        await updateSession(session, { currentStep: 'REVIEW_TESTIMONIAL', collectedData: { rating } });
+        return;
+      } else {
+        const response = `Thank you for your ${rating}-star feedback. We appreciate your honesty.\n\nCould you let us know what we could improve?`;
+        await whatsappService.sendTextMessage(customer.phone, response, ctx);
+        await updateSession(session, { currentStep: 'REVIEW_TESTIMONIAL', collectedData: { rating } });
+        return;
+      }
     }
-
-    await whatsappService.sendTextMessage(customer.phone, response, ctx);
-
-    // Reset session to allow new conversations
-    await updateSession(session, { currentStep: 'COMPLETE' });
-    return;
   }
 
-  // If text response instead of rating
-  if (text.length > 5) {
-    const response = 'Thank you for sharing your experience! 🙏 Your feedback helps us serve you better.\n\nWould you like to plan another trip? Just say hi! 👋';
-    await whatsappService.sendTextMessage(customer.phone, response, ctx);
-    await updateSession(session, { currentStep: 'COMPLETE' });
-    return;
+  // If in TESTIMONIAL step
+  if (session.currentStep === 'REVIEW_TESTIMONIAL') {
+    if (text.length > 2) {
+      const reviewService = require(path.resolve(__dirname, '../../../backend/src/services/reviewService.ts'));
+      await reviewService.saveReview({
+        agencyId: agency.id,
+        customerId: customer.id,
+        rating: session.collectedData.rating,
+        testimonial: text
+      }).catch(console.error);
+
+      let response = 'Thank you for sharing your experience! 🙏 Your feedback helps us serve you better.\n\nWould you like to plan another trip? Just say hi! 👋';
+      
+      // If rating was 4 or 5, ask for Google review
+      if (session.collectedData.rating >= 4) {
+         if (agency.googleReviewLink) {
+             response = `Thank you for the amazing feedback! 🙏\n\nWould you mind sharing it on Google? It helps other travelers discover us!\n👉 ${agency.googleReviewLink}\n\nWould you like to plan another trip? Just say hi!`;
+         } else {
+             response = `Thank you for the amazing feedback! 🙏\n\nWe really appreciate your support. Would you like to plan another trip? Just say hi!`;
+         }
+      }
+      
+      await whatsappService.sendTextMessage(customer.phone, response, ctx);
+      await updateSession(session, { currentStep: 'COMPLETE' });
+      return;
+    }
   }
 
   // Didn't understand

@@ -3,9 +3,12 @@ import { useQuery } from '@tanstack/react-query';
 import {
   AdjustmentsHorizontalIcon,
   EllipsisVerticalIcon,
+  CalendarDaysIcon,
+  CheckCircleIcon,
   PaperAirplaneIcon,
   PhoneIcon,
   PlusIcon,
+  TrashIcon,
   UserCircleIcon,
   XMarkIcon,
 } from '@heroicons/react/24/outline';
@@ -39,6 +42,13 @@ const EMPTY_EDIT_FORM = {
   lostReason: '',
 };
 
+const EMPTY_FOLLOWUP_FORM = {
+  scheduledAt: '',
+  note: '',
+};
+
+const FOLLOWUP_STORAGE_KEY = 'travel-bot.lead-followups';
+
 function toBudgetPaise(value) {
   const numeric = Number(String(value || '').replace(/[^\d.]/g, ''));
   if (!numeric) return undefined;
@@ -48,6 +58,278 @@ function toBudgetPaise(value) {
 function fromBudgetPaise(value) {
   if (!value) return '';
   return String(Math.round(value / 100));
+}
+
+function loadFollowups() {
+  if (typeof window === 'undefined') return {};
+
+  try {
+    return JSON.parse(window.localStorage.getItem(FOLLOWUP_STORAGE_KEY) || '{}');
+  } catch {
+    return {};
+  }
+}
+
+function LeadDrawer({
+  isOpen,
+  lead,
+  agents,
+  quickFacts,
+  editForm,
+  setEditForm,
+  onClose,
+  onSaveLead,
+  isSaving,
+  followups,
+  followupForm,
+  setFollowupForm,
+  onAddFollowup,
+  onToggleFollowup,
+  onDeleteFollowup,
+}) {
+  const sortedFollowups = useMemo(
+    () => [...followups].sort((left, right) => new Date(left.scheduledAt) - new Date(right.scheduledAt)),
+    [followups]
+  );
+
+  if (!lead) return null;
+
+  return (
+    <div className={`fixed inset-0 z-50 transition ${isOpen ? 'pointer-events-auto' : 'pointer-events-none'}`}>
+      <button
+        type="button"
+        aria-label="Close lead drawer"
+        onClick={onClose}
+        className={`absolute inset-0 bg-slate-950/45 backdrop-blur-sm transition-opacity ${isOpen ? 'opacity-100' : 'opacity-0'}`}
+      />
+
+      <aside
+        className={`absolute right-0 top-0 flex h-full w-full max-w-[540px] flex-col border-l border-slate-200 bg-white shadow-[0_24px_80px_-36px_rgba(15,23,42,0.45)] transition-transform duration-300 ${
+          isOpen ? 'translate-x-0' : 'translate-x-full'
+        }`}
+      >
+        <div className="border-b border-slate-200 px-5 py-4">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[0.22em] text-slate-400">Lead Details</p>
+              <h2 className="mt-2 text-xl font-semibold tracking-tight text-slate-950">{lead.customer?.name || 'Traveler'}</h2>
+              <p className="mt-1 text-sm text-slate-500">Open lead context, ownership, and scheduled follow-ups.</p>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-[10px] p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+            >
+              <XMarkIcon className="h-5 w-5" />
+            </button>
+          </div>
+        </div>
+
+        <div className="hide-scrollbar flex-1 overflow-y-auto px-5 py-5">
+          <div className="rounded-[18px] border border-slate-200 bg-[#fbfcfd] p-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className={`badge ${getStatusTone(lead.status)}`}>{lead.status}</span>
+              {lead.package?.name ? <span className="badge bg-slate-100 text-slate-600">{lead.package.name}</span> : null}
+            </div>
+
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <InfoRow icon={PhoneIcon} label="Phone" value={formatPhone(lead.customer?.phone) || 'Phone pending'} />
+              <InfoRow icon={UserCircleIcon} label="Assigned to" value={lead.assignedAgent?.name || 'Unassigned concierge'} />
+              <InfoRow icon={CalendarDaysIcon} label="Created" value={formatDateTime(lead.createdAt)} />
+              <InfoRow label="Travel" value={lead.travelDates || 'Dates flexible'} />
+            </div>
+
+            <div className="mt-4 rounded-[14px] border border-slate-200 bg-white p-4">
+              <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">Trip Notes</p>
+              <p className="mt-2 text-sm leading-7 text-slate-600">{lead.notes || 'No notes added for this lead yet.'}</p>
+            </div>
+
+            <div className="mt-4 rounded-[14px] border border-slate-200 bg-white p-4">
+              <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">Trip Brief</p>
+              <div className="mt-3 space-y-3">
+                {quickFacts.map((item) => (
+                  <div key={item} className="rounded-[12px] border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+                    {item}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <form onSubmit={onSaveLead} className="mt-5 space-y-4 rounded-[18px] border border-slate-200 bg-white p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">Lead Controls</p>
+                <h3 className="mt-1 text-base font-semibold text-slate-950">Assign user and update status</h3>
+              </div>
+              <span className="text-xs text-slate-400">Saved through CRM</span>
+            </div>
+
+            <Field label="Status">
+              <select
+                value={editForm.status}
+                onChange={(event) => setEditForm((current) => ({ ...current, status: event.target.value }))}
+                className="shell-input-rect"
+              >
+                {STATUS_OPTIONS.map((status) => (
+                  <option key={status} value={status}>{status}</option>
+                ))}
+              </select>
+            </Field>
+
+            <Field label="Assigned user">
+              <select
+                value={editForm.assignedAgentId}
+                onChange={(event) => setEditForm((current) => ({ ...current, assignedAgentId: event.target.value }))}
+                className="shell-input-rect"
+              >
+                <option value="">Unassigned</option>
+                {agents.map((agent) => (
+                  <option key={agent.id} value={agent.id}>{agent.name}</option>
+                ))}
+              </select>
+            </Field>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Destination">
+                <input
+                  type="text"
+                  value={editForm.destination}
+                  onChange={(event) => setEditForm((current) => ({ ...current, destination: event.target.value }))}
+                  className="shell-input-rect"
+                />
+              </Field>
+
+              <Field label="Travel dates">
+                <input
+                  type="text"
+                  value={editForm.travelDates}
+                  onChange={(event) => setEditForm((current) => ({ ...current, travelDates: event.target.value }))}
+                  className="shell-input-rect"
+                />
+              </Field>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Budget per person">
+                <input
+                  type="number"
+                  value={editForm.budget}
+                  onChange={(event) => setEditForm((current) => ({ ...current, budget: event.target.value }))}
+                  className="shell-input-rect"
+                />
+              </Field>
+
+              <Field label="Travelers">
+                <input
+                  type="number"
+                  min="1"
+                  value={editForm.travellers}
+                  onChange={(event) => setEditForm((current) => ({ ...current, travellers: event.target.value }))}
+                  className="shell-input-rect"
+                />
+              </Field>
+            </div>
+
+            <Field label="Notes">
+              <textarea
+                rows="4"
+                value={editForm.notes}
+                onChange={(event) => setEditForm((current) => ({ ...current, notes: event.target.value }))}
+                className="shell-input-rect rounded-[14px]"
+              />
+            </Field>
+
+            <button type="submit" disabled={isSaving} className="shell-button-primary w-full">
+              {isSaving ? 'Saving...' : 'Save lead changes'}
+            </button>
+          </form>
+
+          <section className="mt-5 rounded-[18px] border border-slate-200 bg-white p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">Follow-ups</p>
+                <h3 className="mt-1 text-base font-semibold text-slate-950">Schedule next touchpoints</h3>
+              </div>
+              <div className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-medium text-slate-500">
+                {sortedFollowups.length} scheduled
+              </div>
+            </div>
+
+            <form onSubmit={onAddFollowup} className="mt-4 space-y-4">
+              <Field label="Follow-up date & time">
+                <input
+                  type="datetime-local"
+                  value={followupForm.scheduledAt}
+                  onChange={(event) => setFollowupForm((current) => ({ ...current, scheduledAt: event.target.value }))}
+                  className="shell-input-rect"
+                />
+              </Field>
+
+              <Field label="Follow-up note">
+                <textarea
+                  rows="3"
+                  value={followupForm.note}
+                  onChange={(event) => setFollowupForm((current) => ({ ...current, note: event.target.value }))}
+                  placeholder="Call back with updated package options, confirm budget, share quote..."
+                  className="shell-input-rect rounded-[14px]"
+                />
+              </Field>
+
+              <button type="submit" className="shell-button-primary w-full">
+                Schedule follow-up
+              </button>
+            </form>
+
+            <div className="mt-4 space-y-3">
+              {sortedFollowups.length === 0 ? (
+                <div className="rounded-[14px] border border-dashed border-slate-200 px-4 py-5 text-sm text-slate-500">
+                  No follow-ups scheduled for this lead yet.
+                </div>
+              ) : (
+                sortedFollowups.map((followup) => (
+                  <div key={followup.id} className="rounded-[14px] border border-slate-200 bg-slate-50 px-4 py-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                            {followup.status}
+                          </span>
+                          <span className="text-sm font-semibold text-slate-900">{formatDateTime(followup.scheduledAt)}</span>
+                        </div>
+                        <p className="mt-2 text-sm leading-6 text-slate-600">{followup.note || 'Follow-up note not provided.'}</p>
+                      </div>
+
+                      <div className="flex shrink-0 items-center gap-2">
+                        {followup.status !== 'Done' ? (
+                          <button
+                            type="button"
+                            onClick={() => onToggleFollowup(followup.id)}
+                            className="rounded-[10px] p-2 text-emerald-600 transition hover:bg-emerald-50"
+                            aria-label="Mark follow-up as done"
+                          >
+                            <CheckCircleIcon className="h-5 w-5" />
+                          </button>
+                        ) : null}
+                        <button
+                          type="button"
+                          onClick={() => onDeleteFollowup(followup.id)}
+                          className="rounded-[10px] p-2 text-rose-500 transition hover:bg-rose-50"
+                          aria-label="Delete follow-up"
+                        >
+                          <TrashIcon className="h-5 w-5" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </section>
+        </div>
+      </aside>
+    </div>
+  );
 }
 
 function Field({ label, children }) {
@@ -131,9 +413,12 @@ function ConversationRow({ lead, selected, onSelect }) {
 export default function Leads() {
   const [filters, setFilters] = useState({ page: 1, pageSize: 50, status: '', search: '' });
   const [selectedLeadId, setSelectedLeadId] = useState(null);
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [createForm, setCreateForm] = useState(EMPTY_CREATE_FORM);
   const [editForm, setEditForm] = useState(EMPTY_EDIT_FORM);
+  const [followupForm, setFollowupForm] = useState(EMPTY_FOLLOWUP_FORM);
+  const [followupsByLeadId, setFollowupsByLeadId] = useState(() => loadFollowups());
   const [draftMessage, setDraftMessage] = useState('');
 
   const leadsQuery = useLeads(filters);
@@ -154,6 +439,12 @@ export default function Leads() {
 
   const agents = agentsResponse?.data || [];
   const messages = messagesQuery.data?.data || activeLead?.messages || [];
+  const activeFollowups = followupsByLeadId[activeLead?.id] || [];
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem(FOLLOWUP_STORAGE_KEY, JSON.stringify(followupsByLeadId));
+  }, [followupsByLeadId]);
 
   useEffect(() => {
     if (!leadRows.length) {
@@ -180,7 +471,58 @@ export default function Leads() {
       notes: activeLead.notes || '',
       lostReason: activeLead.lostReason || '',
     });
+    setFollowupForm(EMPTY_FOLLOWUP_FORM);
   }, [activeLead]);
+
+  function handleSelectLead(leadId) {
+    setSelectedLeadId(leadId);
+    setIsDrawerOpen(true);
+  }
+
+  function handleCloseDrawer() {
+    setIsDrawerOpen(false);
+  }
+
+  function handleAddFollowup(event) {
+    event.preventDefault();
+    if (!activeLead || !followupForm.scheduledAt.trim()) return;
+
+    const nextFollowup = {
+      id: globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      scheduledAt: new Date(followupForm.scheduledAt).toISOString(),
+      note: followupForm.note.trim(),
+      status: 'Scheduled',
+      createdAt: new Date().toISOString(),
+    };
+
+    setFollowupsByLeadId((current) => ({
+      ...current,
+      [activeLead.id]: [...(current[activeLead.id] || []), nextFollowup],
+    }));
+    setFollowupForm(EMPTY_FOLLOWUP_FORM);
+  }
+
+  function handleToggleFollowup(followupId) {
+    if (!activeLead) return;
+
+    setFollowupsByLeadId((current) => ({
+      ...current,
+      [activeLead.id]: (current[activeLead.id] || []).map((followup) =>
+        followup.id === followupId
+          ? { ...followup, status: followup.status === 'Done' ? 'Scheduled' : 'Done' }
+          : followup
+      ),
+    }));
+  }
+
+  function handleDeleteFollowup(followupId) {
+    if (!activeLead) return;
+
+    setFollowupsByLeadId((current) => ({
+      ...current,
+      [activeLead.id]: (current[activeLead.id] || []).filter((followup) => followup.id !== followupId),
+    }));
+  }
 
   const quickFacts = useMemo(() => {
     if (!activeLead) return [];
@@ -240,11 +582,12 @@ export default function Leads() {
     setCreateForm(EMPTY_CREATE_FORM);
     setIsCreateOpen(false);
     setSelectedLeadId(result?.data?.id || null);
+    setIsDrawerOpen(true);
   }
 
   return (
     <div className="w-full">
-      <section className="grid min-h-[calc(100vh-6.25rem)] overflow-hidden rounded-[16px] border border-slate-200 bg-white xl:grid-cols-[320px_minmax(0,1fr)_320px]">
+      <section className="grid min-h-[calc(100vh-6.25rem)] overflow-hidden rounded-[16px] border border-slate-200 bg-white xl:grid-cols-[320px_minmax(0,1fr)]">
         <aside className="border-b border-slate-200 bg-[#fbfcfd] xl:border-b-0 xl:border-r">
           <div className="border-b border-slate-200 px-5 py-4">
             <div className="flex items-center justify-between">
@@ -271,7 +614,7 @@ export default function Leads() {
                   key={lead.id}
                   lead={lead}
                   selected={lead.id === selectedLeadId}
-                  onSelect={() => setSelectedLeadId(lead.id)}
+                  onSelect={() => handleSelectLead(lead.id)}
                 />
               ))
             )}
@@ -362,112 +705,25 @@ export default function Leads() {
             </form>
           </footer>
         </div>
-
-        <aside className="hidden bg-white xl:flex xl:flex-col">
-          {!activeLead ? (
-            <div className="flex h-full items-center justify-center px-6 text-center text-sm text-slate-500">
-              Client profile appears here after you select a lead.
-            </div>
-          ) : (
-            <div className="hide-scrollbar flex h-full flex-col overflow-y-auto px-5 py-5">
-              <div>
-                <p className="text-xs font-bold uppercase tracking-[0.22em] text-slate-400">Client</p>
-                <h3 className="mt-3 text-[18px] font-semibold text-slate-950">{activeLead.customer?.name || 'Traveler'}</h3>
-                <p className="mt-3 text-sm leading-7 text-slate-500">
-                  {activeLead.notes || 'Use this panel for concise client context, not decorative filler.'}
-                </p>
-              </div>
-
-              <div className="mt-6 border-t border-slate-200 pt-5">
-                <p className="text-xs font-bold uppercase tracking-[0.22em] text-slate-400">Details</p>
-                <div className="mt-3 space-y-1">
-                  <InfoRow icon={PhoneIcon} label="Phone" value={formatPhone(activeLead.customer?.phone) || 'Phone pending'} />
-                  <InfoRow icon={UserCircleIcon} label="Owner" value={activeLead.assignedAgent?.name || 'Unassigned concierge'} />
-                  <InfoRow label="Created" value={formatDateTime(activeLead.createdAt)} />
-                </div>
-              </div>
-
-              <div className="mt-6 border-t border-slate-200 pt-5">
-                <p className="text-xs font-bold uppercase tracking-[0.22em] text-slate-400">Trip Brief</p>
-                <div className="mt-3 space-y-3">
-                  {quickFacts.map((item) => (
-                    <div key={item} className="rounded-[12px] border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
-                      {item}
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <form onSubmit={handleSaveLead} className="mt-6 space-y-4 border-t border-slate-200 pt-5">
-                <Field label="Status">
-                  <select
-                    value={editForm.status}
-                    onChange={(event) => setEditForm((current) => ({ ...current, status: event.target.value }))}
-                    className="shell-input-rect"
-                  >
-                    {STATUS_OPTIONS.map((status) => (
-                      <option key={status} value={status}>{status}</option>
-                    ))}
-                  </select>
-                </Field>
-
-                <Field label="Assigned agent">
-                  <select
-                    value={editForm.assignedAgentId}
-                    onChange={(event) => setEditForm((current) => ({ ...current, assignedAgentId: event.target.value }))}
-                    className="shell-input-rect"
-                  >
-                    <option value="">Unassigned</option>
-                    {agents.map((agent) => (
-                      <option key={agent.id} value={agent.id}>{agent.name}</option>
-                    ))}
-                  </select>
-                </Field>
-
-                <Field label="Destination">
-                  <input
-                    type="text"
-                    value={editForm.destination}
-                    onChange={(event) => setEditForm((current) => ({ ...current, destination: event.target.value }))}
-                    className="shell-input-rect"
-                  />
-                </Field>
-
-                <Field label="Travel dates">
-                  <input
-                    type="text"
-                    value={editForm.travelDates}
-                    onChange={(event) => setEditForm((current) => ({ ...current, travelDates: event.target.value }))}
-                    className="shell-input-rect"
-                  />
-                </Field>
-
-                <Field label="Budget per person">
-                  <input
-                    type="number"
-                    value={editForm.budget}
-                    onChange={(event) => setEditForm((current) => ({ ...current, budget: event.target.value }))}
-                    className="shell-input-rect"
-                  />
-                </Field>
-
-                <Field label="Notes">
-                  <textarea
-                    rows="5"
-                    value={editForm.notes}
-                    onChange={(event) => setEditForm((current) => ({ ...current, notes: event.target.value }))}
-                    className="shell-input-rect rounded-[14px]"
-                  />
-                </Field>
-
-                <button type="submit" disabled={updateLead.isPending} className="shell-button-primary w-full">
-                  {updateLead.isPending ? 'Saving...' : 'Save changes'}
-                </button>
-              </form>
-            </div>
-          )}
-        </aside>
       </section>
+
+      <LeadDrawer
+        isOpen={isDrawerOpen && !!activeLead}
+        lead={activeLead}
+        agents={agents}
+        quickFacts={quickFacts}
+        editForm={editForm}
+        setEditForm={setEditForm}
+        onClose={handleCloseDrawer}
+        onSaveLead={handleSaveLead}
+        isSaving={updateLead.isPending}
+        followups={activeFollowups}
+        followupForm={followupForm}
+        setFollowupForm={setFollowupForm}
+        onAddFollowup={handleAddFollowup}
+        onToggleFollowup={handleToggleFollowup}
+        onDeleteFollowup={handleDeleteFollowup}
+      />
 
       {isCreateOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4 backdrop-blur-sm">
