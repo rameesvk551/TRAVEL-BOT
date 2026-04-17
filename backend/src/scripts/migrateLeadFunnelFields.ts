@@ -36,6 +36,23 @@ async function migrate() {
     allowNull: true,
   });
 
+  await ensureColumn('leads', 'source', {
+    type: Sequelize.STRING(100),
+    allowNull: true,
+    defaultValue: 'whatsapp_organic',
+  });
+
+  await ensureColumn('leads', 'referral_code_id', {
+    type: Sequelize.UUID,
+    allowNull: true,
+  });
+
+  await ensureColumn('leads', 'lead_score', {
+    type: Sequelize.INTEGER,
+    allowNull: false,
+    defaultValue: 0,
+  });
+
   await ensureLeadStatusValues();
 }
 
