@@ -684,7 +684,8 @@ async function sendFlowMessage(phone, body, flowConfig, context, options = {}) {
 
       return markMessageSent(message, response);
     } catch (err) {
-      return markMessageFailed(message, 'sendFlowMessage', err);
+      await markMessageFailed(message, 'sendFlowMessage', err);
+      return sendTextMessage(phone, fallbackContent, context);
     }
   }
 
@@ -730,7 +731,8 @@ async function sendFlowMessage(phone, body, flowConfig, context, options = {}) {
 
     return markMessageSent(message, response);
   } catch (err) {
-    return markMessageFailed(message, 'sendFlowMessage', err);
+    await markMessageFailed(message, 'sendFlowMessage', err);
+    return sendTextMessage(phone, fallbackContent, context);
   }
 }
 
