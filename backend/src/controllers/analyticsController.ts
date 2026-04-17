@@ -110,6 +110,16 @@ async function sourceReport(req, res, next) {
   }
 }
 
+async function bookingReport(req, res, next) {
+  try {
+    const { from, to } = req.query;
+    const data = await analyticsService.getBookingReport(req.agency.id, from, to);
+    res.json({ success: true, data });
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function exportReport(req, res, next) {
   try {
     const { type, from, to } = req.query;
@@ -136,5 +146,6 @@ module.exports = {
   seasonalReport,
   profitReport,
   sourceReport,
+  bookingReport,
   exportReport,
 };

@@ -834,6 +834,125 @@ async function exportReport(agencyId, reportType, from, to) {
   return csvLines.join('\n');
 }
 
+// ─── 11. BOOKING REPORT ─────────────────────────────────────────────────────
+
+async function getBookingReport(agencyId, from, to) {
+  const { start, end } = defaultRange(from, to);
+  const prev = prevRange(start, end);
+
+  // Total bookings in range
+  const totalBookings = await Booking.count({
+    where: { agencyId, createdAt: { [Op.between]: [start, end] } },
+  });
+  const prevBookings = await Booking.count({
+    where: { agencyId, createdAt: { [Op.between]: [prev.start, prev.end] } },
+  });
+
+  // Bookings by status
+  const bookingsByStatus = await Booking.findAll({
+    where: { agencyId, createdAt: { [Op.between]: [start, end] } },
+    attributes: ['status', [fn('COUNT', col('id')), 'count']],
+    group: ['status'],
+    raw: true,
+  });
+
+  // Confirmed bookings
+  const confirmed = await Booking.count({
+    where: { agencyId, status: { [Op.in]: ['CONFIRMED', 'COMPLETED'] }, createdAt: { [Op.between]: [start, end] } },
+  });
+
+  // Cancelled bookings + cancellation rate
+  const cancelled = await Booking.count({
+    where: { agencyId, status: 'CANCELLED', createdAt: { [Op.between]: [start, end] } },
+  });
+  const cancellationRate = totalBookings > 0 ? parseFloat((cancelled / totalBookings * 100).toFixed(1)) : 0;
+
+  // Average travellers per booking
+  const avgTravellersResult = await Booking.findOne({
+    where: { agencyId, createdAt: { [Op.between]: [start, end] } },
+    attributes: [[fn('AVG', col('travellers')), 'avg']],
+    raw: true,
+  });
+  const avgTravellers = parseFloat(parseFloat(avgTravellersResult?.avg || '0').toFixed(1));
+
+  // Total revenue from bookings in range
+  const totalRevenue = (await Booking.sum('total_amount', {
+    where: { agencyId, createdAt: { [Op.between]: [start, end] } },
+  })) || 0;
+
+  // Bookings over time (daily)
+  const bookingsByDay = await Booking.findAll({
+    where: { agencyId, createdAt: { [Op.between]: [start, end] } },
+    attributes: [
+      [fn('DATE', col('created_at')), 'date'],
+      [fn('COUNT', col('id')), 'count'],
+    ],
+    group: [fn('DATE', col('created_at'))],
+    order: [[fn('DATE', col('created_at')), 'ASC']],
+    raw: true,
+  });
+
+  // Top destinations from bookings
+  const topDestinations = await sequelize.query(`
+    SELECT unnest(p.destinations) AS destination,
+           COUNT(DISTINCT b.id) AS booking_count,
+           SUM(b.travellers) AS total_travellers,
+           SUM(b.total_amount) AS revenue
+    FROM bookings b
+    JOIN packages p ON p.id = b.package_id
+    WHERE b.agency_id = :agencyId
+      AND b.created_at BETWEEN :start AND :end
+      AND p.destinations IS NOT NULL
+    GROUP BY unnest(p.destinations)
+    ORDER BY booking_count DESC
+    LIMIT 10
+  `, {
+    replacements: { agencyId, start, end },
+    type: sequelize.QueryTypes.SELECT,
+  });
+
+  // Upcoming departures (next 30 days from now)
+  const upcomingStart = new Date();
+  const upcomingEnd = new Date();
+  upcomingEnd.setDate(upcomingEnd.getDate() + 30);
+
+  const upcomingDepartures = await Booking.findAll({
+    where: {
+      agencyId,
+      travelDate: { [Op.between]: [upcomingStart, upcomingEnd] },
+      status: { [Op.in]: ['PENDING', 'CONFIRMED'] },
+    },
+    include: [
+      { model: Customer, as: 'customer', attributes: ['name', 'phone'] },
+      { model: Package, as: 'package', attributes: ['name', 'destinations'] },
+    ],
+    order: [['travelDate', 'ASC']],
+    limit: 15,
+    raw: false,
+  });
+
+  // Bookings by status for pie chart
+  const statusBreakdown = bookingsByStatus.map((r) => ({
+    status: r.status,
+    count: parseInt(r.count, 10),
+  }));
+
+  return {
+    totalBookings,
+    prevBookings,
+    bookingsChange: prevBookings > 0 ? parseFloat(((totalBookings - prevBookings) / prevBookings * 100).toFixed(1)) : null,
+    confirmed,
+    cancelled,
+    cancellationRate,
+    avgTravellers,
+    totalRevenue,
+    bookingsByDay,
+    statusBreakdown,
+    topDestinations,
+    upcomingDepartures,
+  };
+}
+
 module.exports = {
   getSummary,
   getSalesReport,
@@ -846,5 +965,6 @@ module.exports = {
   getSeasonalReport,
   getProfitReport,
   getSourceReport,
+  getBookingReport,
   exportReport,
 };

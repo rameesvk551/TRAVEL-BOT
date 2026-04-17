@@ -65,6 +65,11 @@ router.get('/profit', ...guard, analyticsController.profitReport);
 router.get('/sources', ...guard, analyticsController.sourceReport);
 
 /**
+ * GET /api/analytics/bookings - Booking report
+ */
+router.get('/bookings', ...guard, analyticsController.bookingReport);
+
+/**
  * GET /api/analytics/export?type=sales&from=&to= - CSV export
  */
 router.get('/export', ...guard, analyticsController.exportReport);

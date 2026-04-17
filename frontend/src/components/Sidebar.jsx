@@ -6,7 +6,7 @@ import { useUiStore } from '../store/uiStore';
 import { useLogout } from '../hooks/useAuth';
 import {
   HomeIcon,
-  UserGroupIcon,
+  // UserGroupIcon,
   CalendarDaysIcon,
   UsersIcon,
   CubeIcon,
@@ -25,7 +25,7 @@ import { getInitials } from './uiHelpers';
 
 const navItems = [
   { to: '/', icon: HomeIcon, label: 'Dashboard' },
-  { to: '/leads', icon: UserGroupIcon, label: 'Inbox' },
+  // { to: '/leads', icon: UserGroupIcon, label: 'Inbox' },
   { to: '/bookings', icon: CalendarDaysIcon, label: 'Leads' },
   { to: '/customers', icon: UsersIcon, label: 'Clients' },
   { to: '/settings', icon: Cog6ToothIcon, label: 'Settings' },

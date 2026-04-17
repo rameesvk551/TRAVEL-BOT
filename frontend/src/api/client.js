@@ -17,6 +17,11 @@ const client = axios.create({
 // Request interceptor — attach access token
 client.interceptors.request.use((config) => {
   const token = useAuthStore.getState().accessToken;
+
+  if (config.data instanceof FormData && config.headers) {
+    delete config.headers['Content-Type'];
+  }
+
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }

@@ -23,6 +23,7 @@ export const analyticsApi = {
   getSeasonal: () => client.get('/analytics/seasonal').then((r) => r.data),
   getProfit: (params) => client.get(`/analytics/profit${qs(params)}`).then((r) => r.data),
   getSources: (params) => client.get(`/analytics/sources${qs(params)}`).then((r) => r.data),
+  getBookings: (params) => client.get(`/analytics/bookings${qs(params)}`).then((r) => r.data),
 
   exportCsv: (type, params) => {
     const p = new URLSearchParams({ type });

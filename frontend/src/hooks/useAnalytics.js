@@ -90,3 +90,11 @@ export function useSourceReport(params) {
     staleTime: 60 * 1000,
   });
 }
+
+export function useBookingReport(params) {
+  return useQuery({
+    queryKey: ['analytics-bookings', params],
+    queryFn: () => analyticsApi.getBookings(params),
+    staleTime: 60 * 1000,
+  });
+}
