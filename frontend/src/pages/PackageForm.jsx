@@ -21,6 +21,14 @@ export default function PackageForm() {
   const [uploadingImage, setUploadingImage] = useState(false);
   const [error, setError] = useState('');
 
+  const packageQuery = useQuery({
+    queryKey: ['package', id],
+    queryFn: () => packagesApi.getById(id),
+    enabled: isEdit,
+  });
+
+  const packageData = packageQuery.data?.data;
+
   useEffect(() => {
     if (!imageFile) {
       setImagePreview(form.imageUrl || '');
@@ -33,26 +41,38 @@ export default function PackageForm() {
     return () => URL.revokeObjectURL(previewUrl);
   }, [imageFile, form.imageUrl]);
 
-  // Load existing package for edit
-  useQuery({
-    queryKey: ['package', id],
-    queryFn: () => packagesApi.getById(id),
-    enabled: isEdit,
-    onSuccess: (data) => {
-      const pkg = data.data;
+  useEffect(() => {
+    if (!isEdit) {
       setForm({
-        name: pkg.name,
-        duration: pkg.duration || '',
-        destinations: pkg.destinations?.join(', ') || '',
-        basePrice: String((pkg.basePrice || 0) / 100),
-        inclusions: pkg.inclusions?.join('\n') || '',
-        exclusions: pkg.exclusions?.join('\n') || '',
-        imageUrl: pkg.imageUrl || '',
+        name: '',
+        duration: '',
+        destinations: '',
+        basePrice: '',
+        inclusions: '',
+        exclusions: '',
+        imageUrl: '',
       });
       setImageFile(null);
-      setImagePreview(pkg.imageUrl || '');
-    },
-  });
+      setImagePreview('');
+      setError('');
+      return;
+    }
+
+    if (!packageData) return;
+
+    setForm({
+      name: packageData.name || '',
+      duration: packageData.duration || '',
+      destinations: packageData.destinations?.join(', ') || '',
+      basePrice: packageData.basePrice ? String(packageData.basePrice / 100) : '',
+      inclusions: packageData.inclusions?.join('\n') || '',
+      exclusions: packageData.exclusions?.join('\n') || '',
+      imageUrl: packageData.imageUrl || '',
+    });
+    setImageFile(null);
+    setImagePreview(packageData.imageUrl || '');
+    setError('');
+  }, [isEdit, packageData]);
 
   const saveMutation = useMutation({
     mutationFn: (data) => isEdit ? packagesApi.update(id, data) : packagesApi.create(data),
@@ -88,7 +108,7 @@ export default function PackageForm() {
         name: form.name,
         duration: form.duration,
         destinations: form.destinations.split(',').map((d) => d.trim()).filter(Boolean),
-        basePrice: parseInt(form.basePrice, 10) * 100,
+        basePrice: Number.parseInt(form.basePrice, 10) * 100,
         inclusions: form.inclusions.split('\n').filter(Boolean),
         exclusions: form.exclusions.split('\n').filter(Boolean),
         imageUrl,
@@ -123,88 +143,144 @@ export default function PackageForm() {
     setForm((current) => ({ ...current, imageUrl: '' }));
   };
 
+  if (isEdit && packageQuery.isLoading) {
+    return (
+      <div className="mx-auto w-full max-w-4xl p-6">
+        <button onClick={() => navigate('/packages')} className="shell-button-ghost mb-4">
+          <ArrowLeftIcon className="w-4 h-4" /> Back to Packages
+        </button>
+
+        <div className="shell-panel p-6 text-sm text-slate-500">Loading package details...</div>
+      </div>
+    );
+  }
+
+  if (isEdit && packageQuery.isError) {
+    return (
+      <div className="mx-auto w-full max-w-4xl p-6">
+        <button onClick={() => navigate('/packages')} className="shell-button-ghost mb-4">
+          <ArrowLeftIcon className="w-4 h-4" /> Back to Packages
+        </button>
+
+        <div className="mb-4 rounded-xl border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-400">
+          {packageQuery.error?.response?.data?.error || packageQuery.error?.message || 'Failed to load package details'}
+        </div>
+
+        <button type="button" onClick={() => navigate('/packages')} className="shell-button-secondary">
+          Return to Packages
+        </button>
+      </div>
+    );
+  }
+
   return (
-    <div className="p-6 max-w-2xl mx-auto">
-      <button onClick={() => navigate('/packages')} className="btn-ghost text-sm mb-4">
+    <div className="mx-auto w-full max-w-4xl p-6">
+      <button onClick={() => navigate('/packages')} className="shell-button-ghost mb-4">
         <ArrowLeftIcon className="w-4 h-4" /> Back to Packages
       </button>
 
-      <h1 className="text-2xl font-bold text-white mb-6">{isEdit ? 'Edit Package' : 'New Package'}</h1>
-
-      {error && (
-        <div className="mb-4 p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-sm text-red-400">{error}</div>
-      )}
-
-      <form onSubmit={handleSubmit} className="glass-card p-6 space-y-5">
-        <div>
-          <label className="block text-sm text-surface-300 mb-1.5">Package Name *</label>
-          <input value={form.name} onChange={(e) => update('name', e.target.value)} className="input-field" placeholder="Munnar & Alleppey Delight" required />
+      <div className="shell-panel p-6 md:p-8">
+        <div className="mb-6">
+          <p className="eyebrow mb-2">Packages</p>
+          <h1 className="page-title text-[2rem] sm:text-[2.4rem]">{isEdit ? 'Edit Package' : 'New Package'}</h1>
+          <p className="mt-2 max-w-2xl text-sm text-slate-500">
+            Create or update a package itinerary for quoting, chat flows, and brochure publishing.
+          </p>
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm text-surface-300 mb-1.5">Duration</label>
-            <input value={form.duration} onChange={(e) => update('duration', e.target.value)} className="input-field" placeholder="3 Nights 4 Days" />
-          </div>
-          <div>
-            <label className="block text-sm text-surface-300 mb-1.5">Base Price (₹/person) *</label>
-            <input value={form.basePrice} onChange={(e) => update('basePrice', e.target.value)} className="input-field" placeholder="15000" type="number" required />
-          </div>
-        </div>
+        {error && (
+          <div className="mb-4 rounded-xl border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-600">{error}</div>
+        )}
 
-        <div>
-          <label className="block text-sm text-surface-300 mb-1.5">Destinations (comma-separated)</label>
-          <input value={form.destinations} onChange={(e) => update('destinations', e.target.value)} className="input-field" placeholder="Munnar, Alleppey, Kochi" />
-        </div>
-
-        <div>
-          <label className="block text-sm text-surface-300 mb-1.5">Inclusions (one per line)</label>
-          <textarea value={form.inclusions} onChange={(e) => update('inclusions', e.target.value)} className="input-field" rows={4} placeholder={"Hotel accommodation\nBreakfast & dinner\nSightseeing\nTransport"} />
-        </div>
-
-        <div>
-          <label className="block text-sm text-surface-300 mb-1.5">Exclusions (one per line)</label>
-          <textarea value={form.exclusions} onChange={(e) => update('exclusions', e.target.value)} className="input-field" rows={3} placeholder={"Airfare\nPersonal expenses\nEntry tickets"} />
-        </div>
-
-        <div>
-          <label className="block text-sm text-surface-300 mb-1.5">Package Image</label>
-          <div className="rounded-2xl border border-dashed border-surface-600/70 bg-surface-900/30 p-4 space-y-4">
-            <input
-              type="file"
-              accept="image/*"
-              onChange={handleImageChange}
-              className="block w-full text-sm text-surface-300 file:mr-4 file:rounded-lg file:border-0 file:bg-brand-600 file:px-4 file:py-2 file:text-sm file:font-medium file:text-white hover:file:bg-brand-500"
-            />
-
-            <div className="flex items-center justify-between gap-3 text-xs text-surface-400">
-              <p>
-                Upload a JPG, PNG, WebP, or AVIF file. The file is uploaded via backend and saved as the package cover image.
-              </p>
-              <button type="button" onClick={clearImage} className="text-brand-400 hover:text-brand-300 whitespace-nowrap">
-                Remove image
-              </button>
+        <form onSubmit={handleSubmit} className="space-y-6">
+          <div className="grid gap-5 md:grid-cols-2">
+            <div className="md:col-span-2">
+              <label className="mb-1.5 block text-sm font-medium text-slate-700">Package Name *</label>
+              <input
+                value={form.name}
+                onChange={(e) => update('name', e.target.value)}
+                className="shell-input-rect"
+                placeholder="Munnar & Alleppey Delight"
+                required
+              />
             </div>
 
-            {imagePreview ? (
-              <div className="overflow-hidden rounded-xl border border-surface-700/60 bg-surface-800/60">
-                <img src={imagePreview} alt="Package preview" className="h-56 w-full object-cover" />
-              </div>
-            ) : (
-              <div className="flex h-40 items-center justify-center rounded-xl border border-surface-700/60 bg-surface-800/40 text-sm text-surface-500">
-                No image selected yet
-              </div>
-            )}
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-slate-700">Duration</label>
+              <input value={form.duration} onChange={(e) => update('duration', e.target.value)} className="shell-input-rect" placeholder="3 Nights 4 Days" />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-slate-700">Base Price (₹/person) *</label>
+              <input value={form.basePrice} onChange={(e) => update('basePrice', e.target.value)} className="shell-input-rect" placeholder="15000" type="number" required />
+            </div>
           </div>
-        </div>
 
-        <div className="flex gap-3 pt-4">
-          <button type="button" onClick={() => navigate('/packages')} className="btn-secondary flex-1">Cancel</button>
-          <button type="submit" disabled={saveMutation.isPending || uploadingImage} className="btn-primary flex-1">
-            {uploadingImage ? 'Uploading Image...' : saveMutation.isPending ? 'Saving...' : isEdit ? 'Update Package' : 'Create Package'}
-          </button>
-        </div>
-      </form>
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-slate-700">Destinations (comma-separated)</label>
+            <input value={form.destinations} onChange={(e) => update('destinations', e.target.value)} className="shell-input-rect" placeholder="Munnar, Alleppey, Kochi" />
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-slate-700">Inclusions (one per line)</label>
+            <textarea
+              value={form.inclusions}
+              onChange={(e) => update('inclusions', e.target.value)}
+              className="shell-input-rect min-h-[120px] rounded-[16px]"
+              rows={4}
+              placeholder={"Hotel accommodation\nBreakfast & dinner\nSightseeing\nTransport"}
+            />
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-slate-700">Exclusions (one per line)</label>
+            <textarea
+              value={form.exclusions}
+              onChange={(e) => update('exclusions', e.target.value)}
+              className="shell-input-rect min-h-[96px] rounded-[16px]"
+              rows={3}
+              placeholder={"Airfare\nPersonal expenses\nEntry tickets"}
+            />
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-slate-700">Package Image</label>
+            <div className="space-y-4 rounded-[18px] border border-dashed border-slate-200 bg-slate-50 p-4">
+              <input
+                type="file"
+                accept="image/*"
+                onChange={handleImageChange}
+                className="block w-full text-sm text-slate-600 file:mr-4 file:rounded-lg file:border-0 file:bg-[#0d6a5f] file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-[#0b5d54]"
+              />
+
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-xs leading-5 text-slate-500">
+                  Upload a JPG, PNG, WebP, or AVIF file. The file is uploaded via the backend and saved as the package cover image.
+                </p>
+                <button type="button" onClick={clearImage} className="shell-button-ghost whitespace-nowrap">
+                  Remove image
+                </button>
+              </div>
+
+              {imagePreview ? (
+                <div className="overflow-hidden rounded-[16px] border border-slate-200 bg-white shadow-sm">
+                  <img src={imagePreview} alt="Package preview" className="h-56 w-full object-cover" />
+                </div>
+              ) : (
+                <div className="flex h-40 items-center justify-center rounded-[16px] border border-slate-200 bg-white text-sm text-slate-400">
+                  No image selected yet
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-3 pt-2 sm:flex-row">
+            <button type="button" onClick={() => navigate('/packages')} className="shell-button-secondary flex-1">Cancel</button>
+            <button type="submit" disabled={saveMutation.isPending || uploadingImage} className="shell-button-primary flex-1">
+              {uploadingImage ? 'Uploading Image...' : saveMutation.isPending ? 'Saving...' : isEdit ? 'Update Package' : 'Create Package'}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }

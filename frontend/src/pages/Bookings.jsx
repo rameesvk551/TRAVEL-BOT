@@ -3,14 +3,7 @@ import { ListBulletIcon, PlusIcon, Squares2X2Icon, XMarkIcon } from '@heroicons/
 import { useCreateLead, useLeads } from '../hooks/useLeads';
 import { formatCurrency } from '../utils/formatters';
 import { getStatusTone } from '../components/uiHelpers';
-
-const PIPELINE_COLUMNS = [
-  { key: 'NEW', label: 'New Inquiry' },
-  { key: 'CONTACTED', label: 'Qualification' },
-  { key: 'QUOTED', label: 'Proposal' },
-  { key: 'NEGOTIATING', label: 'Negotiating' },
-  { key: 'BOOKED', label: 'Booked' },
-];
+import { LEAD_PIPELINE_COLUMNS } from '../utils/leadStatuses';
 
 const EMPTY_CREATE_FORM = {
   customerName: '',
@@ -107,12 +100,13 @@ export default function Bookings() {
       </section>
 
       {viewMode === 'kanban' ? (
-        <section className="grid gap-4 xl:grid-cols-5">
-          {PIPELINE_COLUMNS.map((column) => {
+        <section className="overflow-x-auto pb-4">
+          <div className="flex min-w-max gap-4">
+          {LEAD_PIPELINE_COLUMNS.map((column) => {
             const items = leads.filter((lead) => lead.status === column.key);
 
             return (
-              <div key={column.key} className="min-h-[420px] rounded-[12px] border border-slate-200 bg-white">
+              <div key={column.key} className="min-h-[420px] w-[280px] shrink-0 rounded-[12px] border border-slate-200 bg-white">
                 <div className="flex items-center justify-between border-b border-slate-200 px-3 py-3">
                   <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500">{column.label}</p>
                   <span className={`badge ${getStatusTone(column.key)}`}>{items.length}</span>
@@ -143,6 +137,7 @@ export default function Bookings() {
               </div>
             );
           })}
+          </div>
         </section>
       ) : (
         <section className="overflow-hidden rounded-[12px] border border-slate-200 bg-white">

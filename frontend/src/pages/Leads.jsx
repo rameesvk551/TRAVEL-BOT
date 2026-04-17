@@ -16,9 +16,8 @@ import client from '../api/client';
 import { useCreateLead, useLead, useLeads, useUpdateLead } from '../hooks/useLeads';
 import { useMessages, useSendMessage } from '../hooks/useMessages';
 import { formatDate, formatDateTime, formatPhone, formatTime, timeAgo } from '../utils/formatters';
+import { LEAD_STATUS_OPTIONS } from '../utils/leadStatuses';
 import { getInitials, getStatusTone } from '../components/uiHelpers';
-
-const STATUS_OPTIONS = ['NEW', 'CONTACTED', 'QUOTED', 'NEGOTIATING', 'BOOKED', 'LOST', 'CANCELLED'];
 
 const EMPTY_CREATE_FORM = {
   customerName: '',
@@ -171,7 +170,7 @@ function LeadDrawer({
                 onChange={(event) => setEditForm((current) => ({ ...current, status: event.target.value }))}
                 className="shell-input-rect"
               >
-                {STATUS_OPTIONS.map((status) => (
+                {LEAD_STATUS_OPTIONS.map((status) => (
                   <option key={status} value={status}>{status}</option>
                 ))}
               </select>

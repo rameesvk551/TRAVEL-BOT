@@ -33,7 +33,7 @@ const navItems = [
 
 const utilityItems = [
   { to: '/packages', icon: CubeIcon, label: 'Packages' },
-  { to: '/analytics', icon: ChartBarIcon, label: 'Analytics' },
+  { to: '/analytics', icon: ChartBarIcon, label: 'Reports' },
 ];
 
 const marketingItems = [

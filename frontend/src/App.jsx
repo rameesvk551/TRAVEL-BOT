@@ -12,6 +12,9 @@ import PackageForm from './pages/PackageForm';
 import Payments from './pages/Payments';
 import Analytics from './pages/Analytics';
 import Settings from './pages/Settings';
+import Templates from './pages/Templates';
+import Campaigns from './pages/Campaigns';
+import Reviews from './pages/Reviews';
 import Sidebar from './components/Sidebar';
 
 /**
@@ -55,6 +58,9 @@ export default function App() {
                   <Route path="/packages" element={<Packages />} />
                   <Route path="/packages/new" element={<PackageForm />} />
                   <Route path="/packages/:id/edit" element={<PackageForm />} />
+                  <Route path="/templates" element={<Templates />} />
+                  <Route path="/campaigns" element={<Campaigns />} />
+                  <Route path="/reviews" element={<Reviews />} />
                   <Route path="/payments" element={<Payments />} />
                   <Route path="/analytics" element={<Analytics />} />
                   <Route path="/settings" element={<Settings />} />
