@@ -204,6 +204,9 @@ async function processMessage(msg, metadata) {
     await routeMessage(session, incoming, customer, agency);
   } catch (err) {
     console.error('[Webhook] Bot processing error:', err.message);
+    if (err.stack) {
+      console.error('[Webhook] Stack trace:', err.stack.split('\n').slice(0, 5).join('\n'));
+    }
 
     // FALLBACK: Always respond to the customer — never leave them hanging
     try {
