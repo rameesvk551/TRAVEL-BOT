@@ -26,6 +26,10 @@ app.get('/health', (req, res) => {
 app.get('/webhook', handleVerification);
 app.post('/webhook', handleIncoming);
 
+// Marketing OS webhook endpoints (same handlers)
+app.get('/api/v1/whatsapp/webhook', handleVerification);
+app.post('/api/v1/whatsapp/webhook', handleIncoming);
+
 // Start server
 app.listen(PORT, () => {
   console.log(`🤖 TravelBot Webhook running on port ${PORT}`);

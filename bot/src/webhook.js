@@ -48,6 +48,11 @@ function verifySignature(rawBody, signature) {
   return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signature));
 }
 
+function verifyMarketingOsSignature(signature) {
+  if (!signature || !process.env.MARKETING_OS_WEBHOOK_SECRET) return false;
+  return signature === process.env.MARKETING_OS_WEBHOOK_SECRET;
+}
+
 /**
  * POST /webhook — Processes incoming WhatsApp messages.
  * Always returns 200 immediately (Meta requirement), then processes async.
@@ -59,13 +64,25 @@ async function handleIncoming(req, res) {
   try {
     const body = req.body;
 
-    // Verify signature if APP_SECRET is configured
-    if (process.env.WEBHOOK_APP_SECRET && req.rawBody) {
-      const signature = req.headers['x-hub-signature-256'];
-      if (!verifySignature(req.rawBody, signature)) {
-        console.error('[Webhook] Invalid signature, rejecting');
-        return;
-      }
+    // Verify signature - check Marketing OS first, then Meta
+    let signatureValid = false;
+    
+    // Check for Marketing OS signature
+    const marketingOsSecret = req.headers['x-marketing-os-secret'];
+    if (marketingOsSecret && process.env.MARKETING_OS_WEBHOOK_SECRET) {
+      signatureValid = verifyMarketingOsSignature(marketingOsSecret);
+      console.log('[Webhook] Marketing OS signature verification:', signatureValid);
+    }
+    // Fallback to Meta signature verification
+    else if (process.env.WEBHOOK_APP_SECRET && req.rawBody) {
+      const metaSignature = req.headers['x-hub-signature-256'];
+      signatureValid = verifySignature(req.rawBody, metaSignature);
+      console.log('[Webhook] Meta signature verification:', signatureValid);
+    }
+    
+    if (!signatureValid) {
+      console.error('[Webhook] Invalid signature from both providers, rejecting');
+      return;
     }
 
     // Extract messages from webhook payload
@@ -204,8 +221,9 @@ async function processMessage(msg, metadata) {
     await routeMessage(session, incoming, customer, agency);
   } catch (err) {
     console.error('[Webhook] Bot processing error:', err.message);
-    if (err.stack) {
-      console.error('[Webhook] Stack trace:', err.stack.split('\n').slice(0, 5).join('\n'));
+    console.error('[Webhook] Error at:', err.stack?.split('\n')[1] || 'Unknown');
+    if (err.original) {
+      console.error('[Webhook] Original DB error:', err.original.message);
     }
 
     // FALLBACK: Always respond to the customer — never leave them hanging
