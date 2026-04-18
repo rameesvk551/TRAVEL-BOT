@@ -4,7 +4,7 @@ import { CheckCircleIcon, ClockIcon, MapPinIcon } from '@heroicons/react/24/outl
 export default function PackageCard({ pkg, onEdit, onDelete }) {
   return (
     <article className="overflow-hidden rounded-[28px] border border-white/80 bg-white shadow-[0_24px_70px_-46px_rgba(15,23,42,0.45)] transition hover:-translate-y-1">
-      <div className="relative h-52 overflow-hidden bg-[linear-gradient(135deg,#f4c98d,#0d6a5f)]">
+      <div className="relative h-52 overflow-hidden bg-[linear-gradient(135deg,#f4c98d,#0d1b3e)]">
         {pkg.imageUrl ? (
           <img src={pkg.imageUrl} alt={pkg.name} className="h-full w-full object-cover" />
         ) : null}

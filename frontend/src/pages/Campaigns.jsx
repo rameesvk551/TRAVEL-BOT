@@ -69,7 +69,7 @@ export default function Campaigns() {
         </div>
         <button
           onClick={() => navigate('/campaigns/new')}
-          className="flex items-center gap-2 rounded-xl bg-[#0d6a5f] px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#0b5a51] transition self-start"
+          className="flex items-center gap-2 rounded-xl bg-[#0d1b3e] px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#0b5a51] transition self-start"
         >
           <Plus className="w-4 h-4" />
           Create Campaign
@@ -130,7 +130,7 @@ export default function Campaigns() {
                 onClick={() => setStatusFilter(f.key)}
                 className={`whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
                   statusFilter === f.key
-                    ? 'bg-[#0d6a5f] text-white shadow-sm'
+                    ? 'bg-[#0d1b3e] text-white shadow-sm'
                     : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700'
                 }`}
               >
@@ -186,7 +186,7 @@ export default function Campaigns() {
                     <p className="mt-1 mb-4 text-sm">Start reaching your audience with push campaigns.</p>
                     <button
                       onClick={() => navigate('/campaigns/new')}
-                      className="inline-flex items-center gap-2 rounded-xl bg-[#0d6a5f] px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#0b5a51]"
+                      className="inline-flex items-center gap-2 rounded-xl bg-[#0d1b3e] px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#0b5a51]"
                     >
                       <Plus className="w-4 h-4" /> Create Your First Campaign
                     </button>

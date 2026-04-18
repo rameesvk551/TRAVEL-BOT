@@ -139,6 +139,16 @@ module.exports = (sequelize) => {
       defaultValue: 2,
       comment: 'Days after return date to request a review',
     },
+    followUpReminderEnabled: {
+      type: DataTypes.BOOLEAN,
+      defaultValue: true,
+      comment: 'Whether to send Whatsapp reminders to agents before follow ups',
+    },
+    followUpReminderMinutes: {
+      type: DataTypes.INTEGER,
+      defaultValue: 30,
+      comment: 'Minutes before follow up to send reminder',
+    },
     whatsappCatalogId: {
       type: DataTypes.STRING(255),
       allowNull: true,

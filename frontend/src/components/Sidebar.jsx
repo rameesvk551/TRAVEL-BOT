@@ -14,8 +14,6 @@ import {
   ChartBarIcon,
   Cog6ToothIcon,
   ArrowRightOnRectangleIcon,
-  SignalIcon,
-  SignalSlashIcon,
   PlusIcon,
   MegaphoneIcon,
   QueueListIcon,
@@ -23,13 +21,13 @@ import {
   ChevronLeftIcon,
   ChevronRightIcon,
 } from '@heroicons/react/24/outline';
-import client from '../api/client';
 import { getInitials } from './uiHelpers';
 
 const navItems = [
   { to: '/', icon: HomeIcon, label: 'Dashboard' },
-  { to: '/bookings', icon: CalendarDaysIcon, label: 'Leads' },
-  { to: '/customers', icon: UserGroupIcon, label: 'Clients' },
+  { to: '/leads', icon: QueueListIcon, label: 'Leads' },
+  { to: '/bookings', icon: CalendarDaysIcon, label: 'Bookings' },
+  { to: '/customers', icon: UserGroupIcon, label: 'Customers' },
   { to: '/agents', icon: UsersIcon, label: 'Users' },
   { to: '/settings', icon: Cog6ToothIcon, label: 'Settings' },
 ];
@@ -61,16 +59,6 @@ export default function Sidebar() {
 
   const collapsed = sidebarCollapsed && !sidebarHovered; // desktop collapsed state unless hovered
 
-  const toggleOnline = async () => {
-    const newStatus = !agent?.isOnline;
-    try {
-      await client.patch('/agents/me/status', { isOnline: newStatus });
-      updateAgent({ isOnline: newStatus });
-    } catch (err) {
-      console.error('Failed to update status:', err);
-    }
-  };
-
   const renderNavItem = ({ to, icon: Icon, label }, exactEnd = false) => {
     const active = exactEnd
       ? location.pathname === to
@@ -89,15 +77,15 @@ export default function Sidebar() {
           collapsed ? 'justify-center' : ''
         } ${
           active
-            ? 'bg-slate-100 text-[#0d6a5f]'
+            ? 'bg-slate-100 text-[#0d1b3e]'
             : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
         }`}
       >
         {active && !collapsed && (
-          <span className="absolute inset-y-2 right-0 w-0.5 rounded-full bg-[#0d6a5f]" />
+          <span className="absolute inset-y-2 right-0 w-0.5 rounded-full bg-[#0d1b3e]" />
         )}
         {active && collapsed && (
-          <span className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-[#0d6a5f]" />
+          <span className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-[#0d1b3e]" />
         )}
         <Icon className="h-5 w-5 shrink-0" />
         {!collapsed && <span>{label}</span>}
@@ -150,7 +138,7 @@ export default function Sidebar() {
             collapsed ? 'justify-center px-2 py-3' : 'gap-3 px-3 py-3'
           }`}
         >
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[radial-gradient(circle_at_top,#43c3b4,#0d6a5f)] text-sm font-bold text-white">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[radial-gradient(circle_at_top,#43c3b4,#0d1b3e)] text-sm font-bold text-white">
             {getInitials(agent?.name, 'LC')}
           </div>
           {!collapsed && (
@@ -204,27 +192,6 @@ export default function Sidebar() {
             <PlusIcon className="h-4 w-4 shrink-0" />
             {!collapsed && 'New Itinerary'}
           </NavLink>
-
-          <button
-            onClick={toggleOnline}
-            title={collapsed ? (agent?.isOnline ? 'Available for handoff' : 'Marked offline') : undefined}
-            className={`flex w-full items-center rounded-[10px] px-3 py-2.5 text-sm font-medium transition ${
-              collapsed ? 'justify-center' : 'gap-3'
-            } ${
-              agent?.isOnline
-                ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
-                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-            }`}
-          >
-            {agent?.isOnline ? (
-              <SignalIcon className="h-5 w-5 shrink-0" />
-            ) : (
-              <SignalSlashIcon className="h-5 w-5 shrink-0" />
-            )}
-            {!collapsed && (
-              <span>{agent?.isOnline ? 'Available for handoff' : 'Marked offline'}</span>
-            )}
-          </button>
 
           <button
             onClick={() => logoutMutation.mutate()}

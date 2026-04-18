@@ -25,11 +25,8 @@
     font-family: 'Manrope', system-ui, -apple-system, sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    color: #10243e;
-    background:
-      radial-gradient(circle at top left, rgba(11, 106, 95, 0.08), transparent 28%),
-      radial-gradient(circle at bottom right, rgba(15, 23, 42, 0.05), transparent 22%),
-      linear-gradient(180deg, #f7f8fb 0%, #eef2f7 100%);
+    color: #0d1b3e;
+    background: #f8f9fa;
   }
 
   button,
@@ -45,8 +42,8 @@
   }
 
   ::selection {
-    background: rgba(11, 106, 95, 0.15);
-    color: #0b2b3f;
+    background: rgba(13, 27, 62, 0.15);
+    color: #0d1b3e;
   }
 
   ::-webkit-scrollbar {
@@ -86,7 +83,7 @@
   }
 
   .shell-button-primary {
-    @apply inline-flex items-center justify-center gap-2 rounded-[14px] bg-[#0d6a5f] px-4 py-2.5 text-sm font-semibold text-white shadow-[0_8px_18px_-14px_rgba(13,106,95,0.55)] transition hover:bg-[#0b5d54] active:scale-[0.99];
+    @apply inline-flex items-center justify-center gap-2 rounded-[14px] bg-[#0d1b3e] px-4 py-2.5 text-sm font-semibold text-white shadow-[0_8px_18px_-14px_rgba(13,27,62,0.55)] transition hover:bg-[#0a1628] active:scale-[0.99];
   }
 
   .shell-button-secondary {

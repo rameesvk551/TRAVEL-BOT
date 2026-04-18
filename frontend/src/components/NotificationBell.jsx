@@ -33,7 +33,7 @@ export default function NotificationBell() {
               {unreadCount > 0 && (
                 <button
                   onClick={clearNotifications}
-                  className="text-xs font-semibold text-[#0d6a5f] hover:text-[#0b5d54]"
+                  className="text-xs font-semibold text-[#0d1b3e] hover:text-[#0b5d54]"
                 >
                   Clear all
                 </button>

@@ -1,906 +1,564 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
-  AdjustmentsHorizontalIcon,
-  EllipsisVerticalIcon,
-  CalendarDaysIcon,
-  CheckCircleIcon,
-  PaperAirplaneIcon,
-  PhoneIcon,
+  MagnifyingGlassIcon,
   PlusIcon,
-  TrashIcon,
-  UserCircleIcon,
   XMarkIcon,
+  PencilIcon,
+  CheckCircleIcon,
+  TrashIcon,
 } from '@heroicons/react/24/outline';
 import client from '../api/client';
-import { useCreateLead, useLead, useLeads, useUpdateLead } from '../hooks/useLeads';
-import { useMessages, useSendMessage } from '../hooks/useMessages';
+import { useLeads, useLead, useCreateLead, useUpdateLead, useAddFollowUp, useUpdateFollowUp, useDeleteFollowUp, useAddNote } from '../hooks/useLeads';
 import { formatDate, formatDateTime, formatPhone, formatTime, timeAgo } from '../utils/formatters';
-import { LEAD_STATUS_OPTIONS } from '../utils/leadStatuses';
+import { LEAD_STATUS_OPTIONS, LEAD_PIPELINE_COLUMNS } from '../utils/leadStatuses';
 import { getInitials, getStatusTone } from '../components/uiHelpers';
 import LeadPipeline from '../components/LeadPipeline';
 
-const EMPTY_CREATE_FORM = {
-  customerName: '',
-  customerPhone: '',
-  destination: '',
-  travelDates: '',
-  travellers: '2',
-  budget: '',
-  assignedAgentId: '',
-  notes: '',
-};
-
-const EMPTY_EDIT_FORM = {
-  status: 'NEW',
-  assignedAgentId: '',
-  destination: '',
-  travelDates: '',
-  travellers: '',
-  budget: '',
-  notes: '',
-  lostReason: '',
-};
-
-const EMPTY_FOLLOWUP_FORM = {
-  scheduledAt: '',
-  note: '',
-};
-
-const FOLLOWUP_STORAGE_KEY = 'travel-bot.lead-followups';
-
-function toBudgetPaise(value) {
-  const numeric = Number(String(value || '').replace(/[^\d.]/g, ''));
-  if (!numeric) return undefined;
-  return Math.round(numeric * 100);
-}
-
-function fromBudgetPaise(value) {
-  if (!value) return '';
-  return String(Math.round(value / 100));
-}
-
-function loadFollowups() {
-  if (typeof window === 'undefined') return {};
-
-  try {
-    return JSON.parse(window.localStorage.getItem(FOLLOWUP_STORAGE_KEY) || '{}');
-  } catch {
-    return {};
-  }
-}
-
-function LeadDrawer({
-  isOpen,
-  lead,
-  agents,
-  quickFacts,
-  editForm,
-  setEditForm,
-  onClose,
-  onSaveLead,
-  isSaving,
-  followups,
-  followupForm,
-  setFollowupForm,
-  onAddFollowup,
-  onToggleFollowup,
-  onDeleteFollowup,
-}) {
-  const sortedFollowups = useMemo(
-    () => [...followups].sort((left, right) => new Date(left.scheduledAt) - new Date(right.scheduledAt)),
-    [followups]
-  );
-
-  if (!lead) return null;
-
-  return (
-    <div className={`fixed inset-0 z-50 transition ${isOpen ? 'pointer-events-auto' : 'pointer-events-none'}`}>
-      <button
-        type="button"
-        aria-label="Close lead drawer"
-        onClick={onClose}
-        className={`absolute inset-0 bg-slate-950/45 backdrop-blur-sm transition-opacity ${isOpen ? 'opacity-100' : 'opacity-0'}`}
-      />
-
-      <aside
-        className={`absolute right-0 top-0 flex h-full w-full max-w-[540px] flex-col border-l border-slate-200 bg-white shadow-[0_24px_80px_-36px_rgba(15,23,42,0.45)] transition-transform duration-300 ${
-          isOpen ? 'translate-x-0' : 'translate-x-full'
-        }`}
-      >
-        <div className="border-b border-slate-200 px-5 py-4">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <p className="text-xs font-bold uppercase tracking-[0.22em] text-slate-400">Lead Details</p>
-              <h2 className="mt-2 text-xl font-semibold tracking-tight text-slate-950">{lead.customer?.name || 'Traveler'}</h2>
-              <p className="mt-1 text-sm text-slate-500">Open lead context, ownership, and scheduled follow-ups.</p>
-            </div>
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-[10px] p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
-            >
-              <XMarkIcon className="h-5 w-5" />
-            </button>
-          </div>
-        </div>
-
-        <div className="hide-scrollbar flex-1 overflow-y-auto px-5 py-5">
-          <div className="rounded-[18px] border border-slate-200 bg-[#fbfcfd] p-4">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className={`badge ${getStatusTone(lead.status)}`}>{lead.status}</span>
-              {lead.package?.name ? <span className="badge bg-slate-100 text-slate-600">{lead.package.name}</span> : null}
-            </div>
-
-            <div className="mt-4 grid gap-3 sm:grid-cols-2">
-              <InfoRow icon={PhoneIcon} label="Phone" value={formatPhone(lead.customer?.phone) || 'Phone pending'} />
-              <InfoRow icon={UserCircleIcon} label="Assigned to" value={lead.assignedAgent?.name || 'Unassigned concierge'} />
-              <InfoRow icon={CalendarDaysIcon} label="Created" value={formatDateTime(lead.createdAt)} />
-              <InfoRow label="Travel" value={lead.travelDates || 'Dates flexible'} />
-            </div>
-
-            <div className="mt-2 grid gap-3 sm:grid-cols-2">
-              <InfoRow label="Destination" value={lead.destination || 'Not specified'} />
-              <InfoRow label="Travelers" value={lead.travellers ? `${lead.travellers} Person(s)` : 'Not specified'} />
-              <InfoRow label="Budget per person" value={lead.budgetPerPerson ? `₹${fromBudgetPaise(lead.budgetPerPerson)}` : 'Not specified'} />
-              <InfoRow label="Interest" value={lead.interest || 'Not specified'} />
-            </div>
-
-            <div className="mt-4 rounded-[14px] border border-slate-200 bg-white p-4">
-              <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">Trip Notes</p>
-              <p className="mt-2 text-sm leading-7 text-slate-600">{lead.notes || 'No notes added for this lead yet.'}</p>
-            </div>
-
-            <div className="mt-4 rounded-[14px] border border-slate-200 bg-white p-4">
-              <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">Trip Brief</p>
-              <div className="mt-3 space-y-3">
-                {quickFacts.map((item) => (
-                  <div key={item} className="rounded-[12px] border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
-                    {item}
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          <form onSubmit={onSaveLead} className="mt-5 space-y-4 rounded-[18px] border border-slate-200 bg-white p-4">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">Lead Controls</p>
-                <h3 className="mt-1 text-base font-semibold text-slate-950">Assign user and update status</h3>
-              </div>
-              <span className="text-xs text-slate-400">Saved through CRM</span>
-            </div>
-
-            <Field label="Status">
-              <select
-                value={editForm.status}
-                onChange={(event) => setEditForm((current) => ({ ...current, status: event.target.value }))}
-                className="shell-input-rect"
-              >
-                {LEAD_STATUS_OPTIONS.map((status) => (
-                  <option key={status} value={status}>{status}</option>
-                ))}
-              </select>
-            </Field>
-
-            <Field label="Assigned user">
-              <select
-                value={editForm.assignedAgentId}
-                onChange={(event) => setEditForm((current) => ({ ...current, assignedAgentId: event.target.value }))}
-                className="shell-input-rect"
-              >
-                <option value="">Unassigned</option>
-                {agents.map((agent) => (
-                  <option key={agent.id} value={agent.id}>{agent.name}</option>
-                ))}
-              </select>
-            </Field>
-
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Destination">
-                <input
-                  type="text"
-                  value={editForm.destination}
-                  onChange={(event) => setEditForm((current) => ({ ...current, destination: event.target.value }))}
-                  className="shell-input-rect"
-                />
-              </Field>
-
-              <Field label="Travel dates">
-                <input
-                  type="text"
-                  value={editForm.travelDates}
-                  onChange={(event) => setEditForm((current) => ({ ...current, travelDates: event.target.value }))}
-                  className="shell-input-rect"
-                />
-              </Field>
-            </div>
-
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Budget per person">
-                <input
-                  type="number"
-                  value={editForm.budget}
-                  onChange={(event) => setEditForm((current) => ({ ...current, budget: event.target.value }))}
-                  className="shell-input-rect"
-                />
-              </Field>
-
-              <Field label="Travelers">
-                <input
-                  type="number"
-                  min="1"
-                  value={editForm.travellers}
-                  onChange={(event) => setEditForm((current) => ({ ...current, travellers: event.target.value }))}
-                  className="shell-input-rect"
-                />
-              </Field>
-            </div>
-
-            <Field label="Notes">
-              <textarea
-                rows="4"
-                value={editForm.notes}
-                onChange={(event) => setEditForm((current) => ({ ...current, notes: event.target.value }))}
-                className="shell-input-rect rounded-[14px]"
-              />
-            </Field>
-
-            <button type="submit" disabled={isSaving} className="shell-button-primary w-full">
-              {isSaving ? 'Saving...' : 'Save lead changes'}
-            </button>
-          </form>
-
-          <section className="mt-5 rounded-[18px] border border-slate-200 bg-white p-4">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">Follow-ups</p>
-                <h3 className="mt-1 text-base font-semibold text-slate-950">Schedule next touchpoints</h3>
-              </div>
-              <div className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-medium text-slate-500">
-                {sortedFollowups.length} scheduled
-              </div>
-            </div>
-
-            <form onSubmit={onAddFollowup} className="mt-4 space-y-4">
-              <Field label="Follow-up date & time">
-                <input
-                  type="datetime-local"
-                  value={followupForm.scheduledAt}
-                  onChange={(event) => setFollowupForm((current) => ({ ...current, scheduledAt: event.target.value }))}
-                  className="shell-input-rect"
-                />
-              </Field>
-
-              <Field label="Follow-up note">
-                <textarea
-                  rows="3"
-                  value={followupForm.note}
-                  onChange={(event) => setFollowupForm((current) => ({ ...current, note: event.target.value }))}
-                  placeholder="Call back with updated package options, confirm budget, share quote..."
-                  className="shell-input-rect rounded-[14px]"
-                />
-              </Field>
-
-              <button type="submit" className="shell-button-primary w-full">
-                Schedule follow-up
-              </button>
-            </form>
-
-            <div className="mt-4 space-y-3">
-              {sortedFollowups.length === 0 ? (
-                <div className="rounded-[14px] border border-dashed border-slate-200 px-4 py-5 text-sm text-slate-500">
-                  No follow-ups scheduled for this lead yet.
-                </div>
-              ) : (
-                sortedFollowups.map((followup) => (
-                  <div key={followup.id} className="rounded-[14px] border border-slate-200 bg-slate-50 px-4 py-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                            {followup.status}
-                          </span>
-                          <span className="text-sm font-semibold text-slate-900">{formatDateTime(followup.scheduledAt)}</span>
-                        </div>
-                        <p className="mt-2 text-sm leading-6 text-slate-600">{followup.note || 'Follow-up note not provided.'}</p>
-                      </div>
-
-                      <div className="flex shrink-0 items-center gap-2">
-                        {followup.status !== 'Done' ? (
-                          <button
-                            type="button"
-                            onClick={() => onToggleFollowup(followup.id)}
-                            className="rounded-[10px] p-2 text-emerald-600 transition hover:bg-emerald-50"
-                            aria-label="Mark follow-up as done"
-                          >
-                            <CheckCircleIcon className="h-5 w-5" />
-                          </button>
-                        ) : null}
-                        <button
-                          type="button"
-                          onClick={() => onDeleteFollowup(followup.id)}
-                          className="rounded-[10px] p-2 text-rose-500 transition hover:bg-rose-50"
-                          aria-label="Delete follow-up"
-                        >
-                          <TrashIcon className="h-5 w-5" />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </section>
-        </div>
-      </aside>
-    </div>
-  );
-}
-
-function Field({ label, children }) {
-  return (
-    <label className="block">
-      <span className="mb-2 block text-xs font-bold uppercase tracking-[0.18em] text-slate-500">{label}</span>
-      {children}
-    </label>
-  );
-}
-
-function InfoRow({ icon: Icon, label, value }) {
-  return (
-    <div className="flex items-start gap-3 py-2">
-      {Icon ? <Icon className="mt-0.5 h-4 w-4 text-slate-400" /> : null}
-      <div>
-        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">{label}</p>
-        <p className="mt-1 text-sm text-slate-700">{value}</p>
-      </div>
-    </div>
-  );
-}
-
-function MessageBubble({ message }) {
-  const incoming = message.direction === 'IN';
-
-  return (
-    <div className={`flex ${incoming ? 'justify-start' : 'justify-end'}`}>
-      <div
-        className={`max-w-[720px] rounded-[16px] px-4 py-3 text-[15px] leading-7 ${
-          incoming
-            ? 'border border-slate-200 bg-white text-slate-700'
-            : 'bg-[#0f766e] text-white'
-        }`}
-      >
-        <p className="whitespace-pre-wrap break-words">{message.content}</p>
-        <p className={`mt-2 text-[11px] font-medium ${incoming ? 'text-slate-400' : 'text-emerald-100/85'}`}>
-          {formatTime(message.timestamp)}
-        </p>
-      </div>
-    </div>
-  );
-}
-
-function ConversationRow({ lead, selected, onSelect, agents, onStatusChange, onAssignAgent }) {
-  return (
-    <button
-      type="button"
-      onClick={onSelect}
-      className={`w-full rounded-[14px] border px-4 py-3 text-left transition ${
-        selected
-          ? 'border-[#99ddd2] bg-[#f7fffd]'
-          : 'border-transparent bg-transparent hover:border-slate-200 hover:bg-slate-50'
-      }`}
-    >
-      <div className="flex items-start gap-3">
-        <div className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[linear-gradient(135deg,#34b6aa,#0f766e)] text-sm font-bold text-white">
-          {getInitials(lead.customer?.name, 'TR')}
-          <span className={`absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-white ${lead.status === 'CONVERTED' ? 'bg-emerald-400' : 'bg-slate-300'}`} />
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center justify-between gap-2">
-            <p className="truncate text-sm font-semibold text-slate-900">{lead.customer?.name || 'Unnamed lead'}</p>
-            <p className="shrink-0 text-[11px] font-medium text-slate-400">{timeAgo(lead.updatedAt || lead.createdAt)}</p>
-          </div>
-          <p className="mt-1 truncate text-sm text-slate-500">{lead.destination || 'Trip details pending'}</p>
-          <div className="mt-2 flex flex-wrap gap-2 items-center">
-            <select
-                value={lead.status}
-                onClick={(e) => e.stopPropagation()}
-                onChange={(e) => onStatusChange(lead.id, e.target.value)}
-                className={`badge ${getStatusTone(lead.status)} border-transparent outline-none cursor-pointer hover:opacity-80 appearance-none text-center pb-[2px] pt-[2px]`}
-            >
-              {LEAD_STATUS_OPTIONS.map((status) => (
-                <option key={status} value={status}>{status}</option>
-              ))}
-            </select>
-            
-            <select
-                value={lead.assignedAgentId || ''}
-                onClick={(e) => e.stopPropagation()}
-                onChange={(e) => onAssignAgent(lead.id, e.target.value)}
-                className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-600 border-none outline-none cursor-pointer hover:bg-slate-200 appearance-none"
-            >
-              <option value="">Unassigned</option>
-              {agents.map((agent) => (
-                <option key={agent.id} value={agent.id}>{agent.name}</option>
-              ))}
-            </select>
-
-            {lead.package?.name ? (
-              <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-600">
-                {lead.package.name}
-              </span>
-            ) : null}
-          </div>
-        </div>
-      </div>
-    </button>
-  );
-}
+const TABS = ['All Leads', 'Just Contacted', 'Package Searched', 'Package Interested', 'Contacted', 'Booked', 'Converted', 'Lost'];
 
 export default function Leads() {
-  const [filters, setFilters] = useState({ page: 1, pageSize: 50, status: '', search: '' });
+  const [activeTab, setActiveTab] = useState('All Leads');
+  const [search, setSearch] = useState('');
+  const [view, setView] = useState('list'); // list or kanban
   const [selectedLeadId, setSelectedLeadId] = useState(null);
-  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
-  const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const [view, setView] = useState('list');
-  const [createForm, setCreateForm] = useState(EMPTY_CREATE_FORM);
-  const [editForm, setEditForm] = useState(EMPTY_EDIT_FORM);
-  const [followupForm, setFollowupForm] = useState(EMPTY_FOLLOWUP_FORM);
-  const [followupsByLeadId, setFollowupsByLeadId] = useState(() => loadFollowups());
-  const [draftMessage, setDraftMessage] = useState('');
-
-  const leadsQuery = useLeads(filters);
-  const leadRows = leadsQuery.data?.data?.data || [];
-
-  const createLead = useCreateLead();
-  const updateLead = useUpdateLead();
-  const activeLeadQuery = useLead(selectedLeadId);
-  const activeLead = activeLeadQuery.data?.data;
-  const customerId = activeLead?.customer?.id;
-  const messagesQuery = useMessages(customerId, { limit: 50 });
-  const sendMessage = useSendMessage();
-
+  
+  // Data Fetching
+  const leadsQuery = useLeads({ pageSize: 200 }); // Increase for now, could be paginated
+  const leads = leadsQuery.data?.data?.data || [];
+  
   const { data: agentsResponse } = useQuery({
     queryKey: ['agents'],
-    queryFn: () => client.get('/agents').then((response) => response.data),
+    queryFn: () => client.get('/agents').then((r) => r.data),
   });
-
   const agents = agentsResponse?.data || [];
-  const messages = messagesQuery.data?.data || activeLead?.messages || [];
-  const activeFollowups = followupsByLeadId[activeLead?.id] || [];
+  
+  const updateLead = useUpdateLead();
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    window.localStorage.setItem(FOLLOWUP_STORAGE_KEY, JSON.stringify(followupsByLeadId));
-  }, [followupsByLeadId]);
-
-  useEffect(() => {
-    if (!leadRows.length) {
-      setSelectedLeadId(null);
-      return;
+  // Derived Data
+  const filteredLeads = useMemo(() => {
+    let filtered = leads;
+    if (activeTab !== 'All Leads') {
+      filtered = filtered.filter(l => l.status.toLowerCase().replace('_', ' ') === activeTab.toLowerCase());
     }
-
-    const visible = leadRows.some((lead) => lead.id === selectedLeadId);
-    if (!selectedLeadId || !visible) {
-      setSelectedLeadId(leadRows[0].id);
+    if (search) {
+      filtered = filtered.filter(l => 
+        l.customer?.name?.toLowerCase().includes(search.toLowerCase()) || 
+        l.customer?.phone?.includes(search) ||
+        l.customer?.email?.toLowerCase().includes(search.toLowerCase())
+      );
     }
-  }, [leadRows, selectedLeadId]);
+    return filtered;
+  }, [leads, activeTab, search]);
 
-  useEffect(() => {
-    if (!activeLead) return;
-
-    setEditForm({
-      status: activeLead.status || 'NEW',
-      assignedAgentId: activeLead.assignedAgentId || '',
-      destination: activeLead.destination || '',
-      travelDates: activeLead.travelDates || '',
-      travellers: activeLead.travellers ? String(activeLead.travellers) : '',
-      budget: fromBudgetPaise(activeLead.budgetPerPerson),
-      notes: activeLead.notes || '',
-      lostReason: activeLead.lostReason || '',
-    });
-    setFollowupForm(EMPTY_FOLLOWUP_FORM);
-  }, [activeLead]);
-
-  function handleSelectLead(leadId) {
-    setSelectedLeadId(leadId);
-    setIsDrawerOpen(true);
-  }
-
-  function handleCloseDrawer() {
-    setIsDrawerOpen(false);
-  }
-
-  function handleAddFollowup(event) {
-    event.preventDefault();
-    if (!activeLead || !followupForm.scheduledAt.trim()) return;
-
-    const nextFollowup = {
-      id: globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`,
-      scheduledAt: new Date(followupForm.scheduledAt).toISOString(),
-      note: followupForm.note.trim(),
-      status: 'Scheduled',
-      createdAt: new Date().toISOString(),
+  const metrics = useMemo(() => {
+    return {
+      totalDeals: leads.length,
+      totalCompanies: new Set(leads.map(l => l.customerId)).size,
+      won: leads.filter(l => l.status === 'CONVERTED').length,
+      lost: leads.filter(l => l.status === 'LOST').length,
     };
-
-    setFollowupsByLeadId((current) => ({
-      ...current,
-      [activeLead.id]: [...(current[activeLead.id] || []), nextFollowup],
-    }));
-    setFollowupForm(EMPTY_FOLLOWUP_FORM);
-  }
-
-  function handleToggleFollowup(followupId) {
-    if (!activeLead) return;
-
-    setFollowupsByLeadId((current) => ({
-      ...current,
-      [activeLead.id]: (current[activeLead.id] || []).map((followup) =>
-        followup.id === followupId
-          ? { ...followup, status: followup.status === 'Done' ? 'Scheduled' : 'Done' }
-          : followup
-      ),
-    }));
-  }
-
-  function handleDeleteFollowup(followupId) {
-    if (!activeLead) return;
-
-    setFollowupsByLeadId((current) => ({
-      ...current,
-      [activeLead.id]: (current[activeLead.id] || []).filter((followup) => followup.id !== followupId),
-    }));
-  }
-
-  const quickFacts = useMemo(() => {
-    if (!activeLead) return [];
-    return [
-      activeLead.destination || 'Destination not yet defined',
-      activeLead.travelDates || 'Dates flexible',
-      activeLead.travellers ? `${activeLead.travellers} travelers` : 'Traveler count pending',
-      activeLead.package?.name || 'Custom itinerary',
-    ];
-  }, [activeLead]);
-
-  async function handleSaveLead(event) {
-    event.preventDefault();
-    if (!selectedLeadId) return;
-
-    await updateLead.mutateAsync({
-      id: selectedLeadId,
-      data: {
-        status: editForm.status,
-        assignedAgentId: editForm.assignedAgentId || null,
-        destination: editForm.destination.trim() || null,
-        travelDates: editForm.travelDates.trim() || null,
-        travellers: editForm.travellers ? Number(editForm.travellers) : null,
-        budgetPerPerson: toBudgetPaise(editForm.budget) || null,
-        notes: editForm.notes.trim() || null,
-        lostReason: editForm.lostReason.trim() || null,
-      },
-    });
-  }
-
-  async function handleSendMessage(event) {
-    event.preventDefault();
-    if (!customerId || !draftMessage.trim()) return;
-
-    await sendMessage.mutateAsync({
-      customerId,
-      content: draftMessage.trim(),
-    });
-    setDraftMessage('');
-  }
-
-  async function handleCreateLead(event) {
-    event.preventDefault();
-
-    const payload = {
-      customerName: createForm.customerName.trim(),
-      customerPhone: createForm.customerPhone.trim(),
-      destination: createForm.destination.trim() || undefined,
-      travelDates: createForm.travelDates.trim() || undefined,
-      travellers: createForm.travellers ? Number(createForm.travellers) : undefined,
-      budgetPerPerson: toBudgetPaise(createForm.budget),
-      assignedAgentId: createForm.assignedAgentId || undefined,
-      notes: createForm.notes.trim() || undefined,
-    };
-
-    const result = await createLead.mutateAsync(payload);
-    setCreateForm(EMPTY_CREATE_FORM);
-    setIsCreateOpen(false);
-    setSelectedLeadId(result?.data?.id || null);
-    setIsDrawerOpen(true);
-  }
-
-  async function handleQuickStatusChange(leadId, newStatus) {
-    if (!leadId) return;
-    await updateLead.mutateAsync({
-      id: leadId,
-      data: { status: newStatus },
-    });
-  }
-
-  async function handleQuickAssignAgent(leadId, agentId) {
-    if (!leadId) return;
-    await updateLead.mutateAsync({
-      id: leadId,
-      data: { assignedAgentId: agentId || null },
-    });
-  }
+  }, [leads]);
 
   return (
-    <div className="w-full">
-      <section className="grid min-h-[calc(100vh-6.25rem)] overflow-hidden rounded-[16px] border border-slate-200 bg-white xl:grid-cols-[320px_minmax(0,1fr)]">
-        <aside className="border-b border-slate-200 bg-[#fbfcfd] xl:border-b-0 xl:border-r">
-          <div className="border-b border-slate-200 px-5 py-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <h1 className="text-[20px] font-bold tracking-tight text-slate-950">Inbox</h1>
-                <div className="rounded-lg bg-slate-50 p-1 flex items-center text-sm">
-                  <button
-                    type="button"
-                    onClick={() => setView('list')}
-                    className={`px-3 py-1 rounded ${view === 'list' ? 'bg-white shadow-sm' : 'text-slate-500'}`}
-                  >
-                    List
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setView('kanban')}
-                    className={`px-3 py-1 rounded ${view === 'kanban' ? 'bg-white shadow-sm' : 'text-slate-500'}`}
-                  >
-                    Kanban
-                  </button>
-                </div>
-              </div>
-
-              <button type="button" className="rounded-[10px] p-2 text-slate-400 transition hover:bg-white hover:text-slate-700">
-                <AdjustmentsHorizontalIcon className="h-5 w-5" />
-              </button>
-            </div>
-            <p className="mt-1 text-sm text-slate-500">{leadRows.length} active conversations</p>
-          </div>
-
-          <div className="hide-scrollbar max-h-[calc(100vh-14rem)] space-y-2 overflow-y-auto p-3">
-            {leadsQuery.isLoading ? (
-              Array.from({ length: 5 }).map((_, index) => (
-                <div key={index} className="h-24 animate-pulse rounded-[14px] bg-slate-100" />
-              ))
-            ) : leadRows.length === 0 ? (
-              <div className="rounded-[14px] border border-dashed border-slate-200 p-6 text-sm text-slate-500">
-                No conversations found.
-              </div>
-            ) : (
-              leadRows.map((lead) => (
-                <ConversationRow
-                  key={lead.id}
-                  lead={lead}
-                  selected={lead.id === selectedLeadId}
-                  onSelect={() => handleSelectLead(lead.id)}
-                  agents={agents}
-                  onStatusChange={handleQuickStatusChange}
-                  onAssignAgent={handleQuickAssignAgent}
-                />
-              ))
-            )}
-          </div>
-
-          <div className="border-t border-slate-200 p-3">
-            <button type="button" onClick={() => setIsCreateOpen(true)} className="shell-button-primary w-full">
-              <PlusIcon className="h-4 w-4" />
-              New Lead
-            </button>
-          </div>
-        </aside>
-
-        <div className="flex min-h-[calc(100vh-6.25rem)] flex-col border-b border-slate-200 xl:border-b-0 xl:border-r">
-          <header className="flex items-center justify-between gap-4 border-b border-slate-200 px-5 py-4">
-            {!activeLead ? (
-              <div className="text-sm text-slate-500">Select a conversation to begin.</div>
-            ) : (
-              <>
-                <div className="min-w-0">
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[linear-gradient(135deg,#34b6aa,#0f766e)] text-sm font-bold text-white">
-                      {getInitials(activeLead.customer?.name, 'TR')}
-                    </div>
-                    <div className="min-w-0">
-                      <h2 className="truncate text-[18px] font-semibold text-slate-950">{activeLead.customer?.name || 'Lead'}</h2>
-                      <p className="mt-1 text-xs font-bold uppercase tracking-[0.18em] text-slate-500">
-                        Status: <span className="text-slate-700">{activeLead.status}</span>
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex shrink-0 items-center gap-2">
-                  <button type="button" className="shell-button-secondary">CRM Notes</button>
-                  <button type="button" className="shell-button-primary">Create Booking</button>
-                  <button type="button" className="rounded-[10px] p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700">
-                    <EllipsisVerticalIcon className="h-5 w-5" />
-                  </button>
-                </div>
-              </>
-            )}
-          </header>
-
-          <div className="hide-scrollbar flex-1 overflow-y-auto bg-[#fcfcfd] px-5 py-5">
-            {view === 'kanban' ? (
-              <LeadPipeline onLeadClick={handleSelectLead} />
-            ) : (
-              (!activeLead ? (
-                <div className="flex h-full items-center justify-center text-sm text-slate-500">
-                  No conversation selected.
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  <div className="flex justify-center">
-                    <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-medium text-slate-500">
-                      {formatDate(activeLead.createdAt)}
-                    </span>
-                  </div>
-
-                  {messages.length === 0 ? (
-                    <div className="rounded-[14px] border border-slate-200 bg-white p-6 text-sm text-slate-500">
-                      No WhatsApp messages yet for this lead.
-                    </div>
-                  ) : (
-                    messages.map((message) => (
-                      <MessageBubble key={message.id} message={message} />
-                    ))
-                  )}
-                </div>
-              ))
-            )}
-          </div>
-
-          <footer className="border-t border-slate-200 bg-white px-5 py-4">
-            <form onSubmit={handleSendMessage} className="flex items-center gap-3 rounded-[14px] border border-slate-200 bg-slate-50 px-3 py-2">
-              <input
-                type="text"
-                value={draftMessage}
-                onChange={(event) => setDraftMessage(event.target.value)}
-                placeholder={activeLead ? `Type a message to ${activeLead.customer?.name || 'this lead'}...` : 'Select a conversation to send messages'}
-                disabled={!activeLead || sendMessage.isPending}
-                className="flex-1 bg-transparent px-1 py-2 text-sm text-slate-900 outline-none placeholder:text-slate-400 disabled:cursor-not-allowed"
-              />
-              <button
-                type="submit"
-                disabled={!activeLead || !draftMessage.trim() || sendMessage.isPending}
-                className="flex h-10 w-10 items-center justify-center rounded-[12px] bg-[#0f766e] text-white transition hover:bg-[#0b5d54] disabled:cursor-not-allowed disabled:bg-slate-300"
-              >
-                <PaperAirplaneIcon className="h-4 w-4" />
-              </button>
-            </form>
-          </footer>
+    <div className="w-full pb-10">
+      
+      {/* Top Header */}
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-2xl font-bold text-slate-900">Lead Management</h1>
+        <div className="flex items-center gap-3">
+           <div className="bg-slate-100 p-1 rounded-lg flex items-center shadow-sm">
+             <button onClick={() => setView('list')} className={`px-4 py-1.5 text-sm font-medium rounded-md ${view === 'list' ? 'bg-white shadow text-slate-800' : 'text-slate-500'}`}>Table</button>
+             <button onClick={() => setView('kanban')} className={`px-4 py-1.5 text-sm font-medium rounded-md ${view === 'kanban' ? 'bg-white shadow text-slate-800' : 'text-slate-500'}`}>Kanban</button>
+           </div>
+           
+           <select className="shell-input-rect bg-white w-32 py-2">
+             <option>All Sources</option>
+           </select>
+           
+           <button className="shell-button-secondary bg-white text-slate-700 py-2">
+             Newest First
+           </button>
+           
+           <button className="shell-button-primary py-2 px-4 shadow-sm bg-blue-600 hover:bg-blue-700 text-white border-0">
+             <PlusIcon className="w-4 h-4 mr-2" /> New Lead
+           </button>
         </div>
-      </section>
+      </div>
+      
+      {/* Search & Tabs */}
+      <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="relative w-full max-w-sm">
+          <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+          <input 
+            type="text" 
+            placeholder="Search by name, email, phone..." 
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            className="w-full border border-slate-200 rounded-[14px] pl-10 pr-4 py-2.5 text-sm outline-none focus:border-blue-500 transition-colors bg-white shadow-sm"
+          />
+        </div>
+        
+        <div className="flex gap-1 overflow-x-auto hide-scrollbar">
+          {TABS.map(tab => (
+            <button 
+              key={tab} 
+              onClick={() => setActiveTab(tab)}
+              className={`px-4 py-2 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
+                activeTab === tab 
+                  ? 'border-blue-500 text-blue-600' 
+                  : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
+              }`}
+            >
+              {tab}
+            </button>
+          ))}
+        </div>
+      </div>
+      
+      {/* Metrics Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+         <div className="bg-white border text-center relative border-slate-200 rounded-[16px] p-5 flex items-center gap-4 shadow-sm">
+           <div className="w-12 h-12 rounded-full border-2 border-blue-500/20 bg-blue-50 flex items-center justify-center text-blue-600 shrink-0">
+             <span className="font-bold text-xl">📁</span>
+           </div>
+           <div>
+             <div className="text-2xl font-bold text-slate-900 leading-none">{metrics.totalDeals}</div>
+             <div className="text-xs font-semibold text-slate-500 mt-1 uppercase tracking-wider">Total Deals</div>
+           </div>
+         </div>
+         <div className="bg-white border relative border-slate-200 rounded-[16px] p-5 flex items-center gap-4 shadow-sm">
+           <div className="w-12 h-12 rounded-full border-2 border-blue-500/20 bg-blue-50 flex items-center justify-center text-blue-600 shrink-0">
+             <span className="font-bold text-xl">🏢</span>
+           </div>
+           <div>
+             <div className="text-2xl font-bold text-slate-900 leading-none">{metrics.totalCompanies}</div>
+             <div className="text-xs font-semibold text-slate-500 mt-1 uppercase tracking-wider">Total Companies</div>
+           </div>
+         </div>
+         <div className="bg-white border relative border-emerald-200 rounded-[16px] p-5 flex items-center gap-4 shadow-sm">
+           <div className="w-12 h-12 rounded-full border-2 border-emerald-500/30 bg-emerald-50 flex items-center justify-center text-emerald-600 shrink-0">
+             <span className="font-bold text-xl">🏆</span>
+           </div>
+           <div>
+             <div className="text-2xl font-bold text-emerald-700 leading-none">{metrics.won}</div>
+             <div className="text-xs font-semibold text-emerald-600/80 mt-1 uppercase tracking-wider">Won</div>
+           </div>
+         </div>
+         <div className="bg-white border relative border-rose-200 rounded-[16px] p-5 flex items-center gap-4 shadow-sm">
+           <div className="w-12 h-12 rounded-full border-2 border-rose-500/30 bg-rose-50 flex items-center justify-center text-rose-500 shrink-0">
+             <span className="font-bold text-xl">🚫</span>
+           </div>
+           <div>
+             <div className="text-2xl font-bold text-rose-600 leading-none">{metrics.lost}</div>
+             <div className="text-xs font-semibold text-rose-500/80 mt-1 uppercase tracking-wider">Lost</div>
+           </div>
+         </div>
+      </div>
+      
+      {/* Filters secondary */}
+      <div className="flex justify-end mb-4 gap-2">
+        <div className="bg-slate-100 rounded-md p-0.5 inline-flex text-xs font-medium text-slate-600 shadow-sm border border-slate-200">
+          <button className="px-3 py-1 bg-blue-600 text-white rounded-md shadow-sm">All</button>
+          <button className="px-3 py-1 hover:bg-slate-200 rounded-md transition-colors">Month</button>
+          <button className="px-3 py-1 hover:bg-slate-200 rounded-md transition-colors">Year</button>
+          <button className="px-3 py-1 hover:bg-slate-200 rounded-md transition-colors">Custom</button>
+        </div>
+      </div>
 
-      <LeadDrawer
-        isOpen={isDrawerOpen && !!activeLead}
-        lead={activeLead}
-        agents={agents}
-        quickFacts={quickFacts}
-        editForm={editForm}
-        setEditForm={setEditForm}
-        onClose={handleCloseDrawer}
-        onSaveLead={handleSaveLead}
-        isSaving={updateLead.isPending}
-        followups={activeFollowups}
-        followupForm={followupForm}
-        setFollowupForm={setFollowupForm}
-        onAddFollowup={handleAddFollowup}
-        onToggleFollowup={handleToggleFollowup}
-        onDeleteFollowup={handleDeleteFollowup}
+      {/* Main Content Area */}
+      {view === 'kanban' ? (
+        <LeadPipeline onLeadClick={(lead) => setSelectedLeadId(lead.id)} />
+      ) : (
+        <div className="bg-white border border-slate-200 rounded-[16px] shadow-sm overflow-hidden">
+          <div className="overflow-x-auto hide-scrollbar">
+            <table className="w-full text-left border-collapse min-w-[800px]">
+              <thead>
+                <tr className="border-b border-slate-200 bg-slate-50/50">
+                  <th className="py-3 px-4 text-xs font-bold uppercase tracking-wider text-slate-500 w-16">SL NO</th>
+                  <th className="py-3 px-4 text-xs font-bold uppercase tracking-wider text-slate-500">LEAD</th>
+                  <th className="py-3 px-4 text-xs font-bold uppercase tracking-wider text-slate-500">CONTACT</th>
+                  <th className="py-3 px-4 text-xs font-bold uppercase tracking-wider text-slate-500">SOURCE</th>
+                  <th className="py-3 px-4 text-xs font-bold uppercase tracking-wider text-slate-500">NEXT CONTACT</th>
+                  <th className="py-3 px-4 text-xs font-bold uppercase tracking-wider text-slate-500">ASSIGNED TO</th>
+                  <th className="py-3 px-4 text-xs font-bold uppercase tracking-wider text-slate-500">STATUS</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {leadsQuery.isLoading ? (
+                  <tr>
+                    <td colSpan="7" className="p-8 text-center text-sm text-slate-500">Loading leads...</td>
+                  </tr>
+                ) : filteredLeads.length === 0 ? (
+                  <tr>
+                    <td colSpan="7" className="p-16 text-center">
+                      <div className="text-slate-400 mb-2">No leads found.</div>
+                    </td>
+                  </tr>
+                ) : (
+                  filteredLeads.map((lead, i) => (
+                    <tr 
+                      key={lead.id} 
+                      className="hover:bg-slate-50/80 transition-colors cursor-pointer group"
+                      onClick={() => setSelectedLeadId(lead.id)}
+                    >
+                      <td className="py-4 px-4 text-sm text-blue-500 font-medium">#{i + 1}</td>
+                      <td className="py-4 px-4">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 font-bold flex items-center justify-center text-xs shrink-0">
+                            {getInitials(lead.customer?.name, 'L')}
+                          </div>
+                          <span className="font-semibold text-slate-900 text-sm">{lead.customer?.name || 'Unnamed Lead'}</span>
+                        </div>
+                      </td>
+                      <td className="py-4 px-4 text-sm text-slate-500">
+                        <div className="flex flex-col gap-1 text-xs">
+                          {lead.customer?.phone && <span className="flex items-center gap-1"><span className="text-slate-400">📞</span> {lead.customer.phone}</span>}
+                          {lead.customer?.email && <span className="flex items-center gap-1"><span className="text-slate-400">✉️</span> {lead.customer.email}</span>}
+                        </div>
+                      </td>
+                      <td className="py-4 px-4 text-sm text-slate-600">{lead.source?.replace('_', ' ') || 'Direct'}</td>
+                      <td className="py-4 px-4 text-sm text-slate-600">
+                        {lead.followUps?.length > 0 
+                          ? formatDateTime(lead.followUps[0].scheduledAt) 
+                          : <span className="text-slate-400">—</span>}
+                      </td>
+                      <td className="py-4 px-4" onClick={e => e.stopPropagation()}>
+                        <select
+                          className="bg-transparent border-0 text-sm font-medium text-slate-600 cursor-pointer focus:ring-0 appearance-none hover:bg-slate-100 rounded-md py-1 px-2"
+                          value={lead.assignedAgentId || ''}
+                          onChange={(e) => updateLead.mutate({ id: lead.id, data: { assignedAgentId: e.target.value }})}
+                        >
+                          <option value="">Unassigned</option>
+                          {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                        </select>
+                      </td>
+                      <td className="py-4 px-4" onClick={e => e.stopPropagation()}>
+                        <select
+                           className={`border-0 appearance-none text-xs font-bold rounded-full px-3 py-1 bg-emerald-100 text-emerald-700 cursor-pointer focus:ring-0 ${getStatusTone(lead.status)}`}
+                           value={lead.status}
+                           onChange={(e) => updateLead.mutate({ id: lead.id, data: { status: e.target.value }})}
+                        >
+                           {LEAD_STATUS_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                        </select>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Slide-out Drawer */}
+      <LeadDrawer 
+        leadId={selectedLeadId} 
+        onClose={() => setSelectedLeadId(null)} 
+        agents={agents} 
       />
 
-      {isCreateOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-2xl rounded-[18px] border border-slate-200 bg-white p-6 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.35)]">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="text-xs font-bold uppercase tracking-[0.22em] text-slate-400">New Lead</p>
-                <h2 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">Create manual inquiry</h2>
+    </div>
+  );
+}
+
+function LeadDrawer({ leadId, onClose, agents }) {
+  const { data, isLoading } = useLead(leadId);
+  const lead = data?.data;
+  
+  const [activeTab, setActiveTab] = useState('Notes');
+  const [noteContent, setNoteContent] = useState('');
+  
+  const [followupDate, setFollowupDate] = useState('');
+  const [followupNote, setFollowupNote] = useState('');
+
+  const updateLead = useUpdateLead();
+  const addNote = useAddNote();
+  const addFollowup = useAddFollowUp();
+  const updateFollowup = useUpdateFollowUp();
+  
+  if (!leadId) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 pointer-events-auto">
+      <div className="absolute inset-0 bg-slate-900/20 backdrop-blur-sm transition-opacity" onClick={onClose} />
+      
+      <aside className="absolute right-0 top-0 h-full w-full max-w-[500px] border-l border-slate-200 bg-white shadow-2xl flex flex-col transform transition-transform duration-300">
+        
+        {/* Drawer Header */}
+        <div className="p-6 border-b border-slate-100 flex items-start justify-between">
+          {isLoading ? (
+            <div className="animate-pulse flex gap-4 w-full">
+              <div className="h-12 w-12 rounded-full bg-slate-200 shrink-0"></div>
+              <div className="space-y-2 flex-1">
+                <div className="h-4 bg-slate-200 rounded w-1/2"></div>
+                <div className="h-3 bg-slate-200 rounded w-1/3"></div>
               </div>
-              <button type="button" onClick={() => setIsCreateOpen(false)} className="rounded-[10px] p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700">
-                <XMarkIcon className="h-5 w-5" />
-              </button>
             </div>
-
-            <form onSubmit={handleCreateLead} className="mt-6 space-y-4">
-              <div className="grid gap-4 sm:grid-cols-2">
-                <Field label="Customer name">
-                  <input
-                    required
-                    value={createForm.customerName}
-                    onChange={(event) => setCreateForm((current) => ({ ...current, customerName: event.target.value }))}
-                    className="shell-input-rect"
-                  />
-                </Field>
-
-                <Field label="Customer phone">
-                  <input
-                    required
-                    value={createForm.customerPhone}
-                    onChange={(event) => setCreateForm((current) => ({ ...current, customerPhone: event.target.value }))}
-                    className="shell-input-rect"
-                  />
-                </Field>
-
-                <Field label="Destination">
-                  <input
-                    value={createForm.destination}
-                    onChange={(event) => setCreateForm((current) => ({ ...current, destination: event.target.value }))}
-                    className="shell-input-rect"
-                  />
-                </Field>
-
-                <Field label="Travel dates">
-                  <input
-                    value={createForm.travelDates}
-                    onChange={(event) => setCreateForm((current) => ({ ...current, travelDates: event.target.value }))}
-                    className="shell-input-rect"
-                  />
-                </Field>
-
-                <Field label="Travelers">
-                  <input
-                    type="number"
-                    min="1"
-                    value={createForm.travellers}
-                    onChange={(event) => setCreateForm((current) => ({ ...current, travellers: event.target.value }))}
-                    className="shell-input-rect"
-                  />
-                </Field>
-
-                <Field label="Budget per person">
-                  <input
-                    type="number"
-                    min="0"
-                    value={createForm.budget}
-                    onChange={(event) => setCreateForm((current) => ({ ...current, budget: event.target.value }))}
-                    className="shell-input-rect"
-                  />
-                </Field>
-
-                <Field label="Assign agent">
-                  <select
-                    value={createForm.assignedAgentId}
-                    onChange={(event) => setCreateForm((current) => ({ ...current, assignedAgentId: event.target.value }))}
-                    className="shell-input-rect"
-                  >
-                    <option value="">Leave unassigned</option>
-                    {agents.map((agent) => (
-                      <option key={agent.id} value={agent.id}>{agent.name}</option>
-                    ))}
-                  </select>
-                </Field>
+          ) : (
+            <div className="flex items-center gap-4 w-full">
+              <div className="w-12 h-12 rounded-full bg-blue-100 text-blue-600 font-bold flex items-center justify-center text-lg shrink-0">
+                {getInitials(lead?.customer?.name, 'L')}
               </div>
-
-              <Field label="Notes">
-                <textarea
-                  rows="4"
-                  value={createForm.notes}
-                  onChange={(event) => setCreateForm((current) => ({ ...current, notes: event.target.value }))}
-                  className="shell-input-rect rounded-[14px]"
-                />
-              </Field>
-
-              <div className="flex justify-end gap-3 pt-2">
-                <button type="button" onClick={() => setIsCreateOpen(false)} className="shell-button-secondary">
-                  Cancel
-                </button>
-                <button type="submit" disabled={createLead.isPending} className="shell-button-primary">
-                  {createLead.isPending ? 'Creating...' : 'Create lead'}
-                </button>
+              <div className="flex-1 min-w-0">
+                <h2 className="text-xl font-bold tracking-tight text-slate-900 truncate">
+                  {lead?.customer?.name?.toUpperCase() || 'UNNAMED LEAD'}
+                </h2>
+                <div className="text-sm text-slate-500 flex items-center gap-2 mt-0.5">
+                  <span className={`badge ${getStatusTone(lead?.status)} text-[10px] px-2 py-0.5`}>{lead?.status}</span>
+                </div>
               </div>
-            </form>
+            </div>
+          )}
+          
+          <div className="flex items-center gap-2 shrink-0">
+            <button className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors">
+              <PencilIcon className="w-5 h-5" />
+            </button>
+            <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors">
+              <XMarkIcon className="w-5 h-5" />
+            </button>
           </div>
         </div>
-      ) : null}
+
+        {/* Lead Properties Grid */}
+        {!isLoading && lead && (
+          <div className="px-6 py-4 grid grid-cols-2 gap-y-4 gap-x-6 text-sm">
+             <div>
+               <div className="text-slate-400 text-xs mb-1">Project</div>
+               <div className="font-medium text-slate-900">—</div>
+             </div>
+             <div>
+               <div className="text-slate-400 text-xs mb-1">Source</div>
+               <div className="font-medium text-slate-900">{lead.source?.replace('_', ' ') || 'organic'}</div>
+             </div>
+             <div>
+               <div className="text-slate-400 text-xs mb-1">Contact Person</div>
+               <div className="font-medium text-slate-900">{lead.customer?.name?.toUpperCase()}</div>
+             </div>
+             <div>
+               <div className="text-slate-400 text-xs mb-1">Phone</div>
+               <div className="font-medium text-slate-900">{lead.customer?.phone || '—'}</div>
+             </div>
+             <div>
+               <div className="text-slate-400 text-xs mb-1">Email</div>
+               <div className="font-medium text-slate-900">{lead.customer?.email || '—'}</div>
+             </div>
+             <div>
+               <div className="text-slate-400 text-xs mb-1">Bill Value</div>
+               <div className="font-medium text-slate-900">{lead.budgetPerPerson ? `₹${Math.round(lead.budgetPerPerson/100)}` : '—'}</div>
+             </div>
+             <div>
+               <div className="text-slate-400 text-xs mb-1">Created</div>
+               <div className="font-medium text-slate-900">{formatDate(lead.createdAt)}</div>
+             </div>
+             <div>
+               <div className="text-slate-400 text-xs mb-1">Last Contact</div>
+               <div className="font-medium text-slate-900">
+                 {lead.messages?.length > 0 ? formatDate(lead.messages[0].createdAt) : '—'}
+               </div>
+             </div>
+             <div>
+               <div className="text-slate-400 text-xs mb-1">Next Contact</div>
+               <div className="font-medium text-slate-900">
+                 {lead.followUps?.find(f => f.status === 'Scheduled') ? formatDate(lead.followUps.find(f => f.status === 'Scheduled').scheduledAt) : '—'}
+               </div>
+             </div>
+             <div>
+                <div className="text-slate-400 text-xs mb-1 flex items-center justify-between">
+                  Assigned To
+                </div>
+                <div className="font-medium text-slate-900 flex items-center gap-2">
+                   <select
+                      className="bg-transparent border-0 font-medium text-blue-600 appearance-none p-0 cursor-pointer focus:ring-0 text-sm"
+                      value={lead.assignedAgentId || ''}
+                      onChange={(e) => updateLead.mutate({ id: lead.id, data: { assignedAgentId: e.target.value }})}
+                    >
+                      <option value="">— Change</option>
+                      {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                    </select>
+                </div>
+             </div>
+          </div>
+        )}
+
+        {/* Tabs Row */}
+        <div className="border-b border-slate-100 px-6 flex gap-6 overflow-x-auto hide-scrollbar shrink-0">
+          {['Notes', 'Follow-ups', 'Activity Reports', 'Timeline'].map(tab => (
+            <button
+               key={tab}
+               onClick={() => setActiveTab(tab)}
+               className={`py-3 text-sm font-semibold border-b-2 transition-colors whitespace-nowrap ${
+                 activeTab === tab ? 'border-emerald-500 text-emerald-600' : 'border-transparent text-slate-500 hover:text-slate-700'
+               }`}
+            >
+              {tab}
+            </button>
+          ))}
+        </div>
+
+        {/* Tab Content Area */}
+        <div className="flex-1 overflow-y-auto px-6 py-6 bg-slate-50 hide-scrollbar">
+          {!isLoading && lead && (
+            <>
+              {activeTab === 'Notes' && (
+                <div className="space-y-4">
+                  <div className="bg-white rounded-[12px] p-1 border border-slate-200 flex flex-col gap-2">
+                    <textarea 
+                      placeholder="Add a new note..."
+                      className="w-full text-sm outline-none border-0 px-3 py-2 bg-transparent resize-none focus:ring-0"
+                      rows="3"
+                      value={noteContent}
+                      onChange={e => setNoteContent(e.target.value)}
+                    />
+                    <div className="flex justify-end px-2 pb-2">
+                      <button 
+                        disabled={addNote.isPending || !noteContent.trim()}
+                        onClick={() => {
+                          addNote.mutate({ id: lead.id, data: { content: noteContent.trim() }});
+                          setNoteContent('');
+                        }}
+                        className="shell-button-primary py-1.5 px-4 text-xs"
+                      >
+                        {addNote.isPending ? 'Adding...' : 'Add Note'}
+                      </button>
+                    </div>
+                  </div>
+                  
+                  {(!lead.notesList || lead.notesList.length === 0) ? (
+                    <div className="text-center py-10 bg-white border border-slate-100 rounded-xl mt-4">
+                      <div className="text-slate-500 text-sm">No notes yet. Add your first note above.</div>
+                    </div>
+                  ) : (
+                    <div className="space-y-3 mt-4">
+                      {lead.notesList.map(note => (
+                        <div key={note.id} className="bg-white border text-sm border-slate-200 rounded-xl p-4">
+                          <div className="whitespace-pre-wrap text-slate-700">{note.content}</div>
+                          <div className="mt-3 text-xs text-slate-400 font-medium flex justify-between">
+                            <span>{note.agent?.name || 'Agent'}</span>
+                            <span>{formatDateTime(note.createdAt)}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {activeTab === 'Follow-ups' && (
+                <div className="space-y-4">
+                  <form 
+                     className="bg-white rounded-[14px] p-4 border border-emerald-500 shadow-[0_2px_10px_-2px_rgba(16,185,129,0.15)] flex flex-col gap-3"
+                     onSubmit={(e) => {
+                       e.preventDefault();
+                       addFollowup.mutate({ id: lead.id, data: { scheduledAt: new Date(followupDate).toISOString(), note: followupNote }});
+                       setFollowupDate(''); setFollowupNote('');
+                     }}
+                  >
+                    <h4 className="text-sm font-bold text-slate-800">Schedule Follow-Up</h4>
+                    <input 
+                      type="datetime-local" 
+                      required
+                      value={followupDate}
+                      onChange={e => setFollowupDate(e.target.value)}
+                      className="shell-input-rect bg-slate-50 text-sm"
+                    />
+                    <textarea 
+                      placeholder="Follow-up note (e.g., Call him back regarding pricing)"
+                      className="shell-input-rect bg-slate-50 text-sm py-2 resize-none"
+                      rows="2"
+                      required
+                      value={followupNote}
+                      onChange={e => setFollowupNote(e.target.value)}
+                    />
+                    <button type="submit" disabled={addFollowup.isPending} className="bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-sm py-2 px-4 rounded-lg transition-colors w-full">
+                       {addFollowup.isPending ? 'Scheduling...' : 'Schedule Follow-Up'}
+                    </button>
+                  </form>
+
+                  {(!lead.followUps || lead.followUps.length === 0) ? (
+                    <div className="text-center py-10 bg-white border border-slate-100 rounded-xl">
+                      <div className="text-slate-500 text-sm">No follow-ups scheduled</div>
+                    </div>
+                  ) : (
+                    <div className="space-y-3 mt-4">
+                       {lead.followUps.map(f => (
+                         <div key={f.id} className={`bg-white border p-4 rounded-xl flex flex-col gap-2 relative overflow-hidden ${f.status === 'Done' ? 'border-slate-200 opacity-60' : 'border-blue-100'}`}>
+                           {f.status === 'Scheduled' && <div className="absolute top-0 left-0 w-1 h-full bg-blue-500" />}
+                           <div className="flex items-center justify-between">
+                             <div className="text-xs font-bold uppercase tracking-wider text-slate-400">{f.status}</div>
+                             <div className="text-sm font-semibold text-slate-700">{formatDateTime(f.scheduledAt)}</div>
+                           </div>
+                           <p className="text-sm text-slate-800">{f.note}</p>
+                           {f.status === 'Scheduled' && (
+                             <div className="flex justify-end mt-2">
+                               <button 
+                                 className="text-xs font-semibold bg-emerald-50 text-emerald-600 px-3 py-1.5 rounded-lg flex items-center gap-1 hover:bg-emerald-100 transition-colors"
+                                 onClick={() => updateFollowup.mutate({ id: lead.id, followUpId: f.id, data: { status: 'Done' }})}
+                               >
+                                 <CheckCircleIcon className="w-4 h-4" /> Mark Done
+                               </button>
+                             </div>
+                           )}
+                         </div>
+                       ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {activeTab === 'Activity Reports' && (
+                 <div className="text-center py-10 bg-white border border-slate-100 rounded-xl">
+                   <div className="text-slate-500 text-sm">No activity reports generated yet.</div>
+                 </div>
+              )}
+
+              {activeTab === 'Timeline' && (
+                 <div className="space-y-4">
+                   <div className="bg-white border border-slate-200 rounded-xl p-4 flex gap-4">
+                     <div className="w-6 flex flex-col items-center shrink-0">
+                       <div className="w-6 h-6 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center shrink-0">
+                         <CheckCircleIcon className="w-4 h-4" />
+                       </div>
+                       <div className="w-px h-full bg-slate-200 mt-2"></div>
+                     </div>
+                     <div className="flex-1 pb-4">
+                        <div className="flex justify-between items-start">
+                           <div>
+                             <h4 className="text-sm font-bold text-slate-800">Lead Created</h4>
+                             <p className="text-xs text-slate-500 mt-1">Lead {lead.customer?.name} created via {lead.source || 'Bot'}</p>
+                           </div>
+                           <span className="text-xs text-slate-400">{formatDateTime(lead.createdAt)}</span>
+                        </div>
+                     </div>
+                   </div>
+
+                   {lead.messages?.map((msg, i) => (
+                     <div key={msg.id} className="bg-white border border-slate-200 rounded-xl p-4 flex gap-4">
+                       <div className="w-6 flex flex-col items-center shrink-0">
+                         <div className="w-6 h-6 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center shrink-0 text-[10px] font-bold">
+                           {msg.direction === 'IN' ? 'IN' : 'OUT'}
+                         </div>
+                         {i !== lead.messages.length - 1 && <div className="w-px h-full bg-slate-200 mt-2"></div>}
+                       </div>
+                       <div className="flex-1 pb-2">
+                          <div className="flex justify-between items-start">
+                             <div className="flex-1">
+                               <h4 className="text-sm font-bold text-slate-800">{msg.direction === 'IN' ? 'Message Received' : 'Message Sent'}</h4>
+                               <p className="text-sm text-slate-600 mt-1 break-words line-clamp-3">{msg.content}</p>
+                             </div>
+                             <span className="text-xs text-slate-400 pl-4 shrink-0">{formatDateTime(msg.timestamp)}</span>
+                          </div>
+                       </div>
+                     </div>
+                   ))}
+                 </div>
+              )}
+            </>
+          )}
+        </div>
+
+      </aside>
     </div>
   );
 }

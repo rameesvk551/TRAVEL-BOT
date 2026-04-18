@@ -20,11 +20,11 @@ export default function Reviews() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left Panel - Avg Rating */}
-        <div className="lg:col-span-2 bg-white rounded-xl shadow-[0_2px_10px_-3px_rgba(6,81,237,0.1)] p-8 border border-slate-100/60">
-           <div className="grid grid-cols-2 gap-12 items-center h-full">
+        <div className="lg:col-span-2 bg-white rounded-xl shadow-[0_2px_10px_-3px_rgba(6,81,237,0.1)] p-6 border border-slate-100/60">
+           <div className="grid grid-cols-2 gap-8 items-center h-full">
               <div>
-                 <p className="text-xs font-bold tracking-widest text-slate-400 uppercase mb-4">Average Rating</p>
-                 <h1 className="text-[5rem] font-extrabold text-[#0a1b3f] leading-none mb-3 tracking-tighter">
+                 <p className="text-xs font-bold tracking-widest text-slate-400 uppercase mb-2">Average Rating</p>
+                 <h1 className="text-[4rem] font-extrabold text-[#0a1b3f] leading-none mb-2 tracking-tighter">
                    {stats.avgRating.toFixed(1)}
                  </h1>
                  <div className="flex gap-1 mb-3">
@@ -33,7 +33,7 @@ export default function Reviews() {
                  <p className="text-xs font-semibold text-slate-400">Based on {stats.totalReviews.toLocaleString()} global reviews</p>
               </div>
               
-              <div className="space-y-4 relative">
+              <div className="space-y-2 relative">
                  {[5,4,3,2,1].map(r => {
                       const item = stats.distribution.find(d => parseInt(d.rating) === r) || { count: 0 };
                       const pct = stats.totalReviews > 0 ? (item.count / stats.totalReviews) * 100 : 0;
@@ -57,29 +57,29 @@ export default function Reviews() {
         </div>
 
         {/* Right Panels */}
-        <div className="space-y-6 flex flex-col justify-between">
+        <div className="space-y-4 flex flex-col justify-between">
            {/* Total Collected */}
-           <div className="bg-slate-50/80 rounded-xl p-6 border border-slate-100 relative h-full flex flex-col justify-center">
-              <div className="w-10 h-10 bg-white rounded flex items-center justify-center shadow-sm text-blue-600 mb-6 transition-transform hover:scale-105">
-                 <Database className="w-5 h-5" strokeWidth={2.5} /> 
+           <div className="bg-slate-50/80 rounded-xl p-5 border border-slate-100 relative h-full flex flex-col justify-center">
+              <div className="w-8 h-8 bg-white rounded flex items-center justify-center shadow-sm text-blue-600 mb-3 transition-transform hover:scale-105">
+                 <Database className="w-4 h-4" strokeWidth={2.5} /> 
               </div>
-              <div className="absolute top-6 right-6 bg-blue-100 text-blue-700 text-[10px] font-bold px-2 py-0.5 rounded-full tracking-wide">
+              <div className="absolute top-5 right-5 bg-blue-100 text-blue-700 text-[9px] font-bold px-2 py-0.5 rounded-full tracking-wide">
                  +12.4%
               </div>
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Total Collected</p>
-              <h2 className="text-3xl font-extrabold text-[#0a1b3f]">{stats.totalReviews.toLocaleString()}</h2>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Total Collected</p>
+              <h2 className="text-2xl font-extrabold text-[#0a1b3f]">{stats.totalReviews.toLocaleString()}</h2>
            </div>
 
            {/* Published & Approved */}
-           <div className="bg-[#0a1945] rounded-xl p-6 text-white relative h-full flex flex-col justify-center shadow-lg shadow-blue-900/20">
-              <div className="w-10 h-10 bg-white/10 rounded flex items-center justify-center mb-6 backdrop-blur-sm transition-transform hover:scale-105">
-                 <BadgeCheck className="w-5 h-5 text-blue-100" strokeWidth={2.5} />
+           <div className="bg-[#0a1945] rounded-xl p-5 text-white relative h-full flex flex-col justify-center shadow-lg shadow-blue-900/20">
+              <div className="w-8 h-8 bg-white/10 rounded flex items-center justify-center mb-3 backdrop-blur-sm transition-transform hover:scale-105">
+                 <BadgeCheck className="w-4 h-4 text-blue-100" strokeWidth={2.5} />
               </div>
-              <div className="absolute top-6 right-6 bg-white/10 text-white text-[10px] font-bold px-2 py-0.5 rounded-full tracking-wide backdrop-blur-sm">
+              <div className="absolute top-5 right-5 bg-white/10 text-white text-[9px] font-bold px-2 py-0.5 rounded-full tracking-wide backdrop-blur-sm">
                  STABLE
               </div>
-              <p className="text-[10px] font-bold text-blue-200 uppercase tracking-widest mb-2">Published & Approved</p>
-              <h2 className="text-3xl font-extrabold">{stats.publishedCount.toLocaleString()}</h2>
+              <p className="text-[10px] font-bold text-blue-200 uppercase tracking-widest mb-1">Published & Approved</p>
+              <h2 className="text-2xl font-extrabold">{stats.publishedCount.toLocaleString()}</h2>
            </div>
         </div>
       </div>

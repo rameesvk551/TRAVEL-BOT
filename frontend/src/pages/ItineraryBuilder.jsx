@@ -67,7 +67,7 @@ function SortableDay({ day, index, updateDay, removeDay }) {
           <div key={type} className="pt-2 border-t border-slate-100">
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs font-bold uppercase text-slate-500 tracking-wider flex-1">{type}</span>
-              <button type="button" onClick={() => addItem(type)} className="text-[#0d6a5f] text-xs font-semibold hover:underline">
+              <button type="button" onClick={() => addItem(type)} className="text-[#0d1b3e] text-xs font-semibold hover:underline">
                 + Add
               </button>
             </div>
@@ -99,6 +99,11 @@ export default function ItineraryBuilder() {
     travelStartDate: '', travelEndDate: '', status: 'DRAFT', days: [], totalPrice: 0
   });
 
+  const [packageSearch, setPackageSearch] = useState('');
+  const [customerSearch, setCustomerSearch] = useState('');
+  const [showPackageDropdown, setShowPackageDropdown] = useState(false);
+  const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
+
   const { data: leadsData } = useLeads({ pageSize: 500 });
   const { data: packagesData } = useQuery({
     queryKey: ['packages'],
@@ -117,6 +122,17 @@ export default function ItineraryBuilder() {
 
   const packages = useMemo(() => packagesData?.data || [], [packagesData]);
 
+  // Filtered lists based on search
+  const filteredPackages = useMemo(() => {
+    if (!packageSearch) return packages;
+    return packages.filter(p => p.name.toLowerCase().includes(packageSearch.toLowerCase()));
+  }, [packages, packageSearch]);
+
+  const filteredCustomers = useMemo(() => {
+    if (!customerSearch) return customers;
+    return customers.filter(c => c.name.toLowerCase().includes(customerSearch.toLowerCase()));
+  }, [customers, customerSearch]);
+
   const itineraryQuery = useQuery({
     queryKey: ['itinerary', id],
     queryFn: () => itinerariesApi.getById(id),
@@ -126,9 +142,26 @@ export default function ItineraryBuilder() {
   useEffect(() => {
     if (isEdit && itineraryQuery.data?.data) {
       const it = itineraryQuery.data.data;
+      const pkg = packages.find(p => p.id === it.packageId);
+      const cust = customers.find(c => c.id === it.customerId);
       setForm({ ...it, customerId: it.customerId || '', packageId: it.packageId || '', travelStartDate: it.travelStartDate || '', travelEndDate: it.travelEndDate || '' });
+      if (pkg) setPackageSearch(pkg.name);
+      if (cust) setCustomerSearch(cust.name);
     }
   }, [isEdit, itineraryQuery.data]);
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (!e.target.closest('[data-dropdown="package"]')) {
+        setShowPackageDropdown(false);
+      }
+      if (!e.target.closest('[data-dropdown="customer"]')) {
+        setShowCustomerDropdown(false);
+      }
+    };
+    document.addEventListener('click', handleClickOutside);
+    return () => document.removeEventListener('click', handleClickOutside);
+  }, []);
 
   const saveMutation = useMutation({
     mutationFn: (payload) => isEdit ? itinerariesApi.update(id, payload) : itinerariesApi.create(payload),
@@ -199,17 +232,99 @@ export default function ItineraryBuilder() {
           </div>
           <div>
             <label className="text-xs font-bold uppercase text-slate-500">Package (Optional)</label>
-            <select className="shell-input-rect mt-1" value={form.packageId} onChange={e => setForm({...form, packageId: e.target.value})}>
-              <option value="">-- No Package / Custom Itinerary --</option>
-              {packages.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
+            <div className="relative mt-1" data-dropdown="package">
+              <input 
+                type="text"
+                className="shell-input-rect w-full"
+                placeholder="Search packages..."
+                value={packageSearch}
+                onChange={e => setPackageSearch(e.target.value)}
+                onFocus={() => setShowPackageDropdown(true)}
+              />
+              {showPackageDropdown && (
+                <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto">
+                  <div 
+                    className="px-3 py-2 text-sm text-slate-700 hover:bg-slate-100 cursor-pointer"
+                    onClick={() => {
+                      setForm({...form, packageId: ''});
+                      setPackageSearch('');
+                      setShowPackageDropdown(false);
+                    }}
+                  >
+                    -- No Package / Custom Itinerary --
+                  </div>
+                  {filteredPackages.map(p => (
+                    <div 
+                      key={p.id}
+                      className="px-3 py-2 text-sm text-slate-700 hover:bg-slate-100 cursor-pointer"
+                      onClick={() => {
+                        setForm({...form, packageId: p.id});
+                        setPackageSearch(p.name);
+                        setShowPackageDropdown(false);
+                      }}
+                    >
+                      {p.name}
+                    </div>
+                  ))}
+                  {filteredPackages.length === 0 && (
+                    <div className="px-3 py-2 text-sm text-slate-500 text-center">No packages found</div>
+                  )}
+                </div>
+              )}
+              {form.packageId && (
+                <div className="mt-1 text-xs text-slate-500">
+                  Selected: {packages.find(p => p.id === form.packageId)?.name}
+                </div>
+              )}
+            </div>
           </div>
           <div>
             <label className="text-xs font-bold uppercase text-slate-500">Client (Optional)</label>
-            <select className="shell-input-rect mt-1" value={form.customerId} onChange={e => setForm({...form, customerId: e.target.value})}>
-              <option value="">-- Select Client --</option>
-              {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
+            <div className="relative mt-1" data-dropdown="customer">
+              <input 
+                type="text"
+                className="shell-input-rect w-full"
+                placeholder="Search clients..."
+                value={customerSearch}
+                onChange={e => setCustomerSearch(e.target.value)}
+                onFocus={() => setShowCustomerDropdown(true)}
+              />
+              {showCustomerDropdown && (
+                <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto">
+                  <div 
+                    className="px-3 py-2 text-sm text-slate-700 hover:bg-slate-100 cursor-pointer"
+                    onClick={() => {
+                      setForm({...form, customerId: ''});
+                      setCustomerSearch('');
+                      setShowCustomerDropdown(false);
+                    }}
+                  >
+                    -- Select Client --
+                  </div>
+                  {filteredCustomers.map(c => (
+                    <div 
+                      key={c.id}
+                      className="px-3 py-2 text-sm text-slate-700 hover:bg-slate-100 cursor-pointer"
+                      onClick={() => {
+                        setForm({...form, customerId: c.id});
+                        setCustomerSearch(c.name);
+                        setShowCustomerDropdown(false);
+                      }}
+                    >
+                      {c.name}
+                    </div>
+                  ))}
+                  {filteredCustomers.length === 0 && (
+                    <div className="px-3 py-2 text-sm text-slate-500 text-center">No clients found</div>
+                  )}
+                </div>
+              )}
+              {form.customerId && (
+                <div className="mt-1 text-xs text-slate-500">
+                  Selected: {customers.find(c => c.id === form.customerId)?.name}
+                </div>
+              )}
+            </div>
           </div>
           <div>
             <label className="text-xs font-bold uppercase text-slate-500">Destination</label>
@@ -277,7 +392,7 @@ export default function ItineraryBuilder() {
           <h2 className="text-xl font-bold text-slate-900 mb-6">Financials</h2>
           
           <div className="space-y-4">
-            <div className="p-4 rounded-2xl bg-[#0d6a5f] shadow-lg">
+            <div className="p-4 rounded-2xl bg-[#0d1b3e] shadow-lg">
               <p className="text-xs font-bold uppercase text-emerald-100 mb-1">Total Price</p>
               <p className="text-2xl font-bold text-white">{formatCurrency(form.totalPrice * 100)}</p>
             </div>
@@ -297,7 +412,7 @@ export default function ItineraryBuilder() {
       {/* HIDDEN PRINTABLE VIEW */}
       <div className="hidden">
         <div ref={pdfRef} className="bg-white text-black p-10 w-[800px]">
-          <h1 className="text-4xl font-bold text-[#0d6a5f] mb-4">{form.name || 'Itinerary Proposal'}</h1>
+          <h1 className="text-4xl font-bold text-[#0d1b3e] mb-4">{form.name || 'Itinerary Proposal'}</h1>
           <p className="text-lg text-slate-600 mb-8">{form.destination}</p>
           <div className="mb-8 grid grid-cols-2 gap-4">
             <div><strong className="text-slate-500">Guests:</strong> {form.adults} Adults, {form.children} Children</div>
@@ -306,7 +421,7 @@ export default function ItineraryBuilder() {
           
           <div className="space-y-8">
             {form.days.map((d, i) => (
-              <div key={i} className="border-l-4 border-[#0d6a5f] pl-4">
+              <div key={i} className="border-l-4 border-[#0d1b3e] pl-4">
                 <h3 className="text-xl font-bold">Day {i+1}: {d.title}</h3>
                 <p className="text-slate-600 mt-2">{d.description}</p>
                 {d.hotels?.length > 0 && <p className="mt-2 text-sm"><strong>Hotel:</strong> {d.hotels.map(h => h.name).join(', ')}</p>}
@@ -318,7 +433,7 @@ export default function ItineraryBuilder() {
 
           <div className="mt-12 pt-8 border-t border-slate-200">
             <h3 className="text-2xl font-bold mb-4">Pricing</h3>
-            <p className="text-3xl font-bold text-[#0d6a5f]">{formatCurrency(totals.price * 100)}</p>
+            <p className="text-3xl font-bold text-[#0d1b3e]">{formatCurrency(totals.price * 100)}</p>
           </div>
         </div>
       </div>

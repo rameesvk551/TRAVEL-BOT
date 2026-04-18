@@ -45,10 +45,50 @@ async function remove(req, res, next) {
   }
 }
 
+async function addFollowUp(req, res, next) {
+  try {
+    const followUp = await leadService.addFollowUp(req.params.id, req.agency.id, req.body);
+    res.status(201).json({ success: true, data: followUp, message: 'Follow-up scheduled' });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function updateFollowUp(req, res, next) {
+  try {
+    const followUp = await leadService.updateFollowUp(req.params.id, req.params.followUpId, req.agency.id, req.body);
+    res.json({ success: true, data: followUp });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function deleteFollowUp(req, res, next) {
+  try {
+    await leadService.deleteFollowUp(req.params.id, req.params.followUpId, req.agency.id);
+    res.json({ success: true, message: 'Follow-up deleted' });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function addNote(req, res, next) {
+  try {
+    const note = await leadService.addNote(req.params.id, req.agency.id, req.user?.id || req.agent?.id || req.agency?.id, req.body.content);
+    res.status(201).json({ success: true, data: note, message: 'Note added' });
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   list,
   getById,
   create,
   update,
   remove,
+  addFollowUp,
+  updateFollowUp,
+  deleteFollowUp,
+  addNote,
 };

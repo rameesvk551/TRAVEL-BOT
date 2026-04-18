@@ -47,3 +47,45 @@ export function useDeleteLead() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['leads'] }),
   });
 }
+
+// FollowUp hooks
+export function useAddFollowUp() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }) => leadsApi.addFollowUp(id, data),
+    onSuccess: (_, { id }) => {
+      qc.invalidateQueries({ queryKey: ['lead', id] });
+    },
+  });
+}
+
+export function useUpdateFollowUp() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, followUpId, data }) => leadsApi.updateFollowUp(id, followUpId, data),
+    onSuccess: (_, { id }) => {
+      qc.invalidateQueries({ queryKey: ['lead', id] });
+    },
+  });
+}
+
+export function useDeleteFollowUp() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, followUpId }) => leadsApi.deleteFollowUp(id, followUpId),
+    onSuccess: (_, { id }) => {
+      qc.invalidateQueries({ queryKey: ['lead', id] });
+    },
+  });
+}
+
+// Note hooks
+export function useAddNote() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }) => leadsApi.addNote(id, data),
+    onSuccess: (_, { id }) => {
+      qc.invalidateQueries({ queryKey: ['lead', id] });
+    },
+  });
+}

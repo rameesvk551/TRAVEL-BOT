@@ -14,8 +14,8 @@ import { analyticsApi } from '../api/analyticsApi';
 
 
 /* ───────────────── Color Palette ───────────────── */
-const COLORS = ['#0d6a5f', '#14b8a6', '#0ea5e9', '#6366f1', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
-const TEAL = '#0d6a5f';
+const COLORS = ['#0d1b3e', '#14b8a6', '#0ea5e9', '#6366f1', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
+const TEAL = '#0d1b3e';
 const TEAL_LIGHT = '#14b8a6';
 
 /* ───────────────── Tab definitions ───────────────── */
@@ -863,7 +863,7 @@ export default function Analytics() {
             <button
               key={p.label}
               onClick={() => setDatePreset(p.days)}
-              className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${datePreset === p.days ? 'bg-[#0d6a5f] text-white shadow-sm' : 'border border-slate-200 bg-white text-slate-500 hover:bg-slate-50'}`}
+              className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${datePreset === p.days ? 'bg-[#0d1b3e] text-white shadow-sm' : 'border border-slate-200 bg-white text-slate-500 hover:bg-slate-50'}`}
             >
               {p.label}
             </button>
@@ -879,7 +879,7 @@ export default function Analytics() {
             onClick={() => setActiveTab(tab.key)}
             className={`flex shrink-0 items-center gap-1.5 rounded-xl px-4 py-2.5 text-sm font-semibold transition ${
               activeTab === tab.key
-                ? 'bg-[#0d6a5f] text-white shadow-md shadow-teal-500/20'
+                ? 'bg-[#0d1b3e] text-white shadow-md shadow-teal-500/20'
                 : 'border border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:text-slate-700'
             }`}
           >

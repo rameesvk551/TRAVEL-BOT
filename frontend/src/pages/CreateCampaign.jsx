@@ -19,6 +19,7 @@ const CAMPAIGN_TYPES = [
   { value: 'PROMOTIONAL', label: 'Promotional', icon: Gift, desc: 'Special offers, discounts, and deals', gradient: 'from-emerald-500 to-teal-600' },
   { value: 'RE_ENGAGEMENT', label: 'Re-engagement', icon: RotateCcw, desc: 'Win back inactive customers', gradient: 'from-amber-500 to-orange-600' },
   { value: 'SEASONAL', label: 'Seasonal', icon: Sparkles, desc: 'Holiday/season-based campaigns', gradient: 'from-violet-500 to-purple-600' },
+  { value: 'REVIEW_COLLECTION', label: 'Review Collection', icon: Star, desc: 'Request trip reviews manually', gradient: 'from-pink-500 to-rose-600' },
 ];
 
 const AUDIENCE_MODES = [
@@ -344,7 +345,7 @@ export default function CreateCampaign() {
                     {/* Step circle */}
                     <div className={`relative flex items-center justify-center w-11 h-11 rounded-2xl transition-all duration-500 ${
                       isActive
-                        ? 'bg-gradient-to-br from-[#0d6a5f] to-[#0a524a] text-white shadow-lg shadow-teal-500/25 scale-110'
+                        ? 'bg-gradient-to-br from-[#0d1b3e] to-[#0a524a] text-white shadow-lg shadow-teal-500/25 scale-110'
                         : isDone
                         ? 'bg-gradient-to-br from-emerald-400 to-emerald-500 text-white shadow-md shadow-emerald-200/40'
                         : 'bg-slate-100 text-slate-400 group-hover:bg-slate-200'
@@ -356,7 +357,7 @@ export default function CreateCampaign() {
                     </div>
                     {/* Label */}
                     <span className={`text-[11px] font-bold tracking-wide transition-colors duration-300 ${
-                      isActive ? 'text-[#0d6a5f]'
+                      isActive ? 'text-[#0d1b3e]'
                       : isDone ? 'text-emerald-600'
                       : 'text-slate-400'
                     }`}>
@@ -418,7 +419,7 @@ export default function CreateCampaign() {
                         onClick={() => setFormData({ ...formData, type: t.value })}
                         className={`group relative flex items-start gap-4 rounded-2xl border-2 p-4 text-left transition-all duration-300 overflow-hidden ${
                           isActive
-                            ? 'border-[#0d6a5f] bg-gradient-to-br from-teal-50/80 to-emerald-50/50 shadow-lg shadow-teal-100/60 scale-[1.01]'
+                            ? 'border-[#0d1b3e] bg-gradient-to-br from-teal-50/80 to-emerald-50/50 shadow-lg shadow-teal-100/60 scale-[1.01]'
                             : 'border-slate-200/80 hover:border-slate-300 hover:shadow-md hover:shadow-slate-100/60 hover:bg-slate-50/50'
                         }`}
                       >
@@ -430,7 +431,7 @@ export default function CreateCampaign() {
                           <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">{t.desc}</p>
                         </div>
                         {isActive && (
-                          <div className="flex h-6 w-6 items-center justify-center rounded-full bg-gradient-to-br from-[#0d6a5f] to-[#0a524a] text-white shadow-md animate-scale-in">
+                          <div className="flex h-6 w-6 items-center justify-center rounded-full bg-gradient-to-br from-[#0d1b3e] to-[#0a524a] text-white shadow-md animate-scale-in">
                             <Check className="w-3.5 h-3.5" strokeWidth={3} />
                           </div>
                         )}
@@ -481,7 +482,7 @@ export default function CreateCampaign() {
                       }}
                       className={`group relative flex flex-col gap-2.5 rounded-2xl border-2 p-4 text-left transition-all duration-300 overflow-hidden ${
                         isSelected
-                          ? 'border-[#0d6a5f] bg-gradient-to-br from-teal-50/80 to-emerald-50/50 shadow-lg shadow-teal-100/60'
+                          ? 'border-[#0d1b3e] bg-gradient-to-br from-teal-50/80 to-emerald-50/50 shadow-lg shadow-teal-100/60'
                           : 'border-slate-200/80 hover:border-slate-300 hover:shadow-md hover:bg-slate-50/50'
                       }`}
                     >
@@ -491,7 +492,7 @@ export default function CreateCampaign() {
                           <span className="text-sm font-bold text-slate-900 truncate">{t.displayName}</span>
                         </div>
                         {isSelected && (
-                          <div className="flex h-5 w-5 items-center justify-center rounded-full bg-gradient-to-br from-[#0d6a5f] to-[#0a524a] text-white flex-shrink-0 animate-scale-in">
+                          <div className="flex h-5 w-5 items-center justify-center rounded-full bg-gradient-to-br from-[#0d1b3e] to-[#0a524a] text-white flex-shrink-0 animate-scale-in">
                             <Check className="w-3 h-3" strokeWidth={3} />
                           </div>
                         )}
@@ -593,7 +594,7 @@ export default function CreateCampaign() {
                       }}
                       className={`group relative flex flex-col items-center gap-2.5 rounded-2xl border-2 p-3.5 text-center transition-all duration-300 overflow-hidden ${
                         isActive
-                          ? 'border-[#0d6a5f] bg-gradient-to-b from-teal-50/80 to-emerald-50/60 shadow-lg shadow-teal-100/50 scale-[1.02]'
+                          ? 'border-[#0d1b3e] bg-gradient-to-b from-teal-50/80 to-emerald-50/60 shadow-lg shadow-teal-100/50 scale-[1.02]'
                           : 'border-slate-200/80 hover:border-slate-300 hover:shadow-md hover:bg-slate-50/50'
                       }`}
                     >
@@ -604,7 +605,7 @@ export default function CreateCampaign() {
                       }`}>
                         <Icon className="w-4.5 h-4.5" />
                       </div>
-                      <span className={`text-xs font-bold leading-tight transition-colors duration-300 ${isActive ? 'text-[#0d6a5f]' : 'text-slate-700'}`}>{m.label}</span>
+                      <span className={`text-xs font-bold leading-tight transition-colors duration-300 ${isActive ? 'text-[#0d1b3e]' : 'text-slate-700'}`}>{m.label}</span>
                       {isActive && <div className="absolute -bottom-6 -right-6 w-16 h-16 bg-teal-400/10 rounded-full blur-xl" />}
                     </button>
                   );
@@ -637,7 +638,7 @@ export default function CreateCampaign() {
                         <button
                           onClick={() => setSelectedPackageId(null)}
                           className={`group flex items-center gap-3 rounded-xl border-2 p-3.5 text-left transition-all duration-300 ${
-                            !selectedPackageId ? 'border-[#0d6a5f] bg-gradient-to-r from-teal-50/80 to-emerald-50/50 shadow-md' : 'border-slate-200/80 hover:border-slate-300 hover:shadow-sm'
+                            !selectedPackageId ? 'border-[#0d1b3e] bg-gradient-to-r from-teal-50/80 to-emerald-50/50 shadow-md' : 'border-slate-200/80 hover:border-slate-300 hover:shadow-sm'
                           }`}
                         >
                           <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-slate-300 to-slate-400 flex items-center justify-center text-white">
@@ -656,7 +657,7 @@ export default function CreateCampaign() {
                             key={pkg.id}
                             onClick={() => setSelectedPackageId(pkg.id)}
                             className={`group flex items-center gap-3 rounded-xl border-2 p-3.5 text-left transition-all duration-300 ${
-                              isSelected ? 'border-[#0d6a5f] bg-gradient-to-r from-teal-50/80 to-emerald-50/50 shadow-md' : 'border-slate-200/80 hover:border-slate-300 hover:shadow-sm'
+                              isSelected ? 'border-[#0d1b3e] bg-gradient-to-r from-teal-50/80 to-emerald-50/50 shadow-md' : 'border-slate-200/80 hover:border-slate-300 hover:shadow-sm'
                             }`}
                           >
                             {pkg.imageUrl ? (
@@ -671,7 +672,7 @@ export default function CreateCampaign() {
                               <p className="text-xs text-slate-400">{(pkg.destinations || []).join(', ') || pkg.category || '-'}</p>
                             </div>
                             {isSelected && (
-                              <div className="flex h-5 w-5 items-center justify-center rounded-full bg-gradient-to-br from-[#0d6a5f] to-[#0a524a] text-white flex-shrink-0 animate-scale-in">
+                              <div className="flex h-5 w-5 items-center justify-center rounded-full bg-gradient-to-br from-[#0d1b3e] to-[#0a524a] text-white flex-shrink-0 animate-scale-in">
                                 <Check className="w-3 h-3" strokeWidth={3} />
                               </div>
                             )}
@@ -696,7 +697,7 @@ export default function CreateCampaign() {
                                 )}
                                 className={`rounded-full px-4 py-2 text-xs font-bold transition-all duration-300 ${
                                   isSelected
-                                    ? 'bg-gradient-to-r from-[#0d6a5f] to-[#0a524a] text-white shadow-md shadow-teal-200/40'
+                                    ? 'bg-gradient-to-r from-[#0d1b3e] to-[#0a524a] text-white shadow-md shadow-teal-200/40'
                                     : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                                 }`}
                               >
@@ -721,7 +722,7 @@ export default function CreateCampaign() {
                           onClick={() => setSelectedBookingStatus(s.value)}
                           className={`rounded-xl px-5 py-3 text-sm font-bold transition-all duration-300 ${
                             selectedBookingStatus === s.value
-                              ? 'bg-gradient-to-r from-[#0d6a5f] to-[#0a524a] text-white shadow-lg shadow-teal-200/40'
+                              ? 'bg-gradient-to-r from-[#0d1b3e] to-[#0a524a] text-white shadow-lg shadow-teal-200/40'
                               : 'border border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300'
                           }`}
                         >
@@ -769,7 +770,7 @@ export default function CreateCampaign() {
                       <button
                         onClick={() => processImportText(importText)}
                         disabled={!importText.trim() || importStatus === 'importing'}
-                        className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-[#0d6a5f] to-[#0a524a] px-5 py-3 text-sm font-bold text-white shadow-lg shadow-teal-200/30 hover:shadow-xl hover:shadow-teal-200/40 transition-all duration-300 disabled:opacity-50 disabled:shadow-none"
+                        className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-[#0d1b3e] to-[#0a524a] px-5 py-3 text-sm font-bold text-white shadow-lg shadow-teal-200/30 hover:shadow-xl hover:shadow-teal-200/40 transition-all duration-300 disabled:opacity-50 disabled:shadow-none"
                       >
                         <UserPlus className="w-4 h-4" />
                         {importStatus === 'importing' ? 'Importing...' : 'Import Contacts'}
@@ -893,13 +894,13 @@ export default function CreateCampaign() {
                   onClick={() => setFormData({ ...formData, scheduleMode: 'now' })}
                   className={`group relative flex flex-col items-center gap-4 rounded-2xl border-2 p-8 transition-all duration-300 overflow-hidden ${
                     formData.scheduleMode === 'now'
-                      ? 'border-[#0d6a5f] bg-gradient-to-b from-teal-50/80 to-emerald-50/60 shadow-xl shadow-teal-100/50 scale-[1.01]'
+                      ? 'border-[#0d1b3e] bg-gradient-to-b from-teal-50/80 to-emerald-50/60 shadow-xl shadow-teal-100/50 scale-[1.01]'
                       : 'border-slate-200/80 hover:border-slate-300 hover:shadow-lg'
                   }`}
                 >
                   <div className={`flex h-16 w-16 items-center justify-center rounded-2xl transition-all duration-500 ${
                     formData.scheduleMode === 'now'
-                      ? 'bg-gradient-to-br from-[#0d6a5f] to-[#0a524a] text-white shadow-xl shadow-teal-300/30 scale-110'
+                      ? 'bg-gradient-to-br from-[#0d1b3e] to-[#0a524a] text-white shadow-xl shadow-teal-300/30 scale-110'
                       : 'bg-slate-100 text-slate-400 group-hover:bg-slate-200'
                   }`}>
                     <Send className="w-7 h-7" />
@@ -915,13 +916,13 @@ export default function CreateCampaign() {
                   onClick={() => setFormData({ ...formData, scheduleMode: 'scheduled' })}
                   className={`group relative flex flex-col items-center gap-4 rounded-2xl border-2 p-8 transition-all duration-300 overflow-hidden ${
                     formData.scheduleMode === 'scheduled'
-                      ? 'border-[#0d6a5f] bg-gradient-to-b from-teal-50/80 to-emerald-50/60 shadow-xl shadow-teal-100/50 scale-[1.01]'
+                      ? 'border-[#0d1b3e] bg-gradient-to-b from-teal-50/80 to-emerald-50/60 shadow-xl shadow-teal-100/50 scale-[1.01]'
                       : 'border-slate-200/80 hover:border-slate-300 hover:shadow-lg'
                   }`}
                 >
                   <div className={`flex h-16 w-16 items-center justify-center rounded-2xl transition-all duration-500 ${
                     formData.scheduleMode === 'scheduled'
-                      ? 'bg-gradient-to-br from-[#0d6a5f] to-[#0a524a] text-white shadow-xl shadow-teal-300/30 scale-110'
+                      ? 'bg-gradient-to-br from-[#0d1b3e] to-[#0a524a] text-white shadow-xl shadow-teal-300/30 scale-110'
                       : 'bg-slate-100 text-slate-400 group-hover:bg-slate-200'
                   }`}>
                     <Clock className="w-7 h-7" />
@@ -979,7 +980,7 @@ export default function CreateCampaign() {
                         </div>
                         <span className="text-sm text-slate-500">{item.label}</span>
                       </div>
-                      <span className={`text-sm font-bold ${item.highlight ? 'text-[#0d6a5f]' : 'text-slate-900'}`}>
+                      <span className={`text-sm font-bold ${item.highlight ? 'text-[#0d1b3e]' : 'text-slate-900'}`}>
                         {item.value}
                         {item.label === 'Template' && formData.messageBody && !selectedTemplate && '...'}
                       </span>
@@ -1013,7 +1014,7 @@ export default function CreateCampaign() {
             <button
               onClick={() => setStep(step + 1)}
               disabled={!canProceed()}
-              className="group flex items-center gap-2 rounded-xl bg-gradient-to-r from-[#0d6a5f] to-[#0a524a] px-6 py-2.5 text-sm font-bold text-white shadow-lg shadow-teal-500/20 hover:shadow-xl hover:shadow-teal-500/30 hover:scale-[1.02] transition-all duration-300 disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none disabled:hover:scale-100"
+              className="group flex items-center gap-2 rounded-xl bg-gradient-to-r from-[#0d1b3e] to-[#0a524a] px-6 py-2.5 text-sm font-bold text-white shadow-lg shadow-teal-500/20 hover:shadow-xl hover:shadow-teal-500/30 hover:scale-[1.02] transition-all duration-300 disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none disabled:hover:scale-100"
             >
               Continue
               <ChevronRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform duration-200" />
@@ -1022,7 +1023,7 @@ export default function CreateCampaign() {
             <button
               onClick={handleSubmit}
               disabled={sending}
-              className="group flex items-center gap-2 rounded-xl bg-gradient-to-r from-[#0d6a5f] to-[#0a524a] px-6 py-2.5 text-sm font-bold text-white shadow-lg shadow-teal-500/20 hover:shadow-xl hover:shadow-teal-500/30 hover:scale-[1.02] transition-all duration-300 disabled:opacity-60 disabled:hover:scale-100"
+              className="group flex items-center gap-2 rounded-xl bg-gradient-to-r from-[#0d1b3e] to-[#0a524a] px-6 py-2.5 text-sm font-bold text-white shadow-lg shadow-teal-500/20 hover:shadow-xl hover:shadow-teal-500/30 hover:scale-[1.02] transition-all duration-300 disabled:opacity-60 disabled:hover:scale-100"
             >
               {sending ? (
                 <>

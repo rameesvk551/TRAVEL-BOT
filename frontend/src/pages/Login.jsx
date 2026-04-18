@@ -18,7 +18,7 @@ export default function Login() {
     <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(13,106,95,0.16),transparent_28%),linear-gradient(180deg,#f7f9fc_0%,#eef2f8_100%)] px-4 py-12">
       <div className="mx-auto grid min-h-[calc(100vh-6rem)] max-w-6xl items-center gap-10 lg:grid-cols-[0.95fr_1.05fr]">
         <section className="px-2">
-          <div className="inline-flex h-16 w-16 items-center justify-center rounded-[24px] bg-[radial-gradient(circle_at_top,#45c3b4,#0d6a5f)] text-white shadow-[0_22px_48px_-26px_rgba(13,106,95,0.75)]">
+          <div className="inline-flex h-16 w-16 items-center justify-center rounded-[24px] bg-[radial-gradient(circle_at_top,#45c3b4,#0d1b3e)] text-white shadow-[0_22px_48px_-26px_rgba(13,106,95,0.75)]">
             <GlobeAltIcon className="h-8 w-8" />
           </div>
           <p className="eyebrow mt-8">Travel CRM</p>

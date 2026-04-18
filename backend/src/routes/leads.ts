@@ -72,4 +72,24 @@ router.patch('/:id', authenticate, requirePermission(PERMISSIONS.LEADS_MANAGE), 
  */
 router.delete('/:id', authenticate, requirePermission(PERMISSIONS.LEADS_MANAGE), leadController.remove);
 
+/**
+ * POST /api/leads/:id/followups
+ */
+router.post('/:id/followups', authenticate, leadController.addFollowUp);
+
+/**
+ * PATCH /api/leads/:id/followups/:followUpId
+ */
+router.patch('/:id/followups/:followUpId', authenticate, leadController.updateFollowUp);
+
+/**
+ * DELETE /api/leads/:id/followups/:followUpId
+ */
+router.delete('/:id/followups/:followUpId', authenticate, leadController.deleteFollowUp);
+
+/**
+ * POST /api/leads/:id/notes
+ */
+router.post('/:id/notes', authenticate, leadController.addNote);
+
 module.exports = router;

@@ -111,6 +111,8 @@ export default function Settings() {
     googleReviewLink: agency?.googleReviewLink || '',
     autoReviewCollectionEnabled: agency?.autoReviewCollectionEnabled !== false,
     autoReviewDelayDays: agency?.autoReviewDelayDays ?? 2,
+    followUpReminderEnabled: agency?.followUpReminderEnabled !== false,
+    followUpReminderMinutes: agency?.followUpReminderMinutes ?? 30,
     whatsappCatalogId: agency?.whatsappCatalogId || '',
     razorpayKeyId: '',
     razorpayKeySecret: '',
@@ -184,6 +186,8 @@ export default function Settings() {
     if (form.googleReviewLink !== agency?.googleReviewLink) data.googleReviewLink = form.googleReviewLink;
     if (form.autoReviewCollectionEnabled !== (agency?.autoReviewCollectionEnabled !== false)) data.autoReviewCollectionEnabled = form.autoReviewCollectionEnabled;
     if (parseInt(form.autoReviewDelayDays, 10) !== (agency?.autoReviewDelayDays ?? 2)) data.autoReviewDelayDays = parseInt(form.autoReviewDelayDays, 10);
+    if (form.followUpReminderEnabled !== (agency?.followUpReminderEnabled !== false)) data.followUpReminderEnabled = form.followUpReminderEnabled;
+    if (parseInt(form.followUpReminderMinutes, 10) !== (agency?.followUpReminderMinutes ?? 30)) data.followUpReminderMinutes = parseInt(form.followUpReminderMinutes, 10);
     if (form.whatsappCatalogId !== agency?.whatsappCatalogId) data.whatsappCatalogId = form.whatsappCatalogId;
     if (form.razorpayKeyId) data.razorpayKeyId = form.razorpayKeyId;
     if (form.razorpayKeySecret) data.razorpayKeySecret = form.razorpayKeySecret;
@@ -265,7 +269,7 @@ export default function Settings() {
         <div className="space-y-6">
           <article className="shell-panel p-6">
             <div className="flex items-center gap-3">
-              <BuildingOfficeIcon className="h-5 w-5 text-[#0d6a5f]" />
+              <BuildingOfficeIcon className="h-5 w-5 text-[#0d1b3e]" />
               <h2 className="text-xl font-extrabold text-slate-950">Agency Information</h2>
             </div>
 
@@ -295,7 +299,7 @@ export default function Settings() {
                       checked={form.autoReviewCollectionEnabled}
                       onChange={(e) => update('autoReviewCollectionEnabled', e.target.checked)}
                     />
-                    <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-emerald-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#0d6a5f]"></div>
+                    <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-emerald-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#0d1b3e]"></div>
                   </label>
                 </div>
                 
@@ -317,6 +321,41 @@ export default function Settings() {
                 )}
               </div>
 
+              <div className="col-span-1 md:col-span-2 rounded-[20px] bg-slate-50 border border-slate-100 p-5 mt-2">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-800">Agent Follow-up Reminders</h3>
+                    <p className="text-xs text-slate-500 mt-1 max-w-sm">Automatically send WhatsApp notifications to assigned agents before a scheduled follow-up.</p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input 
+                      type="checkbox" 
+                      className="sr-only peer" 
+                      checked={form.followUpReminderEnabled}
+                      onChange={(e) => update('followUpReminderEnabled', e.target.checked)}
+                    />
+                    <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-emerald-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#0d6a5f]"></div>
+                  </label>
+                </div>
+                
+                {form.followUpReminderEnabled && (
+                   <div className="mt-4 pt-4 border-t border-slate-200">
+                     <label className="block text-sm font-semibold text-slate-700">Offset minutes</label>
+                     <div className="flex items-center mt-2 gap-2">
+                       <input 
+                         type="number" 
+                         min="0" 
+                         max="1440" 
+                         value={form.followUpReminderMinutes}
+                         onChange={(e) => update('followUpReminderMinutes', e.target.value)}
+                         className="shell-input-rect w-24"
+                       />
+                       <span className="text-sm text-slate-500">minutes before follow-up</span>
+                     </div>
+                   </div>
+                )}
+              </div>
+
               <Field label="WhatsApp number" hint="This updates automatically after your provider connection is approved.">
                 <input value={whatsappNumber} disabled className="shell-input-rect cursor-not-allowed opacity-60" />
               </Field>
@@ -329,7 +368,7 @@ export default function Settings() {
 
           <article className="shell-panel p-6">
             <div className="flex items-center gap-3">
-              <KeyIcon className="h-5 w-5 text-[#0d6a5f]" />
+              <KeyIcon className="h-5 w-5 text-[#0d1b3e]" />
               <h2 className="text-xl font-extrabold text-slate-950">Razorpay Integration</h2>
             </div>
             <p className="mt-3 text-sm text-slate-500">Enter your payment credentials to collect deposits directly inside WhatsApp.</p>
@@ -353,7 +392,7 @@ export default function Settings() {
         <div className="space-y-6">
           <article className="shell-panel p-6">
             <div className="flex items-center gap-3">
-              <PhoneIcon className="h-5 w-5 text-[#0d6a5f]" />
+              <PhoneIcon className="h-5 w-5 text-[#0d1b3e]" />
               <h2 className="text-xl font-extrabold text-slate-950">WhatsApp Connection</h2>
             </div>
             <p className="mt-3 text-sm text-slate-500">TravelBot uses Marketing OS as your Meta partner layer for channel onboarding and sync.</p>
@@ -464,7 +503,7 @@ export default function Settings() {
                       item.done
                         ? 'bg-emerald-100 text-emerald-700'
                         : item.active
-                          ? 'bg-emerald-50 text-[#0d6a5f]'
+                          ? 'bg-emerald-50 text-[#0d1b3e]'
                           : 'bg-white text-slate-500'
                     }`}>
                       {item.done ? <CheckCircleIcon className="h-4 w-4" /> : index + 1}

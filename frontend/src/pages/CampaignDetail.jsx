@@ -16,7 +16,7 @@ import {
 } from '../hooks/useCampaigns';
 import { formatDateTime } from '../utils/formatters';
 
-const TEAL = '#0d6a5f';
+const TEAL = '#0d1b3e';
 
 const STATUS_CONFIG = {
   DRAFT: { bg: 'bg-slate-100', text: 'text-slate-600', border: 'border-slate-200', dot: 'bg-slate-400' },
@@ -170,7 +170,7 @@ export default function CampaignDetail() {
           {['DRAFT', 'SCHEDULED'].includes(campaign.status) && (
             <button
               onClick={() => setShowSendConfirm(true)}
-              className="flex items-center gap-1.5 rounded-xl bg-[#0d6a5f] px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#0b5a51] transition"
+              className="flex items-center gap-1.5 rounded-xl bg-[#0d1b3e] px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#0b5a51] transition"
             >
               <Send className="w-4 h-4" /> Send Now
             </button>
@@ -352,7 +352,7 @@ export default function CampaignDetail() {
           {['DRAFT', 'SCHEDULED'].includes(campaign.status) && (
             <button
               onClick={() => setShowSendConfirm(true)}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-[#0d6a5f] px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#0b5a51] transition"
+              className="inline-flex items-center gap-1.5 rounded-xl bg-[#0d1b3e] px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#0b5a51] transition"
             >
               <Send className="w-4 h-4" /> Send Campaign
             </button>
@@ -380,7 +380,7 @@ export default function CampaignDetail() {
               <button
                 onClick={handleSend}
                 disabled={sendMutation.isPending}
-                className="flex-1 rounded-xl bg-[#0d6a5f] py-2.5 text-sm font-semibold text-white hover:bg-[#0b5a51] disabled:opacity-60"
+                className="flex-1 rounded-xl bg-[#0d1b3e] py-2.5 text-sm font-semibold text-white hover:bg-[#0b5a51] disabled:opacity-60"
               >
                 {sendMutation.isPending ? 'Sending...' : 'Yes, Send'}
               </button>

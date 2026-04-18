@@ -1,6 +1,7 @@
 const { Queue, Worker } = require('bullmq');
+const { Op } = require('sequelize');
 const IORedis = require('ioredis');
-const { Booking, Customer, Agency, ScheduledJob, BotSession, Package } = require('../models');
+const { Booking, Customer, Agency, ScheduledJob, BotSession, Package, Agent, FollowUp, Lead } = require('../models');
 const whatsappService = require('./whatsappService');
 const { setISTTime, addDays, delayUntil, formatDateShort } = require('../utils/dateUtils');
 
@@ -272,9 +273,55 @@ async function startChatFollowUpWorker() {
 function startWorker() {
   const reminderWorker = startReminderWorker();
   const chatFollowUpWorker = startChatFollowUpWorker();
+  const agentPoller = startAgentFollowUpReminderPoller();
   console.log('[Scheduler] Reminder worker started');
   console.log('[Scheduler] Chat follow-up worker started');
-  return { reminderWorker, chatFollowUpWorker };
+  console.log('[Scheduler] Agent follow-up poller started');
+  return { reminderWorker, chatFollowUpWorker, agentPoller };
+}
+
+function startAgentFollowUpReminderPoller() {
+  const timer = setInterval(async () => {
+    try {
+      const now = new Date();
+      const nextHour = new Date(now.getTime() + 60 * 60 * 1000);
+      
+      const upcomingFollowUps = await FollowUp.findAll({
+        where: {
+          status: 'Scheduled',
+          notificationSent: false,
+          scheduledAt: {
+            [Op.gt]: now,
+            [Op.lte]: nextHour
+          }
+        },
+        include: [
+          { model: Agent, as: 'agent' },
+          { model: Agency, as: 'agency' },
+          { model: Lead, as: 'lead', include: [{ model: Customer, as: 'customer' }] }
+        ]
+      });
+
+      for (const followUp of upcomingFollowUps) {
+        const agency = followUp.agency;
+        if (!agency || agency.followUpReminderEnabled === false) continue;
+        
+        const reminderMinutes = agency.followUpReminderMinutes || 30;
+        const timeDiffMins = (followUp.scheduledAt.getTime() - now.getTime()) / 60000;
+        
+        if (timeDiffMins <= reminderMinutes) {
+          if (followUp.agent && followUp.agent.phone) {
+            const msg = `*Follow-up Reminder*\n\nYou have a follow-up scheduled in ${Math.round(timeDiffMins)} mins.\n\nCustomer: ${followUp.lead?.customer?.name || 'Unknown'}\nNote: ${followUp.note || 'No notes'}`;
+            await whatsappService.sendSystemNotificationWhatsApp(followUp.agent.phone, msg, { agencyId: agency.id }).catch(console.error);
+          }
+          await followUp.update({ notificationSent: true });
+        }
+      }
+    } catch (e) {
+      console.error('[Scheduler] Agent follow-up poller error:', e.message);
+    }
+  }, 60000);
+  return timer;
 }
 
 function getFollowUpJobId(customerId, agencyId, slot) {

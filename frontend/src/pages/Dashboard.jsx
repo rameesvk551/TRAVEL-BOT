@@ -11,9 +11,9 @@ import { formatDate, formatCurrency } from '../utils/formatters';
 import { getStatusTone } from '../components/uiHelpers';
 
 /* ── Color palette ───────────────────────────────── */
-const TEAL = '#0d6a5f';
+const TEAL = '#0d1b3e';
 const TEAL_LIGHT = '#14b8a6';
-const PIE_COLORS = ['#0d6a5f', '#14b8a6', '#0ea5e9', '#6366f1', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
+const PIE_COLORS = ['#0d1b3e', '#14b8a6', '#0ea5e9', '#6366f1', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
 
 /* ── Helpers ──────────────────────────────────────── */
 function statusCount(leadsByStatus, key) {

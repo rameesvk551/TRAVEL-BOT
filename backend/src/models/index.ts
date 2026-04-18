@@ -40,6 +40,8 @@ const Message = require('./Message')(sequelize);
 const BotSession = require('./BotSession')(sequelize);
 const ScheduledJob = require('./ScheduledJob')(sequelize);
 const Itinerary = require('./Itinerary')(sequelize);
+const FollowUp = require('./FollowUp')(sequelize);
+const LeadNote = require('./LeadNote')(sequelize);
 
 // Marketing models
 const MessageTemplate = require('./MessageTemplate')(sequelize);
@@ -75,6 +77,8 @@ Agent.belongsTo(Agency, { foreignKey: 'agencyId', as: 'agency' });
 Agent.hasMany(RefreshToken, { foreignKey: 'agentId', as: 'refreshTokens' });
 Agent.hasMany(Lead, { foreignKey: 'assignedAgentId', as: 'assignedLeads' });
 Agent.hasMany(Message, { foreignKey: 'agentId', as: 'sentMessages' });
+Agent.hasMany(FollowUp, { foreignKey: 'agentId', as: 'followUps' });
+Agent.hasMany(LeadNote, { foreignKey: 'agentId', as: 'leadNotes' });
 
 // RefreshToken belongs to Agent
 RefreshToken.belongsTo(Agent, { foreignKey: 'agentId', as: 'agent' });
@@ -98,6 +102,8 @@ Lead.belongsTo(Package, { foreignKey: 'packageId', as: 'package' });
 Lead.belongsTo(ReferralCode, { foreignKey: 'referralCodeId', as: 'referralCode' });
 Lead.hasOne(Booking, { foreignKey: 'leadId', as: 'booking' });
 Lead.hasMany(DripEnrollment, { foreignKey: 'leadId', as: 'dripEnrollments' });
+Lead.hasMany(FollowUp, { foreignKey: 'leadId', as: 'followUps' });
+Lead.hasMany(LeadNote, { foreignKey: 'leadId', as: 'notesList' });
 
 // Package belongs to Agency
 Package.belongsTo(Agency, { foreignKey: 'agencyId', as: 'agency' });
@@ -173,6 +179,15 @@ Review.belongsTo(Agency, { foreignKey: 'agencyId', as: 'agency' });
 Review.belongsTo(Customer, { foreignKey: 'customerId', as: 'customer' });
 Review.belongsTo(Booking, { foreignKey: 'bookingId', as: 'booking' });
 
+// FollowUp
+FollowUp.belongsTo(Lead, { foreignKey: 'leadId', as: 'lead' });
+FollowUp.belongsTo(Agency, { foreignKey: 'agencyId', as: 'agency' });
+FollowUp.belongsTo(Agent, { foreignKey: 'agentId', as: 'agent' });
+
+// LeadNote
+LeadNote.belongsTo(Lead, { foreignKey: 'leadId', as: 'lead' });
+LeadNote.belongsTo(Agent, { foreignKey: 'agentId', as: 'agent' });
+
 module.exports = {
   sequelize,
   Sequelize,
@@ -196,4 +211,6 @@ module.exports = {
   ReferralCode,
   Review,
   Itinerary,
+  FollowUp,
+  LeadNote,
 };
