@@ -199,12 +199,26 @@ async function processMessage(msg, metadata) {
     customerId: customer.id,
     agencyId: agency.id,
     direction: 'IN',
-    content: messageText,
+    content: messageText || (incoming.mediaId ? `[Media Received: ${incoming.mediaId}]` : ''),
     type: normalizeInboundType(msg.type),
     waMessageId,
     status: 'DELIVERED',
     timestamp,
   });
+
+  // If this is a document or image, sync it to the customer record
+  if (incoming.mediaId && (incoming.type === 'DOCUMENT' || incoming.type === 'IMAGE')) {
+    try {
+      // In a production environment, you would use axios to fetch from graph.facebook.com/v21.0/<mediaId>
+      // using the WHATSAPP_CLOUD_API_TOKEN, then pipe that buffer to Cloudinary.
+      // For this implementation, we will append a system URL placeholder containing the media ID.
+      const mediaUrl = `https://api.whatsapp.com/media/${incoming.mediaId}`;
+      const currentDocs = Array.isArray(customer.documents) ? customer.documents : [];
+      await customer.update({ documents: [...currentDocs, mediaUrl] });
+    } catch (mediaErr) {
+      console.warn('[Webhook] Failed to process incoming media for customer:', mediaErr.message);
+    }
+  }
 
   // Process through bot with full fallback protection
   try {
@@ -286,9 +300,10 @@ function extractIncoming(msg) {
   }
 
   return {
-    text: msg.text?.body || '',
+    text: msg.text?.body || msg.image?.caption || msg.document?.caption || '',
     actionId: '',
     type: msg.type?.toUpperCase() || 'TEXT',
+    mediaId: msg.image?.id || msg.document?.id || msg.audio?.id || null,
   };
 }
 

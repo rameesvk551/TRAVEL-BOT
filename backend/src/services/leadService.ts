@@ -4,6 +4,7 @@
 const { Op } = require('sequelize');
 const { Lead, Customer, Agent, Package, Message, Booking } = require('../models');
 const { normalizePhone, isValidIndianPhone } = require('../utils/phoneUtils');
+const whatsappService = require('./whatsappService');
 
 /**
  * Lists leads for an agency with filtering and pagination.
@@ -189,7 +190,20 @@ async function createLead(data, agencyId) {
     status,
   });
 
-  return getLeadById(lead.id, agencyId);
+  const fullLead = await getLeadById(lead.id, agencyId);
+
+  if (assignedAgentId) {
+    const agent = fullLead.assignedAgent;
+    if (agent && agent.phone) {
+      const pkgName = fullLead.package ? fullLead.package.name : 'None';
+      const msg = `*New Lead Assigned*\n\nCustomer: ${fullLead.customer?.name || 'Unknown'}\nPhone: ${fullLead.customer?.phone || 'Unknown'}\nDestination: ${fullLead.destination || 'Not specified'}\nPackage: ${pkgName}\nEnquiry Date: ${fullLead.createdAt ? new Date(fullLead.createdAt).toDateString() : new Date().toDateString()}`;
+      whatsappService.sendSystemNotificationWhatsApp(agent.phone, msg, { agencyId }).catch(err => {
+        console.error('Failed to send agent notification', err);
+      });
+    }
+  }
+
+  return fullLead;
 }
 
 /**
@@ -216,7 +230,28 @@ async function updateLead(leadId, agencyId, updates) {
     if (updates[key] !== undefined) filtered[key] = updates[key];
   }
 
+  const isNewAgentAssigned = updates.assignedAgentId && lead.assignedAgentId !== updates.assignedAgentId;
   await lead.update(filtered);
+
+  if (filtered.status === 'CONVERTED') {
+    const customer = await Customer.findByPk(lead.customerId);
+    if (customer && !customer.isCustomer) {
+      await customer.update({ isCustomer: true });
+    }
+  }
+
+  if (isNewAgentAssigned) {
+    const fullLead = await getLeadById(lead.id, agencyId);
+    const agent = fullLead.assignedAgent;
+    if (agent && agent.phone) {
+      const pkgName = fullLead.package ? fullLead.package.name : 'None';
+      const msg = `*New Lead Assigned*\n\nCustomer: ${fullLead.customer?.name || 'Unknown'}\nPhone: ${fullLead.customer?.phone || 'Unknown'}\nDestination: ${fullLead.destination || 'Not specified'}\nPackage: ${pkgName}\nEnquiry Date: ${fullLead.createdAt ? new Date(fullLead.createdAt).toDateString() : new Date().toDateString()}`;
+      whatsappService.sendSystemNotificationWhatsApp(agent.phone, msg, { agencyId }).catch(err => {
+        console.error('Failed to send agent notification', err);
+      });
+    }
+  }
+
   return lead;
 }
 

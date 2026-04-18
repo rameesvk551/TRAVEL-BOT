@@ -164,3 +164,39 @@
     text-wrap: balance;
   }
 }
+
+/* ── Campaign wizard premium effects ── */
+.campaign-wizard-page {
+  position: relative;
+}
+
+.wizard-section-header {
+  margin-bottom: 0.25rem;
+}
+
+/* Scale-in animation for checkmarks */
+@keyframes scaleIn {
+  0% { transform: scale(0); opacity: 0; }
+  60% { transform: scale(1.15); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.animate-scale-in {
+  animation: scaleIn 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* Smooth step transition */
+@keyframes wizardSlideIn {
+  0% { transform: translateY(12px); opacity: 0; }
+  100% { transform: translateY(0); opacity: 1; }
+}
+
+.animate-wizard-in {
+  animation: wizardSlideIn 0.4s ease-out;
+}
+
+/* Gradient hover shimmer for cards */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}

@@ -17,8 +17,7 @@ module.exports = (sequelize) => {
     },
     leadId: {
       type: DataTypes.UUID,
-      allowNull: false,
-      unique: true,
+      allowNull: true,
     },
     customerId: {
       type: DataTypes.UUID,
@@ -29,6 +28,10 @@ module.exports = (sequelize) => {
       allowNull: false,
     },
     packageId: {
+      type: DataTypes.UUID,
+      allowNull: true,
+    },
+    itineraryId: {
       type: DataTypes.UUID,
       allowNull: true,
     },

@@ -23,7 +23,7 @@ const TABS = [
   { key: 'sales', label: '💰 Sales', emoji: '💰' },
   { key: 'bookings', label: '📋 Bookings', emoji: '📋' },
   { key: 'leads', label: '🔁 Pipeline', emoji: '🔁' },
-  { key: 'agents', label: '👨‍💼 Team', emoji: '👨‍💼' },
+  { key: 'agents', label: '👨‍💼 Users', emoji: '👨‍💼' },
   { key: 'packages', label: '🧳 Packages', emoji: '🧳' },
   { key: 'lost', label: '📉 Lost Leads', emoji: '📉' },
   { key: 'reviews', label: '⭐ Reviews', emoji: '⭐' },
@@ -347,8 +347,8 @@ function AgentTab({ params }) {
 
   return (
     <div className="space-y-5">
-      <ReportSection title="Agent Leaderboard" description="Performance ranking by revenue" onExport={() => downloadCsv('agents', params)}>
-        {agents.length === 0 ? <EmptyState message="No agents found." /> : (
+      <ReportSection title="User Leaderboard" description="Performance ranking by revenue" onExport={() => downloadCsv('agents', params)}>
+        {agents.length === 0 ? <EmptyState message="No users found." /> : (
           <div className="overflow-x-auto">
             <table className="w-full text-left">
               <thead>

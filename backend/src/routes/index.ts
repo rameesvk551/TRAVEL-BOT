@@ -2,6 +2,7 @@ const authRoutes = require('./auth');
 const agencyRoutes = require('./agencies');
 const agentRoutes = require('./agents');
 const leadRoutes = require('./leads');
+const customerRoutes = require('./customers');
 const bookingRoutes = require('./bookings');
 const packageRoutes = require('./packages');
 const paymentRoutes = require('./payments');
@@ -22,6 +23,7 @@ function registerApiRoutes(app) {
   app.use('/api/agencies', agencyRoutes);
   app.use('/api/agents', agentRoutes);
   app.use('/api/leads', leadRoutes);
+  app.use('/api/customers', customerRoutes);
   app.use('/api/bookings', bookingRoutes);
   app.use('/api/packages', packageRoutes);
   app.use('/api/payments', paymentRoutes);

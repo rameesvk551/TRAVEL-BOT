@@ -21,6 +21,7 @@ import Campaigns from './pages/Campaigns';
 import CampaignDetail from './pages/CampaignDetail';
 import CreateCampaign from './pages/CreateCampaign';
 import Reviews from './pages/Reviews';
+import Agents from './pages/Agents';
 import Sidebar from './components/Sidebar';
 
 /**
@@ -37,6 +38,7 @@ function ProtectedRoute({ children }) {
  */
 function AppLayout({ children }) {
   const sidebarCollapsed = useUiStore((s) => s.sidebarCollapsed);
+  const sidebarHovered = useUiStore((s) => s.sidebarHovered);
   const [isDesktop, setIsDesktop] = React.useState(window.innerWidth >= 1024);
 
   React.useEffect(() => {
@@ -46,12 +48,14 @@ function AppLayout({ children }) {
     return () => mq.removeEventListener('change', handler);
   }, []);
 
+  const isCollapsed = sidebarCollapsed && !sidebarHovered;
+
   return (
     <div className="flex h-screen overflow-hidden bg-slate-100 text-slate-900">
       <Sidebar />
       <main
         className="flex-1 overflow-y-auto bg-slate-100 transition-[padding] duration-300"
-        style={{ paddingLeft: isDesktop ? (sidebarCollapsed ? 72 : 252) : 0 }}
+        style={{ paddingLeft: isDesktop ? (isCollapsed ? 72 : 252) : 0 }}
       >
         <div className="page-enter min-h-full p-4 md:p-6">{children}</div>
       </main>
@@ -88,6 +92,7 @@ export default function App() {
                   <Route path="/reviews" element={<Reviews />} />
                   <Route path="/payments" element={<Payments />} />
                   <Route path="/analytics" element={<Analytics />} />
+                  <Route path="/agents" element={<Agents />} />
                   <Route path="/settings" element={<Settings />} />
                   <Route path="*" element={<Navigate to="/" replace />} />
                 </Routes>

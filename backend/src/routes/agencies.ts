@@ -15,6 +15,8 @@ const updateAgencySchema = z.object({
   name: z.string().min(2).optional(),
   phone: z.string().optional(),
   googleReviewLink: z.string().optional(),
+  autoReviewCollectionEnabled: z.boolean().optional(),
+  autoReviewDelayDays: z.number().int().min(0).max(30).optional(),
   razorpayKeyId: z.string().optional(),
   razorpayKeySecret: z.string().optional(),
   webhookSecret: z.string().optional(),

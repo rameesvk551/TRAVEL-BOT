@@ -18,6 +18,7 @@ const CAMPAIGN_TYPES = [
   { value: 'PROMOTIONAL', label: 'Promotional', icon: Gift, desc: 'Special offers, discounts, and deals', color: 'bg-emerald-500' },
   { value: 'RE_ENGAGEMENT', label: 'Re-engagement', icon: RotateCcw, desc: 'Win back inactive customers', color: 'bg-amber-500' },
   { value: 'SEASONAL', label: 'Seasonal', icon: Sparkles, desc: 'Holiday/season-based campaigns', color: 'bg-violet-500' },
+  { value: 'REVIEW_COLLECTION', label: 'Review Collection', icon: Star, desc: 'Request trip reviews manually', color: 'bg-pink-500' },
 ];
 
 const AUDIENCE_MODES = [

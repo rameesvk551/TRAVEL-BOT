@@ -13,47 +13,68 @@ const { scheduleBookingReminders } = require('./schedulerService');
  * @returns {Promise<object>} Created booking
  */
 async function createBooking(data, agencyId) {
-  const { leadId, packageId, totalAmount, advanceAmount, travelDate, returnDate, travellers, notes } = data;
+  const { leadId, customerId, packageId, itineraryId, totalAmount, advanceAmount, travelDate, returnDate, travellers, notes } = data;
 
-  // Validate lead
-  const lead = await Lead.findOne({
-    where: { id: leadId, agencyId },
-    include: [{ model: Customer, as: 'customer' }],
-  });
-  if (!lead) {
-    throw Object.assign(new Error('Lead not found'), { statusCode: 404, code: 'LEAD_NOT_FOUND' });
+  let finalCustomerId = customerId;
+
+  // Validate lead if leadId is provided
+  let lead = null;
+  if (leadId) {
+    lead = await Lead.findOne({
+      where: { id: leadId, agencyId },
+      include: [{ model: Customer, as: 'customer' }],
+    });
+    if (!lead) {
+      throw Object.assign(new Error('Lead not found'), { statusCode: 404, code: 'LEAD_NOT_FOUND' });
+    }
+    finalCustomerId = lead.customerId;
   }
 
-  // Check no existing booking
-  const existingBooking = await Booking.findOne({ where: { leadId } });
-  if (existingBooking) {
-    throw Object.assign(new Error('A booking already exists for this lead'), { statusCode: 409, code: 'BOOKING_EXISTS' });
+  if (!finalCustomerId) {
+    throw Object.assign(new Error('Customer ID is required'), { statusCode: 400, code: 'BAD_REQUEST' });
   }
 
   const bookingRef = await generateBookingRef(agencyId);
 
   const booking = await Booking.create({
-    leadId,
-    customerId: lead.customerId,
+    leadId: leadId || null,
+    customerId: finalCustomerId,
     agencyId,
-    packageId: packageId || lead.packageId,
+    packageId: packageId || (lead ? lead.packageId : null),
+    itineraryId: itineraryId || null,
     bookingRef,
     status: 'PENDING',
     totalAmount,
     advancePaid: advanceAmount || 0,
     travelDate: new Date(travelDate),
-    returnDate: new Date(returnDate),
-    travellers: travellers || lead.travellers,
+    returnDate: returnDate ? new Date(returnDate) : null,
+    travellers: travellers || (lead ? lead.travellers : 1),
     notes,
   });
 
   // Update lead status
-  await lead.update({ status: 'BOOKED' });
+  if (lead && lead.status !== 'CONVERTED') {
+    await lead.update({ status: 'CONVERTED' });
+    const cust = await Customer.findByPk(finalCustomerId);
+    if (cust && !cust.isCustomer) await cust.update({ isCustomer: true });
+  }
 
   try {
     await scheduleBookingReminders(booking);
   } catch (err) {
     console.warn('[BookingService] Could not schedule booking reminders:', err.message);
+  }
+
+  // Send WhatsApp confirmation
+  try {
+    const cust = lead?.customer || await Customer.findByPk(finalCustomerId);
+    if (cust && cust.phone) {
+      const whatsappService = require('./whatsappService');
+      const msg = `🎉 *Booking Confirmed!*\n\nHi ${cust.name || 'Traveler'},\nYour booking is confirmed with reference *${bookingRef}*.\n\nTravel Date: ${new Date(travelDate).toDateString()}\n\nReply with any documents we might need to process your trip!`;
+      await whatsappService.sendTextMessage(agencyId, cust.phone, msg);
+    }
+  } catch (err) {
+    console.warn('[BookingService] Could not send WhatsApp confirmation:', err.message);
   }
 
   return booking;

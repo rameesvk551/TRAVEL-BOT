@@ -7,7 +7,7 @@ import {
   Send, Search, Megaphone, RotateCcw, Sparkles, Gift,
   Clock, Filter, Eye, AlertTriangle, Upload, UserPlus,
   Package, Globe, Plane, ShieldCheck, FileSpreadsheet,
-  Inbox, UserCheck, Star, ArrowLeft,
+  Inbox, UserCheck, Star, ArrowLeft, Zap, Target,
 } from 'lucide-react';
 import { useCreateCampaign, useUpdateCampaign, usePreviewAudience, useCampaign } from '../hooks/useCampaigns';
 import { useAgencyTemplates, usePrebuiltTemplates } from '../hooks/useTemplates';
@@ -15,21 +15,21 @@ import { packagesApi } from '../api/packagesApi';
 import { campaignsApi } from '../api/campaignsApi';
 
 const CAMPAIGN_TYPES = [
-  { value: 'BROADCAST', label: 'Broadcast', icon: Megaphone, desc: 'General announcement to all or filtered audiences', color: 'bg-blue-500' },
-  { value: 'PROMOTIONAL', label: 'Promotional', icon: Gift, desc: 'Special offers, discounts, and deals', color: 'bg-emerald-500' },
-  { value: 'RE_ENGAGEMENT', label: 'Re-engagement', icon: RotateCcw, desc: 'Win back inactive customers', color: 'bg-amber-500' },
-  { value: 'SEASONAL', label: 'Seasonal', icon: Sparkles, desc: 'Holiday/season-based campaigns', color: 'bg-violet-500' },
+  { value: 'BROADCAST', label: 'Broadcast', icon: Megaphone, desc: 'General announcement to all or filtered audiences', gradient: 'from-blue-500 to-indigo-600' },
+  { value: 'PROMOTIONAL', label: 'Promotional', icon: Gift, desc: 'Special offers, discounts, and deals', gradient: 'from-emerald-500 to-teal-600' },
+  { value: 'RE_ENGAGEMENT', label: 'Re-engagement', icon: RotateCcw, desc: 'Win back inactive customers', gradient: 'from-amber-500 to-orange-600' },
+  { value: 'SEASONAL', label: 'Seasonal', icon: Sparkles, desc: 'Holiday/season-based campaigns', gradient: 'from-violet-500 to-purple-600' },
 ];
 
 const AUDIENCE_MODES = [
-  { value: 'all', label: 'All Clients', icon: Users, desc: 'Send to every customer in your database', color: 'text-blue-600', bg: 'bg-blue-50' },
-  { value: 'package_bookers', label: 'Package Bookers', icon: Package, desc: 'Clients who booked a specific package', color: 'text-emerald-600', bg: 'bg-emerald-50' },
-  { value: 'package_enquirers', label: 'Package Enquiries', icon: Star, desc: 'Leads who enquired about a package but haven\'t booked', color: 'text-amber-600', bg: 'bg-amber-50' },
-  { value: 'past_travelers', label: 'Past Travelers', icon: Plane, desc: 'Customers with confirmed/completed bookings', color: 'text-teal-600', bg: 'bg-teal-50' },
-  { value: 'leads_only', label: 'Active Leads', icon: Inbox, desc: 'Current pipeline leads (filter by status)', color: 'text-indigo-600', bg: 'bg-indigo-50' },
-  { value: 'by_booking_status', label: 'By Booking Status', icon: ShieldCheck, desc: 'Pending, confirmed, or completed bookings', color: 'text-violet-600', bg: 'bg-violet-50' },
-  { value: 'import', label: 'Import Contacts', icon: Upload, desc: 'Upload a CSV or paste phone numbers', color: 'text-rose-600', bg: 'bg-rose-50' },
-  { value: 'advanced', label: 'Advanced Filters', icon: Filter, desc: 'Destination, budget, date range, source & more', color: 'text-slate-600', bg: 'bg-slate-100' },
+  { value: 'all', label: 'All Clients', icon: Users, desc: 'Send to every customer in your database', gradient: 'from-blue-500 to-blue-600' },
+  { value: 'package_bookers', label: 'Package Bookers', icon: Package, desc: 'Clients who booked a specific package', gradient: 'from-emerald-500 to-emerald-600' },
+  { value: 'package_enquirers', label: 'Package Enquiries', icon: Star, desc: 'Leads who enquired about a package but haven\'t booked', gradient: 'from-amber-500 to-amber-600' },
+  { value: 'past_travelers', label: 'Past Travelers', icon: Plane, desc: 'Customers with confirmed/completed bookings', gradient: 'from-teal-500 to-teal-600' },
+  { value: 'leads_only', label: 'Active Leads', icon: Inbox, desc: 'Current pipeline leads (filter by status)', gradient: 'from-indigo-500 to-indigo-600' },
+  { value: 'by_booking_status', label: 'By Booking Status', icon: ShieldCheck, desc: 'Pending, confirmed, or completed bookings', gradient: 'from-violet-500 to-violet-600' },
+  { value: 'import', label: 'Import Contacts', icon: Upload, desc: 'Upload a CSV or paste phone numbers', gradient: 'from-rose-500 to-rose-600' },
+  { value: 'advanced', label: 'Advanced Filters', icon: Filter, desc: 'Destination, budget, date range, source & more', gradient: 'from-slate-500 to-slate-600' },
 ];
 
 const LEAD_STATUSES = [
@@ -44,11 +44,11 @@ const BOOKING_STATUSES = [
 ];
 
 const STEPS = [
-  { label: 'Details', icon: Megaphone },
-  { label: 'Template', icon: Send },
-  { label: 'Audience', icon: Users },
-  { label: 'Schedule', icon: Calendar },
-  { label: 'Review', icon: Eye },
+  { label: 'Details', icon: Megaphone, desc: 'Name & type' },
+  { label: 'Template', icon: Send, desc: 'Message content' },
+  { label: 'Audience', icon: Users, desc: 'Who receives it' },
+  { label: 'Schedule', icon: Calendar, desc: 'When to send' },
+  { label: 'Review', icon: Eye, desc: 'Confirm & launch' },
 ];
 
 export default function CreateCampaign() {
@@ -294,72 +294,121 @@ export default function CreateCampaign() {
     }
   };
 
+  // ── Render ──
   return (
-    <div className="min-h-[calc(100vh-48px)] flex flex-col animate-in fade-in">
+    <div className="min-h-[calc(100vh-48px)] flex flex-col campaign-wizard-page">
+
+      {/* ── Decorative background orbs ── */}
+      <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
+        <div className="absolute -top-32 -right-32 w-96 h-96 rounded-full bg-gradient-to-br from-teal-400/8 to-emerald-500/5 blur-3xl animate-pulse-soft" />
+        <div className="absolute -bottom-48 -left-48 w-[500px] h-[500px] rounded-full bg-gradient-to-tr from-indigo-400/6 to-violet-500/4 blur-3xl animate-pulse-soft" style={{ animationDelay: '1s' }} />
+      </div>
+
       {/* ── Page Header ── */}
-      <div className="flex items-center gap-4 mb-6">
+      <div className="relative z-10 flex items-center gap-4 mb-5">
         <button
           onClick={() => navigate('/campaigns')}
-          className="flex items-center justify-center w-10 h-10 rounded-xl border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition shadow-sm"
+          className="group flex items-center justify-center w-11 h-11 rounded-2xl border border-slate-200/80 bg-white/80 backdrop-blur-sm text-slate-400 hover:bg-white hover:text-slate-700 hover:border-slate-300 hover:shadow-lg hover:shadow-slate-200/50 transition-all duration-300"
         >
-          <ArrowLeft className="w-5 h-5" />
+          <ArrowLeft className="w-5 h-5 group-hover:-translate-x-0.5 transition-transform duration-200" />
         </button>
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">
+          <h1 className="text-2xl font-extrabold tracking-tight text-slate-900">
             {isEdit ? 'Edit Campaign' : 'Create Campaign'}
           </h1>
-          <p className="text-sm text-slate-500 mt-0.5">Step {step + 1} of {STEPS.length}</p>
+          <p className="text-sm text-slate-500 mt-0.5 flex items-center gap-2">
+            <Zap className="w-3.5 h-3.5 text-teal-500" />
+            Step {step + 1} of {STEPS.length} — {STEPS[step].desc}
+          </p>
         </div>
       </div>
 
       {/* ── Main Card ── */}
-      <div className="flex-1 flex flex-col rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-        {/* Step Indicators */}
-        <div className="flex items-center gap-1 px-6 py-3 border-b border-slate-100 bg-slate-50/50">
-          {STEPS.map((s, i) => {
-            const Icon = s.icon;
-            const isActive = i === step;
-            const isDone = i < step;
-            return (
-              <React.Fragment key={i}>
-                <button
-                  onClick={() => i < step && setStep(i)}
-                  className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition ${
-                    isActive ? 'bg-[#0d6a5f] text-white shadow-sm' :
-                    isDone ? 'bg-emerald-50 text-emerald-700 cursor-pointer hover:bg-emerald-100' :
-                    'text-slate-400'
-                  }`}
-                >
-                  {isDone ? <Check className="w-3.5 h-3.5" /> : <Icon className="w-3.5 h-3.5" />}
-                  <span className="hidden sm:inline">{s.label}</span>
-                </button>
-                {i < STEPS.length - 1 && (
-                  <ChevronRight className={`w-3.5 h-3.5 flex-shrink-0 ${isDone ? 'text-emerald-400' : 'text-slate-200'}`} />
-                )}
-              </React.Fragment>
-            );
-          })}
+      <div className="relative z-10 flex-1 flex flex-col rounded-2xl border border-slate-200/80 bg-white/90 backdrop-blur-sm shadow-[0_8px_40px_-12px_rgba(15,23,42,0.12)] overflow-hidden">
+
+        {/* ── Step Indicator Bar ── */}
+        <div className="relative px-6 py-5 border-b border-slate-100 bg-gradient-to-r from-slate-50/80 via-white to-slate-50/80">
+          <div className="flex items-center justify-between max-w-2xl mx-auto">
+            {STEPS.map((s, i) => {
+              const Icon = s.icon;
+              const isActive = i === step;
+              const isDone = i < step;
+              return (
+                <React.Fragment key={i}>
+                  <button
+                    onClick={() => i < step && setStep(i)}
+                    className={`group relative flex flex-col items-center gap-1.5 transition-all duration-300 ${
+                      i < step ? 'cursor-pointer' : ''
+                    }`}
+                  >
+                    {/* Step circle */}
+                    <div className={`relative flex items-center justify-center w-11 h-11 rounded-2xl transition-all duration-500 ${
+                      isActive
+                        ? 'bg-gradient-to-br from-[#0d6a5f] to-[#0a524a] text-white shadow-lg shadow-teal-500/25 scale-110'
+                        : isDone
+                        ? 'bg-gradient-to-br from-emerald-400 to-emerald-500 text-white shadow-md shadow-emerald-200/40'
+                        : 'bg-slate-100 text-slate-400 group-hover:bg-slate-200'
+                    }`}>
+                      {isDone ? <Check className="w-4 h-4" strokeWidth={3} /> : <Icon className="w-4.5 h-4.5" />}
+                      {isActive && (
+                        <span className="absolute inset-0 rounded-2xl animate-ping bg-teal-500/20" style={{ animationDuration: '2s' }} />
+                      )}
+                    </div>
+                    {/* Label */}
+                    <span className={`text-[11px] font-bold tracking-wide transition-colors duration-300 ${
+                      isActive ? 'text-[#0d6a5f]'
+                      : isDone ? 'text-emerald-600'
+                      : 'text-slate-400'
+                    }`}>
+                      {s.label}
+                    </span>
+                  </button>
+                  {/* Connector line */}
+                  {i < STEPS.length - 1 && (
+                    <div className="flex-1 mx-2">
+                      <div className="h-0.5 rounded-full overflow-hidden bg-slate-100">
+                        <div
+                          className="h-full rounded-full bg-gradient-to-r from-emerald-400 to-teal-500 transition-all duration-700 ease-out"
+                          style={{ width: i < step ? '100%' : i === step ? '40%' : '0%' }}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </React.Fragment>
+              );
+            })}
+          </div>
         </div>
 
-        {/* Step Content */}
-        <div className="flex-1 overflow-y-auto p-6">
+        {/* ── Step Content ── */}
+        <div className="flex-1 overflow-y-auto p-6 lg:p-8">
           {/* ───── Step 1: Details ───── */}
           {step === 0 && (
-            <div className="max-w-2xl mx-auto space-y-5 animate-in fade-in">
+            <div className="max-w-2xl mx-auto space-y-6 animate-fade-in">
+              <div className="wizard-section-header">
+                <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-teal-600 mb-2">
+                  <Target className="w-3.5 h-3.5" />
+                  Campaign Identity
+                </div>
+                <h2 className="text-lg font-bold text-slate-900">Give your campaign a name</h2>
+                <p className="text-sm text-slate-500 mt-0.5">Choose a descriptive name and type that represents this campaign's purpose.</p>
+              </div>
+
               <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-1.5">Campaign Name *</label>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">Campaign Name *</label>
                 <input
                   type="text"
                   placeholder="e.g. Summer Maldives Promo"
-                  className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 outline-none transition"
+                  className="w-full rounded-2xl border border-slate-200 px-5 py-3.5 text-sm bg-slate-50/50 focus:bg-white focus:border-teal-400 focus:ring-4 focus:ring-teal-500/10 outline-none transition-all duration-300 placeholder:text-slate-400"
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                   autoFocus
                 />
               </div>
+
               <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-2">Campaign Type</label>
-                <div className="grid grid-cols-2 gap-3">
+                <label className="block text-sm font-semibold text-slate-700 mb-3">Campaign Type</label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {CAMPAIGN_TYPES.map((t) => {
                     const Icon = t.icon;
                     const isActive = formData.type === t.value;
@@ -367,21 +416,27 @@ export default function CreateCampaign() {
                       <button
                         key={t.value}
                         onClick={() => setFormData({ ...formData, type: t.value })}
-                        className={`flex items-start gap-3 rounded-xl border-2 p-4 text-left transition ${
-                          isActive ? 'border-[#0d6a5f] bg-teal-50/50 ring-1 ring-teal-500/20' : 'border-slate-200 hover:border-slate-300'
+                        className={`group relative flex items-start gap-4 rounded-2xl border-2 p-4 text-left transition-all duration-300 overflow-hidden ${
+                          isActive
+                            ? 'border-[#0d6a5f] bg-gradient-to-br from-teal-50/80 to-emerald-50/50 shadow-lg shadow-teal-100/60 scale-[1.01]'
+                            : 'border-slate-200/80 hover:border-slate-300 hover:shadow-md hover:shadow-slate-100/60 hover:bg-slate-50/50'
                         }`}
                       >
-                        <div className={`flex h-9 w-9 items-center justify-center rounded-lg text-white ${t.color}`}>
-                          <Icon className="w-4 h-4" />
+                        <div className={`flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br ${t.gradient} text-white shadow-lg transition-transform duration-300 ${isActive ? 'scale-110' : 'group-hover:scale-105'}`}>
+                          <Icon className="w-5 h-5" />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-semibold text-slate-900">{t.label}</p>
-                          <p className="text-xs text-slate-500 mt-0.5">{t.desc}</p>
+                          <p className="text-sm font-bold text-slate-900">{t.label}</p>
+                          <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">{t.desc}</p>
                         </div>
                         {isActive && (
-                          <div className="flex h-5 w-5 items-center justify-center rounded-full bg-[#0d6a5f] text-white">
-                            <Check className="w-3 h-3" />
+                          <div className="flex h-6 w-6 items-center justify-center rounded-full bg-gradient-to-br from-[#0d6a5f] to-[#0a524a] text-white shadow-md animate-scale-in">
+                            <Check className="w-3.5 h-3.5" strokeWidth={3} />
                           </div>
+                        )}
+                        {/* Decorative active glow */}
+                        {isActive && (
+                          <div className="absolute -top-12 -right-12 w-32 h-32 bg-teal-400/10 rounded-full blur-2xl" />
                         )}
                       </button>
                     );
@@ -393,18 +448,28 @@ export default function CreateCampaign() {
 
           {/* ───── Step 2: Template ───── */}
           {step === 1 && (
-            <div className="max-w-2xl mx-auto space-y-4 animate-in fade-in">
+            <div className="max-w-2xl mx-auto space-y-5 animate-fade-in">
+              <div className="wizard-section-header">
+                <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-teal-600 mb-2">
+                  <Send className="w-3.5 h-3.5" />
+                  Message Content
+                </div>
+                <h2 className="text-lg font-bold text-slate-900">Choose a template or compose your message</h2>
+                <p className="text-sm text-slate-500 mt-0.5">Select an approved template for reliable delivery, or write a custom message.</p>
+              </div>
+
               <div className="relative">
-                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <Search className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input
                   type="text"
                   placeholder="Search templates..."
-                  className="w-full rounded-xl border border-slate-200 pl-10 pr-4 py-2.5 text-sm focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 outline-none transition"
+                  className="w-full rounded-2xl border border-slate-200 pl-11 pr-4 py-3 text-sm bg-slate-50/50 focus:bg-white focus:border-teal-400 focus:ring-4 focus:ring-teal-500/10 outline-none transition-all duration-300"
                   value={templateSearch}
                   onChange={(e) => setTemplateSearch(e.target.value)}
                 />
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[400px] overflow-y-auto pr-1">
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[400px] overflow-y-auto pr-1 hide-scrollbar">
                 {filteredTemplates.map((t) => {
                   const isSelected = formData.templateId === t.id;
                   return (
@@ -414,44 +479,49 @@ export default function CreateCampaign() {
                         setFormData({ ...formData, templateId: t.id, messageBody: '' });
                         setSelectedTemplate(t);
                       }}
-                      className={`flex flex-col gap-2 rounded-xl border-2 p-3 text-left transition ${
-                        isSelected ? 'border-[#0d6a5f] bg-teal-50/50' : 'border-slate-200 hover:border-slate-300'
+                      className={`group relative flex flex-col gap-2.5 rounded-2xl border-2 p-4 text-left transition-all duration-300 overflow-hidden ${
+                        isSelected
+                          ? 'border-[#0d6a5f] bg-gradient-to-br from-teal-50/80 to-emerald-50/50 shadow-lg shadow-teal-100/60'
+                          : 'border-slate-200/80 hover:border-slate-300 hover:shadow-md hover:bg-slate-50/50'
                       }`}
                     >
                       <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <span className="text-lg">{t.icon || '📝'}</span>
-                          <span className="text-sm font-semibold text-slate-900 truncate">{t.displayName}</span>
+                        <div className="flex items-center gap-2.5">
+                          <span className="text-xl">{t.icon || '📝'}</span>
+                          <span className="text-sm font-bold text-slate-900 truncate">{t.displayName}</span>
                         </div>
                         {isSelected && (
-                          <div className="flex h-5 w-5 items-center justify-center rounded-full bg-[#0d6a5f] text-white flex-shrink-0">
-                            <Check className="w-3 h-3" />
+                          <div className="flex h-5 w-5 items-center justify-center rounded-full bg-gradient-to-br from-[#0d6a5f] to-[#0a524a] text-white flex-shrink-0 animate-scale-in">
+                            <Check className="w-3 h-3" strokeWidth={3} />
                           </div>
                         )}
                       </div>
-                      <p className="text-xs text-slate-500 line-clamp-2">{t.body}</p>
+                      <p className="text-xs text-slate-500 line-clamp-2 leading-relaxed">{t.body}</p>
                       <div className="flex gap-2">
-                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${t.category === 'MARKETING' ? 'bg-blue-50 text-blue-600' : 'bg-slate-100 text-slate-500'}`}>
+                        <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full ${t.category === 'MARKETING' ? 'bg-blue-50 text-blue-600' : 'bg-slate-100 text-slate-500'}`}>
                           {t.category}
                         </span>
                         {t.isPrebuilt && (
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-violet-50 text-violet-600">Prebuilt</span>
+                          <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-violet-50 text-violet-600">Prebuilt</span>
                         )}
                       </div>
+                      {isSelected && <div className="absolute -bottom-8 -right-8 w-24 h-24 bg-teal-400/10 rounded-full blur-2xl" />}
                     </button>
                   );
                 })}
               </div>
-              <div className="border-t border-slate-100 pt-4">
-                <label className="block text-sm font-semibold text-slate-700 mb-1.5">Or compose a custom message</label>
+
+              <div className="border-t border-slate-100 pt-5">
+                <label className="block text-sm font-semibold text-slate-700 mb-2">Or compose a custom message</label>
                 <textarea
                   rows={4}
                   placeholder="Type your message here... Use {{name}} for personalization."
-                  className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 outline-none transition resize-none"
+                  className="w-full rounded-2xl border border-slate-200 px-5 py-3.5 text-sm bg-slate-50/50 focus:bg-white focus:border-teal-400 focus:ring-4 focus:ring-teal-500/10 outline-none transition-all duration-300 resize-none"
                   value={formData.messageBody}
                   onChange={(e) => setFormData({ ...formData, messageBody: e.target.value, templateId: null })}
                 />
-                <p className="mt-1 text-xs text-slate-400">
+                <p className="mt-2 text-xs text-slate-400 flex items-center gap-1.5">
+                  <Sparkles className="w-3 h-3 text-violet-400" />
                   Variables: {'{{name}}'} = customer name. Note: Custom messages require an approved template for WhatsApp delivery.
                 </p>
               </div>
@@ -460,18 +530,29 @@ export default function CreateCampaign() {
 
           {/* ───── Step 3: Audience ───── */}
           {step === 2 && (
-            <div className="max-w-3xl mx-auto space-y-4 animate-in fade-in">
+            <div className="max-w-3xl mx-auto space-y-5 animate-fade-in">
+              <div className="wizard-section-header">
+                <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-teal-600 mb-2">
+                  <Users className="w-3.5 h-3.5" />
+                  Target Audience
+                </div>
+                <h2 className="text-lg font-bold text-slate-900">Who should receive this campaign?</h2>
+                <p className="text-sm text-slate-500 mt-0.5">Define your audience segment for maximum impact.</p>
+              </div>
+
               {/* Audience Count Banner */}
-              <div className={`flex items-center gap-3 rounded-xl p-4 ${
-                audienceMode === 'import' ? (importedIds.length > 0 ? 'bg-teal-50 border border-teal-200' : 'bg-slate-50 border border-slate-200')
-                : audienceCount === 0 ? 'bg-amber-50 border border-amber-200' : 'bg-teal-50 border border-teal-200'
+              <div className={`relative overflow-hidden flex items-center gap-4 rounded-2xl p-5 transition-all duration-500 ${
+                audienceMode === 'import' ? (importedIds.length > 0 ? 'bg-gradient-to-r from-teal-50 to-emerald-50/80 border border-teal-200/80' : 'bg-slate-50 border border-slate-200/80')
+                : audienceCount === 0 ? 'bg-gradient-to-r from-amber-50 to-orange-50/80 border border-amber-200/80' : 'bg-gradient-to-r from-teal-50 to-emerald-50/80 border border-teal-200/80'
               }`}>
-                <Users className={`w-5 h-5 ${
-                  audienceMode === 'import' ? (importedIds.length > 0 ? 'text-teal-600' : 'text-slate-400')
-                  : audienceCount === 0 ? 'text-amber-600' : 'text-teal-600'
-                }`} />
+                <div className={`flex h-12 w-12 items-center justify-center rounded-xl ${
+                  audienceMode === 'import' ? (importedIds.length > 0 ? 'bg-gradient-to-br from-teal-500 to-emerald-500 text-white shadow-lg shadow-teal-200/50' : 'bg-slate-200 text-slate-400')
+                  : audienceCount === 0 ? 'bg-gradient-to-br from-amber-400 to-orange-500 text-white shadow-lg shadow-amber-200/50' : 'bg-gradient-to-br from-teal-500 to-emerald-500 text-white shadow-lg shadow-teal-200/50'
+                }`}>
+                  <Users className="w-5 h-5" />
+                </div>
                 <div className="flex-1">
-                  <p className={`text-sm font-bold ${
+                  <p className={`text-base font-bold ${
                     audienceMode === 'import' ? 'text-slate-800'
                     : audienceCount === 0 ? 'text-amber-800' : 'text-teal-800'
                   }`}>
@@ -480,79 +561,90 @@ export default function CreateCampaign() {
                       : previewMutation.isPending ? 'Counting...' : `${(audienceCount || 0).toLocaleString()} recipients match`
                     }
                   </p>
-                  <p className="text-xs text-slate-500">
+                  <p className="text-xs text-slate-500 mt-0.5">
                     {audienceMode === 'import' ? 'Upload CSV or paste phone numbers below' : 'Based on your selection'}
                   </p>
                 </div>
                 {audienceMode !== 'import' && (
                   <button
                     onClick={refreshAudience}
-                    className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition"
+                    className="group flex items-center gap-2 rounded-xl border border-slate-200/80 bg-white/90 backdrop-blur-sm px-4 py-2 text-xs font-bold text-slate-600 hover:bg-white hover:shadow-md hover:border-slate-300 transition-all duration-300"
                   >
-                    ↻ Refresh
+                    <RotateCcw className="w-3.5 h-3.5 group-hover:rotate-180 transition-transform duration-500" />
+                    Refresh
                   </button>
                 )}
+                {/* Decorative */}
+                <div className="absolute -top-8 -right-8 w-24 h-24 rounded-full bg-gradient-to-br from-teal-300/10 to-emerald-300/10 blur-xl" />
               </div>
 
               {/* Audience Mode Cards */}
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-2">Who should receive this campaign?</label>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  {AUDIENCE_MODES.map((m) => {
-                    const Icon = m.icon;
-                    const isActive = audienceMode === m.value;
-                    return (
-                      <button
-                        key={m.value}
-                        onClick={() => {
-                          setAudienceMode(m.value);
-                          if (m.value !== 'advanced') setShowAdvanced(false);
-                          if (m.value === 'advanced') setShowAdvanced(true);
-                        }}
-                        className={`flex flex-col items-center gap-2 rounded-xl border-2 p-3 text-center transition ${
-                          isActive ? 'border-[#0d6a5f] bg-teal-50/50 ring-1 ring-teal-500/20' : 'border-slate-200 hover:border-slate-300'
-                        }`}
-                      >
-                        <div className={`flex h-9 w-9 items-center justify-center rounded-lg ${isActive ? 'bg-[#0d6a5f] text-white' : `${m.bg} ${m.color}`}`}>
-                          <Icon className="w-4 h-4" />
-                        </div>
-                        <span className="text-xs font-semibold text-slate-800 leading-tight">{m.label}</span>
-                      </button>
-                    );
-                  })}
-                </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                {AUDIENCE_MODES.map((m) => {
+                  const Icon = m.icon;
+                  const isActive = audienceMode === m.value;
+                  return (
+                    <button
+                      key={m.value}
+                      onClick={() => {
+                        setAudienceMode(m.value);
+                        if (m.value !== 'advanced') setShowAdvanced(false);
+                        if (m.value === 'advanced') setShowAdvanced(true);
+                      }}
+                      className={`group relative flex flex-col items-center gap-2.5 rounded-2xl border-2 p-3.5 text-center transition-all duration-300 overflow-hidden ${
+                        isActive
+                          ? 'border-[#0d6a5f] bg-gradient-to-b from-teal-50/80 to-emerald-50/60 shadow-lg shadow-teal-100/50 scale-[1.02]'
+                          : 'border-slate-200/80 hover:border-slate-300 hover:shadow-md hover:bg-slate-50/50'
+                      }`}
+                    >
+                      <div className={`flex h-10 w-10 items-center justify-center rounded-xl transition-all duration-300 ${
+                        isActive
+                          ? `bg-gradient-to-br ${m.gradient} text-white shadow-lg`
+                          : 'bg-slate-100 text-slate-500 group-hover:bg-slate-200'
+                      }`}>
+                        <Icon className="w-4.5 h-4.5" />
+                      </div>
+                      <span className={`text-xs font-bold leading-tight transition-colors duration-300 ${isActive ? 'text-[#0d6a5f]' : 'text-slate-700'}`}>{m.label}</span>
+                      {isActive && <div className="absolute -bottom-6 -right-6 w-16 h-16 bg-teal-400/10 rounded-full blur-xl" />}
+                    </button>
+                  );
+                })}
               </div>
 
               {/* Mode-specific options */}
-              <div className="rounded-xl border border-slate-200 p-4 space-y-4">
+              <div className="rounded-2xl border border-slate-200/80 bg-white/80 backdrop-blur-sm p-5 space-y-4 shadow-sm">
                 {/* ─── All Clients ─── */}
                 {audienceMode === 'all' && (
-                  <div className="flex items-center gap-3 text-center py-4">
-                    <Users className="w-8 h-8 text-blue-500 mx-auto" />
-                    <div className="text-left">
-                      <p className="text-sm font-semibold text-slate-800">Send to all clients</p>
-                      <p className="text-xs text-slate-500">Every customer in your database will receive this message.</p>
+                  <div className="flex items-center gap-4 py-3 px-2">
+                    <div className="w-12 h-12 flex items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-lg shadow-blue-200/50">
+                      <Users className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-slate-800">Send to all clients</p>
+                      <p className="text-xs text-slate-500 mt-0.5">Every customer in your database will receive this message.</p>
                     </div>
                   </div>
                 )}
 
-                {/* ─── Package Bookers | Enquirers | Past Travelers with package | Leads with package ─── */}
+                {/* ─── Package Bookers | Enquirers | Past Travelers | Leads ─── */}
                 {['package_bookers', 'package_enquirers', 'past_travelers', 'leads_only'].includes(audienceMode) && (
                   <div>
-                    <label className="block text-xs font-semibold text-slate-600 mb-1.5">
+                    <label className="block text-xs font-bold uppercase tracking-[0.15em] text-slate-500 mb-2">
                       {audienceMode === 'leads_only' ? 'Filter by package (optional)' : 'Select Package *'}
                     </label>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[200px] overflow-y-auto pr-1">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-[220px] overflow-y-auto pr-1 hide-scrollbar">
                       {audienceMode === 'leads_only' && (
                         <button
                           onClick={() => setSelectedPackageId(null)}
-                          className={`flex items-center gap-3 rounded-xl border-2 p-3 text-left transition ${
-                            !selectedPackageId ? 'border-[#0d6a5f] bg-teal-50/50' : 'border-slate-200 hover:border-slate-300'
+                          className={`group flex items-center gap-3 rounded-xl border-2 p-3.5 text-left transition-all duration-300 ${
+                            !selectedPackageId ? 'border-[#0d6a5f] bg-gradient-to-r from-teal-50/80 to-emerald-50/50 shadow-md' : 'border-slate-200/80 hover:border-slate-300 hover:shadow-sm'
                           }`}
                         >
-                          <Globe className="w-5 h-5 text-slate-400" />
+                          <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-slate-300 to-slate-400 flex items-center justify-center text-white">
+                            <Globe className="w-4 h-4" />
+                          </div>
                           <div>
-                            <p className="text-sm font-semibold text-slate-800">All Packages</p>
+                            <p className="text-sm font-bold text-slate-800">All Packages</p>
                             <p className="text-xs text-slate-400">No package filter</p>
                           </div>
                         </button>
@@ -563,24 +655,24 @@ export default function CreateCampaign() {
                           <button
                             key={pkg.id}
                             onClick={() => setSelectedPackageId(pkg.id)}
-                            className={`flex items-center gap-3 rounded-xl border-2 p-3 text-left transition ${
-                              isSelected ? 'border-[#0d6a5f] bg-teal-50/50' : 'border-slate-200 hover:border-slate-300'
+                            className={`group flex items-center gap-3 rounded-xl border-2 p-3.5 text-left transition-all duration-300 ${
+                              isSelected ? 'border-[#0d6a5f] bg-gradient-to-r from-teal-50/80 to-emerald-50/50 shadow-md' : 'border-slate-200/80 hover:border-slate-300 hover:shadow-sm'
                             }`}
                           >
                             {pkg.imageUrl ? (
-                              <img src={pkg.imageUrl} alt="" className="w-10 h-10 rounded-lg object-cover" />
+                              <img src={pkg.imageUrl} alt="" className="w-10 h-10 rounded-lg object-cover shadow-sm" />
                             ) : (
-                              <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center">
+                              <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center">
                                 <Package className="w-5 h-5 text-slate-400" />
                               </div>
                             )}
                             <div className="flex-1 min-w-0">
-                              <p className="text-sm font-semibold text-slate-800 truncate">{pkg.name}</p>
+                              <p className="text-sm font-bold text-slate-800 truncate">{pkg.name}</p>
                               <p className="text-xs text-slate-400">{(pkg.destinations || []).join(', ') || pkg.category || '-'}</p>
                             </div>
                             {isSelected && (
-                              <div className="flex h-5 w-5 items-center justify-center rounded-full bg-[#0d6a5f] text-white flex-shrink-0">
-                                <Check className="w-3 h-3" />
+                              <div className="flex h-5 w-5 items-center justify-center rounded-full bg-gradient-to-br from-[#0d6a5f] to-[#0a524a] text-white flex-shrink-0 animate-scale-in">
+                                <Check className="w-3 h-3" strokeWidth={3} />
                               </div>
                             )}
                           </button>
@@ -590,8 +682,8 @@ export default function CreateCampaign() {
 
                     {/* Lead status filter for leads_only */}
                     {audienceMode === 'leads_only' && (
-                      <div className="mt-3">
-                        <label className="block text-xs font-semibold text-slate-600 mb-1.5">Lead Status (optional)</label>
+                      <div className="mt-4">
+                        <label className="block text-xs font-bold uppercase tracking-[0.15em] text-slate-500 mb-2">Lead Status (optional)</label>
                         <div className="flex flex-wrap gap-2">
                           {LEAD_STATUSES.map((s) => {
                             const isSelected = selectedLeadStatuses.includes(s);
@@ -602,8 +694,10 @@ export default function CreateCampaign() {
                                   isSelected ? selectedLeadStatuses.filter((x) => x !== s)
                                 : [...selectedLeadStatuses, s]
                                 )}
-                                className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${
-                                  isSelected ? 'bg-[#0d6a5f] text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                                className={`rounded-full px-4 py-2 text-xs font-bold transition-all duration-300 ${
+                                  isSelected
+                                    ? 'bg-gradient-to-r from-[#0d6a5f] to-[#0a524a] text-white shadow-md shadow-teal-200/40'
+                                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                                 }`}
                               >
                                 {s.replace('_', ' ')}
@@ -619,16 +713,16 @@ export default function CreateCampaign() {
                 {/* ─── By Booking Status ─── */}
                 {audienceMode === 'by_booking_status' && (
                   <div>
-                    <label className="block text-xs font-semibold text-slate-600 mb-1.5">Booking Status</label>
+                    <label className="block text-xs font-bold uppercase tracking-[0.15em] text-slate-500 mb-2">Booking Status</label>
                     <div className="flex gap-2">
                       {BOOKING_STATUSES.map((s) => (
                         <button
                           key={s.value}
                           onClick={() => setSelectedBookingStatus(s.value)}
-                          className={`rounded-xl px-4 py-2.5 text-sm font-semibold transition ${
+                          className={`rounded-xl px-5 py-3 text-sm font-bold transition-all duration-300 ${
                             selectedBookingStatus === s.value
-                              ? 'bg-[#0d6a5f] text-white shadow-sm'
-                              : 'border border-slate-200 text-slate-600 hover:bg-slate-50'
+                              ? 'bg-gradient-to-r from-[#0d6a5f] to-[#0a524a] text-white shadow-lg shadow-teal-200/40'
+                              : 'border border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300'
                           }`}
                         >
                           {s.label}
@@ -640,13 +734,13 @@ export default function CreateCampaign() {
 
                 {/* ─── Import Contacts ─── */}
                 {audienceMode === 'import' && (
-                  <div className="space-y-3">
+                  <div className="space-y-4">
                     <div className="flex gap-3">
                       <button
                         onClick={() => fileInputRef.current?.click()}
-                        className="flex items-center gap-2 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-600 hover:bg-slate-100 hover:border-slate-400 transition flex-1"
+                        className="group flex items-center gap-3 rounded-2xl border-2 border-dashed border-slate-300 bg-slate-50/50 px-5 py-4 text-sm font-bold text-slate-600 hover:bg-white hover:border-teal-400 hover:shadow-md transition-all duration-300 flex-1"
                       >
-                        <FileSpreadsheet className="w-5 h-5 text-slate-400" />
+                        <FileSpreadsheet className="w-6 h-6 text-slate-400 group-hover:text-teal-500 transition-colors" />
                         Upload CSV File
                       </button>
                       <input
@@ -659,13 +753,13 @@ export default function CreateCampaign() {
                     </div>
 
                     <div>
-                      <label className="block text-xs font-semibold text-slate-600 mb-1">
-                        Or paste contacts (one per line: <code className="text-teal-600">Name, Phone</code> or just <code className="text-teal-600">Phone</code>)
+                      <label className="block text-xs font-bold uppercase tracking-[0.15em] text-slate-500 mb-2">
+                        Or paste contacts (one per line: <code className="text-teal-600 bg-teal-50 px-1.5 py-0.5 rounded">Name, Phone</code> or just <code className="text-teal-600 bg-teal-50 px-1.5 py-0.5 rounded">Phone</code>)
                       </label>
                       <textarea
                         rows={5}
                         placeholder={`John Doe, +919876543210\nJane, 8765432109\n+917654321098`}
-                        className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm font-mono focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 outline-none transition resize-none"
+                        className="w-full rounded-2xl border border-slate-200 px-5 py-3.5 text-sm font-mono bg-slate-50/50 focus:bg-white focus:border-teal-400 focus:ring-4 focus:ring-teal-500/10 outline-none transition-all duration-300 resize-none"
                         value={importText}
                         onChange={(e) => setImportText(e.target.value)}
                       />
@@ -675,29 +769,29 @@ export default function CreateCampaign() {
                       <button
                         onClick={() => processImportText(importText)}
                         disabled={!importText.trim() || importStatus === 'importing'}
-                        className="flex items-center gap-2 rounded-xl bg-[#0d6a5f] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#0b5a51] transition disabled:opacity-50"
+                        className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-[#0d6a5f] to-[#0a524a] px-5 py-3 text-sm font-bold text-white shadow-lg shadow-teal-200/30 hover:shadow-xl hover:shadow-teal-200/40 transition-all duration-300 disabled:opacity-50 disabled:shadow-none"
                       >
                         <UserPlus className="w-4 h-4" />
                         {importStatus === 'importing' ? 'Importing...' : 'Import Contacts'}
                       </button>
 
                       {importStatus === 'done' && (
-                        <span className="flex items-center gap-1.5 text-sm font-semibold text-emerald-700">
+                        <span className="flex items-center gap-1.5 text-sm font-bold text-emerald-700 animate-fade-in">
                           <UserCheck className="w-4 h-4" /> {importCount} contacts imported!
                         </span>
                       )}
                       {importStatus === 'error' && (
-                        <span className="flex items-center gap-1.5 text-sm font-semibold text-rose-600">
+                        <span className="flex items-center gap-1.5 text-sm font-bold text-rose-600 animate-fade-in">
                           <AlertTriangle className="w-4 h-4" /> No valid contacts found. Check format.
                         </span>
                       )}
                     </div>
 
-                    <div className="rounded-lg bg-blue-50 border border-blue-200 p-3">
-                      <p className="text-xs text-blue-800 font-semibold mb-1">📋 Supported formats:</p>
-                      <ul className="text-xs text-blue-700 space-y-0.5">
-                        <li>• CSV: <code>Name, Phone</code> or just <code>Phone</code></li>
-                        <li>• Phone can be: <code>+919876543210</code>, <code>09876543210</code>, or <code>9876543210</code></li>
+                    <div className="rounded-xl bg-gradient-to-r from-blue-50/80 to-indigo-50/60 border border-blue-200/60 p-4">
+                      <p className="text-xs text-blue-800 font-bold mb-1.5">📋 Supported formats:</p>
+                      <ul className="text-xs text-blue-700 space-y-1">
+                        <li>• CSV: <code className="bg-white/60 px-1.5 py-0.5 rounded">Name, Phone</code> or just <code className="bg-white/60 px-1.5 py-0.5 rounded">Phone</code></li>
+                        <li>• Phone can be: <code className="bg-white/60 px-1.5 py-0.5 rounded">+919876543210</code>, <code className="bg-white/60 px-1.5 py-0.5 rounded">09876543210</code>, or <code className="bg-white/60 px-1.5 py-0.5 rounded">9876543210</code></li>
                         <li>• Headers (name, phone, mobile) are auto-detected and skipped</li>
                         <li>• Max 10,000 contacts per import</li>
                       </ul>
@@ -710,9 +804,9 @@ export default function CreateCampaign() {
                   <div className="space-y-4">
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-xs font-semibold text-slate-600 mb-1">Source</label>
+                        <label className="block text-xs font-bold uppercase tracking-[0.15em] text-slate-500 mb-1.5">Source</label>
                         <select
-                          className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 outline-none"
+                          className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm bg-slate-50/50 focus:bg-white focus:border-teal-400 focus:ring-4 focus:ring-teal-500/10 outline-none transition-all duration-300"
                           value={formData.audienceFilter.source || ''}
                           onChange={(e) => updateAdvancedFilter('source', e.target.value)}
                         >
@@ -726,40 +820,40 @@ export default function CreateCampaign() {
                         </select>
                       </div>
                       <div>
-                        <label className="block text-xs font-semibold text-slate-600 mb-1">Destinations</label>
+                        <label className="block text-xs font-bold uppercase tracking-[0.15em] text-slate-500 mb-1.5">Destinations</label>
                         <input
                           type="text"
                           placeholder="e.g. Maldives, Bali"
-                          className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 outline-none"
+                          className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm bg-slate-50/50 focus:bg-white focus:border-teal-400 focus:ring-4 focus:ring-teal-500/10 outline-none transition-all duration-300"
                           value={(formData.audienceFilter.destinations || []).join(', ')}
                           onChange={(e) => updateAdvancedFilter('destinations', e.target.value.split(',').map((d) => d.trim()).filter(Boolean))}
                         />
                       </div>
                       <div>
-                        <label className="block text-xs font-semibold text-slate-600 mb-1">Created After</label>
-                        <input type="date" className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 outline-none"
+                        <label className="block text-xs font-bold uppercase tracking-[0.15em] text-slate-500 mb-1.5">Created After</label>
+                        <input type="date" className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm bg-slate-50/50 focus:bg-white focus:border-teal-400 focus:ring-4 focus:ring-teal-500/10 outline-none transition-all duration-300"
                           value={formData.audienceFilter.createdAfter || ''}
                           onChange={(e) => updateAdvancedFilter('createdAfter', e.target.value)}
                         />
                       </div>
                       <div>
-                        <label className="block text-xs font-semibold text-slate-600 mb-1">Created Before</label>
-                        <input type="date" className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 outline-none"
+                        <label className="block text-xs font-bold uppercase tracking-[0.15em] text-slate-500 mb-1.5">Created Before</label>
+                        <input type="date" className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm bg-slate-50/50 focus:bg-white focus:border-teal-400 focus:ring-4 focus:ring-teal-500/10 outline-none transition-all duration-300"
                           value={formData.audienceFilter.createdBefore || ''}
                           onChange={(e) => updateAdvancedFilter('createdBefore', e.target.value)}
                         />
                       </div>
                       <div>
-                        <label className="block text-xs font-semibold text-slate-600 mb-1">Last Active Before</label>
-                        <input type="date" className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 outline-none"
+                        <label className="block text-xs font-bold uppercase tracking-[0.15em] text-slate-500 mb-1.5">Last Active Before</label>
+                        <input type="date" className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm bg-slate-50/50 focus:bg-white focus:border-teal-400 focus:ring-4 focus:ring-teal-500/10 outline-none transition-all duration-300"
                           value={formData.audienceFilter.lastActiveBefore || ''}
                           onChange={(e) => updateAdvancedFilter('lastActiveBefore', e.target.value)}
                         />
                       </div>
                       <div>
-                        <label className="block text-xs font-semibold text-slate-600 mb-1">Spam Protection (days)</label>
+                        <label className="block text-xs font-bold uppercase tracking-[0.15em] text-slate-500 mb-1.5">Spam Protection (days)</label>
                         <input type="number" placeholder="e.g. 7"
-                          className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 outline-none"
+                          className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm bg-slate-50/50 focus:bg-white focus:border-teal-400 focus:ring-4 focus:ring-teal-500/10 outline-none transition-all duration-300"
                           value={formData.audienceFilter.excludeCampaignDays || ''}
                           onChange={(e) => updateAdvancedFilter('excludeCampaignDays', e.target.value)}
                         />
@@ -772,9 +866,9 @@ export default function CreateCampaign() {
                 {audienceMode !== 'advanced' && audienceMode !== 'import' && (
                   <button
                     onClick={() => setShowAdvanced(!showAdvanced)}
-                    className="flex items-center gap-1.5 text-xs font-semibold text-teal-600 hover:text-teal-700 transition mt-2"
+                    className="group flex items-center gap-2 text-xs font-bold text-teal-600 hover:text-teal-700 transition-all duration-300 mt-2"
                   >
-                    <Filter className="w-3.5 h-3.5" />
+                    <Filter className="w-3.5 h-3.5 group-hover:rotate-12 transition-transform duration-300" />
                     {showAdvanced ? 'Hide advanced filters' : 'Add advanced filters'}
                   </button>
                 )}
@@ -784,43 +878,68 @@ export default function CreateCampaign() {
 
           {/* ───── Step 4: Schedule ───── */}
           {step === 3 && (
-            <div className="max-w-2xl mx-auto space-y-4 animate-in fade-in">
-              <div className="grid grid-cols-2 gap-3">
+            <div className="max-w-2xl mx-auto space-y-5 animate-fade-in">
+              <div className="wizard-section-header">
+                <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-teal-600 mb-2">
+                  <Calendar className="w-3.5 h-3.5" />
+                  Delivery Schedule
+                </div>
+                <h2 className="text-lg font-bold text-slate-900">When should this campaign go out?</h2>
+                <p className="text-sm text-slate-500 mt-0.5">Choose immediate delivery or schedule for the perfect time.</p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
                 <button
                   onClick={() => setFormData({ ...formData, scheduleMode: 'now' })}
-                  className={`flex flex-col items-center gap-3 rounded-xl border-2 p-6 transition ${
-                    formData.scheduleMode === 'now' ? 'border-[#0d6a5f] bg-teal-50/50' : 'border-slate-200 hover:border-slate-300'
+                  className={`group relative flex flex-col items-center gap-4 rounded-2xl border-2 p-8 transition-all duration-300 overflow-hidden ${
+                    formData.scheduleMode === 'now'
+                      ? 'border-[#0d6a5f] bg-gradient-to-b from-teal-50/80 to-emerald-50/60 shadow-xl shadow-teal-100/50 scale-[1.01]'
+                      : 'border-slate-200/80 hover:border-slate-300 hover:shadow-lg'
                   }`}
                 >
-                  <div className={`flex h-12 w-12 items-center justify-center rounded-full ${formData.scheduleMode === 'now' ? 'bg-[#0d6a5f] text-white' : 'bg-slate-100 text-slate-400'}`}>
-                    <Send className="w-5 h-5" />
+                  <div className={`flex h-16 w-16 items-center justify-center rounded-2xl transition-all duration-500 ${
+                    formData.scheduleMode === 'now'
+                      ? 'bg-gradient-to-br from-[#0d6a5f] to-[#0a524a] text-white shadow-xl shadow-teal-300/30 scale-110'
+                      : 'bg-slate-100 text-slate-400 group-hover:bg-slate-200'
+                  }`}>
+                    <Send className="w-7 h-7" />
                   </div>
                   <div className="text-center">
-                    <p className="text-sm font-bold text-slate-900">Send Now</p>
-                    <p className="text-xs text-slate-500 mt-0.5">Save as draft, send manually later</p>
+                    <p className="text-base font-extrabold text-slate-900">Send Now</p>
+                    <p className="text-xs text-slate-500 mt-1">Save as draft, send manually later</p>
                   </div>
+                  {formData.scheduleMode === 'now' && <div className="absolute -bottom-8 -right-8 w-24 h-24 bg-teal-400/10 rounded-full blur-2xl" />}
                 </button>
+
                 <button
                   onClick={() => setFormData({ ...formData, scheduleMode: 'scheduled' })}
-                  className={`flex flex-col items-center gap-3 rounded-xl border-2 p-6 transition ${
-                    formData.scheduleMode === 'scheduled' ? 'border-[#0d6a5f] bg-teal-50/50' : 'border-slate-200 hover:border-slate-300'
+                  className={`group relative flex flex-col items-center gap-4 rounded-2xl border-2 p-8 transition-all duration-300 overflow-hidden ${
+                    formData.scheduleMode === 'scheduled'
+                      ? 'border-[#0d6a5f] bg-gradient-to-b from-teal-50/80 to-emerald-50/60 shadow-xl shadow-teal-100/50 scale-[1.01]'
+                      : 'border-slate-200/80 hover:border-slate-300 hover:shadow-lg'
                   }`}
                 >
-                  <div className={`flex h-12 w-12 items-center justify-center rounded-full ${formData.scheduleMode === 'scheduled' ? 'bg-[#0d6a5f] text-white' : 'bg-slate-100 text-slate-400'}`}>
-                    <Clock className="w-5 h-5" />
+                  <div className={`flex h-16 w-16 items-center justify-center rounded-2xl transition-all duration-500 ${
+                    formData.scheduleMode === 'scheduled'
+                      ? 'bg-gradient-to-br from-[#0d6a5f] to-[#0a524a] text-white shadow-xl shadow-teal-300/30 scale-110'
+                      : 'bg-slate-100 text-slate-400 group-hover:bg-slate-200'
+                  }`}>
+                    <Clock className="w-7 h-7" />
                   </div>
                   <div className="text-center">
-                    <p className="text-sm font-bold text-slate-900">Schedule</p>
-                    <p className="text-xs text-slate-500 mt-0.5">Pick a future date & time</p>
+                    <p className="text-base font-extrabold text-slate-900">Schedule</p>
+                    <p className="text-xs text-slate-500 mt-1">Pick a future date & time</p>
                   </div>
+                  {formData.scheduleMode === 'scheduled' && <div className="absolute -bottom-8 -right-8 w-24 h-24 bg-teal-400/10 rounded-full blur-2xl" />}
                 </button>
               </div>
+
               {formData.scheduleMode === 'scheduled' && (
-                <div className="rounded-xl border border-slate-200 p-4">
-                  <label className="block text-sm font-semibold text-slate-700 mb-2">Schedule Date & Time</label>
+                <div className="rounded-2xl border border-slate-200/80 bg-white/80 backdrop-blur-sm p-5 shadow-sm animate-fade-in">
+                  <label className="block text-sm font-bold text-slate-700 mb-2.5">Schedule Date & Time</label>
                   <input
                     type="datetime-local"
-                    className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-teal-500 outline-none"
+                    className="w-full rounded-xl border border-slate-200 px-5 py-3.5 text-sm bg-slate-50/50 focus:bg-white focus:border-teal-400 focus:ring-4 focus:ring-teal-500/10 outline-none transition-all duration-300"
                     value={formData.scheduledAt || ''}
                     onChange={(e) => setFormData({ ...formData, scheduledAt: e.target.value })}
                     min={new Date().toISOString().slice(0, 16)}
@@ -832,83 +951,89 @@ export default function CreateCampaign() {
 
           {/* ───── Step 5: Review ───── */}
           {step === 4 && (
-            <div className="max-w-2xl mx-auto space-y-4 animate-in fade-in">
-              <div className="rounded-xl border border-slate-200 divide-y divide-slate-100">
-                <div className="flex justify-between p-4">
-                  <span className="text-sm text-slate-500">Campaign Name</span>
-                  <span className="text-sm font-semibold text-slate-900">{formData.name}</span>
+            <div className="max-w-2xl mx-auto space-y-5 animate-fade-in">
+              <div className="wizard-section-header">
+                <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-teal-600 mb-2">
+                  <Eye className="w-3.5 h-3.5" />
+                  Final Review
                 </div>
-                <div className="flex justify-between p-4">
-                  <span className="text-sm text-slate-500">Type</span>
-                  <span className="text-sm font-semibold text-slate-900">
-                    {CAMPAIGN_TYPES.find((t) => t.value === formData.type)?.label}
-                  </span>
-                </div>
-                <div className="flex justify-between p-4">
-                  <span className="text-sm text-slate-500">Template</span>
-                  <span className="text-sm font-semibold text-slate-900">
-                    {selectedTemplate?.displayName || formData.messageBody?.substring(0, 40) || 'Custom Message'}
-                    {formData.messageBody && !selectedTemplate && '...'}
-                  </span>
-                </div>
-                <div className="flex justify-between p-4">
-                  <span className="text-sm text-slate-500">Audience</span>
-                  <span className="text-sm font-semibold text-teal-700">{getAudienceSummary()}</span>
-                </div>
-                <div className="flex justify-between p-4">
-                  <span className="text-sm text-slate-500">Est. Recipients</span>
-                  <span className="text-sm font-bold text-teal-700">
-                    {audienceMode === 'import' ? importedIds.length : (audienceCount || 0).toLocaleString()}
-                  </span>
-                </div>
-                <div className="flex justify-between p-4">
-                  <span className="text-sm text-slate-500">Delivery</span>
-                  <span className="text-sm font-semibold text-slate-900">
-                    {formData.scheduleMode === 'scheduled'
-                      ? `Scheduled: ${new Date(formData.scheduledAt).toLocaleString()}`
-                      : 'Save as Draft'}
-                  </span>
-                </div>
+                <h2 className="text-lg font-bold text-slate-900">Review your campaign before launching</h2>
+                <p className="text-sm text-slate-500 mt-0.5">Double-check all details are correct. You can go back to any step to make changes.</p>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200/80 bg-white/80 backdrop-blur-sm overflow-hidden shadow-sm">
+                {[
+                  { label: 'Campaign Name', value: formData.name, icon: Megaphone },
+                  { label: 'Type', value: CAMPAIGN_TYPES.find((t) => t.value === formData.type)?.label, icon: Target },
+                  { label: 'Template', value: selectedTemplate?.displayName || formData.messageBody?.substring(0, 40) || 'Custom Message', icon: Send },
+                  { label: 'Audience', value: getAudienceSummary(), icon: Users, highlight: true },
+                  { label: 'Est. Recipients', value: audienceMode === 'import' ? importedIds.length : (audienceCount || 0).toLocaleString(), icon: UserCheck, highlight: true },
+                  { label: 'Delivery', value: formData.scheduleMode === 'scheduled' ? `Scheduled: ${new Date(formData.scheduledAt).toLocaleString()}` : 'Save as Draft', icon: Calendar },
+                ].map((item, idx) => {
+                  const Icon = item.icon;
+                  return (
+                    <div key={idx} className={`flex items-center justify-between px-5 py-4 ${idx > 0 ? 'border-t border-slate-100' : ''} hover:bg-slate-50/50 transition-colors duration-200`}>
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center text-slate-400">
+                          <Icon className="w-4 h-4" />
+                        </div>
+                        <span className="text-sm text-slate-500">{item.label}</span>
+                      </div>
+                      <span className={`text-sm font-bold ${item.highlight ? 'text-[#0d6a5f]' : 'text-slate-900'}`}>
+                        {item.value}
+                        {item.label === 'Template' && formData.messageBody && !selectedTemplate && '...'}
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
 
               {((audienceMode === 'import' && importedIds.length === 0) || (audienceMode !== 'import' && audienceCount === 0)) && (
-                <div className="flex items-center gap-2 rounded-xl bg-amber-50 border border-amber-200 p-4">
-                  <AlertTriangle className="w-5 h-5 text-amber-500 flex-shrink-0" />
-                  <p className="text-sm text-amber-800">No recipients. Adjust your audience before saving.</p>
+                <div className="flex items-center gap-3 rounded-2xl bg-gradient-to-r from-amber-50 to-orange-50/80 border border-amber-200/80 p-5 animate-fade-in">
+                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center text-white shadow-lg shadow-amber-200/40">
+                    <AlertTriangle className="w-5 h-5" />
+                  </div>
+                  <p className="text-sm font-medium text-amber-800">No recipients matched. Please go back and adjust your audience settings.</p>
                 </div>
               )}
             </div>
           )}
         </div>
 
-        {/* Footer */}
-        <div className="flex items-center justify-between border-t border-slate-100 px-6 py-4 bg-white">
+        {/* ── Footer ── */}
+        <div className="relative flex items-center justify-between border-t border-slate-100 px-6 py-4 bg-gradient-to-r from-white via-slate-50/30 to-white">
           <button
             onClick={goBack}
-            className="flex items-center gap-1.5 rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition"
+            className="group flex items-center gap-2 rounded-xl border border-slate-200/80 bg-white/80 backdrop-blur-sm px-5 py-2.5 text-sm font-bold text-slate-600 hover:bg-white hover:shadow-md hover:border-slate-300 transition-all duration-300"
           >
-            <ChevronLeft className="w-4 h-4" />
-            {step === 0 ? 'Back' : 'Back'}
+            <ChevronLeft className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform duration-200" />
+            Back
           </button>
           {step < STEPS.length - 1 ? (
             <button
               onClick={() => setStep(step + 1)}
               disabled={!canProceed()}
-              className="flex items-center gap-1.5 rounded-xl bg-[#0d6a5f] px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#0b5a51] transition disabled:opacity-40 disabled:cursor-not-allowed"
+              className="group flex items-center gap-2 rounded-xl bg-gradient-to-r from-[#0d6a5f] to-[#0a524a] px-6 py-2.5 text-sm font-bold text-white shadow-lg shadow-teal-500/20 hover:shadow-xl hover:shadow-teal-500/30 hover:scale-[1.02] transition-all duration-300 disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none disabled:hover:scale-100"
             >
               Continue
-              <ChevronRight className="w-4 h-4" />
+              <ChevronRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform duration-200" />
             </button>
           ) : (
             <button
               onClick={handleSubmit}
               disabled={sending}
-              className="flex items-center gap-1.5 rounded-xl bg-[#0d6a5f] px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#0b5a51] transition disabled:opacity-60"
+              className="group flex items-center gap-2 rounded-xl bg-gradient-to-r from-[#0d6a5f] to-[#0a524a] px-6 py-2.5 text-sm font-bold text-white shadow-lg shadow-teal-500/20 hover:shadow-xl hover:shadow-teal-500/30 hover:scale-[1.02] transition-all duration-300 disabled:opacity-60 disabled:hover:scale-100"
             >
               {sending ? (
-                <><span className="animate-spin">⏳</span> Saving...</>
+                <>
+                  <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  Saving...
+                </>
               ) : (
-                <><Check className="w-4 h-4" /> {isEdit ? 'Update Campaign' : 'Create Campaign'}</>
+                <>
+                  <Check className="w-4 h-4" strokeWidth={3} />
+                  {isEdit ? 'Update Campaign' : 'Create Campaign'}
+                </>
               )}
             </button>
           )}

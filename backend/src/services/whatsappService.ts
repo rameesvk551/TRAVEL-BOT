@@ -883,6 +883,40 @@ async function updateMessageStatus(waMessageId, newStatus) {
   );
 }
 
+async function sendSystemNotificationWhatsApp(phone, content, context = {}) {
+  try {
+    const channel = await resolveAgencyChannel(context);
+
+    if (canUseMarketingOs(channel)) {
+      return await sendViaMarketingOs(phone, {
+        type: 'text',
+        text: content,
+      }, channel.marketingOsTenantId);
+    }
+
+    if (canUseCloudApi(channel.phoneNumberId)) {
+      return await sendViaMeta(phone, {
+        type: 'text',
+        text: {
+          preview_url: false,
+          body: content,
+        },
+      }, channel.phoneNumberId);
+    }
+
+    return await interaktClient.post('/message/', {
+      countryCode: '+91',
+      phoneNumber: String(phone).replace('+91', ''),
+      callbackData: 'system-notification',
+      type: 'Text',
+      data: { message: content },
+    });
+  } catch (err) {
+    console.warn('[WhatsAppService] sendSystemNotificationWhatsApp error:', err.response?.data || err.message);
+    return null;
+  }
+}
+
 module.exports = {
   sendTypingIndicator,
   waitForReplyPacing,
@@ -898,4 +932,5 @@ module.exports = {
   sendCatalogMessage,
   sendFallbackMessage,
   updateMessageStatus,
+  sendSystemNotificationWhatsApp,
 };

@@ -129,6 +129,16 @@ module.exports = (sequelize) => {
       allowNull: true,
       comment: 'Google review link for post-trip review redirection',
     },
+    autoReviewCollectionEnabled: {
+      type: DataTypes.BOOLEAN,
+      defaultValue: true,
+      comment: 'Whether to automatically collect reviews after a trip',
+    },
+    autoReviewDelayDays: {
+      type: DataTypes.INTEGER,
+      defaultValue: 2,
+      comment: 'Days after return date to request a review',
+    },
     whatsappCatalogId: {
       type: DataTypes.STRING(255),
       allowNull: true,

@@ -24,12 +24,16 @@ async function scheduleBookingReminders(booking) {
     {
       jobType: 'REMINDER_1DAY',
       scheduledAt: setISTTime(addDays(booking.travelDate, -1), 8, 0),
-    },
-    {
-      jobType: 'REVIEW_REQUEST',
-      scheduledAt: setISTTime(addDays(booking.returnDate, 2), 10, 0),
-    },
+    }
   ];
+
+  if (booking.agency && booking.agency.autoReviewCollectionEnabled !== false) {
+    const delayDays = booking.agency.autoReviewDelayDays ?? 2;
+    jobs.push({
+      jobType: 'REVIEW_REQUEST',
+      scheduledAt: setISTTime(addDays(booking.returnDate, delayDays), 10, 0),
+    });
+  }
 
   for (const { jobType, scheduledAt } of jobs) {
     const delay = delayUntil(scheduledAt);

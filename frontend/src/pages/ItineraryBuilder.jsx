@@ -179,7 +179,7 @@ export default function ItineraryBuilder() {
   const totals = calcTotals();
 
   return (
-    <div className="flex h-full flex-col lg:flex-row overflow-hidden absolute inset-0">
+    <div className="flex min-h-full flex-col lg:flex-row overflow-hidden">
       
       {/* LEFT PANEL: Trip Details */}
       <div className="w-full lg:w-80 bg-slate-50 border-r border-slate-200 p-6 overflow-y-auto z-10 flex-shrink-0">

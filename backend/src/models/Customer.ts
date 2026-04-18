@@ -43,6 +43,14 @@ module.exports = (sequelize) => {
       type: DataTypes.TEXT,
       allowNull: true,
     },
+    isCustomer: {
+      type: DataTypes.BOOLEAN,
+      defaultValue: false,
+    },
+    documents: {
+      type: DataTypes.JSON,
+      defaultValue: [],
+    },
   }, {
     tableName: 'customers',
     indexes: [

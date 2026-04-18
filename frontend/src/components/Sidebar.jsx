@@ -8,6 +8,7 @@ import {
   HomeIcon,
   CalendarDaysIcon,
   UsersIcon,
+  UserGroupIcon,
   CubeIcon,
   DocumentDuplicateIcon,
   ChartBarIcon,
@@ -28,7 +29,8 @@ import { getInitials } from './uiHelpers';
 const navItems = [
   { to: '/', icon: HomeIcon, label: 'Dashboard' },
   { to: '/bookings', icon: CalendarDaysIcon, label: 'Leads' },
-  { to: '/customers', icon: UsersIcon, label: 'Clients' },
+  { to: '/customers', icon: UserGroupIcon, label: 'Clients' },
+  { to: '/agents', icon: UsersIcon, label: 'Users' },
   { to: '/settings', icon: Cog6ToothIcon, label: 'Settings' },
 ];
 
@@ -46,11 +48,18 @@ const marketingItems = [
 
 export default function Sidebar() {
   const { agent, agency, updateAgent } = useAuthStore();
-  const { sidebarOpen, toggleSidebar, sidebarCollapsed, toggleSidebarCollapse } = useUiStore();
+  const {
+    sidebarOpen,
+    toggleSidebar,
+    sidebarCollapsed,
+    toggleSidebarCollapse,
+    sidebarHovered,
+    setSidebarHovered,
+  } = useUiStore();
   const logoutMutation = useLogout();
   const location = useLocation();
 
-  const collapsed = sidebarCollapsed; // desktop collapsed state
+  const collapsed = sidebarCollapsed && !sidebarHovered; // desktop collapsed state unless hovered
 
   const toggleOnline = async () => {
     const newStatus = !agent?.isOnline;
@@ -107,6 +116,8 @@ export default function Sidebar() {
       />
 
       <aside
+        onMouseEnter={() => setSidebarHovered(true)}
+        onMouseLeave={() => setSidebarHovered(false)}
         className={`fixed inset-y-0 left-0 z-40 flex flex-col border-r border-slate-200 bg-white transition-all duration-300 ${
           collapsed ? 'w-[72px] px-2' : 'w-[252px] px-4'
         } py-4 lg:translate-x-0 ${

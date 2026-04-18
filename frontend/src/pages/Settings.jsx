@@ -109,6 +109,8 @@ export default function Settings() {
     name: agency?.name || '',
     phone: agency?.phone || '',
     googleReviewLink: agency?.googleReviewLink || '',
+    autoReviewCollectionEnabled: agency?.autoReviewCollectionEnabled !== false,
+    autoReviewDelayDays: agency?.autoReviewDelayDays ?? 2,
     whatsappCatalogId: agency?.whatsappCatalogId || '',
     razorpayKeyId: '',
     razorpayKeySecret: '',
@@ -180,6 +182,8 @@ export default function Settings() {
     if (form.name !== agency?.name) data.name = form.name;
     if (form.phone !== agency?.phone) data.phone = form.phone;
     if (form.googleReviewLink !== agency?.googleReviewLink) data.googleReviewLink = form.googleReviewLink;
+    if (form.autoReviewCollectionEnabled !== (agency?.autoReviewCollectionEnabled !== false)) data.autoReviewCollectionEnabled = form.autoReviewCollectionEnabled;
+    if (parseInt(form.autoReviewDelayDays, 10) !== (agency?.autoReviewDelayDays ?? 2)) data.autoReviewDelayDays = parseInt(form.autoReviewDelayDays, 10);
     if (form.whatsappCatalogId !== agency?.whatsappCatalogId) data.whatsappCatalogId = form.whatsappCatalogId;
     if (form.razorpayKeyId) data.razorpayKeyId = form.razorpayKeyId;
     if (form.razorpayKeySecret) data.razorpayKeySecret = form.razorpayKeySecret;
@@ -277,6 +281,41 @@ export default function Settings() {
               <Field label="Google Review Link" hint="Sent by the bot when customers give 4 or 5 star ratings.">
                 <input value={form.googleReviewLink} onChange={(event) => update('googleReviewLink', event.target.value)} placeholder="https://g.page/r/your-agency/review" className="shell-input-rect" />
               </Field>
+
+              <div className="col-span-1 md:col-span-2 rounded-[20px] bg-slate-50 border border-slate-100 p-5 mt-2">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-800">Auto Review Collection</h3>
+                    <p className="text-xs text-slate-500 mt-1 max-w-sm">Automatically ask customers for a review after their trip completes.</p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input 
+                      type="checkbox" 
+                      className="sr-only peer" 
+                      checked={form.autoReviewCollectionEnabled}
+                      onChange={(e) => update('autoReviewCollectionEnabled', e.target.checked)}
+                    />
+                    <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-emerald-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#0d6a5f]"></div>
+                  </label>
+                </div>
+                
+                {form.autoReviewCollectionEnabled && (
+                   <div className="mt-4 pt-4 border-t border-slate-200">
+                     <label className="block text-sm font-semibold text-slate-700">Days to wait after return date</label>
+                     <div className="flex items-center mt-2 gap-2">
+                       <input 
+                         type="number" 
+                         min="0" 
+                         max="30" 
+                         value={form.autoReviewDelayDays}
+                         onChange={(e) => update('autoReviewDelayDays', e.target.value)}
+                         className="shell-input-rect w-24"
+                       />
+                       <span className="text-sm text-slate-500">days</span>
+                     </div>
+                   </div>
+                )}
+              </div>
 
               <Field label="WhatsApp number" hint="This updates automatically after your provider connection is approved.">
                 <input value={whatsappNumber} disabled className="shell-input-rect cursor-not-allowed opacity-60" />

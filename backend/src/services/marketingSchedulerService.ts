@@ -3,7 +3,7 @@
 const { Queue, Worker } = require('bullmq');
 const IORedis = require('ioredis');
 const dripService = require('./dripService');
-const { Campaign, CampaignRecipient, Customer, MessageTemplate } = require('../models');
+const { Campaign, CampaignRecipient, Customer, MessageTemplate, BotSession } = require('../models');
 const whatsappService = require('./whatsappService');
 const { Op } = require('sequelize');
 
@@ -82,6 +82,16 @@ async function sendToRecipient(recipient, campaign, template, agencyId) {
       waMessageId,
       sentAt: new Date(),
     });
+
+    if (campaign.type === 'REVIEW_COLLECTION') {
+      const [session] = await BotSession.findOrCreate({
+        where: { customerId: recipient.customerId, agencyId },
+        defaults: { currentStep: 'REVIEW', isHandedOff: false }
+      });
+      if (session) {
+        await session.update({ currentStep: 'REVIEW', isHandedOff: false });
+      }
+    }
 
     return 'SENT';
   } catch (err) {

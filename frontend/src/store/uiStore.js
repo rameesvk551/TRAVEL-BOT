@@ -9,6 +9,7 @@ import { create } from 'zustand';
 export const useUiStore = create((set) => ({
   sidebarOpen: false,          // mobile drawer open/close
   sidebarCollapsed: true,      // desktop collapsed (icons-only) mode
+  sidebarHovered: false,       // desktop expand-on-hover state
   activeChatCustomerId: null,
   chatPanelOpen: false,
   activeModal: null,
@@ -19,6 +20,8 @@ export const useUiStore = create((set) => ({
 
   toggleSidebarCollapse: () =>
     set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
+
+  setSidebarHovered: (hovered) => set({ sidebarHovered: hovered }),
 
   openChat: (customerId) =>
     set({ activeChatCustomerId: customerId, chatPanelOpen: true }),

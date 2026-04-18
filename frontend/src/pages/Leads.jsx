@@ -395,7 +395,7 @@ function ConversationRow({ lead, selected, onSelect, agents, onStatusChange, onA
       <div className="flex items-start gap-3">
         <div className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[linear-gradient(135deg,#34b6aa,#0f766e)] text-sm font-bold text-white">
           {getInitials(lead.customer?.name, 'TR')}
-          <span className={`absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-white ${lead.status === 'BOOKED' ? 'bg-emerald-400' : 'bg-slate-300'}`} />
+          <span className={`absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-white ${lead.status === 'CONVERTED' ? 'bg-emerald-400' : 'bg-slate-300'}`} />
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-2">
