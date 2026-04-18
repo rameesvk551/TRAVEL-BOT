@@ -23,6 +23,11 @@ module.exports = (sequelize) => {
       type: DataTypes.UUID,
       allowNull: true,
     },
+    packageId: {
+      type: DataTypes.UUID,
+      allowNull: true,
+      comment: 'Link to a pre-defined package template',
+    },
     leadId: {
       type: DataTypes.UUID,
       allowNull: true,

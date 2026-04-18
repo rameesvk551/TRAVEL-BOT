@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { itinerariesApi } from '../api/itinerariesApi';
+import { packagesApi } from '../api/packagesApi';
 import { useLeads } from '../hooks/useLeads';
 import { ArrowLeftIcon, PlusIcon, TrashIcon, DocumentArrowDownIcon } from '@heroicons/react/24/outline';
 import { formatCurrency } from '../utils/formatters';
@@ -17,7 +18,7 @@ function SortableDay({ day, index, updateDay, removeDay }) {
 
   const addItem = (type) => {
     updateDay(day.id, {
-      [type]: [...(day[type] || []), { id: crypto.randomUUID(), name: '', cost: '0', price: '0' }]
+      [type]: [...(day[type] || []), { id: crypto.randomUUID(), name: '' }]
     });
   };
 
@@ -73,10 +74,8 @@ function SortableDay({ day, index, updateDay, removeDay }) {
             
             <div className="space-y-2">
               {(day[type] || []).map((item, i) => (
-                <div key={item.id} className="flex flex-wrap gap-2 items-center bg-slate-50 p-2 rounded-lg border border-slate-100">
-                  <input className="flex-1 min-w-[150px] shell-input py-1.5 px-3 text-xs bg-white" placeholder="Name" value={item.name} onChange={e => updateItem(type, i, 'name', e.target.value)} />
-                  <input className="w-20 shell-input py-1.5 px-3 text-xs bg-white" placeholder="Cost" type="number" value={item.cost} onChange={e => updateItem(type, i, 'cost', e.target.value)} />
-                  <input className="w-20 shell-input py-1.5 px-3 text-xs bg-white border-emerald-200" placeholder="Price" type="number" value={item.price} onChange={e => updateItem(type, i, 'price', e.target.value)} />
+                <div key={item.id} className="flex gap-2 items-center bg-slate-50 p-2 rounded-lg border border-slate-100">
+                  <input className="flex-1 shell-input py-1.5 px-3 text-xs bg-white" placeholder="Name" value={item.name} onChange={e => updateItem(type, i, 'name', e.target.value)} />
                   <button type="button" onClick={() => removeItem(type, i)} className="text-slate-400 hover:text-rose-500"><TrashIcon className="w-4 h-4" /></button>
                 </div>
               ))}
@@ -96,11 +95,16 @@ export default function ItineraryBuilder() {
   const pdfRef = useRef();
 
   const [form, setForm] = useState({
-    name: '', customerId: '', destination: '', adults: 2, children: 0,
-    travelStartDate: '', travelEndDate: '', status: 'DRAFT', days: []
+    name: '', customerId: '', packageId: '', destination: '', adults: 2, children: 0,
+    travelStartDate: '', travelEndDate: '', status: 'DRAFT', days: [], totalPrice: 0
   });
 
   const { data: leadsData } = useLeads({ pageSize: 500 });
+  const { data: packagesData } = useQuery({
+    queryKey: ['packages'],
+    queryFn: () => packagesApi.list(),
+  });
+
   const customers = useMemo(() => {
     const map = new Map();
     (leadsData?.data?.data || []).forEach(lead => {
@@ -111,6 +115,8 @@ export default function ItineraryBuilder() {
     return Array.from(map.values());
   }, [leadsData]);
 
+  const packages = useMemo(() => packagesData?.data || [], [packagesData]);
+
   const itineraryQuery = useQuery({
     queryKey: ['itinerary', id],
     queryFn: () => itinerariesApi.getById(id),
@@ -120,7 +126,7 @@ export default function ItineraryBuilder() {
   useEffect(() => {
     if (isEdit && itineraryQuery.data?.data) {
       const it = itineraryQuery.data.data;
-      setForm({ ...it, customerId: it.customerId || '', travelStartDate: it.travelStartDate || '', travelEndDate: it.travelEndDate || '' });
+      setForm({ ...it, customerId: it.customerId || '', packageId: it.packageId || '', travelStartDate: it.travelStartDate || '', travelEndDate: it.travelEndDate || '' });
     }
   }, [isEdit, itineraryQuery.data]);
 
@@ -163,23 +169,20 @@ export default function ItineraryBuilder() {
     }
   };
 
-  // Calculations
+  // Calculations - simplified to use totalPrice from form
   const calcTotals = () => {
-    let cost = 0; let price = 0;
-    form.days.forEach(day => {
-      ['hotels', 'activities', 'transports'].forEach(type => {
-        (day[type] || []).forEach(item => {
-          cost += Number(item.cost || 0); price += Number(item.price || 0);
-        });
-      });
-    });
-    return { cost, price, profit: price - cost, margin: price > 0 ? ((price - cost) / price) * 100 : 0 };
+    return { 
+      cost: 0, 
+      price: Number(form.totalPrice || 0), 
+      profit: 0, 
+      margin: 0 
+    };
   };
 
   const totals = calcTotals();
 
   return (
-    <div className="flex min-h-full flex-col lg:flex-row overflow-hidden">
+    <div className="flex flex-col lg:flex-row h-screen overflow-hidden bg-white">
       
       {/* LEFT PANEL: Trip Details */}
       <div className="w-full lg:w-80 bg-slate-50 border-r border-slate-200 p-6 overflow-y-auto z-10 flex-shrink-0">
@@ -195,7 +198,14 @@ export default function ItineraryBuilder() {
             <input className="shell-input-rect mt-1" value={form.name} onChange={e => setForm({...form, name: e.target.value})} placeholder="Summer in Swiss" />
           </div>
           <div>
-            <label className="text-xs font-bold uppercase text-slate-500">Client</label>
+            <label className="text-xs font-bold uppercase text-slate-500">Package (Optional)</label>
+            <select className="shell-input-rect mt-1" value={form.packageId} onChange={e => setForm({...form, packageId: e.target.value})}>
+              <option value="">-- No Package / Custom Itinerary --</option>
+              {packages.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs font-bold uppercase text-slate-500">Client (Optional)</label>
             <select className="shell-input-rect mt-1" value={form.customerId} onChange={e => setForm({...form, customerId: e.target.value})}>
               <option value="">-- Select Client --</option>
               {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
@@ -224,6 +234,10 @@ export default function ItineraryBuilder() {
               <label className="text-xs font-bold uppercase text-slate-500">Children</label>
               <input type="number" className="shell-input-rect mt-1" value={form.children} onChange={e => setForm({...form, children: parseInt(e.target.value)})} />
             </div>
+          </div>
+          <div>
+            <label className="text-xs font-bold uppercase text-slate-500">Total Price (INR)</label>
+            <input type="number" className="shell-input-rect mt-1" value={form.totalPrice} onChange={e => setForm({...form, totalPrice: parseFloat(e.target.value) || 0})} placeholder="0" />
           </div>
         </div>
       </div>
@@ -263,22 +277,9 @@ export default function ItineraryBuilder() {
           <h2 className="text-xl font-bold text-slate-900 mb-6">Financials</h2>
           
           <div className="space-y-4">
-            <div className="p-4 rounded-2xl bg-white border border-slate-200">
-              <p className="text-xs font-bold uppercase text-slate-500 mb-1">Total Cost (INR)</p>
-              <p className="text-2xl font-bold text-slate-900">{formatCurrency(totals.cost * 100)}</p>
-            </div>
             <div className="p-4 rounded-2xl bg-[#0d6a5f] shadow-lg">
-              <p className="text-xs font-bold uppercase text-emerald-100 mb-1">Selling Price</p>
-              <p className="text-2xl font-bold text-white">{formatCurrency(totals.price * 100)}</p>
-            </div>
-            
-            <div className="flex justify-between items-center px-2 pt-2">
-              <span className="text-sm font-medium text-slate-600">Projected Profit</span>
-              <span className="text-sm font-bold text-emerald-600">{formatCurrency(totals.profit * 100)}</span>
-            </div>
-            <div className="flex justify-between items-center px-2 pb-4 border-b border-slate-200">
-              <span className="text-sm font-medium text-slate-600">Margin</span>
-              <span className="text-sm font-bold text-slate-900">{totals.margin.toFixed(1)}%</span>
+              <p className="text-xs font-bold uppercase text-emerald-100 mb-1">Total Price</p>
+              <p className="text-2xl font-bold text-white">{formatCurrency(form.totalPrice * 100)}</p>
             </div>
           </div>
         </div>
@@ -287,7 +288,7 @@ export default function ItineraryBuilder() {
           <button onClick={handleExportPDF} className="shell-button-secondary w-full text-center justify-center">
             <DocumentArrowDownIcon className="w-4 h-4" /> Export PDF
           </button>
-          <button onClick={() => saveMutation.mutate({...form, days: form.days.map(d => ({...d, date: undefined}))})} disabled={saveMutation.isPending} className="shell-button-primary w-full text-center justify-center">
+          <button onClick={() => saveMutation.mutate(form)} disabled={saveMutation.isPending} className="shell-button-primary w-full text-center justify-center">
             {saveMutation.isPending ? 'Saving...' : 'Save Itinerary'}
           </button>
         </div>
