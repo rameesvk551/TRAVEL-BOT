@@ -8,7 +8,6 @@ import {
   useCampaigns, useSendCampaign, useDuplicateCampaign, useDeleteCampaign,
 } from '../hooks/useCampaigns';
 import { formatDateTime } from '../utils/formatters';
-import CampaignWizard from '../components/CampaignWizard';
 
 const STATUS_FILTERS = [
   { key: '', label: 'All' },
@@ -39,8 +38,6 @@ export default function Campaigns() {
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
-  const [showWizard, setShowWizard] = useState(false);
-  const [editCampaign, setEditCampaign] = useState(null);
   const [menuOpen, setMenuOpen] = useState(null);
 
   const queryParams = statusFilter ? { status: statusFilter } : {};
@@ -71,7 +68,7 @@ export default function Campaigns() {
           <p className="text-slate-500 mt-1 text-sm">Broadcast promotional messages to segmented audiences.</p>
         </div>
         <button
-          onClick={() => { setEditCampaign(null); setShowWizard(true); }}
+          onClick={() => navigate('/campaigns/new')}
           className="flex items-center gap-2 rounded-xl bg-[#0d6a5f] px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#0b5a51] transition self-start"
         >
           <Plus className="w-4 h-4" />
@@ -188,7 +185,7 @@ export default function Campaigns() {
                     </p>
                     <p className="mt-1 mb-4 text-sm">Start reaching your audience with push campaigns.</p>
                     <button
-                      onClick={() => setShowWizard(true)}
+                      onClick={() => navigate('/campaigns/new')}
                       className="inline-flex items-center gap-2 rounded-xl bg-[#0d6a5f] px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#0b5a51]"
                     >
                       <Plus className="w-4 h-4" /> Create Your First Campaign
@@ -309,13 +306,6 @@ export default function Campaigns() {
         </div>
       </div>
 
-      {/* Campaign Wizard Modal */}
-      {showWizard && (
-        <CampaignWizard
-          onClose={() => { setShowWizard(false); setEditCampaign(null); }}
-          editCampaign={editCampaign}
-        />
-      )}
     </div>
   );
 }

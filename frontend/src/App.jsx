@@ -1,7 +1,9 @@
 // FILE: /frontend/src/App.jsx
 
+import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useAuthStore } from './store/authStore';
+import { useUiStore } from './store/uiStore';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Leads from './pages/Leads';
@@ -17,6 +19,7 @@ import Itineraries from './pages/Itineraries';
 import ItineraryBuilder from './pages/ItineraryBuilder';
 import Campaigns from './pages/Campaigns';
 import CampaignDetail from './pages/CampaignDetail';
+import CreateCampaign from './pages/CreateCampaign';
 import Reviews from './pages/Reviews';
 import Sidebar from './components/Sidebar';
 
@@ -33,10 +36,23 @@ function ProtectedRoute({ children }) {
  * Layout wrapper with sidebar for authenticated pages.
  */
 function AppLayout({ children }) {
+  const sidebarCollapsed = useUiStore((s) => s.sidebarCollapsed);
+  const [isDesktop, setIsDesktop] = React.useState(window.innerWidth >= 1024);
+
+  React.useEffect(() => {
+    const mq = window.matchMedia('(min-width: 1024px)');
+    const handler = (e) => setIsDesktop(e.matches);
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
+  }, []);
+
   return (
     <div className="flex h-screen overflow-hidden bg-slate-100 text-slate-900">
       <Sidebar />
-      <main className="flex-1 overflow-y-auto bg-slate-100 lg:pl-[252px]">
+      <main
+        className="flex-1 overflow-y-auto bg-slate-100 transition-[padding] duration-300"
+        style={{ paddingLeft: isDesktop ? (sidebarCollapsed ? 72 : 252) : 0 }}
+      >
         <div className="page-enter min-h-full p-4 md:p-6">{children}</div>
       </main>
     </div>
@@ -66,6 +82,8 @@ export default function App() {
                   <Route path="/itineraries/:id/edit" element={<ItineraryBuilder />} />
                   <Route path="/templates" element={<Templates />} />
                   <Route path="/campaigns" element={<Campaigns />} />
+                  <Route path="/campaigns/new" element={<CreateCampaign />} />
+                  <Route path="/campaigns/:id/edit" element={<CreateCampaign />} />
                   <Route path="/campaigns/:id" element={<CampaignDetail />} />
                   <Route path="/reviews" element={<Reviews />} />
                   <Route path="/payments" element={<Payments />} />

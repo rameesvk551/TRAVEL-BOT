@@ -2,8 +2,9 @@
 
 import { formatCurrency, formatDate, getStatusBadgeClass, truncate } from '../utils/formatters';
 import { UserCircleIcon, MapPinIcon, CalendarIcon } from '@heroicons/react/24/outline';
+import { LEAD_STATUS_OPTIONS } from '../utils/leadStatuses';
 
-export default function LeadCard({ lead, onClick }) {
+export default function LeadCard({ lead, onClick, onStatusChange, onAssignAgent, agents = [] }) {
   const customer = lead.customer || {};
   const agent = lead.assignedAgent;
 
@@ -23,9 +24,16 @@ export default function LeadCard({ lead, onClick }) {
             <p className="text-xs text-surface-400">{customer.phone}</p>
           </div>
         </div>
-        <span className={`badge ${getStatusBadgeClass(lead.status)}`}>
-          {lead.status}
-        </span>
+        <select
+          value={lead.status}
+          onClick={(e) => e.stopPropagation()}
+          onChange={(e) => onStatusChange?.(lead.id, e.target.value)}
+          className={`badge ${getStatusBadgeClass(lead.status)} border-transparent outline-none cursor-pointer hover:opacity-80 appearance-none text-center pb-[2px] pt-[2px]`}
+        >
+          {LEAD_STATUS_OPTIONS.map((s) => (
+            <option key={s} value={s}>{s}</option>
+          ))}
+        </select>
       </div>
 
       {/* Details */}
@@ -52,11 +60,23 @@ export default function LeadCard({ lead, onClick }) {
       {/* Footer */}
       <div className="flex items-center justify-between pt-2 border-t border-surface-700/30">
         <p className="text-[10px] text-surface-500">{formatDate(lead.createdAt)}</p>
-        {agent && (
-          <p className="text-[10px] text-surface-400">
-            → {agent.name}
-          </p>
-        )}
+        <div className="flex items-center gap-2">
+          {agent ? (
+            <p className="text-[10px] text-surface-400">→ {agent.name}</p>
+          ) : null}
+
+          <select
+            value={lead.assignedAgentId || ''}
+            onClick={(e) => e.stopPropagation()}
+            onChange={(e) => onAssignAgent?.(lead.id, e.target.value)}
+            className="text-[10px] bg-transparent text-surface-400 outline-none"
+          >
+            <option value="">Unassigned</option>
+            {agents.map((a) => (
+              <option key={a.id} value={a.id}>{a.name}</option>
+            ))}
+          </select>
+        </div>
       </div>
     </div>
   );

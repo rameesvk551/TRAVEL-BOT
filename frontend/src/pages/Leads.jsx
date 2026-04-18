@@ -18,6 +18,7 @@ import { useMessages, useSendMessage } from '../hooks/useMessages';
 import { formatDate, formatDateTime, formatPhone, formatTime, timeAgo } from '../utils/formatters';
 import { LEAD_STATUS_OPTIONS } from '../utils/leadStatuses';
 import { getInitials, getStatusTone } from '../components/uiHelpers';
+import LeadPipeline from '../components/LeadPipeline';
 
 const EMPTY_CREATE_FORM = {
   customerName: '',
@@ -443,6 +444,7 @@ export default function Leads() {
   const [selectedLeadId, setSelectedLeadId] = useState(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [view, setView] = useState('list');
   const [createForm, setCreateForm] = useState(EMPTY_CREATE_FORM);
   const [editForm, setEditForm] = useState(EMPTY_EDIT_FORM);
   const [followupForm, setFollowupForm] = useState(EMPTY_FOLLOWUP_FORM);
@@ -635,7 +637,26 @@ export default function Leads() {
         <aside className="border-b border-slate-200 bg-[#fbfcfd] xl:border-b-0 xl:border-r">
           <div className="border-b border-slate-200 px-5 py-4">
             <div className="flex items-center justify-between">
-              <h1 className="text-[20px] font-bold tracking-tight text-slate-950">Inbox</h1>
+              <div className="flex items-center gap-4">
+                <h1 className="text-[20px] font-bold tracking-tight text-slate-950">Inbox</h1>
+                <div className="rounded-lg bg-slate-50 p-1 flex items-center text-sm">
+                  <button
+                    type="button"
+                    onClick={() => setView('list')}
+                    className={`px-3 py-1 rounded ${view === 'list' ? 'bg-white shadow-sm' : 'text-slate-500'}`}
+                  >
+                    List
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setView('kanban')}
+                    className={`px-3 py-1 rounded ${view === 'kanban' ? 'bg-white shadow-sm' : 'text-slate-500'}`}
+                  >
+                    Kanban
+                  </button>
+                </div>
+              </div>
+
               <button type="button" className="rounded-[10px] p-2 text-slate-400 transition hover:bg-white hover:text-slate-700">
                 <AdjustmentsHorizontalIcon className="h-5 w-5" />
               </button>
@@ -707,28 +728,32 @@ export default function Leads() {
           </header>
 
           <div className="hide-scrollbar flex-1 overflow-y-auto bg-[#fcfcfd] px-5 py-5">
-            {!activeLead ? (
-              <div className="flex h-full items-center justify-center text-sm text-slate-500">
-                No conversation selected.
-              </div>
+            {view === 'kanban' ? (
+              <LeadPipeline onLeadClick={handleSelectLead} />
             ) : (
-              <div className="space-y-4">
-                <div className="flex justify-center">
-                  <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-medium text-slate-500">
-                    {formatDate(activeLead.createdAt)}
-                  </span>
+              (!activeLead ? (
+                <div className="flex h-full items-center justify-center text-sm text-slate-500">
+                  No conversation selected.
                 </div>
-
-                {messages.length === 0 ? (
-                  <div className="rounded-[14px] border border-slate-200 bg-white p-6 text-sm text-slate-500">
-                    No WhatsApp messages yet for this lead.
+              ) : (
+                <div className="space-y-4">
+                  <div className="flex justify-center">
+                    <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-medium text-slate-500">
+                      {formatDate(activeLead.createdAt)}
+                    </span>
                   </div>
-                ) : (
-                  messages.map((message) => (
-                    <MessageBubble key={message.id} message={message} />
-                  ))
-                )}
-              </div>
+
+                  {messages.length === 0 ? (
+                    <div className="rounded-[14px] border border-slate-200 bg-white p-6 text-sm text-slate-500">
+                      No WhatsApp messages yet for this lead.
+                    </div>
+                  ) : (
+                    messages.map((message) => (
+                      <MessageBubble key={message.id} message={message} />
+                    ))
+                  )}
+                </div>
+              ))
             )}
           </div>
 

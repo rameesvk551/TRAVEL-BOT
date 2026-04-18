@@ -2,6 +2,8 @@
 
 import { useState } from 'react';
 import { useLeads, useUpdateLead } from '../hooks/useLeads';
+import { useQuery } from '@tanstack/react-query';
+import client from '../api/client';
 import LeadCard from './LeadCard';
 import { LEAD_PIPELINE_COLUMNS } from '../utils/leadStatuses';
 
@@ -11,6 +13,13 @@ export default function LeadPipeline({ onLeadClick }) {
   const [draggedLead, setDraggedLead] = useState(null);
 
   const leads = data?.data?.data || [];
+
+  const { data: agentsResponse } = useQuery({
+    queryKey: ['agents'],
+    queryFn: () => client.get('/agents').then((r) => r.data),
+  });
+
+  const agents = agentsResponse?.data || [];
 
   const getLeadsByStatus = (status) =>
     leads.filter((l) => l.status === status);
@@ -32,6 +41,16 @@ export default function LeadPipeline({ onLeadClick }) {
     }
     setDraggedLead(null);
   };
+
+  function handleStatusChange(leadId, newStatus) {
+    if (!leadId) return;
+    updateLead.mutate({ id: leadId, data: { status: newStatus } });
+  }
+
+  function handleAssignAgent(leadId, agentId) {
+    if (!leadId) return;
+    updateLead.mutate({ id: leadId, data: { assignedAgentId: agentId || null } });
+  }
 
   const colorBorderMap = {
     blue: 'border-blue-500/30',
@@ -121,7 +140,13 @@ export default function LeadPipeline({ onLeadClick }) {
                   onDragStart={(e) => handleDragStart(e, lead)}
                   className="cursor-grab active:cursor-grabbing"
                 >
-                  <LeadCard lead={lead} onClick={onLeadClick} />
+                  <LeadCard
+                    lead={lead}
+                    onClick={onLeadClick}
+                    onStatusChange={handleStatusChange}
+                    onAssignAgent={handleAssignAgent}
+                    agents={agents}
+                  />
                 </div>
               ))}
 

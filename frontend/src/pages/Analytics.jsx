@@ -5,9 +5,8 @@ import {
 } from 'recharts';
 import {
   useSalesReport, useLeadFunnelReport, useAgentPerformanceReport,
-  usePackageReport, useLostLeadsReport, useResponseReport,
-  useReviewReport, useSeasonalReport, useProfitReport, useSourceReport,
-  useBookingReport,
+  usePackageReport, useLostLeadsReport,
+  useReviewReport, useSourceReport, useBookingReport,
 } from '../hooks/useAnalytics';
 import { useCampaignAnalytics } from '../hooks/useCampaigns';
 import { formatCurrency, formatDate } from '../utils/formatters';
@@ -27,12 +26,10 @@ const TABS = [
   { key: 'agents', label: '👨‍💼 Team', emoji: '👨‍💼' },
   { key: 'packages', label: '🧳 Packages', emoji: '🧳' },
   { key: 'lost', label: '📉 Lost Leads', emoji: '📉' },
-  { key: 'response', label: '⏱ Response', emoji: '⏱' },
   { key: 'reviews', label: '⭐ Reviews', emoji: '⭐' },
-  { key: 'seasonal', label: '📅 Trends', emoji: '📅' },
-  { key: 'profit', label: '💸 Profit', emoji: '💸' },
   { key: 'sources', label: '📦 Sources', emoji: '📦' },
   { key: 'campaigns', label: '📣 Campaigns', emoji: '📣' },
+  
 ];
 
 /* ───────────────── Date Range Presets ───────────────── */
@@ -567,56 +564,7 @@ function LostLeadsTab({ params }) {
   );
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
-   6. RESPONSE & FOLLOW-UP
-   ═══════════════════════════════════════════════════════════════════════════ */
-
-function ResponseTab({ params }) {
-  const { data, isLoading } = useResponseReport(params);
-  const d = data?.data || {};
-
-  const distData = useMemo(() => {
-    const order = ['Under 5 min', '5-15 min', '15-60 min', '1-24 hours', 'Over 24 hours'];
-    const colors = ['#10b981', '#14b8a6', '#f59e0b', '#f97316', '#ef4444'];
-    return order.map((bucket, i) => {
-      const match = (d.responseDistribution || []).find((r) => r.bucket === bucket);
-      return { name: bucket, count: parseInt(match?.count || '0', 10), fill: colors[i] };
-    });
-  }, [d.responseDistribution]);
-
-  if (isLoading) return <ChartSkeleton />;
-
-  return (
-    <div className="space-y-5">
-      <div className="grid gap-4 md:grid-cols-3">
-        <KpiCard label="Avg Response Time" value={`${d.avgResponseMinutes || 0} min`} subValue={d.conversationCount ? `from ${d.conversationCount} conversations` : ''} />
-        <KpiCard label="Missed Follow-ups" value={d.missedFollowUps || 0} subValue="leads without agent reply" />
-        <KpiCard label="Conversations" value={d.conversationCount || 0} />
-      </div>
-
-      <ReportSection title="Response Time Distribution" description="How quickly your team responds">
-        {distData.every((d) => d.count === 0) ? <EmptyState message="No response data yet." /> : (
-          <ResponsiveContainer width="100%" height={280}>
-            <BarChart data={distData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-              <XAxis dataKey="name" tick={{ fontSize: 11, fill: '#475569' }} />
-              <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} />
-              <Tooltip content={<CustomTooltip />} />
-              <Bar dataKey="count" radius={[6, 6, 0, 0]} name="Conversations">
-                {distData.map((entry, i) => <Cell key={i} fill={entry.fill} />)}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        )}
-      </ReportSection>
-
-      <div className="rounded-[14px] border border-amber-200 bg-amber-50 p-5">
-        <p className="text-sm font-bold text-amber-800">💡 Tip: Faster response = more bookings</p>
-        <p className="mt-1 text-sm text-amber-700">Agencies that respond within 5 minutes have 3x higher conversion rates. {d.avgResponseMinutes > 15 ? 'Your current response time is above 15 minutes — consider enabling notification alerts.' : d.avgResponseMinutes > 0 ? 'Great job keeping response times low!' : ''}</p>
-      </div>
-    </div>
-  );
-}
+/* Response tab removed */
 
 /* ═══════════════════════════════════════════════════════════════════════════
    7. CUSTOMER REVIEWS
@@ -692,138 +640,9 @@ function ReviewTab({ params }) {
   );
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
-   8. SEASONAL / TRENDS
-   ═══════════════════════════════════════════════════════════════════════════ */
+/* Seasonal/Trends tab removed */
 
-function SeasonalTab() {
-  const { data, isLoading } = useSeasonalReport();
-  const d = data?.data || {};
-
-  const bookingData = useMemo(() =>
-    (d.bookingsByMonth || []).map((r) => ({
-      month: new Date(r.month).toLocaleDateString('en-IN', { month: 'short', year: '2-digit' }),
-      bookings: r.bookings,
-      revenue: Math.round(r.revenue / 100),
-    })), [d.bookingsByMonth]);
-
-  if (isLoading) return <ChartSkeleton />;
-
-  return (
-    <div className="space-y-5">
-      {d.peakMonth && d.slowMonth && (
-        <div className="grid gap-4 md:grid-cols-2">
-          <div className="rounded-[14px] border border-emerald-200 bg-emerald-50 p-5">
-            <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-emerald-600">🔥 Peak Month</p>
-            <p className="mt-2 text-2xl font-bold text-emerald-800">
-              {new Date(d.peakMonth.month).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })}
-            </p>
-            <p className="mt-1 text-sm text-emerald-600">{d.peakMonth.bookings} bookings · {formatCurrency(d.peakMonth.revenue)}</p>
-          </div>
-          <div className="rounded-[14px] border border-slate-200 bg-slate-50 p-5">
-            <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">📉 Slowest Month</p>
-            <p className="mt-2 text-2xl font-bold text-slate-700">
-              {new Date(d.slowMonth.month).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })}
-            </p>
-            <p className="mt-1 text-sm text-slate-500">{d.slowMonth.bookings} bookings · {formatCurrency(d.slowMonth.revenue)}</p>
-          </div>
-        </div>
-      )}
-
-      <ReportSection title="Monthly Bookings & Revenue" description="Last 24 months trend">
-        {bookingData.length === 0 ? <EmptyState /> : (
-          <ResponsiveContainer width="100%" height={320}>
-            <BarChart data={bookingData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-              <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#94a3b8' }} />
-              <YAxis yAxisId="left" tick={{ fontSize: 11, fill: '#94a3b8' }} />
-              <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11, fill: '#94a3b8' }} tickFormatter={(v) => `₹${v >= 1000 ? (v / 1000).toFixed(0) + 'K' : v}`} />
-              <Tooltip content={<CustomTooltip />} />
-              <Legend iconType="circle" wrapperStyle={{ fontSize: '12px' }} />
-              <Bar yAxisId="left" dataKey="bookings" fill={TEAL} radius={[4, 4, 0, 0]} name="Bookings" />
-              <Bar yAxisId="right" dataKey="revenue" fill="#0ea5e9" radius={[4, 4, 0, 0]} name="Revenue (₹)" />
-            </BarChart>
-          </ResponsiveContainer>
-        )}
-      </ReportSection>
-
-      <div className="rounded-[14px] border border-blue-200 bg-blue-50 p-5">
-        <p className="text-sm font-bold text-blue-800">📅 Use this data to plan</p>
-        <p className="mt-1 text-sm text-blue-700">• Run promotional offers during slow months<br/>• Increase staffing during peak seasons<br/>• Adjust pricing based on demand patterns</p>
-      </div>
-    </div>
-  );
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   9. PROFIT REPORT
-   ═══════════════════════════════════════════════════════════════════════════ */
-
-function ProfitTab({ params }) {
-  const { data, isLoading } = useProfitReport(params);
-  const d = data?.data || {};
-
-  if (isLoading) return <ChartSkeleton />;
-
-  const pkgData = (d.byPackage || []).map((p) => ({
-    name: (p.packageName || 'N/A').substring(0, 18),
-    selling: Math.round(p.selling / 100),
-    cost: Math.round(p.cost / 100),
-    profit: Math.round(p.profit / 100),
-  }));
-
-  return (
-    <div className="space-y-5">
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <KpiCard label="Total Selling" value={formatCurrency(d.totalSelling || 0)} />
-        <KpiCard label="Estimated Cost" value={formatCurrency(d.totalCost || 0)} />
-        <KpiCard label="Estimated Profit" value={formatCurrency(d.totalProfit || 0)} />
-        <KpiCard label="Profit Margin" value={`${d.profitMargin || 0}%`} />
-      </div>
-
-      <ReportSection title="Profit by Package" description="Selling price vs estimated base cost (basePrice × travellers)">
-        {pkgData.length === 0 ? <EmptyState message="No profit data yet. Book packages to see estimates." /> : (
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={pkgData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-              <XAxis dataKey="name" tick={{ fontSize: 11, fill: '#475569' }} />
-              <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} tickFormatter={(v) => `₹${v >= 1000 ? (v / 1000).toFixed(0) + 'K' : v}`} />
-              <Tooltip content={<CustomTooltip formatter={(v) => `₹${v.toLocaleString('en-IN')}`} />} />
-              <Legend iconType="circle" wrapperStyle={{ fontSize: '12px' }} />
-              <Bar dataKey="selling" fill={TEAL} radius={[4, 4, 0, 0]} name="Selling (₹)" />
-              <Bar dataKey="cost" fill="#94a3b8" radius={[4, 4, 0, 0]} name="Base Cost (₹)" />
-              <Bar dataKey="profit" fill="#10b981" radius={[4, 4, 0, 0]} name="Profit (₹)" />
-            </BarChart>
-          </ResponsiveContainer>
-        )}
-      </ReportSection>
-
-      {(d.byPackage || []).length > 0 && (
-        <ReportSection title="Package Margins" description="Margin ranking">
-          <div className="space-y-2">
-            {(d.byPackage || []).map((p, i) => (
-              <div key={i} className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-3">
-                <span className="text-sm font-medium text-slate-700">{p.packageName}</span>
-                <div className="flex items-center gap-4">
-                  <span className="text-sm text-slate-500">{p.bookings} bookings</span>
-                  <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${p.margin >= 20 ? 'bg-emerald-50 text-emerald-700' : p.margin >= 10 ? 'bg-amber-50 text-amber-700' : 'bg-rose-50 text-rose-600'}`}>
-                    {p.margin}% margin
-                  </span>
-                  <span className="text-sm font-bold text-emerald-700">{formatCurrency(p.profit)}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </ReportSection>
-      )}
-
-      <div className="rounded-[14px] border border-violet-200 bg-violet-50 p-5">
-        <p className="text-sm font-bold text-violet-800">💡 Note on Profit Estimation</p>
-        <p className="mt-1 text-sm text-violet-700">Profit is estimated using <strong>basePrice × travellers</strong> as the cost baseline. For accurate profit tracking, consider adding actual cost fields to your packages (hotel, transport, etc.).</p>
-      </div>
-    </div>
-  );
-}
+/* Profit tab removed */
 
 /* ═══════════════════════════════════════════════════════════════════════════
    10. SOURCE REPORT
@@ -1078,10 +897,9 @@ export default function Analytics() {
         {activeTab === 'agents' && <AgentTab params={params} />}
         {activeTab === 'packages' && <PackageTab params={params} />}
         {activeTab === 'lost' && <LostLeadsTab params={params} />}
-        {activeTab === 'response' && <ResponseTab params={params} />}
+        
         {activeTab === 'reviews' && <ReviewTab params={params} />}
-        {activeTab === 'seasonal' && <SeasonalTab />}
-        {activeTab === 'profit' && <ProfitTab params={params} />}
+        
         {activeTab === 'sources' && <SourceTab params={params} />}
         {activeTab === 'campaigns' && <CampaignAnalyticsTab params={params} />}
       </section>

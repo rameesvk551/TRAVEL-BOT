@@ -7,7 +7,8 @@ import { create } from 'zustand';
  * UI store — manages sidebar, modals, and notification state.
  */
 export const useUiStore = create((set) => ({
-  sidebarOpen: true,
+  sidebarOpen: false,          // mobile drawer open/close
+  sidebarCollapsed: true,      // desktop collapsed (icons-only) mode
   activeChatCustomerId: null,
   chatPanelOpen: false,
   activeModal: null,
@@ -15,6 +16,9 @@ export const useUiStore = create((set) => ({
   notifications: [],
 
   toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
+
+  toggleSidebarCollapse: () =>
+    set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
 
   openChat: (customerId) =>
     set({ activeChatCustomerId: customerId, chatPanelOpen: true }),

@@ -43,34 +43,7 @@ export default function Dashboard() {
         <MetricCard label="Revenue" value={`Rs ${(analytics.totalRevenue || 0) / 100 >= 1 ? ((analytics.totalRevenue || 0) / 100).toLocaleString('en-IN') : '0'}`} note="Total confirmed" />
       </section>
 
-      <section className="grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
-        <div className="rounded-[12px] border border-slate-200 bg-white">
-          <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
-            <div>
-              <h2 className="text-sm font-semibold text-slate-950">Recent Conversations</h2>
-              <p className="text-xs text-slate-500">Latest inbound WhatsApp messages</p>
-            </div>
-            <Link to="/leads" className="text-sm font-medium text-[#0f766e]">Open inbox</Link>
-          </div>
-
-          <div className="divide-y divide-slate-100">
-            {liveMessages.length === 0 ? (
-              <div className="px-4 py-8 text-sm text-slate-500">No recent inbound messages.</div>
-            ) : (
-              liveMessages.slice(0, 6).map((message) => (
-                <div key={message.id} className="grid gap-2 px-4 py-3 md:grid-cols-[180px_minmax(0,1fr)_90px] md:items-center">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-slate-900">{message.customer?.name || 'Guest lead'}</p>
-                    <p className="mt-0.5 text-xs text-slate-500">{timeAgo(message.timestamp)}</p>
-                  </div>
-                  <p className="truncate text-sm text-slate-600">{truncate(message.content, 110)}</p>
-                  <p className="text-right text-xs text-slate-400">{formatTime(message.timestamp)}</p>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-
+      <section className="grid gap-4">
         <div className="rounded-[12px] border border-slate-200 bg-white">
           <div className="border-b border-slate-200 px-4 py-3">
             <h2 className="text-sm font-semibold text-slate-950">Pipeline Snapshot</h2>
