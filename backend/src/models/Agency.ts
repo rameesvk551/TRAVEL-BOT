@@ -32,7 +32,6 @@ module.exports = (sequelize) => {
     whatsappNumber: {
       type: DataTypes.STRING(20),
       allowNull: false,
-      unique: true,
       comment: 'The WhatsApp Business number customers message',
     },
     whatsappProvider: {
@@ -142,8 +141,9 @@ module.exports = (sequelize) => {
   }, {
     tableName: 'agencies',
     indexes: [
-      { fields: ['whatsapp_number'] },
-      { fields: ['email'] },
+      { fields: ['whatsapp_number'], unique: true },
+      { fields: ['email'], unique: true },
+      { fields: ['phone'], unique: true },
     ],
   });
 
