@@ -13,7 +13,10 @@ import Payments from './pages/Payments';
 import Analytics from './pages/Analytics';
 import Settings from './pages/Settings';
 import Templates from './pages/Templates';
+import Itineraries from './pages/Itineraries';
+import ItineraryBuilder from './pages/ItineraryBuilder';
 import Campaigns from './pages/Campaigns';
+import CampaignDetail from './pages/CampaignDetail';
 import Reviews from './pages/Reviews';
 import Sidebar from './components/Sidebar';
 
@@ -58,8 +61,12 @@ export default function App() {
                   <Route path="/packages" element={<Packages />} />
                   <Route path="/packages/new" element={<PackageForm />} />
                   <Route path="/packages/:id/edit" element={<PackageForm />} />
+                  <Route path="/itineraries" element={<Itineraries />} />
+                  <Route path="/itineraries/new" element={<ItineraryBuilder />} />
+                  <Route path="/itineraries/:id/edit" element={<ItineraryBuilder />} />
                   <Route path="/templates" element={<Templates />} />
                   <Route path="/campaigns" element={<Campaigns />} />
+                  <Route path="/campaigns/:id" element={<CampaignDetail />} />
                   <Route path="/reviews" element={<Reviews />} />
                   <Route path="/payments" element={<Payments />} />
                   <Route path="/analytics" element={<Analytics />} />

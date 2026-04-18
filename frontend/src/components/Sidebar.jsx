@@ -10,6 +10,7 @@ import {
   CalendarDaysIcon,
   UsersIcon,
   CubeIcon,
+  DocumentDuplicateIcon,
   ChartBarIcon,
   Cog6ToothIcon,
   ArrowRightOnRectangleIcon,
@@ -32,6 +33,7 @@ const navItems = [
 ];
 
 const utilityItems = [
+  { to: '/itineraries', icon: DocumentDuplicateIcon, label: 'Itineraries' },
   { to: '/packages', icon: CubeIcon, label: 'Packages' },
   { to: '/analytics', icon: ChartBarIcon, label: 'Reports' },
 ];

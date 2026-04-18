@@ -22,6 +22,15 @@ exports.getById = async (req, res, next) => {
   }
 };
 
+exports.getStats = async (req, res, next) => {
+  try {
+    const result = await campaignService.getCampaignStats(req.params.id, req.user.agencyId);
+    res.json({ success: true, data: result });
+  } catch (err) {
+    next(err);
+  }
+};
+
 exports.create = async (req, res, next) => {
   try {
     const campaign = await campaignService.createCampaign(req.user.agencyId, req.body);
@@ -59,10 +68,57 @@ exports.cancel = async (req, res, next) => {
   }
 };
 
+exports.delete = async (req, res, next) => {
+  try {
+    const result = await campaignService.deleteCampaign(req.params.id, req.user.agencyId);
+    res.json({ success: true, data: result });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+};
+
+exports.duplicate = async (req, res, next) => {
+  try {
+    const campaign = await campaignService.duplicateCampaign(req.params.id, req.user.agencyId);
+    res.status(201).json({ success: true, data: campaign });
+  } catch (err) {
+    next(err);
+  }
+};
+
 exports.previewAudience = async (req, res, next) => {
   try {
     const count = await campaignService.previewAudienceCount(req.user.agencyId, req.body);
     res.json({ success: true, data: { count } });
+  } catch (err) {
+    next(err);
+  }
+};
+
+exports.analytics = async (req, res, next) => {
+  try {
+    const result = await campaignService.getCampaignAnalytics(req.user.agencyId, req.query);
+    res.json({ success: true, data: result });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * Import contacts from a JSON array of { name, phone } objects.
+ * Returns the created/found customer IDs to use as manualCustomerIds.
+ */
+exports.importContacts = async (req, res, next) => {
+  try {
+    const { contacts } = req.body;
+    if (!Array.isArray(contacts) || contacts.length === 0) {
+      return res.status(400).json({ success: false, error: 'Provide a non-empty contacts array.' });
+    }
+    if (contacts.length > 10000) {
+      return res.status(400).json({ success: false, error: 'Maximum 10,000 contacts per import.' });
+    }
+    const customerIds = await campaignService.importContacts(req.user.agencyId, contacts);
+    res.json({ success: true, data: { customerIds, count: customerIds.length } });
   } catch (err) {
     next(err);
   }

@@ -138,6 +138,13 @@ function LeadDrawer({
               <InfoRow label="Travel" value={lead.travelDates || 'Dates flexible'} />
             </div>
 
+            <div className="mt-2 grid gap-3 sm:grid-cols-2">
+              <InfoRow label="Destination" value={lead.destination || 'Not specified'} />
+              <InfoRow label="Travelers" value={lead.travellers ? `${lead.travellers} Person(s)` : 'Not specified'} />
+              <InfoRow label="Budget per person" value={lead.budgetPerPerson ? `₹${fromBudgetPaise(lead.budgetPerPerson)}` : 'Not specified'} />
+              <InfoRow label="Interest" value={lead.interest || 'Not specified'} />
+            </div>
+
             <div className="mt-4 rounded-[14px] border border-slate-200 bg-white p-4">
               <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">Trip Notes</p>
               <p className="mt-2 text-sm leading-7 text-slate-600">{lead.notes || 'No notes added for this lead yet.'}</p>
@@ -373,7 +380,7 @@ function MessageBubble({ message }) {
   );
 }
 
-function ConversationRow({ lead, selected, onSelect }) {
+function ConversationRow({ lead, selected, onSelect, agents, onStatusChange, onAssignAgent }) {
   return (
     <button
       type="button"
@@ -395,8 +402,30 @@ function ConversationRow({ lead, selected, onSelect }) {
             <p className="shrink-0 text-[11px] font-medium text-slate-400">{timeAgo(lead.updatedAt || lead.createdAt)}</p>
           </div>
           <p className="mt-1 truncate text-sm text-slate-500">{lead.destination || 'Trip details pending'}</p>
-          <div className="mt-2 flex flex-wrap gap-2">
-            <span className={`badge ${getStatusTone(lead.status)}`}>{lead.status}</span>
+          <div className="mt-2 flex flex-wrap gap-2 items-center">
+            <select
+                value={lead.status}
+                onClick={(e) => e.stopPropagation()}
+                onChange={(e) => onStatusChange(lead.id, e.target.value)}
+                className={`badge ${getStatusTone(lead.status)} border-transparent outline-none cursor-pointer hover:opacity-80 appearance-none text-center pb-[2px] pt-[2px]`}
+            >
+              {LEAD_STATUS_OPTIONS.map((status) => (
+                <option key={status} value={status}>{status}</option>
+              ))}
+            </select>
+            
+            <select
+                value={lead.assignedAgentId || ''}
+                onClick={(e) => e.stopPropagation()}
+                onChange={(e) => onAssignAgent(lead.id, e.target.value)}
+                className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-600 border-none outline-none cursor-pointer hover:bg-slate-200 appearance-none"
+            >
+              <option value="">Unassigned</option>
+              {agents.map((agent) => (
+                <option key={agent.id} value={agent.id}>{agent.name}</option>
+              ))}
+            </select>
+
             {lead.package?.name ? (
               <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-600">
                 {lead.package.name}
@@ -584,6 +613,22 @@ export default function Leads() {
     setIsDrawerOpen(true);
   }
 
+  async function handleQuickStatusChange(leadId, newStatus) {
+    if (!leadId) return;
+    await updateLead.mutateAsync({
+      id: leadId,
+      data: { status: newStatus },
+    });
+  }
+
+  async function handleQuickAssignAgent(leadId, agentId) {
+    if (!leadId) return;
+    await updateLead.mutateAsync({
+      id: leadId,
+      data: { assignedAgentId: agentId || null },
+    });
+  }
+
   return (
     <div className="w-full">
       <section className="grid min-h-[calc(100vh-6.25rem)] overflow-hidden rounded-[16px] border border-slate-200 bg-white xl:grid-cols-[320px_minmax(0,1fr)]">
@@ -614,6 +659,9 @@ export default function Leads() {
                   lead={lead}
                   selected={lead.id === selectedLeadId}
                   onSelect={() => handleSelectLead(lead.id)}
+                  agents={agents}
+                  onStatusChange={handleQuickStatusChange}
+                  onAssignAgent={handleQuickAssignAgent}
                 />
               ))
             )}

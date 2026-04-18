@@ -15,6 +15,7 @@ const campaignRoutes = require('./campaigns');
 const dripRoutes = require('./drips');
 const referralRoutes = require('./referrals');
 const reviewRoutes = require('./reviews');
+const itineraryRoutes = require('./itineraries');
 
 function registerApiRoutes(app) {
   app.use('/api/auth', authRoutes);
@@ -34,6 +35,7 @@ function registerApiRoutes(app) {
   app.use('/api/drips', dripRoutes);
   app.use('/api/referrals', referralRoutes);
   app.use('/api/reviews', reviewRoutes);
+  app.use('/api/itineraries', itineraryRoutes);
 }
 
 module.exports = {

@@ -9,6 +9,7 @@ import {
   useReviewReport, useSeasonalReport, useProfitReport, useSourceReport,
   useBookingReport,
 } from '../hooks/useAnalytics';
+import { useCampaignAnalytics } from '../hooks/useCampaigns';
 import { formatCurrency, formatDate } from '../utils/formatters';
 import { analyticsApi } from '../api/analyticsApi';
 
@@ -31,6 +32,7 @@ const TABS = [
   { key: 'seasonal', label: '📅 Trends', emoji: '📅' },
   { key: 'profit', label: '💸 Profit', emoji: '💸' },
   { key: 'sources', label: '📦 Sources', emoji: '📦' },
+  { key: 'campaigns', label: '📣 Campaigns', emoji: '📣' },
 ];
 
 /* ───────────────── Date Range Presets ───────────────── */
@@ -915,6 +917,112 @@ function formatSourceName(source) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
+   12. CAMPAIGN ANALYTICS
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+function CampaignAnalyticsTab({ params }) {
+  const { data, isLoading } = useCampaignAnalytics(params);
+  const d = data?.data || {};
+
+  const chartData = (d.campaignsByDay || []).map((r) => ({
+    date: new Date(r.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }),
+    campaigns: r.count,
+    recipients: r.recipients,
+  }));
+
+  if (isLoading) return <ChartSkeleton />;
+
+  return (
+    <div className="space-y-5">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <KpiCard label="Total Campaigns" value={d.totalCampaigns || 0} subValue={`${d.sentCampaigns || 0} sent`} />
+        <KpiCard label="Total Recipients" value={(d.totalRecipients || 0).toLocaleString()} />
+        <KpiCard label="Delivery Rate" value={`${d.deliveryRate || 0}%`} subValue="delivered / sent" />
+        <KpiCard label="Read Rate" value={`${d.readRate || 0}%`} subValue="read / delivered" />
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-3">
+        <KpiCard label="Delivered" value={(d.totalDelivered || 0).toLocaleString()} />
+        <KpiCard label="Read" value={(d.totalRead || 0).toLocaleString()} />
+        <KpiCard label="Reply Rate" value={`${d.replyRate || 0}%`} subValue={`${(d.totalReplied || 0).toLocaleString()} replies`} />
+      </div>
+
+      <ReportSection title="Campaigns Over Time" description="Daily campaign sends">
+        {chartData.length === 0 ? <EmptyState message="No campaign data yet." /> : (
+          <ResponsiveContainer width="100%" height={280}>
+            <BarChart data={chartData}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+              <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#94a3b8' }} />
+              <YAxis yAxisId="left" tick={{ fontSize: 11, fill: '#94a3b8' }} />
+              <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11, fill: '#94a3b8' }} />
+              <Tooltip contentStyle={{ borderRadius: '12px', borderColor: '#e2e8f0', fontSize: '12px' }} />
+              <Legend iconType="circle" wrapperStyle={{ fontSize: '12px' }} />
+              <Bar yAxisId="left" dataKey="campaigns" fill={TEAL} radius={[4, 4, 0, 0]} name="Campaigns" />
+              <Bar yAxisId="right" dataKey="recipients" fill="#0ea5e9" radius={[4, 4, 0, 0]} name="Recipients" />
+            </BarChart>
+          </ResponsiveContainer>
+        )}
+      </ReportSection>
+
+      <div className="grid gap-5 xl:grid-cols-2">
+        <ReportSection title="Top Performing Campaigns" description="By read count">
+          {(d.topCampaigns || []).length === 0 ? <EmptyState message="No sent campaigns yet." /> : (
+            <div className="space-y-2">
+              {(d.topCampaigns || []).map((c, i) => (
+                <div key={c.id || i} className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-3">
+                  <div className="flex items-center gap-3">
+                    <span className="flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold text-white" style={{ background: COLORS[i % COLORS.length] }}>{i + 1}</span>
+                    <div>
+                      <p className="text-sm font-semibold text-slate-800">{c.name}</p>
+                      <p className="text-xs text-slate-400">{c.template?.displayName || 'Custom'}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm text-slate-500">{c.totalRecipients || 0} sent</span>
+                    <span className="text-sm font-bold text-teal-700">{c.read || 0} read</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </ReportSection>
+
+        <ReportSection title="Template Performance" description="Read rates by template">
+          {(d.templateStats || []).length === 0 ? <EmptyState message="No template data yet." /> : (
+            <div className="space-y-2">
+              {(d.templateStats || []).map((t, i) => (
+                <div key={t.templateId || i} className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-lg">{t.template?.icon || '📝'}</span>
+                    <div>
+                      <p className="text-sm font-semibold text-slate-800">{t.template?.displayName || 'Unknown'}</p>
+                      <p className="text-xs text-slate-400">{t.campaignCount} campaigns</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm text-slate-500">{t.totalSent} sent</span>
+                    <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${t.readRate >= 50 ? 'bg-emerald-50 text-emerald-700' : t.readRate >= 25 ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-500'}`}>
+                      {t.readRate}% read
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </ReportSection>
+      </div>
+
+      {d.totalFailed > 0 && (
+        <div className="rounded-[14px] border border-rose-200 bg-rose-50 p-5">
+          <p className="text-sm font-bold text-rose-800">⚠️ {d.totalFailed.toLocaleString()} messages failed delivery</p>
+          <p className="mt-1 text-sm text-rose-700">Check individual campaign details for error messages. Common causes: invalid phone numbers, expired templates, or rate limits.</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
    MAIN REPORTS PAGE
    ═══════════════════════════════════════════════════════════════════════════ */
 
@@ -929,7 +1037,7 @@ export default function Analytics() {
       <section className="flex flex-col gap-3 border-b border-slate-200 pb-4 md:flex-row md:items-center md:justify-between">
         <div>
           <h1 className="text-[28px] font-bold tracking-tight text-slate-950">Reports & Analytics</h1>
-          <p className="text-sm text-slate-500">Deep business insights across 10 reports. Export any report as CSV.</p>
+          <p className="text-sm text-slate-500">Deep business insights across 12 reports. Export any report as CSV.</p>
         </div>
         <div className="flex items-center gap-2">
           {DATE_PRESETS.map((p) => (
@@ -975,6 +1083,7 @@ export default function Analytics() {
         {activeTab === 'seasonal' && <SeasonalTab />}
         {activeTab === 'profit' && <ProfitTab params={params} />}
         {activeTab === 'sources' && <SourceTab params={params} />}
+        {activeTab === 'campaigns' && <CampaignAnalyticsTab params={params} />}
       </section>
     </div>
   );

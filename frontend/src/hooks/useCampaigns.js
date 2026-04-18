@@ -19,6 +19,23 @@ export function useCampaign(id) {
   });
 }
 
+export function useCampaignStats(id) {
+  return useQuery({
+    queryKey: ['campaign-stats', id],
+    queryFn: () => campaignsApi.getStats(id),
+    enabled: !!id,
+    refetchInterval: 15000,
+  });
+}
+
+export function useCampaignAnalytics(params = {}) {
+  return useQuery({
+    queryKey: ['campaign-analytics', params],
+    queryFn: () => campaignsApi.analytics(params),
+    staleTime: 60 * 1000,
+  });
+}
+
 export function useCreateCampaign() {
   const qc = useQueryClient();
   return useMutation({
@@ -46,5 +63,38 @@ export function useSendCampaign() {
       qc.invalidateQueries({ queryKey: ['campaigns'] });
       qc.invalidateQueries({ queryKey: ['campaign', id] });
     },
+  });
+}
+
+export function useCancelCampaign() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id) => campaignsApi.cancel(id),
+    onSuccess: (_, id) => {
+      qc.invalidateQueries({ queryKey: ['campaigns'] });
+      qc.invalidateQueries({ queryKey: ['campaign', id] });
+    },
+  });
+}
+
+export function useDeleteCampaign() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id) => campaignsApi.delete(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['campaigns'] }),
+  });
+}
+
+export function useDuplicateCampaign() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id) => campaignsApi.duplicate(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['campaigns'] }),
+  });
+}
+
+export function usePreviewAudience() {
+  return useMutation({
+    mutationFn: (filter) => campaignsApi.previewAudience(filter),
   });
 }

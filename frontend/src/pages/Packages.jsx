@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { PlusIcon } from '@heroicons/react/24/outline';
+import { PlusIcon, MapPinIcon } from '@heroicons/react/24/outline';
 import { packagesApi } from '../api/packagesApi';
 import { formatCurrency } from '../utils/formatters';
 import { useAuthStore } from '../store/authStore';
@@ -74,8 +74,23 @@ export default function Packages() {
                 packages.map((pkg) => (
                   <tr key={pkg.id}>
                     <td className="px-4 py-4">
-                      <p className="text-sm font-medium text-slate-900">{pkg.name}</p>
-                      {pkg.summary ? <p className="mt-1 text-sm text-slate-500">{pkg.summary}</p> : null}
+                      <div className="flex items-center gap-3">
+                        {pkg.imageUrl ? (
+                          <img
+                            src={pkg.imageUrl}
+                            alt={pkg.name}
+                            className="h-12 w-12 flex-shrink-0 rounded-lg object-cover border border-slate-200 shadow-sm"
+                          />
+                        ) : (
+                          <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-slate-50">
+                            <MapPinIcon className="h-5 w-5 text-slate-300" />
+                          </div>
+                        )}
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-slate-900">{pkg.name}</p>
+                          {pkg.summary ? <p className="mt-0.5 text-xs text-slate-500 line-clamp-2">{pkg.summary}</p> : null}
+                        </div>
+                      </div>
                     </td>
                     <td className="px-4 py-4 text-sm text-slate-600">{pkg.category || '—'}</td>
                     <td className="px-4 py-4 text-sm text-slate-600">{pkg.destinations?.join(', ') || '—'}</td>

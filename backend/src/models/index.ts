@@ -39,6 +39,7 @@ const Payment = require('./Payment')(sequelize);
 const Message = require('./Message')(sequelize);
 const BotSession = require('./BotSession')(sequelize);
 const ScheduledJob = require('./ScheduledJob')(sequelize);
+const Itinerary = require('./Itinerary')(sequelize);
 
 // Marketing models
 const MessageTemplate = require('./MessageTemplate')(sequelize);
@@ -111,6 +112,11 @@ Booking.belongsTo(Package, { foreignKey: 'packageId', as: 'package' });
 Booking.hasMany(Payment, { foreignKey: 'bookingId', as: 'payments' });
 Booking.hasMany(ScheduledJob, { foreignKey: 'bookingId', as: 'scheduledJobs' });
 Booking.hasOne(Review, { foreignKey: 'bookingId', as: 'review' });
+
+// Itinerary
+Itinerary.belongsTo(Agency, { foreignKey: 'agencyId', as: 'agency' });
+Itinerary.belongsTo(Customer, { foreignKey: 'customerId', as: 'customer' });
+Itinerary.belongsTo(Lead, { foreignKey: 'leadId', as: 'lead' });
 
 // Payment
 Payment.belongsTo(Booking, { foreignKey: 'bookingId', as: 'booking' });
@@ -189,4 +195,5 @@ module.exports = {
   DripEnrollment,
   ReferralCode,
   Review,
+  Itinerary,
 };

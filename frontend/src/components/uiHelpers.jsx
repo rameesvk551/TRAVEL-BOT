@@ -11,12 +11,17 @@ export function getInitials(name, fallback = 'FC') {
 
 export function getStatusTone(status) {
   const tones = {
-    NEW: 'bg-sky-100 text-sky-700',
-    CONTACTED: 'bg-amber-100 text-amber-700',
-    QUOTED: 'bg-indigo-100 text-indigo-700',
-    NEGOTIATING: 'bg-violet-100 text-violet-700',
+    JUST_CONTACTED: 'bg-sky-100 text-sky-700',
+    PACKAGE_SEARCHED: 'bg-amber-100 text-amber-700',
+    PACKAGE_INTERESTED: 'bg-indigo-100 text-indigo-700',
+    CONTACTED: 'bg-violet-100 text-violet-700',
     BOOKED: 'bg-emerald-100 text-emerald-700',
     LOST: 'bg-rose-100 text-rose-700',
+    UNKNOWN: 'bg-slate-100 text-slate-600',
+    // Legacy maps for backwards compatibility
+    NEW: 'bg-sky-100 text-sky-700',
+    QUOTED: 'bg-indigo-100 text-indigo-700',
+    NEGOTIATING: 'bg-violet-100 text-violet-700',
     CANCELLED: 'bg-slate-200 text-slate-600',
     PENDING: 'bg-amber-100 text-amber-700',
     CONFIRMED: 'bg-emerald-100 text-emerald-700',

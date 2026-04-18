@@ -1,0 +1,326 @@
+import { useState, useEffect, useRef, useMemo } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { itinerariesApi } from '../api/itinerariesApi';
+import { useLeads } from '../hooks/useLeads';
+import { ArrowLeftIcon, PlusIcon, TrashIcon, DocumentArrowDownIcon } from '@heroicons/react/24/outline';
+import { formatCurrency } from '../utils/formatters';
+import html2canvas from 'html2canvas';
+import { jsPDF } from 'jspdf';
+import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
+import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+
+function SortableDay({ day, index, updateDay, removeDay }) {
+  const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id: day.id });
+  const style = { transform: CSS.Transform.toString(transform), transition };
+
+  const addItem = (type) => {
+    updateDay(day.id, {
+      [type]: [...(day[type] || []), { id: crypto.randomUUID(), name: '', cost: '0', price: '0' }]
+    });
+  };
+
+  const updateItem = (type, itemIndex, field, value) => {
+    const list = [...(day[type] || [])];
+    list[itemIndex] = { ...list[itemIndex], [field]: value };
+    updateDay(day.id, { [type]: list });
+  };
+
+  const removeItem = (type, itemIndex) => {
+    const list = [...(day[type] || [])];
+    list.splice(itemIndex, 1);
+    updateDay(day.id, { [type]: list });
+  };
+
+  return (
+    <div ref={setNodeRef} style={style} className="shell-panel p-5 mb-4 group border border-slate-200">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-3">
+          <div {...attributes} {...listeners} className="cursor-grab p-1 text-slate-400 hover:text-slate-600">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" /></svg>
+          </div>
+          <h3 className="font-bold text-slate-900">Day {index + 1}</h3>
+        </div>
+        <button type="button" onClick={() => removeDay(day.id)} className="text-slate-400 hover:text-rose-500 transition">
+          <TrashIcon className="w-4 h-4" />
+        </button>
+      </div>
+
+      <div className="space-y-4">
+        <input 
+          className="shell-input-rect font-semibold" 
+          placeholder="Day Title (e.g., Arrival in Paris)" 
+          value={day.title || ''} 
+          onChange={e => updateDay(day.id, { title: e.target.value })} 
+        />
+        <textarea 
+          className="shell-input-rect min-h-[80px]" 
+          placeholder="Description" 
+          value={day.description || ''} 
+          onChange={e => updateDay(day.id, { description: e.target.value })} 
+        />
+
+        {/* Dynamic Lists */}
+        {['hotels', 'activities', 'transports'].map(type => (
+          <div key={type} className="pt-2 border-t border-slate-100">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-bold uppercase text-slate-500 tracking-wider flex-1">{type}</span>
+              <button type="button" onClick={() => addItem(type)} className="text-[#0d6a5f] text-xs font-semibold hover:underline">
+                + Add
+              </button>
+            </div>
+            
+            <div className="space-y-2">
+              {(day[type] || []).map((item, i) => (
+                <div key={item.id} className="flex flex-wrap gap-2 items-center bg-slate-50 p-2 rounded-lg border border-slate-100">
+                  <input className="flex-1 min-w-[150px] shell-input py-1.5 px-3 text-xs bg-white" placeholder="Name" value={item.name} onChange={e => updateItem(type, i, 'name', e.target.value)} />
+                  <input className="w-20 shell-input py-1.5 px-3 text-xs bg-white" placeholder="Cost" type="number" value={item.cost} onChange={e => updateItem(type, i, 'cost', e.target.value)} />
+                  <input className="w-20 shell-input py-1.5 px-3 text-xs bg-white border-emerald-200" placeholder="Price" type="number" value={item.price} onChange={e => updateItem(type, i, 'price', e.target.value)} />
+                  <button type="button" onClick={() => removeItem(type, i)} className="text-slate-400 hover:text-rose-500"><TrashIcon className="w-4 h-4" /></button>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export default function ItineraryBuilder() {
+  const { id } = useParams();
+  const navigate = useNavigate();
+  const qc = useQueryClient();
+  const isEdit = !!id;
+  const pdfRef = useRef();
+
+  const [form, setForm] = useState({
+    name: '', customerId: '', destination: '', adults: 2, children: 0,
+    travelStartDate: '', travelEndDate: '', status: 'DRAFT', days: []
+  });
+
+  const { data: leadsData } = useLeads({ pageSize: 500 });
+  const customers = useMemo(() => {
+    const map = new Map();
+    (leadsData?.data?.data || []).forEach(lead => {
+      if (lead.customer && !map.has(lead.customer.id)) {
+        map.set(lead.customer.id, lead.customer);
+      }
+    });
+    return Array.from(map.values());
+  }, [leadsData]);
+
+  const itineraryQuery = useQuery({
+    queryKey: ['itinerary', id],
+    queryFn: () => itinerariesApi.getById(id),
+    enabled: isEdit,
+  });
+
+  useEffect(() => {
+    if (isEdit && itineraryQuery.data?.data) {
+      const it = itineraryQuery.data.data;
+      setForm({ ...it, customerId: it.customerId || '', travelStartDate: it.travelStartDate || '', travelEndDate: it.travelEndDate || '' });
+    }
+  }, [isEdit, itineraryQuery.data]);
+
+  const saveMutation = useMutation({
+    mutationFn: (payload) => isEdit ? itinerariesApi.update(id, payload) : itinerariesApi.create(payload),
+    onSuccess: () => {
+      qc.invalidateQueries(['itineraries']);
+      navigate('/itineraries');
+    }
+  });
+
+  const handleExportPDF = async () => {
+    if (!pdfRef.current) return;
+    const canvas = await html2canvas(pdfRef.current, { scale: 2 });
+    const imgData = canvas.toDataURL('image/png');
+    const pdf = new jsPDF('p', 'mm', 'a4');
+    const pdfWidth = pdf.internal.pageSize.getWidth();
+    const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+    pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+    pdf.save(`Itinerary_${form.name || 'Export'}.pdf`);
+  };
+
+  const addDay = () => setForm(f => ({ ...f, days: [...f.days, { id: crypto.randomUUID(), title: '', description: '', hotels: [], activities: [], transports: [] }] }));
+  const removeDay = (dayId) => setForm(f => ({ ...f, days: f.days.filter(d => d.id !== dayId) }));
+  const updateDay = (dayId, updates) => setForm(f => ({ ...f, days: f.days.map(d => d.id === dayId ? { ...d, ...updates } : d) }));
+
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
+
+  const handleDragEnd = (event) => {
+    const { active, over } = event;
+    if (active.id !== over.id) {
+      setForm((f) => {
+        const oldIndex = f.days.findIndex(d => d.id === active.id);
+        const newIndex = f.days.findIndex(d => d.id === over.id);
+        return { ...f, days: arrayMove(f.days, oldIndex, newIndex) };
+      });
+    }
+  };
+
+  // Calculations
+  const calcTotals = () => {
+    let cost = 0; let price = 0;
+    form.days.forEach(day => {
+      ['hotels', 'activities', 'transports'].forEach(type => {
+        (day[type] || []).forEach(item => {
+          cost += Number(item.cost || 0); price += Number(item.price || 0);
+        });
+      });
+    });
+    return { cost, price, profit: price - cost, margin: price > 0 ? ((price - cost) / price) * 100 : 0 };
+  };
+
+  const totals = calcTotals();
+
+  return (
+    <div className="flex h-full flex-col lg:flex-row overflow-hidden absolute inset-0">
+      
+      {/* LEFT PANEL: Trip Details */}
+      <div className="w-full lg:w-80 bg-slate-50 border-r border-slate-200 p-6 overflow-y-auto z-10 flex-shrink-0">
+        <button onClick={() => navigate('/itineraries')} className="shell-button-ghost mb-6 -ml-3">
+          <ArrowLeftIcon className="w-4 h-4" /> Back
+        </button>
+        
+        <h2 className="text-xl font-bold text-slate-900 mb-6">Trip Details</h2>
+        
+        <div className="space-y-4">
+          <div>
+            <label className="text-xs font-bold uppercase text-slate-500">Itinerary Name</label>
+            <input className="shell-input-rect mt-1" value={form.name} onChange={e => setForm({...form, name: e.target.value})} placeholder="Summer in Swiss" />
+          </div>
+          <div>
+            <label className="text-xs font-bold uppercase text-slate-500">Client</label>
+            <select className="shell-input-rect mt-1" value={form.customerId} onChange={e => setForm({...form, customerId: e.target.value})}>
+              <option value="">-- Select Client --</option>
+              {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs font-bold uppercase text-slate-500">Destination</label>
+            <input className="shell-input-rect mt-1" value={form.destination} onChange={e => setForm({...form, destination: e.target.value})} />
+          </div>
+          <div className="flex gap-3">
+            <div className="flex-1">
+              <label className="text-xs font-bold uppercase text-slate-500">Start Date</label>
+              <input type="date" className="shell-input-rect mt-1" value={form.travelStartDate} onChange={e => setForm({...form, travelStartDate: e.target.value})} />
+            </div>
+            <div className="flex-1">
+              <label className="text-xs font-bold uppercase text-slate-500">End Date</label>
+              <input type="date" className="shell-input-rect mt-1" value={form.travelEndDate} onChange={e => setForm({...form, travelEndDate: e.target.value})} />
+            </div>
+          </div>
+          <div className="flex gap-3">
+            <div className="flex-1">
+              <label className="text-xs font-bold uppercase text-slate-500">Adults</label>
+              <input type="number" className="shell-input-rect mt-1" value={form.adults} onChange={e => setForm({...form, adults: parseInt(e.target.value)})} />
+            </div>
+            <div className="flex-1">
+              <label className="text-xs font-bold uppercase text-slate-500">Children</label>
+              <input type="number" className="shell-input-rect mt-1" value={form.children} onChange={e => setForm({...form, children: parseInt(e.target.value)})} />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* MIDDLE: Builder Canvas */}
+      <div className="flex-1 bg-white p-6 overflow-y-auto relative">
+        <div className="max-w-2xl mx-auto pb-32">
+          
+          <div className="flex items-center justify-between mb-8">
+            <h1 className="text-3xl font-extrabold tracking-tight text-slate-900">Itinerary Builder</h1>
+            <button onClick={addDay} className="shell-button-secondary">
+              <PlusIcon className="w-4 h-4" /> Add Day
+            </button>
+          </div>
+
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+            <SortableContext items={form.days} strategy={verticalListSortingStrategy}>
+              {form.days.map((day, ix) => (
+                <SortableDay key={day.id} day={day} index={ix} updateDay={updateDay} removeDay={removeDay} />
+              ))}
+            </SortableContext>
+          </DndContext>
+
+          {form.days.length === 0 && (
+            <div className="text-center py-20 border-2 border-dashed border-slate-200 rounded-3xl">
+              <p className="text-slate-400 font-medium">Start planning the perfect trip.</p>
+              <button onClick={addDay} className="mt-4 shell-button-primary"><PlusIcon className="w-4 h-4"/> Add Day 1</button>
+            </div>
+          )}
+
+        </div>
+      </div>
+
+      {/* RIGHT PANEL: Costing & Actions */}
+      <div className="w-full lg:w-72 bg-slate-50 border-l border-slate-200 p-6 flex-shrink-0 flex flex-col justify-between overflow-y-auto z-10">
+        <div>
+          <h2 className="text-xl font-bold text-slate-900 mb-6">Financials</h2>
+          
+          <div className="space-y-4">
+            <div className="p-4 rounded-2xl bg-white border border-slate-200">
+              <p className="text-xs font-bold uppercase text-slate-500 mb-1">Total Cost (INR)</p>
+              <p className="text-2xl font-bold text-slate-900">{formatCurrency(totals.cost * 100)}</p>
+            </div>
+            <div className="p-4 rounded-2xl bg-[#0d6a5f] shadow-lg">
+              <p className="text-xs font-bold uppercase text-emerald-100 mb-1">Selling Price</p>
+              <p className="text-2xl font-bold text-white">{formatCurrency(totals.price * 100)}</p>
+            </div>
+            
+            <div className="flex justify-between items-center px-2 pt-2">
+              <span className="text-sm font-medium text-slate-600">Projected Profit</span>
+              <span className="text-sm font-bold text-emerald-600">{formatCurrency(totals.profit * 100)}</span>
+            </div>
+            <div className="flex justify-between items-center px-2 pb-4 border-b border-slate-200">
+              <span className="text-sm font-medium text-slate-600">Margin</span>
+              <span className="text-sm font-bold text-slate-900">{totals.margin.toFixed(1)}%</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-3 pt-6">
+          <button onClick={handleExportPDF} className="shell-button-secondary w-full text-center justify-center">
+            <DocumentArrowDownIcon className="w-4 h-4" /> Export PDF
+          </button>
+          <button onClick={() => saveMutation.mutate({...form, days: form.days.map(d => ({...d, date: undefined}))})} disabled={saveMutation.isPending} className="shell-button-primary w-full text-center justify-center">
+            {saveMutation.isPending ? 'Saving...' : 'Save Itinerary'}
+          </button>
+        </div>
+      </div>
+
+      {/* HIDDEN PRINTABLE VIEW */}
+      <div className="hidden">
+        <div ref={pdfRef} className="bg-white text-black p-10 w-[800px]">
+          <h1 className="text-4xl font-bold text-[#0d6a5f] mb-4">{form.name || 'Itinerary Proposal'}</h1>
+          <p className="text-lg text-slate-600 mb-8">{form.destination}</p>
+          <div className="mb-8 grid grid-cols-2 gap-4">
+            <div><strong className="text-slate-500">Guests:</strong> {form.adults} Adults, {form.children} Children</div>
+            <div><strong className="text-slate-500">Dates:</strong> {form.travelStartDate} to {form.travelEndDate}</div>
+          </div>
+          
+          <div className="space-y-8">
+            {form.days.map((d, i) => (
+              <div key={i} className="border-l-4 border-[#0d6a5f] pl-4">
+                <h3 className="text-xl font-bold">Day {i+1}: {d.title}</h3>
+                <p className="text-slate-600 mt-2">{d.description}</p>
+                {d.hotels?.length > 0 && <p className="mt-2 text-sm"><strong>Hotel:</strong> {d.hotels.map(h => h.name).join(', ')}</p>}
+                {d.activities?.length > 0 && <p className="text-sm"><strong>Activities:</strong> {d.activities.map(h => h.name).join(', ')}</p>}
+                {d.transports?.length > 0 && <p className="text-sm"><strong>Transport:</strong> {d.transports.map(h => h.name).join(', ')}</p>}
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-12 pt-8 border-t border-slate-200">
+            <h3 className="text-2xl font-bold mb-4">Pricing</h3>
+            <p className="text-3xl font-bold text-[#0d6a5f]">{formatCurrency(totals.price * 100)}</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
