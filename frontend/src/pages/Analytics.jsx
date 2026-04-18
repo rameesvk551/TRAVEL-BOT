@@ -7,9 +7,11 @@ import {
   useSalesReport, useLeadFunnelReport, useAgentPerformanceReport,
   usePackageReport, useLostLeadsReport, useResponseReport,
   useReviewReport, useSeasonalReport, useProfitReport, useSourceReport,
+  useBookingReport,
 } from '../hooks/useAnalytics';
+import { formatCurrency, formatDate } from '../utils/formatters';
 import { analyticsApi } from '../api/analyticsApi';
-import { formatCurrency } from '../utils/formatters';
+
 
 /* ───────────────── Color Palette ───────────────── */
 const COLORS = ['#0d6a5f', '#14b8a6', '#0ea5e9', '#6366f1', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
@@ -19,6 +21,7 @@ const TEAL_LIGHT = '#14b8a6';
 /* ───────────────── Tab definitions ───────────────── */
 const TABS = [
   { key: 'sales', label: '💰 Sales', emoji: '💰' },
+  { key: 'bookings', label: '📋 Bookings', emoji: '📋' },
   { key: 'leads', label: '🔁 Pipeline', emoji: '🔁' },
   { key: 'agents', label: '👨‍💼 Team', emoji: '👨‍💼' },
   { key: 'packages', label: '🧳 Packages', emoji: '🧳' },
@@ -962,6 +965,7 @@ export default function Analytics() {
       {/* Active Tab Content */}
       <section>
         {activeTab === 'sales' && <SalesTab params={params} />}
+        {activeTab === 'bookings' && <BookingTab params={params} />}
         {activeTab === 'leads' && <LeadFunnelTab params={params} />}
         {activeTab === 'agents' && <AgentTab params={params} />}
         {activeTab === 'packages' && <PackageTab params={params} />}
