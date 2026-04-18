@@ -7,6 +7,7 @@ require('dotenv').config({ path: require('path').resolve(__dirname, '../../.env'
 const app = require('./app');
 const { sequelize } = require('./models');
 const { startWorker } = require('./services/schedulerService');
+const { ensureProductionSchema } = require('./services/schemaBootstrap');
 
 const PORT = process.env.PORT || 3000;
 
@@ -15,32 +16,31 @@ const PORT = process.env.PORT || 3000;
  */
 async function start() {
   try {
-    // Test database connection
     await sequelize.authenticate();
-    console.log('✅ Database connected');
+    console.log('Database connected');
 
-    // Sync models (use migrations in production)
-    if (process.env.NODE_ENV !== 'production') {
+    if (process.env.NODE_ENV === 'production') {
+      await ensureProductionSchema();
+      console.log('Production schema checked');
+    } else {
       await sequelize.sync();
-      console.log('✅ Database synced');
+      console.log('Database synced');
     }
 
-    // Start BullMQ reminder worker
     try {
       startWorker();
-      console.log('✅ Scheduler worker started');
+      console.log('Scheduler worker started');
     } catch (err) {
-      console.warn('⚠️  Scheduler worker failed to start (Redis may be unavailable):', err.message);
+      console.warn('Scheduler worker failed to start (Redis may be unavailable):', err.message);
     }
 
-    // Start Express server
     app.listen(PORT, () => {
-      console.log(`🚀 TravelBot Backend running on port ${PORT}`);
-      console.log(`   Health: http://localhost:${PORT}/health`);
-      console.log(`   API:    http://localhost:${PORT}/api`);
+      console.log(`TravelBot Backend running on port ${PORT}`);
+      console.log(`Health: http://localhost:${PORT}/health`);
+      console.log(`API:    http://localhost:${PORT}/api`);
     });
   } catch (err) {
-    console.error('❌ Failed to start server:', err.message);
+    console.error('Failed to start server:', err.message);
     process.exit(1);
   }
 }
