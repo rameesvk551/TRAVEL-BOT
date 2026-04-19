@@ -63,7 +63,21 @@ module.exports = (sequelize) => {
       comment: 'Travel interest selected by the customer, e.g. DOMESTIC or INTERNATIONAL',
     },
     status: {
-      type: DataTypes.ENUM('JUST_CONTACTED', 'PACKAGE_SEARCHED', 'PACKAGE_INTERESTED', 'CONTACTED', 'BOOKED', 'CONVERTED', 'LOST', 'UNKNOWN'),
+      type: DataTypes.ENUM(
+        'JUST_CONTACTED',
+        'PACKAGE_SEARCHED',
+        'PACKAGE_INTERESTED',
+        'NEW',
+        'ENQUIRY',
+        'CONTACTED',
+        'QUOTED',
+        'NEGOTIATING',
+        'BOOKED',
+        'CONVERTED',
+        'LOST',
+        'CANCELLED',
+        'UNKNOWN'
+      ),
       defaultValue: 'JUST_CONTACTED',
     },
     lostReason: {

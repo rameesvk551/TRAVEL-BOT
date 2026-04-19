@@ -29,6 +29,13 @@ async function ensureColumn(tableName, columnName, definition) {
   console.log(`[SchemaBootstrap] Added ${tableName}.${columnName}`);
 }
 
+async function ensureEnumValues(typeName, values) {
+  for (const value of values) {
+    await sequelize.query(`ALTER TYPE "${typeName}" ADD VALUE IF NOT EXISTS '${value}'`);
+    console.log(`[SchemaBootstrap] Ensured ${typeName}.${value}`);
+  }
+}
+
 async function ensureAgenciesSchema() {
   await ensureColumn('agencies', 'auto_review_collection_enabled', {
     type: Sequelize.BOOLEAN,
@@ -53,6 +60,24 @@ async function ensureAgenciesSchema() {
     allowNull: false,
     defaultValue: 30,
   });
+}
+
+async function ensureLeadsSchema() {
+  await ensureEnumValues('enum_leads_status', [
+    'JUST_CONTACTED',
+    'PACKAGE_SEARCHED',
+    'PACKAGE_INTERESTED',
+    'NEW',
+    'ENQUIRY',
+    'CONTACTED',
+    'QUOTED',
+    'NEGOTIATING',
+    'BOOKED',
+    'CONVERTED',
+    'LOST',
+    'CANCELLED',
+    'UNKNOWN',
+  ]);
 }
 
 async function ensureCustomersSchema() {
@@ -205,6 +230,7 @@ async function ensureLeadNotesTable() {
 }
 
 async function ensureProductionSchema() {
+  await ensureLeadsSchema();
   await ensureAgenciesSchema();
   await ensureCustomersSchema();
   await ensureBookingsSchema();
