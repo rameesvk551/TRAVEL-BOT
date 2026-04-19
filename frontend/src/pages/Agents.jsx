@@ -113,7 +113,7 @@ export default function Agents() {
                     <td className="px-4 py-4 text-sm text-slate-600">{agent.phone || '—'}</td>
                     <td className="px-4 py-4 text-sm text-slate-600">{agent.role}</td>
                     <td className="px-4 py-4">
-                      <span className={`badge ${agent.isOnline ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>
+                      <span className={`badge ${agent.isOnline ? 'bg-[#ebebeb] text-[#2d2d2d]' : 'bg-slate-100 text-slate-600'}`}>
                         {agent.isOnline ? 'Online' : 'Offline'}
                       </span>
                     </td>
@@ -183,7 +183,7 @@ export default function Agents() {
                 </select>
               </div>
               <div className="flex gap-3">
-                <button type="submit" className="flex-1 rounded-[20px] bg-[#0d1b3e] px-4 py-2 text-white">
+                <button type="submit" className="flex-1 rounded-[20px] bg-[#2d2d2d] px-4 py-2 text-white">
                   {editingAgent ? 'Update' : 'Create'}
                 </button>
                 <button

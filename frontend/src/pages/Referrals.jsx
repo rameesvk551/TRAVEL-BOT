@@ -32,12 +32,12 @@ export default function Referrals() {
             <p className="text-3xl font-bold mt-1">{stats.activeCodes}</p>
          </div>
          <div className="shell-panel p-5">
-            <TrendingUp className="w-8 h-8 text-teal-600 mb-4 bg-teal-50 rounded-md p-1.5" />
+            <TrendingUp className="w-8 h-8 text-[#404040] mb-4 bg-[#f0f0f0] rounded-md p-1.5" />
             <p className="text-slate-500 font-medium text-sm">Total Uses</p>
             <p className="text-2xl font-bold text-slate-900 mt-1">{stats.totalUses}</p>
          </div>
          <div className="shell-panel p-5 md:col-span-2">
-            <CreditCard className="w-8 h-8 text-emerald-600 mb-4 bg-emerald-50 rounded-md p-1.5" />
+            <CreditCard className="w-8 h-8 text-[#404040] mb-4 bg-[#f5f5f5] rounded-md p-1.5" />
             <p className="text-slate-500 font-medium text-sm">Revenue Generated via Referrals</p>
             <p className="text-3xl font-bold text-slate-900 mt-1">{formatCurrency(stats.totalRevenue)}</p>
          </div>
@@ -85,7 +85,7 @@ export default function Referrals() {
                            <span className="text-slate-400 text-xs ml-1">/ {c.maxUses}</span>
                         </td>
                         <td className="p-4">
-                           <div className={`w-2 h-2 rounded-full ${c.isActive ? 'bg-emerald-500' : 'bg-slate-300'}`}></div>
+                           <div className={`w-2 h-2 rounded-full ${c.isActive ? 'bg-[#f5f5f5]0' : 'bg-slate-300'}`}></div>
                         </td>
                      </tr>
                    ))}

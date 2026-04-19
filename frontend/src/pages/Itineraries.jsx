@@ -94,9 +94,9 @@ export default function Itineraries() {
                         <div className="text-sm font-medium text-slate-900">{formatCurrency(it.totalPrice)}</div>
                         <div className="text-xs text-slate-500">Cost: {formatCurrency(it.totalCost)}</div>
                       </td>
-                      <td className="px-4 py-4 text-sm text-emerald-600 font-semibold">{marginPct}%</td>
+                      <td className="px-4 py-4 text-sm text-[#2d2d2d] font-semibold">{marginPct}%</td>
                       <td className="px-4 py-4">
-                        <span className={`badge ${it.status === 'CONFIRMED' ? 'bg-emerald-100 text-emerald-700' : it.status === 'SENT' ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-600'}`}>
+                        <span className={`badge ${it.status === 'CONFIRMED' ? 'bg-[#2d2d2d] text-white' : it.status === 'SENT' ? 'bg-[#ebebeb] text-[#404040]' : 'bg-slate-100 text-slate-600'}`}>
                           {it.status}
                         </span>
                       </td>

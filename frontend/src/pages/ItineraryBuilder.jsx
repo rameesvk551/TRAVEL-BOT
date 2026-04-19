@@ -67,7 +67,7 @@ function SortableDay({ day, index, updateDay, removeDay }) {
           <div key={type} className="pt-2 border-t border-slate-100">
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs font-bold uppercase text-slate-500 tracking-wider flex-1">{type}</span>
-              <button type="button" onClick={() => addItem(type)} className="text-[#0d1b3e] text-xs font-semibold hover:underline">
+              <button type="button" onClick={() => addItem(type)} className="text-[#2d2d2d] text-xs font-semibold hover:underline">
                 + Add
               </button>
             </div>
@@ -392,8 +392,8 @@ export default function ItineraryBuilder() {
           <h2 className="text-xl font-bold text-slate-900 mb-6">Financials</h2>
           
           <div className="space-y-4">
-            <div className="p-4 rounded-2xl bg-[#0d1b3e] shadow-lg">
-              <p className="text-xs font-bold uppercase text-emerald-100 mb-1">Total Price</p>
+            <div className="p-4 rounded-2xl bg-[#2d2d2d] shadow-lg">
+              <p className="text-xs font-bold uppercase text-[#ebebeb] mb-1">Total Price</p>
               <p className="text-2xl font-bold text-white">{formatCurrency(form.totalPrice * 100)}</p>
             </div>
           </div>
@@ -412,7 +412,7 @@ export default function ItineraryBuilder() {
       {/* HIDDEN PRINTABLE VIEW */}
       <div className="hidden">
         <div ref={pdfRef} className="bg-white text-black p-10 w-[800px]">
-          <h1 className="text-4xl font-bold text-[#0d1b3e] mb-4">{form.name || 'Itinerary Proposal'}</h1>
+          <h1 className="text-4xl font-bold text-[#2d2d2d] mb-4">{form.name || 'Itinerary Proposal'}</h1>
           <p className="text-lg text-slate-600 mb-8">{form.destination}</p>
           <div className="mb-8 grid grid-cols-2 gap-4">
             <div><strong className="text-slate-500">Guests:</strong> {form.adults} Adults, {form.children} Children</div>
@@ -421,7 +421,7 @@ export default function ItineraryBuilder() {
           
           <div className="space-y-8">
             {form.days.map((d, i) => (
-              <div key={i} className="border-l-4 border-[#0d1b3e] pl-4">
+              <div key={i} className="border-l-4 border-[#2d2d2d] pl-4">
                 <h3 className="text-xl font-bold">Day {i+1}: {d.title}</h3>
                 <p className="text-slate-600 mt-2">{d.description}</p>
                 {d.hotels?.length > 0 && <p className="mt-2 text-sm"><strong>Hotel:</strong> {d.hotels.map(h => h.name).join(', ')}</p>}
@@ -433,7 +433,7 @@ export default function ItineraryBuilder() {
 
           <div className="mt-12 pt-8 border-t border-slate-200">
             <h3 className="text-2xl font-bold mb-4">Pricing</h3>
-            <p className="text-3xl font-bold text-[#0d1b3e]">{formatCurrency(totals.price * 100)}</p>
+            <p className="text-3xl font-bold text-[#2d2d2d]">{formatCurrency(totals.price * 100)}</p>
           </div>
         </div>
       </div>

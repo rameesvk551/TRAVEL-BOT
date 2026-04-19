@@ -52,7 +52,7 @@ export default function Templates() {
             onClick={() => setActiveTab(tab)}
             className={`px-6 py-3 font-medium text-sm border-b-2 transition-colors ${
               activeTab === tab
-                ? 'border-teal-600 text-teal-700'
+                ? 'border-[#2d2d2d] text-[#1a1a1a]'
                 : 'border-transparent text-slate-500 hover:text-slate-700'
             }`}
           >
@@ -77,7 +77,7 @@ export default function Templates() {
                 onClick={() => setCategoryFilter(cat.id)}
                 className={`w-full flex items-center gap-3 px-3 py-2 rounded-md transition-colors text-sm font-medium ${
                   categoryFilter === cat.id
-                    ? 'bg-teal-50 text-teal-700'
+                    ? 'bg-[#f0f0f0] text-[#1a1a1a]'
                     : 'text-slate-600 hover:bg-slate-50'
                 }`}
               >
@@ -150,7 +150,7 @@ function TemplateCard({ template, isPrebuilt }) {
   return (
     <div className="bg-white border border-slate-200 rounded-xl p-5 hover:shadow-md transition-shadow flex flex-col items-start gap-4 h-full relative cursor-pointer">
       <div className="flex items-start justify-between w-full">
-         <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xl shadow-sm border border-slate-100 ${isPrebuilt ? 'bg-indigo-50' : 'bg-teal-50'}`}>
+          <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xl shadow-sm border border-slate-100 ${isPrebuilt ? 'bg-[#f0f0f0]' : 'bg-[#fafafa]'}`}>
             {template.icon || '💬'}
          </div>
          {isPrebuilt ? (
@@ -163,7 +163,7 @@ function TemplateCard({ template, isPrebuilt }) {
       <div className="flex-1 w-full space-y-2">
         <h3 className="font-bold text-slate-900">{template.displayName}</h3>
         <div className="flex flex-wrap gap-2 text-xs font-medium uppercase tracking-wider">
-          <span className={`flex items-center gap-1 ${template.headerType === 'IMAGE' ? 'text-amber-600' : 'text-blue-600'}`}>
+          <span className={`flex items-center gap-1 ${template.headerType === 'IMAGE' ? 'text-[#2d2d2d]' : 'text-[#2d2d2d]'}`}>
             {template.headerType !== 'NONE' ? <ImageIcon className="w-3 h-3" /> : <MessageSquare className="w-3 h-3" />}
             {template.headerType === 'NONE' ? 'TEXT' : template.headerType}
           </span>
@@ -175,7 +175,7 @@ function TemplateCard({ template, isPrebuilt }) {
       </div>
 
       <div className="flex gap-2 w-full pt-4 border-t border-slate-100 mt-auto">
-        <button className="flex-1 py-2 text-sm font-semibold rounded border border-slate-200 text-teal-700 hover:bg-slate-50 transition-colors">
+         <button className="flex-1 py-2 text-sm font-semibold rounded border border-slate-200 text-[#2d2d2d] hover:bg-slate-50 transition-colors">
           Preview
         </button>
         <button className="flex-1 py-2 text-sm font-semibold rounded bg-slate-50 text-slate-700 hover:bg-slate-100 transition-colors border border-slate-200">
@@ -189,11 +189,11 @@ function TemplateCard({ template, isPrebuilt }) {
 function StatusBadge({ status }) {
   switch (status) {
     case 'APPROVED':
-      return <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-teal-50 text-teal-700 text-xs font-bold"><CheckCircle className="w-3 h-3" /> APPROVED</span>;
+      return <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-[#f0f0f0] text-[#2d2d2d] text-xs font-bold"><CheckCircle className="w-3 h-3" /> APPROVED</span>;
     case 'PENDING':
-      return <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-blue-50 text-blue-700 text-xs font-bold"><Clock className="w-3 h-3" /> PENDING</span>;
+      return <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-[#fafafa] text-[#6b6b6b] text-xs font-bold"><Clock className="w-3 h-3" /> PENDING</span>;
     case 'REJECTED':
-      return <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-red-50 text-red-700 text-xs font-bold"><AlertCircle className="w-3 h-3" /> REJECTED</span>;
+      return <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-[#ebebeb] text-[#525252] text-xs font-bold"><AlertCircle className="w-3 h-3" /> REJECTED</span>;
     default:
       return <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-slate-100 text-slate-600 text-xs font-bold">DRAFT</span>;
   }

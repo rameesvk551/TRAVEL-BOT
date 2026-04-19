@@ -23,7 +23,7 @@ const iconMap = {
 
 const colorMap = {
   BOOKING_CREATED: 'text-green-400 bg-green-500/10',
-  PAYMENT_PAID: 'text-emerald-400 bg-emerald-500/10',
+  PAYMENT_PAID: 'text-[#8a8a8a] bg-[#f5f5f5]0/10',
   PAYMENT_PENDING: 'text-amber-400 bg-amber-500/10',
   PAYMENT_EXPIRED: 'text-red-400 bg-red-500/10',
   PAYMENT_FAILED: 'text-red-400 bg-red-500/10',

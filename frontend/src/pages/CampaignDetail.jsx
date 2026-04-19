@@ -16,13 +16,13 @@ import {
 } from '../hooks/useCampaigns';
 import { formatDateTime } from '../utils/formatters';
 
-const TEAL = '#0d1b3e';
+const TEAL = '#2d2d2d';
 
 const STATUS_CONFIG = {
   DRAFT: { bg: 'bg-slate-100', text: 'text-slate-600', border: 'border-slate-200', dot: 'bg-slate-400' },
   SCHEDULED: { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-200', dot: 'bg-amber-400' },
   SENDING: { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200', dot: 'bg-blue-400 animate-pulse' },
-  SENT: { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200', dot: 'bg-emerald-400' },
+  SENT: { bg: 'bg-[#f5f5f5]', text: 'text-[#2d2d2d]', border: 'border-[#d4d4d4]', dot: 'bg-[#8a8a8a]' },
   CANCELLED: { bg: 'bg-rose-50', text: 'text-rose-600', border: 'border-rose-200', dot: 'bg-rose-400' },
   FAILED: { bg: 'bg-rose-50', text: 'text-rose-600', border: 'border-rose-200', dot: 'bg-rose-400' },
 };
@@ -30,8 +30,8 @@ const STATUS_CONFIG = {
 const RECIPIENT_STATUS_COLORS = {
   PENDING: 'bg-slate-100 text-slate-600',
   SENT: 'bg-blue-50 text-blue-700',
-  DELIVERED: 'bg-emerald-50 text-emerald-700',
-  READ: 'bg-teal-50 text-teal-700',
+  DELIVERED: 'bg-[#f5f5f5] text-[#2d2d2d]',
+  READ: 'bg-[#f0f0f0] text-[#2d2d2d]',
   REPLIED: 'bg-violet-50 text-violet-700',
   FAILED: 'bg-rose-50 text-rose-700',
 };
@@ -87,7 +87,7 @@ export default function CampaignDetail() {
     return (
       <div className="p-8 flex items-center justify-center min-h-[400px]">
         <div className="text-center">
-          <div className="w-10 h-10 border-4 border-teal-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+          <div className="w-10 h-10 border-4 border-[#f0f0f0]0 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
           <p className="text-sm text-slate-500">Loading campaign...</p>
         </div>
       </div>
@@ -98,7 +98,7 @@ export default function CampaignDetail() {
     return (
       <div className="p-8 text-center">
         <p className="text-slate-500">Campaign not found.</p>
-        <button onClick={() => navigate('/campaigns')} className="mt-3 text-sm text-teal-600 font-semibold">
+        <button onClick={() => navigate('/campaigns')} className="mt-3 text-sm text-[#404040] font-semibold">
           ← Back to campaigns
         </button>
       </div>
@@ -111,8 +111,8 @@ export default function CampaignDetail() {
   const funnelData = [
     { label: 'Total Recipients', count: total, icon: Users, color: 'text-slate-600' },
     { label: 'Sent', count: stats?.sent || campaign.sent || 0, icon: Send, color: 'text-blue-600' },
-    { label: 'Delivered', count: stats?.delivered || campaign.delivered || 0, icon: CheckCircle2, color: 'text-emerald-600' },
-    { label: 'Read', count: stats?.read || campaign.read || 0, icon: Eye, color: 'text-teal-600' },
+    { label: 'Delivered', count: stats?.delivered || campaign.delivered || 0, icon: CheckCircle2, color: 'text-[#404040]' },
+    { label: 'Read', count: stats?.read || campaign.read || 0, icon: Eye, color: 'text-[#404040]' },
     { label: 'Replied', count: stats?.replied || campaign.replied || 0, icon: MessageCircle, color: 'text-violet-600' },
     { label: 'Failed', count: stats?.failed || campaign.failed || 0, icon: XCircle, color: 'text-rose-600' },
   ];
@@ -170,7 +170,7 @@ export default function CampaignDetail() {
           {['DRAFT', 'SCHEDULED'].includes(campaign.status) && (
             <button
               onClick={() => setShowSendConfirm(true)}
-              className="flex items-center gap-1.5 rounded-xl bg-[#0d1b3e] px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#0b5a51] transition"
+              className="flex items-center gap-1.5 rounded-xl bg-[#2d2d2d] px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#1a1a1a] transition"
             >
               <Send className="w-4 h-4" /> Send Now
             </button>
@@ -352,7 +352,7 @@ export default function CampaignDetail() {
           {['DRAFT', 'SCHEDULED'].includes(campaign.status) && (
             <button
               onClick={() => setShowSendConfirm(true)}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-[#0d1b3e] px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#0b5a51] transition"
+              className="inline-flex items-center gap-1.5 rounded-xl bg-[#2d2d2d] px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#1a1a1a] transition"
             >
               <Send className="w-4 h-4" /> Send Campaign
             </button>
@@ -365,7 +365,7 @@ export default function CampaignDetail() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => setShowSendConfirm(false)}>
           <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center gap-3 mb-4">
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-teal-50 text-teal-600">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#f0f0f0] text-[#404040]">
                 <Send className="w-5 h-5" />
               </div>
               <div>
@@ -380,7 +380,7 @@ export default function CampaignDetail() {
               <button
                 onClick={handleSend}
                 disabled={sendMutation.isPending}
-                className="flex-1 rounded-xl bg-[#0d1b3e] py-2.5 text-sm font-semibold text-white hover:bg-[#0b5a51] disabled:opacity-60"
+                className="flex-1 rounded-xl bg-[#2d2d2d] py-2.5 text-sm font-semibold text-white hover:bg-[#1a1a1a] disabled:opacity-60"
               >
                 {sendMutation.isPending ? 'Sending...' : 'Yes, Send'}
               </button>

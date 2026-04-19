@@ -60,7 +60,7 @@ export default function Payments() {
                     <td className="px-6 py-4 text-sm font-bold text-slate-950">{booking.bookingRef}</td>
                     <td className="px-6 py-4 text-sm text-slate-600">{booking.customer?.name || '—'}</td>
                     <td className="px-6 py-4 text-sm font-semibold text-slate-900">{formatCurrency(booking.totalAmount)}</td>
-                    <td className="px-6 py-4 text-sm font-semibold text-emerald-700">{formatCurrency(booking.advancePaid)}</td>
+                    <td className="px-6 py-4 text-sm font-semibold text-[#2d2d2d]">{formatCurrency(booking.advancePaid)}</td>
                     <td className="px-6 py-4 text-sm font-semibold text-amber-700">{formatCurrency(booking.totalAmount - booking.advancePaid)}</td>
                     <td className="px-6 py-4"><PaymentBadge status={booking.status} /></td>
                     <td className="px-6 py-4 text-sm text-slate-500">{formatDate(booking.travelDate)}</td>

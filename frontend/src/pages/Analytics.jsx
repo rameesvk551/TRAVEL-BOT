@@ -14,9 +14,53 @@ import { analyticsApi } from '../api/analyticsApi';
 
 
 /* ───────────────── Color Palette ───────────────── */
-const COLORS = ['#0d1b3e', '#14b8a6', '#0ea5e9', '#6366f1', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
-const TEAL = '#0d1b3e';
-const TEAL_LIGHT = '#14b8a6';
+const COLORS = ['#2d2d2d', '#525252', '#737373', '#8a8a8a', '#404040', '#6b6b6b', '#a3a3a3', '#1a1a1a'];
+const PRIMARY = '#2d2d2d';
+const PRIMARY_LIGHT = '#525252';
+const ACCENT = '#6b6b6b';
+const ACCENT_LIGHT = '#8a8a8a';
+const TEAL = '#2d2d2d';
+const TEAL_LIGHT = '#6b6b6b';
+
+/* ── Reusable SVG gradients for bar charts ─────── */
+function ChartGradients() {
+  return (
+    <defs>
+      <linearGradient id="barPrimary" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stopColor="#404040" stopOpacity={1} />
+        <stop offset="100%" stopColor="#2d2d2d" stopOpacity={1} />
+      </linearGradient>
+      <linearGradient id="barAccent" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stopColor="#8a8a8a" stopOpacity={1} />
+        <stop offset="100%" stopColor="#6b6b6b" stopOpacity={1} />
+      </linearGradient>
+      <linearGradient id="barSecondary" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stopColor="#d4d4d4" stopOpacity={0.9} />
+        <stop offset="100%" stopColor="#b0b0b0" stopOpacity={0.7} />
+      </linearGradient>
+      <linearGradient id="barSky" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stopColor="#737373" stopOpacity={1} />
+        <stop offset="100%" stopColor="#525252" stopOpacity={1} />
+      </linearGradient>
+      <linearGradient id="barAmber" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stopColor="#8a8a8a" stopOpacity={1} />
+        <stop offset="100%" stopColor="#6b6b6b" stopOpacity={1} />
+      </linearGradient>
+      <linearGradient id="barRose" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stopColor="#a3a3a3" stopOpacity={1} />
+        <stop offset="100%" stopColor="#8a8a8a" stopOpacity={1} />
+      </linearGradient>
+      <linearGradient id="areaIndigo" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="5%" stopColor="#2d2d2d" stopOpacity={0.25} />
+        <stop offset="95%" stopColor="#2d2d2d" stopOpacity={0.02} />
+      </linearGradient>
+      <linearGradient id="areaTeal" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="5%" stopColor="#6b6b6b" stopOpacity={0.2} />
+        <stop offset="95%" stopColor="#6b6b6b" stopOpacity={0} />
+      </linearGradient>
+    </defs>
+  );
+}
 
 /* ───────────────── Tab definitions ───────────────── */
 const TABS = [
@@ -29,7 +73,7 @@ const TABS = [
   { key: 'reviews', label: '⭐ Reviews', emoji: '⭐' },
   { key: 'sources', label: '📦 Sources', emoji: '📦' },
   { key: 'campaigns', label: '📣 Campaigns', emoji: '📣' },
-  
+
 ];
 
 /* ───────────────── Date Range Presets ───────────────── */
@@ -68,7 +112,7 @@ function KpiCard({ label, value, subValue, change, prefix = '' }) {
       <p className="mt-2 text-[28px] font-bold tracking-tight text-slate-900">{prefix}{value}</p>
       <div className="mt-1 flex items-center gap-2">
         {change !== null && change !== undefined && (
-          <span className={`inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-[11px] font-bold ${isUp ? 'bg-emerald-50 text-emerald-600' : isDown ? 'bg-rose-50 text-rose-600' : 'bg-slate-50 text-slate-500'}`}>
+          <span className={`inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-[11px] font-bold ${isUp ? 'bg-[#f5f5f5] text-[#404040]' : isDown ? 'bg-rose-50 text-rose-600' : 'bg-slate-50 text-slate-500'}`}>
             {isUp ? '↑' : isDown ? '↓' : '→'} {Math.abs(change)}%
           </span>
         )}
@@ -108,13 +152,17 @@ function EmptyState({ message }) {
 function CustomTooltip({ active, payload, label, formatter }) {
   if (!active || !payload?.length) return null;
   return (
-    <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-lg">
-      <p className="mb-1 text-xs font-bold text-slate-500">{label}</p>
-      {payload.map((p, i) => (
-        <p key={i} className="text-sm font-semibold" style={{ color: p.color }}>
-          {p.name}: {formatter ? formatter(p.value) : p.value}
-        </p>
-      ))}
+    <div className="rounded-2xl border border-slate-200/60 bg-white/95 backdrop-blur-xl px-5 py-4 shadow-[0_20px_60px_-12px_rgba(0,0,0,0.15)]" style={{ minWidth: 160 }}>
+      <p className="mb-2.5 text-[11px] font-bold uppercase tracking-[0.2em] text-slate-400">{label}</p>
+      <div className="space-y-1.5">
+        {payload.map((p, i) => (
+          <div key={i} className="flex items-center gap-2.5">
+            <span className="h-2.5 w-2.5 rounded-full shadow-sm" style={{ background: p.color }} />
+            <span className="text-[13px] text-slate-500">{p.name}</span>
+            <span className="ml-auto text-[13px] font-bold text-slate-900">{formatter ? formatter(p.value) : p.value?.toLocaleString('en-IN')}</span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -171,17 +219,12 @@ function SalesTab({ params }) {
         {chartData.length === 0 ? <EmptyState /> : (
           <ResponsiveContainer width="100%" height={300}>
             <AreaChart data={chartData}>
-              <defs>
-                <linearGradient id="revGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor={TEAL} stopOpacity={0.2} />
-                  <stop offset="95%" stopColor={TEAL} stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-              <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#94a3b8' }} />
-              <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} tickFormatter={(v) => `₹${v >= 1000 ? (v / 1000).toFixed(0) + 'K' : v}`} />
-              <Tooltip content={<CustomTooltip formatter={(v) => `₹${v.toLocaleString('en-IN')}`} />} />
-              <Area type="monotone" dataKey="revenue" stroke={TEAL} strokeWidth={2.5} fill="url(#revGrad)" name="Revenue (₹)" />
+              <ChartGradients />
+              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+              <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} tickFormatter={(v) => `₹${v >= 1000 ? (v / 1000).toFixed(0) + 'K' : v}`} />
+              <Tooltip content={<CustomTooltip formatter={(v) => `₹${v.toLocaleString('en-IN')}`} />} cursor={{ fill: 'rgba(99,102,241,0.04)' }} />
+              <Area type="monotone" dataKey="revenue" stroke={PRIMARY} strokeWidth={2.5} fill="url(#areaIndigo)" name="Revenue (₹)" dot={false} activeDot={{ r: 5, fill: PRIMARY, stroke: '#fff', strokeWidth: 2 }} />
             </AreaChart>
           </ResponsiveContainer>
         )}
@@ -192,11 +235,12 @@ function SalesTab({ params }) {
           {destData.length === 0 ? <EmptyState message="No destination data yet." /> : (
             <ResponsiveContainer width="100%" height={280}>
               <BarChart data={destData} layout="vertical" margin={{ left: 20 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                <XAxis type="number" tick={{ fontSize: 11, fill: '#94a3b8' }} tickFormatter={(v) => `₹${v >= 1000 ? (v / 1000).toFixed(0) + 'K' : v}`} />
-                <YAxis dataKey="name" type="category" tick={{ fontSize: 11, fill: '#475569' }} width={100} />
-                <Tooltip content={<CustomTooltip formatter={(v) => `₹${v.toLocaleString('en-IN')}`} />} />
-                <Bar dataKey="revenue" fill={TEAL} radius={[0, 6, 6, 0]} name="Revenue (₹)" />
+                <ChartGradients />
+                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
+                <XAxis type="number" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} tickFormatter={(v) => `₹${v >= 1000 ? (v / 1000).toFixed(0) + 'K' : v}`} />
+                <YAxis dataKey="name" type="category" tick={{ fontSize: 12, fill: '#475569', fontWeight: 500 }} width={100} axisLine={false} tickLine={false} />
+                <Tooltip content={<CustomTooltip formatter={(v) => `₹${v.toLocaleString('en-IN')}`} />} cursor={{ fill: 'rgba(99,102,241,0.04)' }} />
+                <Bar dataKey="revenue" fill="url(#barPrimary)" radius={[0, 8, 8, 0]} name="Revenue (₹)" barSize={24} />
               </BarChart>
             </ResponsiveContainer>
           )}
@@ -227,7 +271,86 @@ function SalesTab({ params }) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   2. LEAD & CONVERSION FUNNEL
+   2. BOOKINGS REPORT TAB
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+function BookingTab({ params }) {
+  const { data, isLoading } = useBookingReport(params);
+  const d = data?.data || {};
+
+  const chartData = useMemo(() =>
+    (d.bookingsByDay || []).map((b) => ({
+      date: new Date(b.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }),
+      bookings: parseInt(b.count, 10) || 0,
+      revenue: Math.round((parseInt(b.revenue, 10) || 0) / 100),
+    })), [d.bookingsByDay]);
+
+  const statusData = useMemo(() =>
+    (d.bookingsByStatus || []).map((b) => ({
+      name: b.status,
+      value: parseInt(b.count, 10),
+    })), [d.bookingsByStatus]);
+
+  if (isLoading) return <ChartSkeleton />;
+
+  return (
+    <div className="space-y-5">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <KpiCard label="Total Bookings" value={d.totalBookings || 0} change={d.bookingsChange} subValue="vs prior period" />
+        <KpiCard label="Avg Booking Value" value={formatCurrency(d.avgBookingValue || 0)} />
+        <KpiCard label="Completed" value={d.completedBookings || 0} subValue={`${d.completionRate || 0}%`} />
+        <KpiCard label="Pending Confirmation" value={d.pendingBookings || 0} />
+      </div>
+
+      <ReportSection title="Bookings Over Time" description="Daily booking trend" onExport={() => downloadCsv('bookings', params)}>
+        {chartData.length === 0 ? <EmptyState /> : (
+          <ResponsiveContainer width="100%" height={300}>
+            <AreaChart data={chartData}>
+              <defs>
+                <linearGradient id="bookingGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#14b8a6" stopOpacity={0.2} />
+                  <stop offset="95%" stopColor="#14b8a6" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+              <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#94a3b8' }} />
+              <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} />
+              <Tooltip content={<CustomTooltip />} />
+              <Area type="monotone" dataKey="bookings" stroke="#14b8a6" strokeWidth={2.5} fill="url(#bookingGrad)" name="Bookings" />
+            </AreaChart>
+          </ResponsiveContainer>
+        )}
+      </ReportSection>
+
+      {statusData.length > 0 && (
+        <ReportSection title="Bookings by Status" description="Status distribution">
+          <ResponsiveContainer width="100%" height={280}>
+            <PieChart>
+              <Pie
+                data={statusData}
+                cx="50%"
+                cy="50%"
+                labelLine={false}
+                label={({ name, value, percent }) => `${name} (${value})`}
+                outerRadius={80}
+                fill="#8884d8"
+                dataKey="value"
+              >
+                {statusData.map((_, index) => (
+                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                ))}
+              </Pie>
+              <Tooltip />
+            </PieChart>
+          </ResponsiveContainer>
+        </ReportSection>
+      )}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   3. LEAD & CONVERSION FUNNEL
    ═══════════════════════════════════════════════════════════════════════════ */
 
 function LeadFunnelTab({ params }) {
@@ -294,17 +417,12 @@ function LeadFunnelTab({ params }) {
           {chartData.length === 0 ? <EmptyState /> : (
             <ResponsiveContainer width="100%" height={260}>
               <AreaChart data={chartData}>
-                <defs>
-                  <linearGradient id="leadGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#0ea5e9" stopOpacity={0.2} />
-                    <stop offset="95%" stopColor="#0ea5e9" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#94a3b8' }} />
-                <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} />
-                <Tooltip content={<CustomTooltip />} />
-                <Area type="monotone" dataKey="leads" stroke="#0ea5e9" strokeWidth={2} fill="url(#leadGrad)" name="Leads" />
+                <ChartGradients />
+                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} allowDecimals={false} />
+                <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(14,165,233,0.04)' }} />
+                <Area type="monotone" dataKey="leads" stroke="#0ea5e9" strokeWidth={2.5} fill="url(#barSky)" fillOpacity={0.15} name="Leads" dot={false} activeDot={{ r: 5, fill: '#0ea5e9', stroke: '#fff', strokeWidth: 2 }} />
               </AreaChart>
             </ResponsiveContainer>
           )}
@@ -314,10 +432,10 @@ function LeadFunnelTab({ params }) {
           {statusData.length === 0 ? <EmptyState /> : (
             <ResponsiveContainer width="100%" height={260}>
               <PieChart>
-                <Pie data={statusData} cx="50%" cy="50%" outerRadius={90} innerRadius={50} dataKey="value" nameKey="name" paddingAngle={2}>
+                <Pie data={statusData} cx="50%" cy="50%" outerRadius={90} innerRadius={55} dataKey="value" nameKey="name" paddingAngle={3} stroke="none">
                   {statusData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
                 </Pie>
-                <Tooltip />
+                <Tooltip content={<CustomTooltip />} />
                 <Legend iconType="circle" wrapperStyle={{ fontSize: '12px' }} />
               </PieChart>
             </ResponsiveContainer>
@@ -375,9 +493,9 @@ function AgentTab({ params }) {
                       <p className="text-xs text-slate-400">{a.role}</p>
                     </td>
                     <td className="py-3 pr-4 text-right text-sm font-medium text-slate-600">{a.leadsAssigned}</td>
-                    <td className="py-3 pr-4 text-right text-sm font-bold text-emerald-600">{a.leadsConverted}</td>
+                    <td className="py-3 pr-4 text-right text-sm font-bold text-[#404040]">{a.leadsConverted}</td>
                     <td className="py-3 pr-4 text-right">
-                      <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-bold ${a.conversionRate >= 20 ? 'bg-emerald-50 text-emerald-700' : a.conversionRate >= 10 ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-500'}`}>
+                      <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-bold ${a.conversionRate >= 20 ? 'bg-[#f5f5f5] text-[#2d2d2d]' : a.conversionRate >= 10 ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-500'}`}>
                         {a.conversionRate}%
                       </span>
                     </td>
@@ -394,14 +512,15 @@ function AgentTab({ params }) {
       {chartData.length > 0 && (
         <ReportSection title="Agent Comparison" description="Leads assigned vs. booked per agent">
           <ResponsiveContainer width="100%" height={280}>
-            <BarChart data={chartData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-              <XAxis dataKey="name" tick={{ fontSize: 12, fill: '#475569' }} />
-              <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} />
-              <Tooltip content={<CustomTooltip />} />
-              <Legend iconType="circle" wrapperStyle={{ fontSize: '12px' }} />
-              <Bar dataKey="leads" fill="#94a3b8" radius={[4, 4, 0, 0]} name="Leads Assigned" />
-              <Bar dataKey="booked" fill={TEAL} radius={[4, 4, 0, 0]} name="Booked" />
+            <BarChart data={chartData} barGap={4}>
+              <ChartGradients />
+              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+              <XAxis dataKey="name" tick={{ fontSize: 12, fill: '#475569', fontWeight: 500 }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} allowDecimals={false} />
+              <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(99,102,241,0.04)' }} />
+              <Legend iconType="circle" wrapperStyle={{ fontSize: '12px', paddingTop: '16px' }} />
+              <Bar dataKey="leads" fill="url(#barSecondary)" radius={[8, 8, 0, 0]} name="Leads Assigned" barSize={28} />
+              <Bar dataKey="booked" fill="url(#barPrimary)" radius={[8, 8, 0, 0]} name="Booked" barSize={28} />
             </BarChart>
           </ResponsiveContainer>
         </ReportSection>
@@ -447,9 +566,9 @@ function PackageTab({ params }) {
                     </td>
                     <td className="py-3 pr-4 text-sm text-slate-600">{(p.package?.destinations || []).join(', ') || '-'}</td>
                     <td className="py-3 pr-4 text-right text-sm text-slate-600">{p.leads}</td>
-                    <td className="py-3 pr-4 text-right text-sm font-bold text-emerald-600">{p.bookingCount}</td>
+                    <td className="py-3 pr-4 text-right text-sm font-bold text-[#404040]">{p.bookingCount}</td>
                     <td className="py-3 pr-4 text-right">
-                      <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-bold ${p.conversionRate >= 30 ? 'bg-emerald-50 text-emerald-700' : p.conversionRate >= 15 ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-500'}`}>
+                      <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-bold ${p.conversionRate >= 30 ? 'bg-[#f5f5f5] text-[#2d2d2d]' : p.conversionRate >= 15 ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-500'}`}>
                         {p.conversionRate}%
                       </span>
                     </td>
@@ -465,14 +584,15 @@ function PackageTab({ params }) {
       {packages.length > 0 && (
         <ReportSection title="Bookings by Package" description="Visual comparison">
           <ResponsiveContainer width="100%" height={280}>
-            <BarChart data={packages.slice(0, 8).map((p) => ({ name: (p.package?.name || 'N/A').substring(0, 15), bookings: p.bookingCount, leads: p.leads }))}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-              <XAxis dataKey="name" tick={{ fontSize: 11, fill: '#475569' }} />
-              <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} />
-              <Tooltip content={<CustomTooltip />} />
-              <Legend iconType="circle" wrapperStyle={{ fontSize: '12px' }} />
-              <Bar dataKey="leads" fill="#cbd5e1" radius={[4, 4, 0, 0]} name="Enquiries" />
-              <Bar dataKey="bookings" fill={TEAL} radius={[4, 4, 0, 0]} name="Bookings" />
+            <BarChart data={packages.slice(0, 8).map((p) => ({ name: (p.package?.name || 'N/A').substring(0, 15), bookings: p.bookingCount, leads: p.leads }))} barGap={4}>
+              <ChartGradients />
+              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+              <XAxis dataKey="name" tick={{ fontSize: 11, fill: '#475569', fontWeight: 500 }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} allowDecimals={false} />
+              <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(99,102,241,0.04)' }} />
+              <Legend iconType="circle" wrapperStyle={{ fontSize: '12px', paddingTop: '16px' }} />
+              <Bar dataKey="leads" fill="url(#barSecondary)" radius={[8, 8, 0, 0]} name="Enquiries" barSize={28} />
+              <Bar dataKey="bookings" fill="url(#barAccent)" radius={[8, 8, 0, 0]} name="Bookings" barSize={28} />
             </BarChart>
           </ResponsiveContainer>
         </ReportSection>
@@ -544,17 +664,12 @@ function LostLeadsTab({ params }) {
           {trendData.length === 0 ? <EmptyState /> : (
             <ResponsiveContainer width="100%" height={220}>
               <AreaChart data={trendData}>
-                <defs>
-                  <linearGradient id="lostGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#ef4444" stopOpacity={0.15} />
-                    <stop offset="95%" stopColor="#ef4444" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#94a3b8' }} />
-                <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} />
-                <Tooltip content={<CustomTooltip />} />
-                <Area type="monotone" dataKey="lost" stroke="#ef4444" strokeWidth={2} fill="url(#lostGrad)" name="Lost Leads" />
+                <ChartGradients />
+                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} allowDecimals={false} />
+                <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(239,68,68,0.04)' }} />
+                <Area type="monotone" dataKey="lost" stroke="#ef4444" strokeWidth={2.5} fill="url(#barRose)" fillOpacity={0.12} name="Lost Leads" dot={false} activeDot={{ r: 5, fill: '#ef4444', stroke: '#fff', strokeWidth: 2 }} />
               </AreaChart>
             </ResponsiveContainer>
           )}
@@ -594,11 +709,12 @@ function ReviewTab({ params }) {
         <ReportSection title="Rating Distribution">
           <ResponsiveContainer width="100%" height={220}>
             <BarChart data={ratingData} layout="vertical">
-              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-              <XAxis type="number" tick={{ fontSize: 11, fill: '#94a3b8' }} />
-              <YAxis dataKey="stars" type="category" tick={{ fontSize: 12, fill: '#475569' }} width={60} />
-              <Tooltip content={<CustomTooltip />} />
-              <Bar dataKey="count" fill="#f59e0b" radius={[0, 6, 6, 0]} name="Reviews" />
+              <ChartGradients />
+              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
+              <XAxis type="number" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} allowDecimals={false} />
+              <YAxis dataKey="stars" type="category" tick={{ fontSize: 12, fill: '#475569', fontWeight: 500 }} width={60} axisLine={false} tickLine={false} />
+              <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(245,158,11,0.06)' }} />
+              <Bar dataKey="count" fill="url(#barAmber)" radius={[0, 8, 8, 0]} name="Reviews" barSize={20} />
             </BarChart>
           </ResponsiveContainer>
         </ReportSection>
@@ -664,10 +780,10 @@ function SourceTab({ params }) {
           {pieData.length === 0 ? <EmptyState message="No source data yet." /> : (
             <ResponsiveContainer width="100%" height={260}>
               <PieChart>
-                <Pie data={pieData} cx="50%" cy="50%" outerRadius={90} innerRadius={50} dataKey="value" nameKey="name" paddingAngle={3}>
+                <Pie data={pieData} cx="50%" cy="50%" outerRadius={90} innerRadius={55} dataKey="value" nameKey="name" paddingAngle={3} stroke="none">
                   {pieData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
                 </Pie>
-                <Tooltip />
+                <Tooltip content={<CustomTooltip />} />
                 <Legend iconType="circle" wrapperStyle={{ fontSize: '12px' }} />
               </PieChart>
             </ResponsiveContainer>
@@ -685,8 +801,8 @@ function SourceTab({ params }) {
                   </div>
                   <div className="flex items-center gap-4">
                     <span className="text-sm text-slate-500">{s.leads} leads</span>
-                    <span className="text-sm font-semibold text-emerald-600">{s.booked} booked</span>
-                    <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${s.conversionRate >= 20 ? 'bg-emerald-50 text-emerald-700' : s.conversionRate >= 10 ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-500'}`}>
+                    <span className="text-sm font-semibold text-[#404040]">{s.booked} booked</span>
+                    <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${s.conversionRate >= 20 ? 'bg-[#f5f5f5] text-[#2d2d2d]' : s.conversionRate >= 10 ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-500'}`}>
                       {s.conversionRate}%
                     </span>
                   </div>
@@ -699,15 +815,16 @@ function SourceTab({ params }) {
 
       {sources.length > 0 && (
         <ReportSection title="Leads by Source" description="Comparison bar chart">
-          <ResponsiveContainer width="100%" height={260}>
-            <BarChart data={sources.map((s) => ({ name: formatSourceName(s.source), leads: s.leads, booked: s.booked }))}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-              <XAxis dataKey="name" tick={{ fontSize: 11, fill: '#475569' }} />
-              <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} />
-              <Tooltip content={<CustomTooltip />} />
-              <Legend iconType="circle" wrapperStyle={{ fontSize: '12px' }} />
-              <Bar dataKey="leads" fill="#94a3b8" radius={[4, 4, 0, 0]} name="Total Leads" />
-              <Bar dataKey="booked" fill={TEAL} radius={[4, 4, 0, 0]} name="Booked" />
+          <ResponsiveContainer width="100%" height={280}>
+            <BarChart data={sources.map((s) => ({ name: formatSourceName(s.source), leads: s.leads, booked: s.booked }))} barGap={4}>
+              <ChartGradients />
+              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+              <XAxis dataKey="name" tick={{ fontSize: 12, fill: '#475569', fontWeight: 500 }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} allowDecimals={false} />
+              <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(99,102,241,0.04)' }} />
+              <Legend iconType="circle" wrapperStyle={{ fontSize: '12px', paddingTop: '16px' }} />
+              <Bar dataKey="leads" fill="url(#barSecondary)" radius={[8, 8, 0, 0]} name="Total Leads" barSize={32} />
+              <Bar dataKey="booked" fill="url(#barPrimary)" radius={[8, 8, 0, 0]} name="Booked" barSize={32} />
             </BarChart>
           </ResponsiveContainer>
         </ReportSection>
@@ -769,15 +886,16 @@ function CampaignAnalyticsTab({ params }) {
       <ReportSection title="Campaigns Over Time" description="Daily campaign sends">
         {chartData.length === 0 ? <EmptyState message="No campaign data yet." /> : (
           <ResponsiveContainer width="100%" height={280}>
-            <BarChart data={chartData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-              <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#94a3b8' }} />
-              <YAxis yAxisId="left" tick={{ fontSize: 11, fill: '#94a3b8' }} />
-              <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11, fill: '#94a3b8' }} />
-              <Tooltip contentStyle={{ borderRadius: '12px', borderColor: '#e2e8f0', fontSize: '12px' }} />
-              <Legend iconType="circle" wrapperStyle={{ fontSize: '12px' }} />
-              <Bar yAxisId="left" dataKey="campaigns" fill={TEAL} radius={[4, 4, 0, 0]} name="Campaigns" />
-              <Bar yAxisId="right" dataKey="recipients" fill="#0ea5e9" radius={[4, 4, 0, 0]} name="Recipients" />
+            <BarChart data={chartData} barGap={4}>
+              <ChartGradients />
+              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+              <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
+              <YAxis yAxisId="left" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} allowDecimals={false} />
+              <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} allowDecimals={false} />
+              <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(99,102,241,0.04)' }} />
+              <Legend iconType="circle" wrapperStyle={{ fontSize: '12px', paddingTop: '16px' }} />
+              <Bar yAxisId="left" dataKey="campaigns" fill="url(#barPrimary)" radius={[8, 8, 0, 0]} name="Campaigns" barSize={24} />
+              <Bar yAxisId="right" dataKey="recipients" fill="url(#barSky)" radius={[8, 8, 0, 0]} name="Recipients" barSize={24} />
             </BarChart>
           </ResponsiveContainer>
         )}
@@ -798,7 +916,7 @@ function CampaignAnalyticsTab({ params }) {
                   </div>
                   <div className="flex items-center gap-3">
                     <span className="text-sm text-slate-500">{c.totalRecipients || 0} sent</span>
-                    <span className="text-sm font-bold text-teal-700">{c.read || 0} read</span>
+                    <span className="text-sm font-bold text-[#2d2d2d]">{c.read || 0} read</span>
                   </div>
                 </div>
               ))}
@@ -820,7 +938,7 @@ function CampaignAnalyticsTab({ params }) {
                   </div>
                   <div className="flex items-center gap-3">
                     <span className="text-sm text-slate-500">{t.totalSent} sent</span>
-                    <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${t.readRate >= 50 ? 'bg-emerald-50 text-emerald-700' : t.readRate >= 25 ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-500'}`}>
+                    <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${t.readRate >= 50 ? 'bg-[#f5f5f5] text-[#2d2d2d]' : t.readRate >= 25 ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-500'}`}>
                       {t.readRate}% read
                     </span>
                   </div>
@@ -863,7 +981,7 @@ export default function Analytics() {
             <button
               key={p.label}
               onClick={() => setDatePreset(p.days)}
-              className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${datePreset === p.days ? 'bg-[#0d1b3e] text-white shadow-sm' : 'border border-slate-200 bg-white text-slate-500 hover:bg-slate-50'}`}
+              className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${datePreset === p.days ? 'bg-gradient-to-r from-indigo-500 to-violet-500 text-white shadow-md shadow-indigo-500/25' : 'border border-slate-200 bg-white text-slate-500 hover:bg-slate-50'}`}
             >
               {p.label}
             </button>
@@ -877,11 +995,10 @@ export default function Analytics() {
           <button
             key={tab.key}
             onClick={() => setActiveTab(tab.key)}
-            className={`flex shrink-0 items-center gap-1.5 rounded-xl px-4 py-2.5 text-sm font-semibold transition ${
-              activeTab === tab.key
-                ? 'bg-[#0d1b3e] text-white shadow-md shadow-teal-500/20'
+            className={`flex shrink-0 items-center gap-1.5 rounded-xl px-4 py-2.5 text-sm font-semibold transition ${activeTab === tab.key
+                ? 'bg-gradient-to-r from-indigo-500 to-violet-500 text-white shadow-md shadow-indigo-500/25'
                 : 'border border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:text-slate-700'
-            }`}
+              }`}
           >
             <span>{tab.emoji}</span>
             <span className="hidden sm:inline">{tab.label.replace(tab.emoji + ' ', '')}</span>
@@ -897,9 +1014,7 @@ export default function Analytics() {
         {activeTab === 'agents' && <AgentTab params={params} />}
         {activeTab === 'packages' && <PackageTab params={params} />}
         {activeTab === 'lost' && <LostLeadsTab params={params} />}
-        
         {activeTab === 'reviews' && <ReviewTab params={params} />}
-        
         {activeTab === 'sources' && <SourceTab params={params} />}
         {activeTab === 'campaigns' && <CampaignAnalyticsTab params={params} />}
       </section>

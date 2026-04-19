@@ -51,10 +51,10 @@ function AppLayout({ children }) {
   const isCollapsed = sidebarCollapsed && !sidebarHovered;
 
   return (
-    <div className="flex h-screen overflow-hidden bg-slate-100 text-slate-900">
+    <div className="flex h-screen overflow-hidden bg-[#f5f5f5] text-[#1a1a1a]">
       <Sidebar />
       <main
-        className="flex-1 overflow-y-auto bg-slate-100 transition-[padding] duration-300"
+        className="flex-1 overflow-y-auto bg-[#f5f5f5] transition-[padding] duration-300"
         style={{ paddingLeft: isDesktop ? (isCollapsed ? 72 : 252) : 0 }}
       >
         <div className="page-enter min-h-full p-4 md:p-6">{children}</div>

@@ -4,7 +4,7 @@ import { CheckCircleIcon, ClockIcon, MapPinIcon } from '@heroicons/react/24/outl
 export default function PackageCard({ pkg, onEdit, onDelete }) {
   return (
     <article className="overflow-hidden rounded-[28px] border border-white/80 bg-white shadow-[0_24px_70px_-46px_rgba(15,23,42,0.45)] transition hover:-translate-y-1">
-      <div className="relative h-52 overflow-hidden bg-[linear-gradient(135deg,#f4c98d,#0d1b3e)]">
+      <div className="relative h-52 overflow-hidden bg-[linear-gradient(135deg,#f4c98d,#2d2d2d)]">
         {pkg.imageUrl ? (
           <img src={pkg.imageUrl} alt={pkg.name} className="h-full w-full object-cover" />
         ) : null}
@@ -19,7 +19,7 @@ export default function PackageCard({ pkg, onEdit, onDelete }) {
 
       <div className="p-5">
         <div className="flex flex-wrap gap-2">
-          {pkg.category ? <span className="badge bg-emerald-50 text-emerald-700">{pkg.category}</span> : null}
+          {pkg.category ? <span className="badge bg-[#f5f5f5] text-[#2d2d2d]">{pkg.category}</span> : null}
           {pkg.brochureUrl ? <span className="badge bg-slate-100 text-slate-600">Brochure</span> : null}
         </div>
 
@@ -41,7 +41,7 @@ export default function PackageCard({ pkg, onEdit, onDelete }) {
           ) : null}
           {pkg.inclusions?.length ? (
             <p className="flex items-center gap-2">
-              <CheckCircleIcon className="h-4 w-4 text-emerald-500" />
+              <CheckCircleIcon className="h-4 w-4 text-[#f5f5f5]0" />
               {pkg.inclusions.length} inclusions
             </p>
           ) : null}

@@ -23,8 +23,8 @@ export default function Automations() {
         <div className="p-12 text-center text-slate-500">Loading workflows...</div>
       ) : trips.length === 0 ? (
         <div className="shell-panel p-16 flex flex-col items-center justify-center text-center">
-            <div className="w-20 h-20 bg-teal-50 rounded-full flex items-center justify-center mb-6">
-                <Workflow className="w-10 h-10 text-teal-600" />
+            <div className="w-20 h-20 bg-[#f0f0f0] rounded-full flex items-center justify-center mb-6">
+                <Workflow className="w-10 h-10 text-[#404040]" />
             </div>
             <h2 className="text-xl font-bold text-slate-900 mb-2">Build your first automation</h2>
             <p className="text-slate-500 max-w-md mb-8">Nurture leads, combat cart abandonment, or send post-trip check-ins completely on autopilot.</p>
@@ -37,7 +37,7 @@ export default function Automations() {
                <div className="p-6 border-b border-slate-100 flex items-start justify-between">
                   <div>
                      <div className="flex items-center gap-3 mb-2">
-                        <div className={`p-2 rounded-md ${sequence.isActive ? 'bg-teal-50 text-teal-600' : 'bg-slate-100 text-slate-400'}`}>
+                        <div className={`p-2 rounded-md ${sequence.isActive ? 'bg-[#f0f0f0] text-[#404040]' : 'bg-slate-100 text-slate-400'}`}>
                            <Workflow className="w-5 h-5" />
                         </div>
                         <h3 className="font-bold text-lg text-slate-900">{sequence.name}</h3>
@@ -47,7 +47,7 @@ export default function Automations() {
                   <div className="flex items-center gap-3">
                      <label className="relative inline-flex items-center cursor-pointer">
                         <input type="checkbox" className="sr-only peer" checked={sequence.isActive} readOnly />
-                        <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-teal-500"></div>
+                        <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#f0f0f0]0"></div>
                      </label>
                      <button className="text-slate-400 hover:text-slate-900 p-1"><MoreVertical className="w-5 h-5"/></button>
                   </div>

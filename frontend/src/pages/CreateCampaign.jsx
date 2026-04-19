@@ -16,7 +16,7 @@ import { campaignsApi } from '../api/campaignsApi';
 
 const CAMPAIGN_TYPES = [
   { value: 'BROADCAST', label: 'Broadcast', icon: Megaphone, desc: 'General announcement to all or filtered audiences', gradient: 'from-blue-500 to-indigo-600' },
-  { value: 'PROMOTIONAL', label: 'Promotional', icon: Gift, desc: 'Special offers, discounts, and deals', gradient: 'from-emerald-500 to-teal-600' },
+  { value: 'PROMOTIONAL', label: 'Promotional', icon: Gift, desc: 'Special offers, discounts, and deals', gradient: 'from-[#f5f5f5]0 to-[#404040]' },
   { value: 'RE_ENGAGEMENT', label: 'Re-engagement', icon: RotateCcw, desc: 'Win back inactive customers', gradient: 'from-amber-500 to-orange-600' },
   { value: 'SEASONAL', label: 'Seasonal', icon: Sparkles, desc: 'Holiday/season-based campaigns', gradient: 'from-violet-500 to-purple-600' },
   { value: 'REVIEW_COLLECTION', label: 'Review Collection', icon: Star, desc: 'Request trip reviews manually', gradient: 'from-pink-500 to-rose-600' },
@@ -24,9 +24,9 @@ const CAMPAIGN_TYPES = [
 
 const AUDIENCE_MODES = [
   { value: 'all', label: 'All Clients', icon: Users, desc: 'Send to every customer in your database', gradient: 'from-blue-500 to-blue-600' },
-  { value: 'package_bookers', label: 'Package Bookers', icon: Package, desc: 'Clients who booked a specific package', gradient: 'from-emerald-500 to-emerald-600' },
+  { value: 'package_bookers', label: 'Package Bookers', icon: Package, desc: 'Clients who booked a specific package', gradient: 'from-[#f5f5f5]0 to-[#404040]' },
   { value: 'package_enquirers', label: 'Package Enquiries', icon: Star, desc: 'Leads who enquired about a package but haven\'t booked', gradient: 'from-amber-500 to-amber-600' },
-  { value: 'past_travelers', label: 'Past Travelers', icon: Plane, desc: 'Customers with confirmed/completed bookings', gradient: 'from-teal-500 to-teal-600' },
+  { value: 'past_travelers', label: 'Past Travelers', icon: Plane, desc: 'Customers with confirmed/completed bookings', gradient: 'from-[#f0f0f0]0 to-[#404040]' },
   { value: 'leads_only', label: 'Active Leads', icon: Inbox, desc: 'Current pipeline leads (filter by status)', gradient: 'from-indigo-500 to-indigo-600' },
   { value: 'by_booking_status', label: 'By Booking Status', icon: ShieldCheck, desc: 'Pending, confirmed, or completed bookings', gradient: 'from-violet-500 to-violet-600' },
   { value: 'import', label: 'Import Contacts', icon: Upload, desc: 'Upload a CSV or paste phone numbers', gradient: 'from-rose-500 to-rose-600' },
@@ -301,7 +301,7 @@ export default function CreateCampaign() {
 
       {/* ── Decorative background orbs ── */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
-        <div className="absolute -top-32 -right-32 w-96 h-96 rounded-full bg-gradient-to-br from-teal-400/8 to-emerald-500/5 blur-3xl animate-pulse-soft" />
+        <div className="absolute -top-32 -right-32 w-96 h-96 rounded-full bg-gradient-to-br from-teal-400/8 to-[#f5f5f5]0/5 blur-3xl animate-pulse-soft" />
         <div className="absolute -bottom-48 -left-48 w-[500px] h-[500px] rounded-full bg-gradient-to-tr from-indigo-400/6 to-violet-500/4 blur-3xl animate-pulse-soft" style={{ animationDelay: '1s' }} />
       </div>
 
@@ -318,7 +318,7 @@ export default function CreateCampaign() {
             {isEdit ? 'Edit Campaign' : 'Create Campaign'}
           </h1>
           <p className="text-sm text-slate-500 mt-0.5 flex items-center gap-2">
-            <Zap className="w-3.5 h-3.5 text-teal-500" />
+            <Zap className="w-3.5 h-3.5 text-[#f0f0f0]0" />
             Step {step + 1} of {STEPS.length} — {STEPS[step].desc}
           </p>
         </div>
@@ -345,20 +345,20 @@ export default function CreateCampaign() {
                     {/* Step circle */}
                     <div className={`relative flex items-center justify-center w-11 h-11 rounded-2xl transition-all duration-500 ${
                       isActive
-                        ? 'bg-gradient-to-br from-[#0d1b3e] to-[#0a524a] text-white shadow-lg shadow-teal-500/25 scale-110'
+                        ? 'bg-gradient-to-br from-[#2d2d2d] to-[#404040] text-white shadow-lg shadow-[#f0f0f0]0/25 scale-110'
                         : isDone
-                        ? 'bg-gradient-to-br from-emerald-400 to-emerald-500 text-white shadow-md shadow-emerald-200/40'
+                        ? 'bg-gradient-to-br from-[#8a8a8a] to-[#f5f5f5]0 text-white shadow-md shadow-[#d4d4d4]/40'
                         : 'bg-slate-100 text-slate-400 group-hover:bg-slate-200'
                     }`}>
                       {isDone ? <Check className="w-4 h-4" strokeWidth={3} /> : <Icon className="w-4.5 h-4.5" />}
                       {isActive && (
-                        <span className="absolute inset-0 rounded-2xl animate-ping bg-teal-500/20" style={{ animationDuration: '2s' }} />
+                        <span className="absolute inset-0 rounded-2xl animate-ping bg-[#f0f0f0]0/20" style={{ animationDuration: '2s' }} />
                       )}
                     </div>
                     {/* Label */}
                     <span className={`text-[11px] font-bold tracking-wide transition-colors duration-300 ${
-                      isActive ? 'text-[#0d1b3e]'
-                      : isDone ? 'text-emerald-600'
+                      isActive ? 'text-[#2d2d2d]'
+                      : isDone ? 'text-[#404040]'
                       : 'text-slate-400'
                     }`}>
                       {s.label}
@@ -369,7 +369,7 @@ export default function CreateCampaign() {
                     <div className="flex-1 mx-2">
                       <div className="h-0.5 rounded-full overflow-hidden bg-slate-100">
                         <div
-                          className="h-full rounded-full bg-gradient-to-r from-emerald-400 to-teal-500 transition-all duration-700 ease-out"
+                          className="h-full rounded-full bg-gradient-to-r from-[#8a8a8a] to-[#f0f0f0]0 transition-all duration-700 ease-out"
                           style={{ width: i < step ? '100%' : i === step ? '40%' : '0%' }}
                         />
                       </div>
@@ -387,7 +387,7 @@ export default function CreateCampaign() {
           {step === 0 && (
             <div className="max-w-2xl mx-auto space-y-6 animate-fade-in">
               <div className="wizard-section-header">
-                <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-teal-600 mb-2">
+                <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-[#404040] mb-2">
                   <Target className="w-3.5 h-3.5" />
                   Campaign Identity
                 </div>
@@ -400,7 +400,7 @@ export default function CreateCampaign() {
                 <input
                   type="text"
                   placeholder="e.g. Summer Maldives Promo"
-                  className="w-full rounded-2xl border border-slate-200 px-5 py-3.5 text-sm bg-slate-50/50 focus:bg-white focus:border-teal-400 focus:ring-4 focus:ring-teal-500/10 outline-none transition-all duration-300 placeholder:text-slate-400"
+                  className="w-full rounded-2xl border border-slate-200 px-5 py-3.5 text-sm bg-slate-50/50 focus:bg-white focus:border-teal-400 focus:ring-4 focus:ring-[#f0f0f0]0/10 outline-none transition-all duration-300 placeholder:text-slate-400"
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                   autoFocus
@@ -419,7 +419,7 @@ export default function CreateCampaign() {
                         onClick={() => setFormData({ ...formData, type: t.value })}
                         className={`group relative flex items-start gap-4 rounded-2xl border-2 p-4 text-left transition-all duration-300 overflow-hidden ${
                           isActive
-                            ? 'border-[#0d1b3e] bg-gradient-to-br from-teal-50/80 to-emerald-50/50 shadow-lg shadow-teal-100/60 scale-[1.01]'
+                            ? 'border-[#2d2d2d] bg-gradient-to-br from-[#f0f0f0] to-[#f5f5f5]/50 shadow-lg shadow-[#e5e5e5] scale-[1.01]'
                             : 'border-slate-200/80 hover:border-slate-300 hover:shadow-md hover:shadow-slate-100/60 hover:bg-slate-50/50'
                         }`}
                       >
@@ -431,7 +431,7 @@ export default function CreateCampaign() {
                           <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">{t.desc}</p>
                         </div>
                         {isActive && (
-                          <div className="flex h-6 w-6 items-center justify-center rounded-full bg-gradient-to-br from-[#0d1b3e] to-[#0a524a] text-white shadow-md animate-scale-in">
+                          <div className="flex h-6 w-6 items-center justify-center rounded-full bg-gradient-to-br from-[#2d2d2d] to-[#404040] text-white shadow-md animate-scale-in">
                             <Check className="w-3.5 h-3.5" strokeWidth={3} />
                           </div>
                         )}
@@ -451,7 +451,7 @@ export default function CreateCampaign() {
           {step === 1 && (
             <div className="max-w-2xl mx-auto space-y-5 animate-fade-in">
               <div className="wizard-section-header">
-                <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-teal-600 mb-2">
+                <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-[#404040] mb-2">
                   <Send className="w-3.5 h-3.5" />
                   Message Content
                 </div>
@@ -464,7 +464,7 @@ export default function CreateCampaign() {
                 <input
                   type="text"
                   placeholder="Search templates..."
-                  className="w-full rounded-2xl border border-slate-200 pl-11 pr-4 py-3 text-sm bg-slate-50/50 focus:bg-white focus:border-teal-400 focus:ring-4 focus:ring-teal-500/10 outline-none transition-all duration-300"
+                  className="w-full rounded-2xl border border-slate-200 pl-11 pr-4 py-3 text-sm bg-slate-50/50 focus:bg-white focus:border-teal-400 focus:ring-4 focus:ring-[#f0f0f0]0/10 outline-none transition-all duration-300"
                   value={templateSearch}
                   onChange={(e) => setTemplateSearch(e.target.value)}
                 />
@@ -482,7 +482,7 @@ export default function CreateCampaign() {
                       }}
                       className={`group relative flex flex-col gap-2.5 rounded-2xl border-2 p-4 text-left transition-all duration-300 overflow-hidden ${
                         isSelected
-                          ? 'border-[#0d1b3e] bg-gradient-to-br from-teal-50/80 to-emerald-50/50 shadow-lg shadow-teal-100/60'
+                          ? 'border-[#2d2d2d] bg-gradient-to-br from-[#f0f0f0] to-[#f5f5f5]/50 shadow-lg shadow-[#e5e5e5]'
                           : 'border-slate-200/80 hover:border-slate-300 hover:shadow-md hover:bg-slate-50/50'
                       }`}
                     >
@@ -492,7 +492,7 @@ export default function CreateCampaign() {
                           <span className="text-sm font-bold text-slate-900 truncate">{t.displayName}</span>
                         </div>
                         {isSelected && (
-                          <div className="flex h-5 w-5 items-center justify-center rounded-full bg-gradient-to-br from-[#0d1b3e] to-[#0a524a] text-white flex-shrink-0 animate-scale-in">
+                          <div className="flex h-5 w-5 items-center justify-center rounded-full bg-gradient-to-br from-[#2d2d2d] to-[#404040] text-white flex-shrink-0 animate-scale-in">
                             <Check className="w-3 h-3" strokeWidth={3} />
                           </div>
                         )}
@@ -517,7 +517,7 @@ export default function CreateCampaign() {
                 <textarea
                   rows={4}
                   placeholder="Type your message here... Use {{name}} for personalization."
-                  className="w-full rounded-2xl border border-slate-200 px-5 py-3.5 text-sm bg-slate-50/50 focus:bg-white focus:border-teal-400 focus:ring-4 focus:ring-teal-500/10 outline-none transition-all duration-300 resize-none"
+                  className="w-full rounded-2xl border border-slate-200 px-5 py-3.5 text-sm bg-slate-50/50 focus:bg-white focus:border-teal-400 focus:ring-4 focus:ring-[#f0f0f0]0/10 outline-none transition-all duration-300 resize-none"
                   value={formData.messageBody}
                   onChange={(e) => setFormData({ ...formData, messageBody: e.target.value, templateId: null })}
                 />
@@ -533,7 +533,7 @@ export default function CreateCampaign() {
           {step === 2 && (
             <div className="max-w-3xl mx-auto space-y-5 animate-fade-in">
               <div className="wizard-section-header">
-                <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-teal-600 mb-2">
+                <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-[#404040] mb-2">
                   <Users className="w-3.5 h-3.5" />
                   Target Audience
                 </div>
@@ -543,12 +543,12 @@ export default function CreateCampaign() {
 
               {/* Audience Count Banner */}
               <div className={`relative overflow-hidden flex items-center gap-4 rounded-2xl p-5 transition-all duration-500 ${
-                audienceMode === 'import' ? (importedIds.length > 0 ? 'bg-gradient-to-r from-teal-50 to-emerald-50/80 border border-teal-200/80' : 'bg-slate-50 border border-slate-200/80')
-                : audienceCount === 0 ? 'bg-gradient-to-r from-amber-50 to-orange-50/80 border border-amber-200/80' : 'bg-gradient-to-r from-teal-50 to-emerald-50/80 border border-teal-200/80'
+                audienceMode === 'import' ? (importedIds.length > 0 ? 'bg-gradient-to-r from-[#f0f0f0] to-[#f5f5f5]/80 border border-[#d4d4d4]/80' : 'bg-slate-50 border border-slate-200/80')
+                : audienceCount === 0 ? 'bg-gradient-to-r from-amber-50 to-orange-50/80 border border-amber-200/80' : 'bg-gradient-to-r from-[#f0f0f0] to-[#f5f5f5]/80 border border-[#d4d4d4]/80'
               }`}>
                 <div className={`flex h-12 w-12 items-center justify-center rounded-xl ${
-                  audienceMode === 'import' ? (importedIds.length > 0 ? 'bg-gradient-to-br from-teal-500 to-emerald-500 text-white shadow-lg shadow-teal-200/50' : 'bg-slate-200 text-slate-400')
-                  : audienceCount === 0 ? 'bg-gradient-to-br from-amber-400 to-orange-500 text-white shadow-lg shadow-amber-200/50' : 'bg-gradient-to-br from-teal-500 to-emerald-500 text-white shadow-lg shadow-teal-200/50'
+                  audienceMode === 'import' ? (importedIds.length > 0 ? 'bg-gradient-to-br from-[#f0f0f0]0 to-[#f5f5f5]0 text-white shadow-lg shadow-[#d4d4d4]/50' : 'bg-slate-200 text-slate-400')
+                  : audienceCount === 0 ? 'bg-gradient-to-br from-amber-400 to-orange-500 text-white shadow-lg shadow-amber-200/50' : 'bg-gradient-to-br from-[#f0f0f0]0 to-[#f5f5f5]0 text-white shadow-lg shadow-[#d4d4d4]/50'
                 }`}>
                   <Users className="w-5 h-5" />
                 </div>
@@ -576,7 +576,7 @@ export default function CreateCampaign() {
                   </button>
                 )}
                 {/* Decorative */}
-                <div className="absolute -top-8 -right-8 w-24 h-24 rounded-full bg-gradient-to-br from-teal-300/10 to-emerald-300/10 blur-xl" />
+                <div className="absolute -top-8 -right-8 w-24 h-24 rounded-full bg-gradient-to-br from-[#b0b0b0]/10 to-[#b0b0b0]/10 blur-xl" />
               </div>
 
               {/* Audience Mode Cards */}
@@ -594,7 +594,7 @@ export default function CreateCampaign() {
                       }}
                       className={`group relative flex flex-col items-center gap-2.5 rounded-2xl border-2 p-3.5 text-center transition-all duration-300 overflow-hidden ${
                         isActive
-                          ? 'border-[#0d1b3e] bg-gradient-to-b from-teal-50/80 to-emerald-50/60 shadow-lg shadow-teal-100/50 scale-[1.02]'
+                          ? 'border-[#2d2d2d] bg-gradient-to-b from-[#f0f0f0] to-[#f5f5f5]/60 shadow-lg shadow-[#e5e5e5] scale-[1.02]'
                           : 'border-slate-200/80 hover:border-slate-300 hover:shadow-md hover:bg-slate-50/50'
                       }`}
                     >
@@ -605,7 +605,7 @@ export default function CreateCampaign() {
                       }`}>
                         <Icon className="w-4.5 h-4.5" />
                       </div>
-                      <span className={`text-xs font-bold leading-tight transition-colors duration-300 ${isActive ? 'text-[#0d1b3e]' : 'text-slate-700'}`}>{m.label}</span>
+                      <span className={`text-xs font-bold leading-tight transition-colors duration-300 ${isActive ? 'text-[#2d2d2d]' : 'text-slate-700'}`}>{m.label}</span>
                       {isActive && <div className="absolute -bottom-6 -right-6 w-16 h-16 bg-teal-400/10 rounded-full blur-xl" />}
                     </button>
                   );
@@ -638,7 +638,7 @@ export default function CreateCampaign() {
                         <button
                           onClick={() => setSelectedPackageId(null)}
                           className={`group flex items-center gap-3 rounded-xl border-2 p-3.5 text-left transition-all duration-300 ${
-                            !selectedPackageId ? 'border-[#0d1b3e] bg-gradient-to-r from-teal-50/80 to-emerald-50/50 shadow-md' : 'border-slate-200/80 hover:border-slate-300 hover:shadow-sm'
+                            !selectedPackageId ? 'border-[#2d2d2d] bg-gradient-to-r from-[#f0f0f0] to-[#f5f5f5]/50 shadow-md' : 'border-slate-200/80 hover:border-slate-300 hover:shadow-sm'
                           }`}
                         >
                           <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-slate-300 to-slate-400 flex items-center justify-center text-white">
@@ -657,7 +657,7 @@ export default function CreateCampaign() {
                             key={pkg.id}
                             onClick={() => setSelectedPackageId(pkg.id)}
                             className={`group flex items-center gap-3 rounded-xl border-2 p-3.5 text-left transition-all duration-300 ${
-                              isSelected ? 'border-[#0d1b3e] bg-gradient-to-r from-teal-50/80 to-emerald-50/50 shadow-md' : 'border-slate-200/80 hover:border-slate-300 hover:shadow-sm'
+                              isSelected ? 'border-[#2d2d2d] bg-gradient-to-r from-[#f0f0f0] to-[#f5f5f5]/50 shadow-md' : 'border-slate-200/80 hover:border-slate-300 hover:shadow-sm'
                             }`}
                           >
                             {pkg.imageUrl ? (
@@ -672,7 +672,7 @@ export default function CreateCampaign() {
                               <p className="text-xs text-slate-400">{(pkg.destinations || []).join(', ') || pkg.category || '-'}</p>
                             </div>
                             {isSelected && (
-                              <div className="flex h-5 w-5 items-center justify-center rounded-full bg-gradient-to-br from-[#0d1b3e] to-[#0a524a] text-white flex-shrink-0 animate-scale-in">
+                              <div className="flex h-5 w-5 items-center justify-center rounded-full bg-gradient-to-br from-[#2d2d2d] to-[#404040] text-white flex-shrink-0 animate-scale-in">
                                 <Check className="w-3 h-3" strokeWidth={3} />
                               </div>
                             )}
@@ -697,7 +697,7 @@ export default function CreateCampaign() {
                                 )}
                                 className={`rounded-full px-4 py-2 text-xs font-bold transition-all duration-300 ${
                                   isSelected
-                                    ? 'bg-gradient-to-r from-[#0d1b3e] to-[#0a524a] text-white shadow-md shadow-teal-200/40'
+                                    ? 'bg-gradient-to-r from-[#2d2d2d] to-[#404040] text-white shadow-md shadow-black/5'
                                     : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                                 }`}
                               >
@@ -722,7 +722,7 @@ export default function CreateCampaign() {
                           onClick={() => setSelectedBookingStatus(s.value)}
                           className={`rounded-xl px-5 py-3 text-sm font-bold transition-all duration-300 ${
                             selectedBookingStatus === s.value
-                              ? 'bg-gradient-to-r from-[#0d1b3e] to-[#0a524a] text-white shadow-lg shadow-teal-200/40'
+                              ? 'bg-gradient-to-r from-[#2d2d2d] to-[#404040] text-white shadow-lg shadow-black/5'
                               : 'border border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300'
                           }`}
                         >
@@ -741,7 +741,7 @@ export default function CreateCampaign() {
                         onClick={() => fileInputRef.current?.click()}
                         className="group flex items-center gap-3 rounded-2xl border-2 border-dashed border-slate-300 bg-slate-50/50 px-5 py-4 text-sm font-bold text-slate-600 hover:bg-white hover:border-teal-400 hover:shadow-md transition-all duration-300 flex-1"
                       >
-                        <FileSpreadsheet className="w-6 h-6 text-slate-400 group-hover:text-teal-500 transition-colors" />
+                        <FileSpreadsheet className="w-6 h-6 text-slate-400 group-hover:text-[#f0f0f0]0 transition-colors" />
                         Upload CSV File
                       </button>
                       <input
@@ -755,12 +755,12 @@ export default function CreateCampaign() {
 
                     <div>
                       <label className="block text-xs font-bold uppercase tracking-[0.15em] text-slate-500 mb-2">
-                        Or paste contacts (one per line: <code className="text-teal-600 bg-teal-50 px-1.5 py-0.5 rounded">Name, Phone</code> or just <code className="text-teal-600 bg-teal-50 px-1.5 py-0.5 rounded">Phone</code>)
+                        Or paste contacts (one per line: <code className="text-[#404040] bg-[#f0f0f0] px-1.5 py-0.5 rounded">Name, Phone</code> or just <code className="text-[#404040] bg-[#f0f0f0] px-1.5 py-0.5 rounded">Phone</code>)
                       </label>
                       <textarea
                         rows={5}
                         placeholder={`John Doe, +919876543210\nJane, 8765432109\n+917654321098`}
-                        className="w-full rounded-2xl border border-slate-200 px-5 py-3.5 text-sm font-mono bg-slate-50/50 focus:bg-white focus:border-teal-400 focus:ring-4 focus:ring-teal-500/10 outline-none transition-all duration-300 resize-none"
+                        className="w-full rounded-2xl border border-slate-200 px-5 py-3.5 text-sm font-mono bg-slate-50/50 focus:bg-white focus:border-teal-400 focus:ring-4 focus:ring-[#f0f0f0]0/10 outline-none transition-all duration-300 resize-none"
                         value={importText}
                         onChange={(e) => setImportText(e.target.value)}
                       />
@@ -770,14 +770,14 @@ export default function CreateCampaign() {
                       <button
                         onClick={() => processImportText(importText)}
                         disabled={!importText.trim() || importStatus === 'importing'}
-                        className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-[#0d1b3e] to-[#0a524a] px-5 py-3 text-sm font-bold text-white shadow-lg shadow-teal-200/30 hover:shadow-xl hover:shadow-teal-200/40 transition-all duration-300 disabled:opacity-50 disabled:shadow-none"
+                        className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-[#2d2d2d] to-[#404040] px-5 py-3 text-sm font-bold text-white shadow-lg shadow-black/5 hover:shadow-xl hover:shadow-black/5 transition-all duration-300 disabled:opacity-50 disabled:shadow-none"
                       >
                         <UserPlus className="w-4 h-4" />
                         {importStatus === 'importing' ? 'Importing...' : 'Import Contacts'}
                       </button>
 
                       {importStatus === 'done' && (
-                        <span className="flex items-center gap-1.5 text-sm font-bold text-emerald-700 animate-fade-in">
+                        <span className="flex items-center gap-1.5 text-sm font-bold text-[#2d2d2d] animate-fade-in">
                           <UserCheck className="w-4 h-4" /> {importCount} contacts imported!
                         </span>
                       )}
@@ -807,7 +807,7 @@ export default function CreateCampaign() {
                       <div>
                         <label className="block text-xs font-bold uppercase tracking-[0.15em] text-slate-500 mb-1.5">Source</label>
                         <select
-                          className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm bg-slate-50/50 focus:bg-white focus:border-teal-400 focus:ring-4 focus:ring-teal-500/10 outline-none transition-all duration-300"
+                          className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm bg-slate-50/50 focus:bg-white focus:border-teal-400 focus:ring-4 focus:ring-[#f0f0f0]0/10 outline-none transition-all duration-300"
                           value={formData.audienceFilter.source || ''}
                           onChange={(e) => updateAdvancedFilter('source', e.target.value)}
                         >
@@ -825,28 +825,28 @@ export default function CreateCampaign() {
                         <input
                           type="text"
                           placeholder="e.g. Maldives, Bali"
-                          className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm bg-slate-50/50 focus:bg-white focus:border-teal-400 focus:ring-4 focus:ring-teal-500/10 outline-none transition-all duration-300"
+                          className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm bg-slate-50/50 focus:bg-white focus:border-teal-400 focus:ring-4 focus:ring-[#f0f0f0]0/10 outline-none transition-all duration-300"
                           value={(formData.audienceFilter.destinations || []).join(', ')}
                           onChange={(e) => updateAdvancedFilter('destinations', e.target.value.split(',').map((d) => d.trim()).filter(Boolean))}
                         />
                       </div>
                       <div>
                         <label className="block text-xs font-bold uppercase tracking-[0.15em] text-slate-500 mb-1.5">Created After</label>
-                        <input type="date" className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm bg-slate-50/50 focus:bg-white focus:border-teal-400 focus:ring-4 focus:ring-teal-500/10 outline-none transition-all duration-300"
+                        <input type="date" className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm bg-slate-50/50 focus:bg-white focus:border-teal-400 focus:ring-4 focus:ring-[#f0f0f0]0/10 outline-none transition-all duration-300"
                           value={formData.audienceFilter.createdAfter || ''}
                           onChange={(e) => updateAdvancedFilter('createdAfter', e.target.value)}
                         />
                       </div>
                       <div>
                         <label className="block text-xs font-bold uppercase tracking-[0.15em] text-slate-500 mb-1.5">Created Before</label>
-                        <input type="date" className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm bg-slate-50/50 focus:bg-white focus:border-teal-400 focus:ring-4 focus:ring-teal-500/10 outline-none transition-all duration-300"
+                        <input type="date" className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm bg-slate-50/50 focus:bg-white focus:border-teal-400 focus:ring-4 focus:ring-[#f0f0f0]0/10 outline-none transition-all duration-300"
                           value={formData.audienceFilter.createdBefore || ''}
                           onChange={(e) => updateAdvancedFilter('createdBefore', e.target.value)}
                         />
                       </div>
                       <div>
                         <label className="block text-xs font-bold uppercase tracking-[0.15em] text-slate-500 mb-1.5">Last Active Before</label>
-                        <input type="date" className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm bg-slate-50/50 focus:bg-white focus:border-teal-400 focus:ring-4 focus:ring-teal-500/10 outline-none transition-all duration-300"
+                        <input type="date" className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm bg-slate-50/50 focus:bg-white focus:border-teal-400 focus:ring-4 focus:ring-[#f0f0f0]0/10 outline-none transition-all duration-300"
                           value={formData.audienceFilter.lastActiveBefore || ''}
                           onChange={(e) => updateAdvancedFilter('lastActiveBefore', e.target.value)}
                         />
@@ -854,7 +854,7 @@ export default function CreateCampaign() {
                       <div>
                         <label className="block text-xs font-bold uppercase tracking-[0.15em] text-slate-500 mb-1.5">Spam Protection (days)</label>
                         <input type="number" placeholder="e.g. 7"
-                          className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm bg-slate-50/50 focus:bg-white focus:border-teal-400 focus:ring-4 focus:ring-teal-500/10 outline-none transition-all duration-300"
+                          className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm bg-slate-50/50 focus:bg-white focus:border-teal-400 focus:ring-4 focus:ring-[#f0f0f0]0/10 outline-none transition-all duration-300"
                           value={formData.audienceFilter.excludeCampaignDays || ''}
                           onChange={(e) => updateAdvancedFilter('excludeCampaignDays', e.target.value)}
                         />
@@ -867,7 +867,7 @@ export default function CreateCampaign() {
                 {audienceMode !== 'advanced' && audienceMode !== 'import' && (
                   <button
                     onClick={() => setShowAdvanced(!showAdvanced)}
-                    className="group flex items-center gap-2 text-xs font-bold text-teal-600 hover:text-teal-700 transition-all duration-300 mt-2"
+                    className="group flex items-center gap-2 text-xs font-bold text-[#404040] hover:text-[#2d2d2d] transition-all duration-300 mt-2"
                   >
                     <Filter className="w-3.5 h-3.5 group-hover:rotate-12 transition-transform duration-300" />
                     {showAdvanced ? 'Hide advanced filters' : 'Add advanced filters'}
@@ -881,7 +881,7 @@ export default function CreateCampaign() {
           {step === 3 && (
             <div className="max-w-2xl mx-auto space-y-5 animate-fade-in">
               <div className="wizard-section-header">
-                <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-teal-600 mb-2">
+                <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-[#404040] mb-2">
                   <Calendar className="w-3.5 h-3.5" />
                   Delivery Schedule
                 </div>
@@ -894,13 +894,13 @@ export default function CreateCampaign() {
                   onClick={() => setFormData({ ...formData, scheduleMode: 'now' })}
                   className={`group relative flex flex-col items-center gap-4 rounded-2xl border-2 p-8 transition-all duration-300 overflow-hidden ${
                     formData.scheduleMode === 'now'
-                      ? 'border-[#0d1b3e] bg-gradient-to-b from-teal-50/80 to-emerald-50/60 shadow-xl shadow-teal-100/50 scale-[1.01]'
+                      ? 'border-[#2d2d2d] bg-gradient-to-b from-[#f0f0f0] to-[#f5f5f5]/60 shadow-xl shadow-[#e5e5e5] scale-[1.01]'
                       : 'border-slate-200/80 hover:border-slate-300 hover:shadow-lg'
                   }`}
                 >
                   <div className={`flex h-16 w-16 items-center justify-center rounded-2xl transition-all duration-500 ${
                     formData.scheduleMode === 'now'
-                      ? 'bg-gradient-to-br from-[#0d1b3e] to-[#0a524a] text-white shadow-xl shadow-teal-300/30 scale-110'
+                      ? 'bg-gradient-to-br from-[#2d2d2d] to-[#404040] text-white shadow-xl shadow-black/5 scale-110'
                       : 'bg-slate-100 text-slate-400 group-hover:bg-slate-200'
                   }`}>
                     <Send className="w-7 h-7" />
@@ -916,13 +916,13 @@ export default function CreateCampaign() {
                   onClick={() => setFormData({ ...formData, scheduleMode: 'scheduled' })}
                   className={`group relative flex flex-col items-center gap-4 rounded-2xl border-2 p-8 transition-all duration-300 overflow-hidden ${
                     formData.scheduleMode === 'scheduled'
-                      ? 'border-[#0d1b3e] bg-gradient-to-b from-teal-50/80 to-emerald-50/60 shadow-xl shadow-teal-100/50 scale-[1.01]'
+                      ? 'border-[#2d2d2d] bg-gradient-to-b from-[#f0f0f0] to-[#f5f5f5]/60 shadow-xl shadow-[#e5e5e5] scale-[1.01]'
                       : 'border-slate-200/80 hover:border-slate-300 hover:shadow-lg'
                   }`}
                 >
                   <div className={`flex h-16 w-16 items-center justify-center rounded-2xl transition-all duration-500 ${
                     formData.scheduleMode === 'scheduled'
-                      ? 'bg-gradient-to-br from-[#0d1b3e] to-[#0a524a] text-white shadow-xl shadow-teal-300/30 scale-110'
+                      ? 'bg-gradient-to-br from-[#2d2d2d] to-[#404040] text-white shadow-xl shadow-black/5 scale-110'
                       : 'bg-slate-100 text-slate-400 group-hover:bg-slate-200'
                   }`}>
                     <Clock className="w-7 h-7" />
@@ -940,7 +940,7 @@ export default function CreateCampaign() {
                   <label className="block text-sm font-bold text-slate-700 mb-2.5">Schedule Date & Time</label>
                   <input
                     type="datetime-local"
-                    className="w-full rounded-xl border border-slate-200 px-5 py-3.5 text-sm bg-slate-50/50 focus:bg-white focus:border-teal-400 focus:ring-4 focus:ring-teal-500/10 outline-none transition-all duration-300"
+                    className="w-full rounded-xl border border-slate-200 px-5 py-3.5 text-sm bg-slate-50/50 focus:bg-white focus:border-teal-400 focus:ring-4 focus:ring-[#f0f0f0]0/10 outline-none transition-all duration-300"
                     value={formData.scheduledAt || ''}
                     onChange={(e) => setFormData({ ...formData, scheduledAt: e.target.value })}
                     min={new Date().toISOString().slice(0, 16)}
@@ -954,7 +954,7 @@ export default function CreateCampaign() {
           {step === 4 && (
             <div className="max-w-2xl mx-auto space-y-5 animate-fade-in">
               <div className="wizard-section-header">
-                <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-teal-600 mb-2">
+                <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-[#404040] mb-2">
                   <Eye className="w-3.5 h-3.5" />
                   Final Review
                 </div>
@@ -980,7 +980,7 @@ export default function CreateCampaign() {
                         </div>
                         <span className="text-sm text-slate-500">{item.label}</span>
                       </div>
-                      <span className={`text-sm font-bold ${item.highlight ? 'text-[#0d1b3e]' : 'text-slate-900'}`}>
+                      <span className={`text-sm font-bold ${item.highlight ? 'text-[#2d2d2d]' : 'text-slate-900'}`}>
                         {item.value}
                         {item.label === 'Template' && formData.messageBody && !selectedTemplate && '...'}
                       </span>
@@ -1014,7 +1014,7 @@ export default function CreateCampaign() {
             <button
               onClick={() => setStep(step + 1)}
               disabled={!canProceed()}
-              className="group flex items-center gap-2 rounded-xl bg-gradient-to-r from-[#0d1b3e] to-[#0a524a] px-6 py-2.5 text-sm font-bold text-white shadow-lg shadow-teal-500/20 hover:shadow-xl hover:shadow-teal-500/30 hover:scale-[1.02] transition-all duration-300 disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none disabled:hover:scale-100"
+              className="group flex items-center gap-2 rounded-xl bg-gradient-to-r from-[#2d2d2d] to-[#404040] px-6 py-2.5 text-sm font-bold text-white shadow-lg shadow-[#f0f0f0]0/20 hover:shadow-xl hover:shadow-[#f0f0f0]0/30 hover:scale-[1.02] transition-all duration-300 disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none disabled:hover:scale-100"
             >
               Continue
               <ChevronRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform duration-200" />
@@ -1023,7 +1023,7 @@ export default function CreateCampaign() {
             <button
               onClick={handleSubmit}
               disabled={sending}
-              className="group flex items-center gap-2 rounded-xl bg-gradient-to-r from-[#0d1b3e] to-[#0a524a] px-6 py-2.5 text-sm font-bold text-white shadow-lg shadow-teal-500/20 hover:shadow-xl hover:shadow-teal-500/30 hover:scale-[1.02] transition-all duration-300 disabled:opacity-60 disabled:hover:scale-100"
+              className="group flex items-center gap-2 rounded-xl bg-gradient-to-r from-[#2d2d2d] to-[#404040] px-6 py-2.5 text-sm font-bold text-white shadow-lg shadow-[#f0f0f0]0/20 hover:shadow-xl hover:shadow-[#f0f0f0]0/30 hover:scale-[1.02] transition-all duration-300 disabled:opacity-60 disabled:hover:scale-100"
             >
               {sending ? (
                 <>

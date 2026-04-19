@@ -85,7 +85,7 @@ function runEmbeddedSignup(embeddedSignup) {
 }
 
 function statusTone(status) {
-  if (status === 'CONNECTED') return 'bg-emerald-100 text-emerald-700';
+  if (status === 'CONNECTED') return 'bg-[#ebebeb] text-[#2d2d2d]';
   if (status === 'PENDING') return 'bg-amber-100 text-amber-700';
   if (status === 'FAILED') return 'bg-rose-100 text-rose-700';
   return 'bg-slate-100 text-slate-600';
@@ -259,7 +259,7 @@ export default function Settings() {
       </section>
 
       {success ? (
-        <div className="rounded-[22px] border border-emerald-200 bg-emerald-50 px-5 py-4 text-sm font-medium text-emerald-700">{success}</div>
+        <div className="rounded-[22px] border border-[#d4d4d4] bg-[#f5f5f5] px-5 py-4 text-sm font-medium text-[#2d2d2d]">{success}</div>
       ) : null}
       {error ? (
         <div className="rounded-[22px] border border-rose-200 bg-rose-50 px-5 py-4 text-sm font-medium text-rose-700">{error}</div>
@@ -269,7 +269,7 @@ export default function Settings() {
         <div className="space-y-6">
           <article className="shell-panel p-6">
             <div className="flex items-center gap-3">
-              <BuildingOfficeIcon className="h-5 w-5 text-[#0d1b3e]" />
+              <BuildingOfficeIcon className="h-5 w-5 text-[#2d2d2d]" />
               <h2 className="text-xl font-extrabold text-slate-950">Agency Information</h2>
             </div>
 
@@ -299,7 +299,7 @@ export default function Settings() {
                       checked={form.autoReviewCollectionEnabled}
                       onChange={(e) => update('autoReviewCollectionEnabled', e.target.checked)}
                     />
-                    <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-emerald-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#0d1b3e]"></div>
+                    <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-slate-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#2d2d2d]"></div>
                   </label>
                 </div>
                 
@@ -334,7 +334,7 @@ export default function Settings() {
                       checked={form.followUpReminderEnabled}
                       onChange={(e) => update('followUpReminderEnabled', e.target.checked)}
                     />
-                    <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-emerald-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#0d6a5f]"></div>
+                    <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-slate-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#2d2d2d]"></div>
                   </label>
                 </div>
                 
@@ -368,7 +368,7 @@ export default function Settings() {
 
           <article className="shell-panel p-6">
             <div className="flex items-center gap-3">
-              <KeyIcon className="h-5 w-5 text-[#0d1b3e]" />
+              <KeyIcon className="h-5 w-5 text-[#2d2d2d]" />
               <h2 className="text-xl font-extrabold text-slate-950">Razorpay Integration</h2>
             </div>
             <p className="mt-3 text-sm text-slate-500">Enter your payment credentials to collect deposits directly inside WhatsApp.</p>
@@ -392,7 +392,7 @@ export default function Settings() {
         <div className="space-y-6">
           <article className="shell-panel p-6">
             <div className="flex items-center gap-3">
-              <PhoneIcon className="h-5 w-5 text-[#0d1b3e]" />
+              <PhoneIcon className="h-5 w-5 text-[#2d2d2d]" />
               <h2 className="text-xl font-extrabold text-slate-950">WhatsApp Connection</h2>
             </div>
             <p className="mt-3 text-sm text-slate-500">TravelBot uses Marketing OS as your Meta partner layer for channel onboarding and sync.</p>
@@ -501,9 +501,9 @@ export default function Settings() {
                   <div className="flex items-center gap-3">
                     <div className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold ${
                       item.done
-                        ? 'bg-emerald-100 text-emerald-700'
+                        ? 'bg-[#ebebeb] text-[#2d2d2d]'
                         : item.active
-                          ? 'bg-emerald-50 text-[#0d1b3e]'
+                          ? 'bg-[#f0f0f0] text-[#2d2d2d]'
                           : 'bg-white text-slate-500'
                     }`}>
                       {item.done ? <CheckCircleIcon className="h-4 w-4" /> : index + 1}
@@ -520,13 +520,13 @@ export default function Settings() {
             </div>
 
             {connectFlowStep === 'meta' ? (
-              <div className="mt-4 rounded-[22px] border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+              <div className="mt-4 rounded-[22px] border border-[#d4d4d4] bg-[#f5f5f5] px-4 py-3 text-sm text-[#2d2d2d]">
                 Complete the Meta popup to approve your WhatsApp Business number.
               </div>
             ) : null}
 
             {connectFlowStep === 'connected' ? (
-              <div className="mt-4 rounded-[22px] border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+              <div className="mt-4 rounded-[22px] border border-[#d4d4d4] bg-[#f5f5f5] px-4 py-3 text-sm text-[#2d2d2d]">
                 WhatsApp is connected and synced back into TravelBot.
               </div>
             ) : null}

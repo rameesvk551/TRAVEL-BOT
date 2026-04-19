@@ -95,7 +95,7 @@ export default function Customers() {
             <section className="rounded-[12px] border border-slate-200 bg-white px-5 py-4">
               <h1 className="text-[24px] font-semibold tracking-tight text-slate-950">{selectedCustomer.name || 'Traveler'}</h1>
               <div className="mt-3 flex flex-wrap items-center gap-2">
-                <span className="badge bg-emerald-100 text-emerald-700">CUSTOMER</span>
+                <span className="badge bg-[#ebebeb] text-[#2d2d2d]">CUSTOMER</span>
               </div>
             </section>
 

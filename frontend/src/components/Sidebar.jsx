@@ -77,15 +77,15 @@ export default function Sidebar() {
           collapsed ? 'justify-center' : ''
         } ${
           active
-            ? 'bg-slate-100 text-[#0d1b3e]'
-            : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
+            ? 'bg-[#f0f0f0] text-[#1a1a1a]'
+            : 'text-[#8a8a8a] hover:bg-[#f5f5f5] hover:text-[#1a1a1a]'
         }`}
       >
         {active && !collapsed && (
-          <span className="absolute inset-y-2 right-0 w-0.5 rounded-full bg-[#0d1b3e]" />
+          <span className="absolute inset-y-2 right-0 w-0.5 rounded-full bg-[#2d2d2d]" />
         )}
         {active && collapsed && (
-          <span className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-[#0d1b3e]" />
+          <span className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-[#2d2d2d]" />
         )}
         <Icon className="h-5 w-5 shrink-0" />
         {!collapsed && <span>{label}</span>}
@@ -97,7 +97,7 @@ export default function Sidebar() {
     <>
       {/* Mobile backdrop */}
       <div
-        className={`fixed inset-0 z-30 bg-slate-950/35 backdrop-blur-sm transition lg:hidden ${
+        className={`fixed inset-0 z-30 bg-black/25 backdrop-blur-sm transition lg:hidden ${
           sidebarOpen ? 'opacity-100' : 'pointer-events-none opacity-0'
         }`}
         onClick={toggleSidebar}
@@ -106,7 +106,7 @@ export default function Sidebar() {
       <aside
         onMouseEnter={() => setSidebarHovered(true)}
         onMouseLeave={() => setSidebarHovered(false)}
-        className={`fixed inset-y-0 left-0 z-40 flex flex-col border-r border-slate-200 bg-white transition-all duration-300 ${
+        className={`fixed inset-y-0 left-0 z-40 flex flex-col border-r border-[#e5e5e5] bg-white transition-all duration-300 ${
           collapsed ? 'w-[72px] px-2' : 'w-[252px] px-4'
         } py-4 lg:translate-x-0 ${
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
@@ -115,13 +115,13 @@ export default function Sidebar() {
         {/* Agency name + collapse toggle */}
         <div className={`flex items-center ${collapsed ? 'justify-center' : 'justify-between px-2'}`}>
           {!collapsed && (
-            <p className="text-[15px] font-semibold tracking-tight text-slate-900">
+            <p className="text-[15px] font-semibold tracking-tight text-[#1a1a1a]">
               {agency?.name || 'Travel CRM'}
             </p>
           )}
           <button
             onClick={toggleSidebarCollapse}
-            className="hidden lg:flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+            className="hidden lg:flex h-7 w-7 items-center justify-center rounded-lg text-[#8a8a8a] transition hover:bg-[#f0f0f0] hover:text-[#404040]"
             title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           >
             {collapsed ? (
@@ -134,19 +134,19 @@ export default function Sidebar() {
 
         {/* Agent info */}
         <div
-          className={`mt-5 flex items-center rounded-[12px] border border-slate-200 bg-slate-50 ${
+          className={`mt-5 flex items-center rounded-[12px] border border-[#e5e5e5] bg-[#fafafa] ${
             collapsed ? 'justify-center px-2 py-3' : 'gap-3 px-3 py-3'
           }`}
         >
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[radial-gradient(circle_at_top,#43c3b4,#0d1b3e)] text-sm font-bold text-white">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#2d2d2d] text-sm font-bold text-white">
             {getInitials(agent?.name, 'LC')}
           </div>
           {!collapsed && (
             <div className="min-w-0">
-              <p className="truncate text-sm font-bold text-slate-900">
+              <p className="truncate text-sm font-bold text-[#1a1a1a]">
                 {agent?.name || 'Lead Curator'}
               </p>
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-[#8a8a8a]">
                 {agent?.isOnline ? 'Active Now' : 'Offline'}
               </p>
             </div>
@@ -166,7 +166,7 @@ export default function Sidebar() {
             <p className="eyebrow">Workspace</p>
           </div>
         )}
-        {collapsed && <hr className="mx-auto mt-6 w-8 border-slate-200" />}
+        {collapsed && <hr className="mx-auto mt-6 w-8 border-[#e5e5e5]" />}
         <nav className="mt-2 space-y-1">
           {utilityItems.map((item) => renderNavItem(item))}
         </nav>
@@ -177,7 +177,7 @@ export default function Sidebar() {
             <p className="eyebrow">Marketing</p>
           </div>
         )}
-        {collapsed && <hr className="mx-auto mt-6 w-8 border-slate-200" />}
+        {collapsed && <hr className="mx-auto mt-6 w-8 border-[#e5e5e5]" />}
         <nav className="mt-2 space-y-1">
           {marketingItems.map((item) => renderNavItem(item))}
         </nav>
@@ -196,7 +196,7 @@ export default function Sidebar() {
           <button
             onClick={() => logoutMutation.mutate()}
             title={collapsed ? 'Logout' : undefined}
-            className={`flex w-full items-center rounded-[10px] px-3 py-2.5 text-sm font-medium text-rose-600 transition hover:bg-rose-50 ${
+            className={`flex w-full items-center rounded-[10px] px-3 py-2.5 text-sm font-medium text-[#8a8a8a] transition hover:bg-[#f0f0f0] hover:text-[#1a1a1a] ${
               collapsed ? 'justify-center' : 'gap-3'
             }`}
           >

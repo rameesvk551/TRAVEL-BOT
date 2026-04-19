@@ -13,6 +13,16 @@
 
   :root {
     color-scheme: light;
+    --grey-900: #1a1a1a;
+    --grey-800: #2d2d2d;
+    --grey-700: #404040;
+    --grey-600: #525252;
+    --grey-500: #6b6b6b;
+    --grey-400: #8a8a8a;
+    --grey-300: #b0b0b0;
+    --grey-200: #d4d4d4;
+    --grey-100: #ebebeb;
+    --grey-50: #f5f5f5;
   }
 
   html,
@@ -25,8 +35,8 @@
     font-family: 'Manrope', system-ui, -apple-system, sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    color: #0d1b3e;
-    background: #f8f9fa;
+    color: var(--grey-900);
+    background: var(--grey-50);
   }
 
   button,
@@ -42,8 +52,8 @@
   }
 
   ::selection {
-    background: rgba(13, 27, 62, 0.15);
-    color: #0d1b3e;
+    background: rgba(64, 64, 64, 0.15);
+    color: var(--grey-900);
   }
 
   ::-webkit-scrollbar {
@@ -56,18 +66,18 @@
   }
 
   ::-webkit-scrollbar-thumb {
-    background: rgba(148, 163, 184, 0.4);
+    background: rgba(160, 160, 160, 0.4);
     border-radius: 9999px;
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    background: rgba(100, 116, 139, 0.55);
+    background: rgba(120, 120, 120, 0.55);
   }
 }
 
 @layer components {
   .shell-panel {
-    @apply rounded-[20px] border border-slate-200/90 bg-white/90 shadow-[0_10px_24px_-20px_rgba(15,23,42,0.22)] backdrop-blur;
+    @apply rounded-[20px] border border-slate-200/90 bg-white/90 shadow-[0_10px_24px_-20px_rgba(0,0,0,0.12)] backdrop-blur;
   }
 
   .shell-panel-soft {
@@ -75,15 +85,15 @@
   }
 
   .shell-input {
-    @apply w-full rounded-full border border-slate-200 bg-slate-100/90 px-4 py-2.5 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-emerald-600/20 focus:bg-white focus:ring-2 focus:ring-emerald-500/10;
+    @apply w-full rounded-full border border-slate-200 bg-slate-100/90 px-4 py-2.5 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:bg-white focus:ring-2 focus:ring-slate-300/30;
   }
 
   .shell-input-rect {
-    @apply w-full rounded-[14px] border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-emerald-600/20 focus:bg-white focus:ring-2 focus:ring-emerald-500/10;
+    @apply w-full rounded-[14px] border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:bg-white focus:ring-2 focus:ring-slate-300/30;
   }
 
   .shell-button-primary {
-    @apply inline-flex items-center justify-center gap-2 rounded-[14px] bg-[#0d1b3e] px-4 py-2.5 text-sm font-semibold text-white shadow-[0_8px_18px_-14px_rgba(13,27,62,0.55)] transition hover:bg-[#0a1628] active:scale-[0.99];
+    @apply inline-flex items-center justify-center gap-2 rounded-[14px] bg-[#2d2d2d] px-4 py-2.5 text-sm font-semibold text-white shadow-[0_8px_18px_-14px_rgba(0,0,0,0.45)] transition hover:bg-[#1a1a1a] active:scale-[0.99];
   }
 
   .shell-button-secondary {

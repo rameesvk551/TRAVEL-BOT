@@ -15,7 +15,7 @@ import { campaignsApi } from '../api/campaignsApi';
 
 const CAMPAIGN_TYPES = [
   { value: 'BROADCAST', label: 'Broadcast', icon: Megaphone, desc: 'General announcement to all or filtered audiences', color: 'bg-blue-500' },
-  { value: 'PROMOTIONAL', label: 'Promotional', icon: Gift, desc: 'Special offers, discounts, and deals', color: 'bg-emerald-500' },
+  { value: 'PROMOTIONAL', label: 'Promotional', icon: Gift, desc: 'Special offers, discounts, and deals', color: 'bg-[#f5f5f5]0' },
   { value: 'RE_ENGAGEMENT', label: 'Re-engagement', icon: RotateCcw, desc: 'Win back inactive customers', color: 'bg-amber-500' },
   { value: 'SEASONAL', label: 'Seasonal', icon: Sparkles, desc: 'Holiday/season-based campaigns', color: 'bg-violet-500' },
   { value: 'REVIEW_COLLECTION', label: 'Review Collection', icon: Star, desc: 'Request trip reviews manually', color: 'bg-pink-500' },
@@ -23,9 +23,9 @@ const CAMPAIGN_TYPES = [
 
 const AUDIENCE_MODES = [
   { value: 'all', label: 'All Clients', icon: Users, desc: 'Send to every customer in your database', color: 'text-blue-600', bg: 'bg-blue-50' },
-  { value: 'package_bookers', label: 'Package Bookers', icon: Package, desc: 'Clients who booked a specific package', color: 'text-emerald-600', bg: 'bg-emerald-50' },
+  { value: 'package_bookers', label: 'Package Bookers', icon: Package, desc: 'Clients who booked a specific package', color: 'text-[#404040]', bg: 'bg-[#f5f5f5]' },
   { value: 'package_enquirers', label: 'Package Enquiries', icon: Star, desc: 'Leads who enquired about a package but haven\'t booked', color: 'text-amber-600', bg: 'bg-amber-50' },
-  { value: 'past_travelers', label: 'Past Travelers', icon: Plane, desc: 'Customers with confirmed/completed bookings', color: 'text-teal-600', bg: 'bg-teal-50' },
+  { value: 'past_travelers', label: 'Past Travelers', icon: Plane, desc: 'Customers with confirmed/completed bookings', color: 'text-[#404040]', bg: 'bg-[#f0f0f0]' },
   { value: 'leads_only', label: 'Active Leads', icon: Inbox, desc: 'Current pipeline leads (filter by status)', color: 'text-indigo-600', bg: 'bg-indigo-50' },
   { value: 'by_booking_status', label: 'By Booking Status', icon: ShieldCheck, desc: 'Pending, confirmed, or completed bookings', color: 'text-violet-600', bg: 'bg-violet-50' },
   { value: 'import', label: 'Import Contacts', icon: Upload, desc: 'Upload a CSV or paste phone numbers', color: 'text-rose-600', bg: 'bg-rose-50' },
@@ -298,8 +298,8 @@ export default function CampaignWizard({ onClose, editCampaign = null }) {
                 <button
                   onClick={() => i < step && setStep(i)}
                   className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition ${
-                    isActive ? 'bg-[#0d1b3e] text-white shadow-sm' :
-                    isDone ? 'bg-emerald-50 text-emerald-700 cursor-pointer hover:bg-emerald-100' :
+                    isActive ? 'bg-[#2d2d2d] text-white shadow-sm' :
+                    isDone ? 'bg-[#f5f5f5] text-[#2d2d2d] cursor-pointer hover:bg-[#ebebeb]' :
                     'text-slate-400'
                   }`}
                 >
@@ -307,7 +307,7 @@ export default function CampaignWizard({ onClose, editCampaign = null }) {
                   <span className="hidden sm:inline">{s.label}</span>
                 </button>
                 {i < STEPS.length - 1 && (
-                  <ChevronRight className={`w-3.5 h-3.5 flex-shrink-0 ${isDone ? 'text-emerald-400' : 'text-slate-200'}`} />
+                  <ChevronRight className={`w-3.5 h-3.5 flex-shrink-0 ${isDone ? 'text-[#8a8a8a]' : 'text-slate-200'}`} />
                 )}
               </React.Fragment>
             );
@@ -324,7 +324,7 @@ export default function CampaignWizard({ onClose, editCampaign = null }) {
                 <input
                   type="text"
                   placeholder="e.g. Summer Maldives Promo"
-                  className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 outline-none transition"
+                  className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-[#f0f0f0]0 focus:ring-2 focus:ring-[#f0f0f0]0/20 outline-none transition"
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                   autoFocus
@@ -341,7 +341,7 @@ export default function CampaignWizard({ onClose, editCampaign = null }) {
                         key={t.value}
                         onClick={() => setFormData({ ...formData, type: t.value })}
                         className={`flex items-start gap-3 rounded-xl border-2 p-4 text-left transition ${
-                          isActive ? 'border-[#0d1b3e] bg-teal-50/50 ring-1 ring-teal-500/20' : 'border-slate-200 hover:border-slate-300'
+                          isActive ? 'border-[#2d2d2d] bg-[#f5f5f5] ring-1 ring-[#f0f0f0]0/20' : 'border-slate-200 hover:border-slate-300'
                         }`}
                       >
                         <div className={`flex h-9 w-9 items-center justify-center rounded-lg text-white ${t.color}`}>
@@ -352,7 +352,7 @@ export default function CampaignWizard({ onClose, editCampaign = null }) {
                           <p className="text-xs text-slate-500 mt-0.5">{t.desc}</p>
                         </div>
                         {isActive && (
-                          <div className="flex h-5 w-5 items-center justify-center rounded-full bg-[#0d1b3e] text-white">
+                          <div className="flex h-5 w-5 items-center justify-center rounded-full bg-[#2d2d2d] text-white">
                             <Check className="w-3 h-3" />
                           </div>
                         )}
@@ -372,7 +372,7 @@ export default function CampaignWizard({ onClose, editCampaign = null }) {
                 <input
                   type="text"
                   placeholder="Search templates..."
-                  className="w-full rounded-xl border border-slate-200 pl-10 pr-4 py-2.5 text-sm focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 outline-none transition"
+                  className="w-full rounded-xl border border-slate-200 pl-10 pr-4 py-2.5 text-sm focus:border-[#f0f0f0]0 focus:ring-2 focus:ring-[#f0f0f0]0/20 outline-none transition"
                   value={templateSearch}
                   onChange={(e) => setTemplateSearch(e.target.value)}
                 />
@@ -388,7 +388,7 @@ export default function CampaignWizard({ onClose, editCampaign = null }) {
                         setSelectedTemplate(t);
                       }}
                       className={`flex flex-col gap-2 rounded-xl border-2 p-3 text-left transition ${
-                        isSelected ? 'border-[#0d1b3e] bg-teal-50/50' : 'border-slate-200 hover:border-slate-300'
+                        isSelected ? 'border-[#2d2d2d] bg-[#f5f5f5]' : 'border-slate-200 hover:border-slate-300'
                       }`}
                     >
                       <div className="flex items-center justify-between">
@@ -397,7 +397,7 @@ export default function CampaignWizard({ onClose, editCampaign = null }) {
                           <span className="text-sm font-semibold text-slate-900 truncate">{t.displayName}</span>
                         </div>
                         {isSelected && (
-                          <div className="flex h-5 w-5 items-center justify-center rounded-full bg-[#0d1b3e] text-white flex-shrink-0">
+                          <div className="flex h-5 w-5 items-center justify-center rounded-full bg-[#2d2d2d] text-white flex-shrink-0">
                             <Check className="w-3 h-3" />
                           </div>
                         )}
@@ -420,7 +420,7 @@ export default function CampaignWizard({ onClose, editCampaign = null }) {
                 <textarea
                   rows={4}
                   placeholder="Type your message here... Use {{name}} for personalization."
-                  className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 outline-none transition resize-none"
+                  className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-[#f0f0f0]0 focus:ring-2 focus:ring-[#f0f0f0]0/20 outline-none transition resize-none"
                   value={formData.messageBody}
                   onChange={(e) => setFormData({ ...formData, messageBody: e.target.value, templateId: null })}
                 />
@@ -436,12 +436,12 @@ export default function CampaignWizard({ onClose, editCampaign = null }) {
             <div className="space-y-4 animate-in fade-in">
               {/* Audience Count Banner */}
               <div className={`flex items-center gap-3 rounded-xl p-4 ${
-                audienceMode === 'import' ? (importedIds.length > 0 ? 'bg-teal-50 border border-teal-200' : 'bg-slate-50 border border-slate-200')
-                : audienceCount === 0 ? 'bg-amber-50 border border-amber-200' : 'bg-teal-50 border border-teal-200'
+                audienceMode === 'import' ? (importedIds.length > 0 ? 'bg-[#f0f0f0] border border-[#d4d4d4]' : 'bg-slate-50 border border-slate-200')
+                : audienceCount === 0 ? 'bg-amber-50 border border-amber-200' : 'bg-[#f0f0f0] border border-[#d4d4d4]'
               }`}>
                 <Users className={`w-5 h-5 ${
-                  audienceMode === 'import' ? (importedIds.length > 0 ? 'text-teal-600' : 'text-slate-400')
-                  : audienceCount === 0 ? 'text-amber-600' : 'text-teal-600'
+                  audienceMode === 'import' ? (importedIds.length > 0 ? 'text-[#404040]' : 'text-slate-400')
+                  : audienceCount === 0 ? 'text-amber-600' : 'text-[#404040]'
                 }`} />
                 <div className="flex-1">
                   <p className={`text-sm font-bold ${
@@ -483,10 +483,10 @@ export default function CampaignWizard({ onClose, editCampaign = null }) {
                           if (m.value === 'advanced') setShowAdvanced(true);
                         }}
                         className={`flex flex-col items-center gap-2 rounded-xl border-2 p-3 text-center transition ${
-                          isActive ? 'border-[#0d1b3e] bg-teal-50/50 ring-1 ring-teal-500/20' : 'border-slate-200 hover:border-slate-300'
+                          isActive ? 'border-[#2d2d2d] bg-[#f5f5f5] ring-1 ring-[#f0f0f0]0/20' : 'border-slate-200 hover:border-slate-300'
                         }`}
                       >
-                        <div className={`flex h-9 w-9 items-center justify-center rounded-lg ${isActive ? 'bg-[#0d1b3e] text-white' : `${m.bg} ${m.color}`}`}>
+                        <div className={`flex h-9 w-9 items-center justify-center rounded-lg ${isActive ? 'bg-[#2d2d2d] text-white' : `${m.bg} ${m.color}`}`}>
                           <Icon className="w-4 h-4" />
                         </div>
                         <span className="text-xs font-semibold text-slate-800 leading-tight">{m.label}</span>
@@ -520,7 +520,7 @@ export default function CampaignWizard({ onClose, editCampaign = null }) {
                         <button
                           onClick={() => setSelectedPackageId(null)}
                           className={`flex items-center gap-3 rounded-xl border-2 p-3 text-left transition ${
-                            !selectedPackageId ? 'border-[#0d1b3e] bg-teal-50/50' : 'border-slate-200 hover:border-slate-300'
+                            !selectedPackageId ? 'border-[#2d2d2d] bg-[#f5f5f5]' : 'border-slate-200 hover:border-slate-300'
                           }`}
                         >
                           <Globe className="w-5 h-5 text-slate-400" />
@@ -537,7 +537,7 @@ export default function CampaignWizard({ onClose, editCampaign = null }) {
                             key={pkg.id}
                             onClick={() => setSelectedPackageId(pkg.id)}
                             className={`flex items-center gap-3 rounded-xl border-2 p-3 text-left transition ${
-                              isSelected ? 'border-[#0d1b3e] bg-teal-50/50' : 'border-slate-200 hover:border-slate-300'
+                              isSelected ? 'border-[#2d2d2d] bg-[#f5f5f5]' : 'border-slate-200 hover:border-slate-300'
                             }`}
                           >
                             {pkg.imageUrl ? (
@@ -552,7 +552,7 @@ export default function CampaignWizard({ onClose, editCampaign = null }) {
                               <p className="text-xs text-slate-400">{(pkg.destinations || []).join(', ') || pkg.category || '-'}</p>
                             </div>
                             {isSelected && (
-                              <div className="flex h-5 w-5 items-center justify-center rounded-full bg-[#0d1b3e] text-white flex-shrink-0">
+                              <div className="flex h-5 w-5 items-center justify-center rounded-full bg-[#2d2d2d] text-white flex-shrink-0">
                                 <Check className="w-3 h-3" />
                               </div>
                             )}
@@ -576,7 +576,7 @@ export default function CampaignWizard({ onClose, editCampaign = null }) {
                                 : [...selectedLeadStatuses, s]
                                 )}
                                 className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${
-                                  isSelected ? 'bg-[#0d1b3e] text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                                  isSelected ? 'bg-[#2d2d2d] text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                                 }`}
                               >
                                 {s.replace('_', ' ')}
@@ -600,7 +600,7 @@ export default function CampaignWizard({ onClose, editCampaign = null }) {
                           onClick={() => setSelectedBookingStatus(s.value)}
                           className={`rounded-xl px-4 py-2.5 text-sm font-semibold transition ${
                             selectedBookingStatus === s.value
-                              ? 'bg-[#0d1b3e] text-white shadow-sm'
+                              ? 'bg-[#2d2d2d] text-white shadow-sm'
                               : 'border border-slate-200 text-slate-600 hover:bg-slate-50'
                           }`}
                         >
@@ -633,12 +633,12 @@ export default function CampaignWizard({ onClose, editCampaign = null }) {
 
                     <div>
                       <label className="block text-xs font-semibold text-slate-600 mb-1">
-                        Or paste contacts (one per line: <code className="text-teal-600">Name, Phone</code> or just <code className="text-teal-600">Phone</code>)
+                        Or paste contacts (one per line: <code className="text-[#404040]">Name, Phone</code> or just <code className="text-[#404040]">Phone</code>)
                       </label>
                       <textarea
                         rows={5}
                         placeholder={`John Doe, +919876543210\nJane, 8765432109\n+917654321098`}
-                        className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm font-mono focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 outline-none transition resize-none"
+                        className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm font-mono focus:border-[#f0f0f0]0 focus:ring-2 focus:ring-[#f0f0f0]0/20 outline-none transition resize-none"
                         value={importText}
                         onChange={(e) => setImportText(e.target.value)}
                       />
@@ -648,14 +648,14 @@ export default function CampaignWizard({ onClose, editCampaign = null }) {
                       <button
                         onClick={() => processImportText(importText)}
                         disabled={!importText.trim() || importStatus === 'importing'}
-                        className="flex items-center gap-2 rounded-xl bg-[#0d1b3e] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#0b5a51] transition disabled:opacity-50"
+                        className="flex items-center gap-2 rounded-xl bg-[#2d2d2d] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#1a1a1a] transition disabled:opacity-50"
                       >
                         <UserPlus className="w-4 h-4" />
                         {importStatus === 'importing' ? 'Importing...' : 'Import Contacts'}
                       </button>
 
                       {importStatus === 'done' && (
-                        <span className="flex items-center gap-1.5 text-sm font-semibold text-emerald-700">
+                        <span className="flex items-center gap-1.5 text-sm font-semibold text-[#2d2d2d]">
                           <UserCheck className="w-4 h-4" /> {importCount} contacts imported!
                         </span>
                       )}
@@ -685,7 +685,7 @@ export default function CampaignWizard({ onClose, editCampaign = null }) {
                       <div>
                         <label className="block text-xs font-semibold text-slate-600 mb-1">Source</label>
                         <select
-                          className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 outline-none"
+                          className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:border-[#f0f0f0]0 outline-none"
                           value={formData.audienceFilter.source || ''}
                           onChange={(e) => updateAdvancedFilter('source', e.target.value)}
                         >
@@ -703,28 +703,28 @@ export default function CampaignWizard({ onClose, editCampaign = null }) {
                         <input
                           type="text"
                           placeholder="e.g. Maldives, Bali"
-                          className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 outline-none"
+                          className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:border-[#f0f0f0]0 outline-none"
                           value={(formData.audienceFilter.destinations || []).join(', ')}
                           onChange={(e) => updateAdvancedFilter('destinations', e.target.value.split(',').map((d) => d.trim()).filter(Boolean))}
                         />
                       </div>
                       <div>
                         <label className="block text-xs font-semibold text-slate-600 mb-1">Created After</label>
-                        <input type="date" className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 outline-none"
+                        <input type="date" className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:border-[#f0f0f0]0 outline-none"
                           value={formData.audienceFilter.createdAfter || ''}
                           onChange={(e) => updateAdvancedFilter('createdAfter', e.target.value)}
                         />
                       </div>
                       <div>
                         <label className="block text-xs font-semibold text-slate-600 mb-1">Created Before</label>
-                        <input type="date" className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 outline-none"
+                        <input type="date" className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:border-[#f0f0f0]0 outline-none"
                           value={formData.audienceFilter.createdBefore || ''}
                           onChange={(e) => updateAdvancedFilter('createdBefore', e.target.value)}
                         />
                       </div>
                       <div>
                         <label className="block text-xs font-semibold text-slate-600 mb-1">Last Active Before</label>
-                        <input type="date" className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 outline-none"
+                        <input type="date" className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:border-[#f0f0f0]0 outline-none"
                           value={formData.audienceFilter.lastActiveBefore || ''}
                           onChange={(e) => updateAdvancedFilter('lastActiveBefore', e.target.value)}
                         />
@@ -732,7 +732,7 @@ export default function CampaignWizard({ onClose, editCampaign = null }) {
                       <div>
                         <label className="block text-xs font-semibold text-slate-600 mb-1">Spam Protection (days)</label>
                         <input type="number" placeholder="e.g. 7"
-                          className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:border-teal-500 outline-none"
+                          className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:border-[#f0f0f0]0 outline-none"
                           value={formData.audienceFilter.excludeCampaignDays || ''}
                           onChange={(e) => updateAdvancedFilter('excludeCampaignDays', e.target.value)}
                         />
@@ -745,7 +745,7 @@ export default function CampaignWizard({ onClose, editCampaign = null }) {
                 {audienceMode !== 'advanced' && audienceMode !== 'import' && (
                   <button
                     onClick={() => setShowAdvanced(!showAdvanced)}
-                    className="flex items-center gap-1.5 text-xs font-semibold text-teal-600 hover:text-teal-700 transition mt-2"
+                    className="flex items-center gap-1.5 text-xs font-semibold text-[#404040] hover:text-[#2d2d2d] transition mt-2"
                   >
                     <Filter className="w-3.5 h-3.5" />
                     {showAdvanced ? 'Hide advanced filters' : 'Add advanced filters'}
@@ -762,10 +762,10 @@ export default function CampaignWizard({ onClose, editCampaign = null }) {
                 <button
                   onClick={() => setFormData({ ...formData, scheduleMode: 'now' })}
                   className={`flex flex-col items-center gap-3 rounded-xl border-2 p-6 transition ${
-                    formData.scheduleMode === 'now' ? 'border-[#0d1b3e] bg-teal-50/50' : 'border-slate-200 hover:border-slate-300'
+                    formData.scheduleMode === 'now' ? 'border-[#2d2d2d] bg-[#f5f5f5]' : 'border-slate-200 hover:border-slate-300'
                   }`}
                 >
-                  <div className={`flex h-12 w-12 items-center justify-center rounded-full ${formData.scheduleMode === 'now' ? 'bg-[#0d1b3e] text-white' : 'bg-slate-100 text-slate-400'}`}>
+                  <div className={`flex h-12 w-12 items-center justify-center rounded-full ${formData.scheduleMode === 'now' ? 'bg-[#2d2d2d] text-white' : 'bg-slate-100 text-slate-400'}`}>
                     <Send className="w-5 h-5" />
                   </div>
                   <div className="text-center">
@@ -776,10 +776,10 @@ export default function CampaignWizard({ onClose, editCampaign = null }) {
                 <button
                   onClick={() => setFormData({ ...formData, scheduleMode: 'scheduled' })}
                   className={`flex flex-col items-center gap-3 rounded-xl border-2 p-6 transition ${
-                    formData.scheduleMode === 'scheduled' ? 'border-[#0d1b3e] bg-teal-50/50' : 'border-slate-200 hover:border-slate-300'
+                    formData.scheduleMode === 'scheduled' ? 'border-[#2d2d2d] bg-[#f5f5f5]' : 'border-slate-200 hover:border-slate-300'
                   }`}
                 >
-                  <div className={`flex h-12 w-12 items-center justify-center rounded-full ${formData.scheduleMode === 'scheduled' ? 'bg-[#0d1b3e] text-white' : 'bg-slate-100 text-slate-400'}`}>
+                  <div className={`flex h-12 w-12 items-center justify-center rounded-full ${formData.scheduleMode === 'scheduled' ? 'bg-[#2d2d2d] text-white' : 'bg-slate-100 text-slate-400'}`}>
                     <Clock className="w-5 h-5" />
                   </div>
                   <div className="text-center">
@@ -793,7 +793,7 @@ export default function CampaignWizard({ onClose, editCampaign = null }) {
                   <label className="block text-sm font-semibold text-slate-700 mb-2">Schedule Date & Time</label>
                   <input
                     type="datetime-local"
-                    className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-teal-500 outline-none"
+                    className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-[#f0f0f0]0 outline-none"
                     value={formData.scheduledAt || ''}
                     onChange={(e) => setFormData({ ...formData, scheduledAt: e.target.value })}
                     min={new Date().toISOString().slice(0, 16)}
@@ -826,11 +826,11 @@ export default function CampaignWizard({ onClose, editCampaign = null }) {
                 </div>
                 <div className="flex justify-between p-4">
                   <span className="text-sm text-slate-500">Audience</span>
-                  <span className="text-sm font-semibold text-teal-700">{getAudienceSummary()}</span>
+                  <span className="text-sm font-semibold text-[#2d2d2d]">{getAudienceSummary()}</span>
                 </div>
                 <div className="flex justify-between p-4">
                   <span className="text-sm text-slate-500">Est. Recipients</span>
-                  <span className="text-sm font-bold text-teal-700">
+                  <span className="text-sm font-bold text-[#2d2d2d]">
                     {audienceMode === 'import' ? importedIds.length : (audienceCount || 0).toLocaleString()}
                   </span>
                 </div>
@@ -867,7 +867,7 @@ export default function CampaignWizard({ onClose, editCampaign = null }) {
             <button
               onClick={() => setStep(step + 1)}
               disabled={!canProceed()}
-              className="flex items-center gap-1.5 rounded-xl bg-[#0d1b3e] px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#0b5a51] transition disabled:opacity-40 disabled:cursor-not-allowed"
+              className="flex items-center gap-1.5 rounded-xl bg-[#2d2d2d] px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#1a1a1a] transition disabled:opacity-40 disabled:cursor-not-allowed"
             >
               Continue
               <ChevronRight className="w-4 h-4" />
@@ -876,7 +876,7 @@ export default function CampaignWizard({ onClose, editCampaign = null }) {
             <button
               onClick={handleSubmit}
               disabled={sending}
-              className="flex items-center gap-1.5 rounded-xl bg-[#0d1b3e] px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#0b5a51] transition disabled:opacity-60"
+              className="flex items-center gap-1.5 rounded-xl bg-[#2d2d2d] px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#1a1a1a] transition disabled:opacity-60"
             >
               {sending ? (
                 <><span className="animate-spin">⏳</span> Saving...</>

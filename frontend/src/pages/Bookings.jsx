@@ -17,6 +17,13 @@ const EMPTY_BOOKING_FORM = {
   notes: '',
 };
 
+function getListPayload(response) {
+  if (Array.isArray(response?.data?.data)) return response.data.data;
+  if (Array.isArray(response?.data)) return response.data;
+  if (Array.isArray(response)) return response;
+  return [];
+}
+
 function Field({ label, children }) {
   return (
     <label className="block">
@@ -35,25 +42,25 @@ export default function Bookings() {
     queryKey: ['bookings'],
     queryFn: () => bookingsApi.list({}),
   });
-  const bookings = bookingsData?.data || [];
+  const bookings = getListPayload(bookingsData);
 
   const { data: customersResponse } = useQuery({
     queryKey: ['customers'],
     queryFn: () => client.get('/customers').then(r => r.data),
   });
-  const customers = customersResponse?.data || [];
+  const customers = getListPayload(customersResponse);
 
   const { data: packagesResponse } = useQuery({
     queryKey: ['packages'],
     queryFn: () => client.get('/packages').then(r => r.data),
   });
-  const packages = packagesResponse?.data || [];
+  const packages = getListPayload(packagesResponse);
 
   const { data: itinerariesResponse } = useQuery({
     queryKey: ['itineraries'],
     queryFn: () => client.get('/itineraries').then(r => r.data),
   });
-  const itineraries = itinerariesResponse?.data || [];
+  const itineraries = getListPayload(itinerariesResponse);
 
   const createBooking = useMutation({
     mutationFn: bookingsApi.create,
@@ -128,7 +135,7 @@ export default function Bookings() {
                     <td className="px-4 py-4 text-sm text-slate-600">{booking.package?.name || 'Custom'}</td>
                     <td className="px-4 py-4 text-sm">{formatDate(booking.travelDate)}</td>
                     <td className="px-4 py-4">
-                      <span className="badge bg-emerald-100 text-emerald-700">{booking.status}</span>
+                      <span className="badge bg-[#ebebeb] text-[#2d2d2d]">{booking.status}</span>
                     </td>
                   </tr>
                 ))

@@ -80,7 +80,7 @@ export default function AppTopbar() {
           >
             <QuestionMarkCircleIcon className="h-5 w-5" />
           </button>
-          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[radial-gradient(circle_at_top,#43c3b4,#0d1b3e)] text-xs font-bold text-white">
+          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[radial-gradient(circle_at_top,#43c3b4,#2d2d2d)] text-xs font-bold text-white">
             {getInitials(agent?.name)}
           </div>
         </div>

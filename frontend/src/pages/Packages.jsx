@@ -97,7 +97,7 @@ export default function Packages() {
                     <td className="px-4 py-4 text-sm text-slate-600">{pkg.duration || '—'}</td>
                     <td className="px-4 py-4 text-sm font-medium text-slate-900">{formatCurrency(pkg.basePrice)}</td>
                     <td className="px-4 py-4">
-                      <span className={`badge ${pkg.isActive ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>
+                      <span className={`badge ${pkg.isActive ? 'bg-[#ebebeb] text-[#2d2d2d]' : 'bg-slate-100 text-slate-600'}`}>
                         {pkg.isActive ? 'Active' : 'Inactive'}
                       </span>
                     </td>

@@ -249,7 +249,7 @@ export default function PackageForm() {
                 type="file"
                 accept="image/*"
                 onChange={handleImageChange}
-                className="block w-full text-sm text-slate-600 file:mr-4 file:rounded-lg file:border-0 file:bg-[#0d1b3e] file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-[#0b5d54]"
+                className="block w-full text-sm text-slate-600 file:mr-4 file:rounded-lg file:border-0 file:bg-[#2d2d2d] file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-[#1a1a1a]"
               />
 
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
