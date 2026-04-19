@@ -74,6 +74,13 @@ async function ensureBookingsSchema() {
     type: Sequelize.UUID,
     allowNull: true,
   });
+
+  // Bookings can now be created directly from a customer without an originating lead.
+  await sequelize.getQueryInterface().changeColumn('bookings', 'lead_id', {
+    type: Sequelize.UUID,
+    allowNull: true,
+  });
+  console.log('[SchemaBootstrap] Updated bookings.lead_id to allow null');
 }
 
 async function ensureItinerariesSchema() {
