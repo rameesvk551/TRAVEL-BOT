@@ -14,49 +14,49 @@ import { analyticsApi } from '../api/analyticsApi';
 
 
 /* ───────────────── Color Palette ───────────────── */
-const COLORS = ['#2d2d2d', '#525252', '#737373', '#8a8a8a', '#404040', '#6b6b6b', '#a3a3a3', '#1a1a1a'];
-const PRIMARY = '#2d2d2d';
-const PRIMARY_LIGHT = '#525252';
-const ACCENT = '#6b6b6b';
-const ACCENT_LIGHT = '#8a8a8a';
-const TEAL = '#2d2d2d';
-const TEAL_LIGHT = '#6b6b6b';
+const COLORS = ['#6366f1', '#8b5cf6', '#0ea5e9', '#10b981', '#f59e0b', '#f43f5e', '#06b6d4', '#ec4899'];
+const PRIMARY = '#6366f1';
+const PRIMARY_LIGHT = '#818cf8';
+const ACCENT = '#8b5cf6';
+const ACCENT_LIGHT = '#a78bfa';
+const TEAL = '#10b981';
+const TEAL_LIGHT = '#34d399';
 
 /* ── Reusable SVG gradients for bar charts ─────── */
 function ChartGradients() {
   return (
     <defs>
       <linearGradient id="barPrimary" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stopColor="#404040" stopOpacity={1} />
-        <stop offset="100%" stopColor="#2d2d2d" stopOpacity={1} />
+        <stop offset="0%" stopColor="#818cf8" stopOpacity={1} />
+        <stop offset="100%" stopColor="#6366f1" stopOpacity={1} />
       </linearGradient>
       <linearGradient id="barAccent" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stopColor="#8a8a8a" stopOpacity={1} />
-        <stop offset="100%" stopColor="#6b6b6b" stopOpacity={1} />
+        <stop offset="0%" stopColor="#a78bfa" stopOpacity={1} />
+        <stop offset="100%" stopColor="#8b5cf6" stopOpacity={1} />
       </linearGradient>
       <linearGradient id="barSecondary" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stopColor="#d4d4d4" stopOpacity={0.9} />
-        <stop offset="100%" stopColor="#b0b0b0" stopOpacity={0.7} />
+        <stop offset="0%" stopColor="#c7d2fe" stopOpacity={0.9} />
+        <stop offset="100%" stopColor="#a5b4fc" stopOpacity={0.7} />
       </linearGradient>
       <linearGradient id="barSky" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stopColor="#737373" stopOpacity={1} />
-        <stop offset="100%" stopColor="#525252" stopOpacity={1} />
+        <stop offset="0%" stopColor="#38bdf8" stopOpacity={1} />
+        <stop offset="100%" stopColor="#0ea5e9" stopOpacity={1} />
       </linearGradient>
       <linearGradient id="barAmber" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stopColor="#8a8a8a" stopOpacity={1} />
-        <stop offset="100%" stopColor="#6b6b6b" stopOpacity={1} />
+        <stop offset="0%" stopColor="#fbbf24" stopOpacity={1} />
+        <stop offset="100%" stopColor="#f59e0b" stopOpacity={1} />
       </linearGradient>
       <linearGradient id="barRose" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stopColor="#a3a3a3" stopOpacity={1} />
-        <stop offset="100%" stopColor="#8a8a8a" stopOpacity={1} />
+        <stop offset="0%" stopColor="#fb7185" stopOpacity={1} />
+        <stop offset="100%" stopColor="#f43f5e" stopOpacity={1} />
       </linearGradient>
       <linearGradient id="areaIndigo" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="5%" stopColor="#2d2d2d" stopOpacity={0.25} />
-        <stop offset="95%" stopColor="#2d2d2d" stopOpacity={0.02} />
+        <stop offset="5%" stopColor="#6366f1" stopOpacity={0.2} />
+        <stop offset="95%" stopColor="#6366f1" stopOpacity={0.02} />
       </linearGradient>
       <linearGradient id="areaTeal" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="5%" stopColor="#6b6b6b" stopOpacity={0.2} />
-        <stop offset="95%" stopColor="#6b6b6b" stopOpacity={0} />
+        <stop offset="5%" stopColor="#10b981" stopOpacity={0.2} />
+        <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
       </linearGradient>
     </defs>
   );
@@ -64,16 +64,15 @@ function ChartGradients() {
 
 /* ───────────────── Tab definitions ───────────────── */
 const TABS = [
-  { key: 'sales', label: '💰 Sales', emoji: '💰' },
-  { key: 'bookings', label: '📋 Bookings', emoji: '📋' },
-  { key: 'leads', label: '🔁 Pipeline', emoji: '🔁' },
-  { key: 'agents', label: '👨‍💼 Users', emoji: '👨‍💼' },
-  { key: 'packages', label: '🧳 Packages', emoji: '🧳' },
-  { key: 'lost', label: '📉 Lost Leads', emoji: '📉' },
-  { key: 'reviews', label: '⭐ Reviews', emoji: '⭐' },
-  { key: 'sources', label: '📦 Sources', emoji: '📦' },
-  { key: 'campaigns', label: '📣 Campaigns', emoji: '📣' },
-
+  { key: 'sales', label: 'Sales' },
+  { key: 'bookings', label: 'Bookings' },
+  { key: 'leads', label: 'Pipeline' },
+  { key: 'agents', label: 'Users' },
+  { key: 'packages', label: 'Packages' },
+  { key: 'lost', label: 'Lost Leads' },
+  { key: 'reviews', label: 'Reviews' },
+  { key: 'sources', label: 'Sources' },
+  { key: 'campaigns', label: 'Campaigns' },
 ];
 
 /* ───────────────── Date Range Presets ───────────────── */
@@ -107,16 +106,16 @@ function KpiCard({ label, value, subValue, change, prefix = '' }) {
   const isUp = change > 0;
   const isDown = change < 0;
   return (
-    <div className="rounded-[14px] border border-slate-200 bg-white p-5 transition-shadow hover:shadow-md">
-      <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">{label}</p>
-      <p className="mt-2 text-[28px] font-bold tracking-tight text-slate-900">{prefix}{value}</p>
+    <div className="kpi-card">
+      <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-neutral-400">{label}</p>
+      <p className="mt-2 text-[28px] font-bold tracking-tight text-neutral-900">{prefix}{value}</p>
       <div className="mt-1 flex items-center gap-2">
         {change !== null && change !== undefined && (
-          <span className={`inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-[11px] font-bold ${isUp ? 'bg-[#f5f5f5] text-[#404040]' : isDown ? 'bg-rose-50 text-rose-600' : 'bg-slate-50 text-slate-500'}`}>
+          <span className={`inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-[11px] font-bold ${isUp ? 'bg-emerald-50 text-emerald-700' : isDown ? 'bg-rose-50 text-rose-600' : 'bg-neutral-50 text-neutral-500'}`}>
             {isUp ? '↑' : isDown ? '↓' : '→'} {Math.abs(change)}%
           </span>
         )}
-        {subValue && <span className="text-xs text-slate-400">{subValue}</span>}
+        {subValue && <span className="text-xs text-neutral-400">{subValue}</span>}
       </div>
     </div>
   );
@@ -124,14 +123,14 @@ function KpiCard({ label, value, subValue, change, prefix = '' }) {
 
 function ReportSection({ title, description, children, onExport }) {
   return (
-    <div className="rounded-[14px] border border-slate-200 bg-white">
-      <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+    <div className="section-card">
+      <div className="section-header">
         <div>
-          <h3 className="text-sm font-bold text-slate-900">{title}</h3>
-          {description && <p className="mt-0.5 text-xs text-slate-400">{description}</p>}
+          <h3 className="text-sm font-bold text-neutral-900">{title}</h3>
+          {description && <p className="mt-0.5 text-xs text-neutral-400">{description}</p>}
         </div>
         {onExport && (
-          <button onClick={onExport} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-500 transition hover:bg-slate-50 hover:text-slate-700">
+          <button onClick={onExport} className="shell-button-ghost text-xs">
             ↓ Export CSV
           </button>
         )}
@@ -142,24 +141,24 @@ function ReportSection({ title, description, children, onExport }) {
 }
 
 function ChartSkeleton() {
-  return <div className="flex h-64 items-center justify-center text-sm text-slate-400">Loading chart data...</div>;
+  return <div className="flex h-64 items-center justify-center text-sm text-neutral-400">Loading chart data...</div>;
 }
 
 function EmptyState({ message }) {
-  return <div className="flex h-48 items-center justify-center text-sm text-slate-400">{message || 'No data available for this period.'}</div>;
+  return <div className="flex h-48 items-center justify-center text-sm text-neutral-400">{message || 'No data available for this period.'}</div>;
 }
 
 function CustomTooltip({ active, payload, label, formatter }) {
   if (!active || !payload?.length) return null;
   return (
-    <div className="rounded-2xl border border-slate-200/60 bg-white/95 backdrop-blur-xl px-5 py-4 shadow-[0_20px_60px_-12px_rgba(0,0,0,0.15)]" style={{ minWidth: 160 }}>
-      <p className="mb-2.5 text-[11px] font-bold uppercase tracking-[0.2em] text-slate-400">{label}</p>
+    <div className="rounded-[var(--radius-md)] border border-neutral-200 bg-white/95 backdrop-blur-xl px-5 py-4 shadow-xl" style={{ minWidth: 160 }}>
+      <p className="mb-2.5 text-[11px] font-bold uppercase tracking-[0.2em] text-neutral-400">{label}</p>
       <div className="space-y-1.5">
         {payload.map((p, i) => (
           <div key={i} className="flex items-center gap-2.5">
             <span className="h-2.5 w-2.5 rounded-full shadow-sm" style={{ background: p.color }} />
-            <span className="text-[13px] text-slate-500">{p.name}</span>
-            <span className="ml-auto text-[13px] font-bold text-slate-900">{formatter ? formatter(p.value) : p.value?.toLocaleString('en-IN')}</span>
+            <span className="text-[13px] text-neutral-500">{p.name}</span>
+            <span className="ml-auto text-[13px] font-bold text-neutral-900">{formatter ? formatter(p.value) : p.value?.toLocaleString('en-IN')}</span>
           </div>
         ))}
       </div>
@@ -495,7 +494,7 @@ function AgentTab({ params }) {
                     <td className="py-3 pr-4 text-right text-sm font-medium text-slate-600">{a.leadsAssigned}</td>
                     <td className="py-3 pr-4 text-right text-sm font-bold text-[#404040]">{a.leadsConverted}</td>
                     <td className="py-3 pr-4 text-right">
-                      <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-bold ${a.conversionRate >= 20 ? 'bg-[#f5f5f5] text-[#2d2d2d]' : a.conversionRate >= 10 ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-500'}`}>
+                      <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-bold ${a.conversionRate >= 20 ? 'bg-emerald-50 text-emerald-700' : a.conversionRate >= 10 ? 'bg-amber-50 text-amber-700' : 'bg-neutral-100 text-neutral-500'}`}>
                         {a.conversionRate}%
                       </span>
                     </td>
@@ -568,7 +567,7 @@ function PackageTab({ params }) {
                     <td className="py-3 pr-4 text-right text-sm text-slate-600">{p.leads}</td>
                     <td className="py-3 pr-4 text-right text-sm font-bold text-[#404040]">{p.bookingCount}</td>
                     <td className="py-3 pr-4 text-right">
-                      <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-bold ${p.conversionRate >= 30 ? 'bg-[#f5f5f5] text-[#2d2d2d]' : p.conversionRate >= 15 ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-500'}`}>
+                      <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-bold ${p.conversionRate >= 30 ? 'bg-emerald-50 text-emerald-700' : p.conversionRate >= 15 ? 'bg-amber-50 text-amber-700' : 'bg-neutral-100 text-neutral-500'}`}>
                         {p.conversionRate}%
                       </span>
                     </td>
@@ -802,7 +801,7 @@ function SourceTab({ params }) {
                   <div className="flex items-center gap-4">
                     <span className="text-sm text-slate-500">{s.leads} leads</span>
                     <span className="text-sm font-semibold text-[#404040]">{s.booked} booked</span>
-                    <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${s.conversionRate >= 20 ? 'bg-[#f5f5f5] text-[#2d2d2d]' : s.conversionRate >= 10 ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-500'}`}>
+                    <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${s.conversionRate >= 20 ? 'bg-emerald-50 text-emerald-700' : s.conversionRate >= 10 ? 'bg-amber-50 text-amber-700' : 'bg-neutral-100 text-neutral-500'}`}>
                       {s.conversionRate}%
                     </span>
                   </div>
@@ -971,10 +970,10 @@ export default function Analytics() {
   return (
     <div className="w-full space-y-5">
       {/* Header */}
-      <section className="flex flex-col gap-3 border-b border-slate-200 pb-4 md:flex-row md:items-center md:justify-between">
+      <section className="flex flex-col gap-3 border-b border-neutral-200 pb-4 md:flex-row md:items-center md:justify-between">
         <div>
-          <h1 className="text-[28px] font-bold tracking-tight text-slate-950">Reports & Analytics</h1>
-          <p className="text-sm text-slate-500">Deep business insights across 12 reports. Export any report as CSV.</p>
+          <h1 className="page-heading">Reports & Analytics</h1>
+          <p className="page-subtext">Deep business insights across 12 reports. Export any report as CSV.</p>
         </div>
         <div className="flex items-center gap-2">
           {DATE_PRESETS.map((p) => (
@@ -995,13 +994,12 @@ export default function Analytics() {
           <button
             key={tab.key}
             onClick={() => setActiveTab(tab.key)}
-            className={`flex shrink-0 items-center gap-1.5 rounded-xl px-4 py-2.5 text-sm font-semibold transition ${activeTab === tab.key
-                ? 'bg-gradient-to-r from-indigo-500 to-violet-500 text-white shadow-md shadow-indigo-500/25'
-                : 'border border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:text-slate-700'
+            className={`flex shrink-0 items-center gap-1.5 rounded-[var(--radius-md)] px-4 py-2.5 text-sm font-semibold transition ${activeTab === tab.key
+                ? 'bg-neutral-900 text-white shadow-sm'
+                : 'border border-neutral-200 bg-white text-neutral-500 hover:border-neutral-300 hover:text-neutral-700'
               }`}
           >
-            <span>{tab.emoji}</span>
-            <span className="hidden sm:inline">{tab.label.replace(tab.emoji + ' ', '')}</span>
+            <span>{tab.label}</span>
           </button>
         ))}
       </section>

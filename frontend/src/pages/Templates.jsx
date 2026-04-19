@@ -13,14 +13,14 @@ export default function Templates() {
   const prebuiltTemplates = prebuiltData?.data || [];
   const agencyTemplates = agencyData?.data || [];
 
-  if (prebuiltLoading || agencyLoading) return <div className="p-8 text-center text-slate-500">Loading templates...</div>;
+  if (prebuiltLoading || agencyLoading) return <div className="p-8 text-center text-neutral-400">Loading templates...</div>;
 
   return (
-    <div className="p-8 space-y-6 animate-in fade-in">
+    <div className="w-full space-y-6 page-enter">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Template Messages</h1>
-          <p className="text-slate-500 mt-1">Manage standard replies and marketing broadcasts.</p>
+          <h1 className="page-heading">Template Messages</h1>
+          <p className="page-subtext mt-1">Manage standard replies and marketing broadcasts.</p>
         </div>
         <button className="shell-button-primary">
           <Plus className="w-4 h-4 mr-2" />
@@ -28,32 +28,32 @@ export default function Templates() {
         </button>
       </div>
 
-      <div className="flex items-center gap-4 bg-white p-2 rounded-lg border border-slate-200 shadow-sm">
+      <div className="flex items-center gap-4 bg-white p-2 rounded-[var(--radius-md)] border border-neutral-200 shadow-sm">
         <div className="flex-1 relative">
-          <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" />
           <input
             type="text"
             placeholder="Search templates (name, content, etc.)"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 bg-transparent border-none focus:ring-0 focus:outline-none"
+            className="w-full pl-10 pr-4 py-2 bg-transparent border-none focus:ring-0 focus:outline-none text-sm"
           />
         </div>
-        <div className="h-8 w-px bg-slate-200"></div>
-        <button className="px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 rounded-md">
+        <div className="h-8 w-px bg-neutral-200"></div>
+        <button className="px-4 py-2 text-sm font-medium text-neutral-600 hover:bg-neutral-50 rounded-[var(--radius-sm)] transition-colors">
           ⟳ Sync Status
         </button>
       </div>
 
-      <div className="flex border-b border-slate-200">
+      <div className="flex border-b border-neutral-200">
         {['All', 'Draft', 'Pending', 'Approved', 'Rejected'].map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
             className={`px-6 py-3 font-medium text-sm border-b-2 transition-colors ${
               activeTab === tab
-                ? 'border-[#2d2d2d] text-[#1a1a1a]'
-                : 'border-transparent text-slate-500 hover:text-slate-700'
+                ? 'border-neutral-900 text-neutral-900'
+                : 'border-transparent text-neutral-400 hover:text-neutral-600'
             }`}
           >
             {tab}
@@ -64,7 +64,7 @@ export default function Templates() {
       <div className="flex gap-8 items-start">
         {/* Categories Sidebar */}
         <div className="w-64 shrink-0 space-y-1">
-          <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3 px-3">Categories</p>
+          <p className="eyebrow mb-3 px-3">Categories</p>
           {[
             { id: 'ALL', name: 'All Templates', icon: MessageSquare },
             { id: 'MARKETING', name: 'Marketing', icon: MessageSquare },
@@ -75,10 +75,10 @@ export default function Templates() {
               <button
                 key={cat.id}
                 onClick={() => setCategoryFilter(cat.id)}
-                className={`w-full flex items-center gap-3 px-3 py-2 rounded-md transition-colors text-sm font-medium ${
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-[var(--radius-sm)] transition-colors text-sm font-medium ${
                   categoryFilter === cat.id
-                    ? 'bg-[#f0f0f0] text-[#1a1a1a]'
-                    : 'text-slate-600 hover:bg-slate-50'
+                    ? 'bg-neutral-900 text-white'
+                    : 'text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800'
                 }`}
               >
                 <Icon className="w-4 h-4" />
@@ -96,11 +96,11 @@ export default function Templates() {
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Preset Gallery</p>
-                  <h2 className="text-xl font-bold text-slate-900 mt-1">Travel templates</h2>
-                  <p className="text-sm text-slate-500">Pick a prebuilt starting point and turn it into a send-ready WhatsApp template.</p>
+                  <p className="eyebrow">Preset Gallery</p>
+                  <h2 className="text-xl font-bold text-neutral-900 mt-1">Travel templates</h2>
+                  <p className="text-sm text-neutral-400">Pick a prebuilt starting point and turn it into a send-ready WhatsApp template.</p>
                 </div>
-                <span className="text-sm text-slate-500">{prebuiltTemplates.length} templates</span>
+                <span className="text-sm text-neutral-400">{prebuiltTemplates.length} templates</span>
               </div>
               
               <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -117,11 +117,11 @@ export default function Templates() {
           <div className="space-y-4">
              <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Saved Library</p>
-                  <h2 className="text-xl font-bold text-slate-900 mt-1">Your saved templates</h2>
-                  <p className="text-sm text-slate-500">Review the templates already in your workspace.</p>
+                  <p className="eyebrow">Saved Library</p>
+                  <h2 className="text-xl font-bold text-neutral-900 mt-1">Your saved templates</h2>
+                  <p className="text-sm text-neutral-400">Review the templates already in your workspace.</p>
                 </div>
-                <span className="text-sm text-slate-500">{agencyTemplates.length} templates</span>
+                <span className="text-sm text-neutral-400">{agencyTemplates.length} templates</span>
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -133,7 +133,7 @@ export default function Templates() {
                 ))}
                 
                 {agencyTemplates.length === 0 && (
-                  <div className="col-span-full py-12 text-center text-slate-500 border-2 border-dashed border-slate-200 rounded-xl">
+                  <div className="col-span-full py-12 text-center text-neutral-400 border-2 border-dashed border-neutral-200 rounded-[var(--radius-lg)]">
                     No templates found matching your criteria.
                   </div>
                 )}
@@ -148,37 +148,37 @@ export default function Templates() {
 
 function TemplateCard({ template, isPrebuilt }) {
   return (
-    <div className="bg-white border border-slate-200 rounded-xl p-5 hover:shadow-md transition-shadow flex flex-col items-start gap-4 h-full relative cursor-pointer">
+    <div className="section-card p-5 hover:shadow-md transition-shadow flex flex-col items-start gap-4 h-full relative cursor-pointer group">
       <div className="flex items-start justify-between w-full">
-          <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xl shadow-sm border border-slate-100 ${isPrebuilt ? 'bg-[#f0f0f0]' : 'bg-[#fafafa]'}`}>
+          <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xl shadow-sm ring-1 ring-neutral-200 ${isPrebuilt ? 'bg-indigo-50' : 'bg-neutral-50'}`}>
             {template.icon || '💬'}
          </div>
          {isPrebuilt ? (
-            <span className="text-xs font-bold text-slate-500 uppercase tracking-widest">PREBUILT</span>
+            <span className="badge bg-indigo-50 text-indigo-600">PREBUILT</span>
          ) : (
             <StatusBadge status={template.status} />
          )}
       </div>
 
       <div className="flex-1 w-full space-y-2">
-        <h3 className="font-bold text-slate-900">{template.displayName}</h3>
+        <h3 className="font-bold text-neutral-900">{template.displayName}</h3>
         <div className="flex flex-wrap gap-2 text-xs font-medium uppercase tracking-wider">
-          <span className={`flex items-center gap-1 ${template.headerType === 'IMAGE' ? 'text-[#2d2d2d]' : 'text-[#2d2d2d]'}`}>
+          <span className="flex items-center gap-1 text-neutral-600">
             {template.headerType !== 'NONE' ? <ImageIcon className="w-3 h-3" /> : <MessageSquare className="w-3 h-3" />}
             {template.headerType === 'NONE' ? 'TEXT' : template.headerType}
           </span>
-          <span className="text-slate-300">•</span>
-          <span className="text-slate-500">{template.category}</span>
+          <span className="text-neutral-300">•</span>
+          <span className="text-neutral-400">{template.category}</span>
         </div>
         
-        <p className="text-sm text-slate-600 line-clamp-3 mt-3">{template.body.replace(/{{[1-9]}}/g, '___')}</p>
+        <p className="text-sm text-neutral-500 line-clamp-3 mt-3">{template.body.replace(/{{[1-9]}}/g, '___')}</p>
       </div>
 
-      <div className="flex gap-2 w-full pt-4 border-t border-slate-100 mt-auto">
-         <button className="flex-1 py-2 text-sm font-semibold rounded border border-slate-200 text-[#2d2d2d] hover:bg-slate-50 transition-colors">
+      <div className="flex gap-2 w-full pt-4 border-t border-neutral-100 mt-auto">
+         <button className="flex-1 py-2 text-sm font-semibold rounded-[var(--radius-sm)] border border-neutral-200 text-neutral-700 hover:bg-neutral-50 transition-colors">
           Preview
         </button>
-        <button className="flex-1 py-2 text-sm font-semibold rounded bg-slate-50 text-slate-700 hover:bg-slate-100 transition-colors border border-slate-200">
+        <button className="flex-1 py-2 text-sm font-semibold rounded-[var(--radius-sm)] bg-neutral-900 text-white hover:bg-neutral-800 transition-colors">
           {isPrebuilt ? 'Use Template' : 'Edit'}
         </button>
       </div>
@@ -189,12 +189,12 @@ function TemplateCard({ template, isPrebuilt }) {
 function StatusBadge({ status }) {
   switch (status) {
     case 'APPROVED':
-      return <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-[#f0f0f0] text-[#2d2d2d] text-xs font-bold"><CheckCircle className="w-3 h-3" /> APPROVED</span>;
+      return <span className="badge bg-emerald-50 text-emerald-700"><CheckCircle className="w-3 h-3" /> APPROVED</span>;
     case 'PENDING':
-      return <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-[#fafafa] text-[#6b6b6b] text-xs font-bold"><Clock className="w-3 h-3" /> PENDING</span>;
+      return <span className="badge bg-amber-50 text-amber-700"><Clock className="w-3 h-3" /> PENDING</span>;
     case 'REJECTED':
-      return <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-[#ebebeb] text-[#525252] text-xs font-bold"><AlertCircle className="w-3 h-3" /> REJECTED</span>;
+      return <span className="badge bg-rose-50 text-rose-700"><AlertCircle className="w-3 h-3" /> REJECTED</span>;
     default:
-      return <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-slate-100 text-slate-600 text-xs font-bold">DRAFT</span>;
+      return <span className="badge bg-neutral-100 text-neutral-500">DRAFT</span>;
   }
 }

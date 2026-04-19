@@ -59,10 +59,10 @@ export default function Agents() {
 
   return (
     <div className="w-full space-y-4">
-      <section className="flex items-end justify-between border-b border-slate-200 pb-4">
+      <section className="flex items-end justify-between border-b border-neutral-200 pb-4">
         <div>
-          <h1 className="text-[28px] font-semibold tracking-tight text-slate-950">Users</h1>
-          <p className="text-sm text-slate-500">Manage team members and their access levels.</p>
+          <h1 className="page-heading">Users</h1>
+          <p className="page-subtext">Manage team members and their access levels.</p>
         </div>
         {canManageAgents ? (
           <button type="button" onClick={() => setShowCreateModal(true)} className="shell-button-primary">
@@ -78,13 +78,13 @@ export default function Agents() {
         </div>
       ) : null}
 
-      <div className="rounded-[12px] border border-slate-200 bg-white">
+      <div className="data-table-wrapper">
         <div className="overflow-x-auto">
           <table className="min-w-full text-left">
-            <thead className="bg-slate-50">
-              <tr>
+            <thead>
+              <tr className="data-table-head">
                 {['Name', 'Email', 'Phone', 'Role', 'Status', 'Actions'].map((heading) => (
-                  <th key={heading} className="px-4 py-3 text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">
+                  <th key={heading} className="data-table-th">
                     {heading}
                   </th>
                 ))}
@@ -112,8 +112,8 @@ export default function Agents() {
                     <td className="px-4 py-4 text-sm text-slate-600">{agent.email}</td>
                     <td className="px-4 py-4 text-sm text-slate-600">{agent.phone || '—'}</td>
                     <td className="px-4 py-4 text-sm text-slate-600">{agent.role}</td>
-                    <td className="px-4 py-4">
-                      <span className={`badge ${agent.isOnline ? 'bg-[#ebebeb] text-[#2d2d2d]' : 'bg-slate-100 text-slate-600'}`}>
+                    <td className="data-table-td">
+                      <span className={`badge ${agent.isOnline ? 'bg-emerald-50 text-emerald-700' : 'bg-neutral-100 text-neutral-500'}`}>
                         {agent.isOnline ? 'Online' : 'Offline'}
                       </span>
                     </td>

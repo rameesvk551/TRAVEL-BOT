@@ -85,10 +85,10 @@ function runEmbeddedSignup(embeddedSignup) {
 }
 
 function statusTone(status) {
-  if (status === 'CONNECTED') return 'bg-[#ebebeb] text-[#2d2d2d]';
+  if (status === 'CONNECTED') return 'bg-emerald-100 text-emerald-700';
   if (status === 'PENDING') return 'bg-amber-100 text-amber-700';
   if (status === 'FAILED') return 'bg-rose-100 text-rose-700';
-  return 'bg-slate-100 text-slate-600';
+  return 'bg-neutral-100 text-neutral-600';
 }
 
 function Field({ label, hint, children }) {
@@ -251,15 +251,15 @@ export default function Settings() {
       <section className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <p className="eyebrow">Configuration</p>
-          <h1 className="mt-2 text-5xl font-extrabold tracking-tight text-slate-950">Settings</h1>
-          <p className="mt-2 max-w-2xl text-sm text-slate-500">
+          <h1 className="mt-2 text-3xl font-extrabold tracking-tight text-neutral-900">Settings</h1>
+          <p className="mt-2 max-w-2xl text-sm text-neutral-500">
             Keep your agency profile, WhatsApp channel, and payment credentials aligned in one quiet control room.
           </p>
         </div>
       </section>
 
       {success ? (
-        <div className="rounded-[22px] border border-[#d4d4d4] bg-[#f5f5f5] px-5 py-4 text-sm font-medium text-[#2d2d2d]">{success}</div>
+        <div className="rounded-[var(--radius-lg)] border border-emerald-200 bg-emerald-50 px-5 py-4 text-sm font-medium text-emerald-700">{success}</div>
       ) : null}
       {error ? (
         <div className="rounded-[22px] border border-rose-200 bg-rose-50 px-5 py-4 text-sm font-medium text-rose-700">{error}</div>

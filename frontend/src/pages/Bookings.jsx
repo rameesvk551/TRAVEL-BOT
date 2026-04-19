@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { bookingsApi } from '../api/bookingsApi';
 import client from '../api/client';
 import { formatCurrency, formatDate } from '../utils/formatters';
+import { getStatusTone } from '../components/uiHelpers';
 
 const EMPTY_BOOKING_FORM = {
   customerId: '',
@@ -27,7 +28,7 @@ function getListPayload(response) {
 function Field({ label, children }) {
   return (
     <label className="block">
-      <span className="mb-2 block text-xs font-bold uppercase tracking-[0.18em] text-slate-500">{label}</span>
+      <span className="mb-2 block text-xs font-bold uppercase tracking-[0.15em] text-neutral-400">{label}</span>
       {children}
     </label>
   );
@@ -88,10 +89,10 @@ export default function Bookings() {
 
   return (
     <div className="w-full space-y-4">
-      <section className="flex flex-col gap-4 border-b border-slate-200 pb-4 md:flex-row md:items-end md:justify-between">
+      <section className="flex flex-col gap-4 border-b border-neutral-200 pb-4 md:flex-row md:items-end md:justify-between">
         <div className="flex flex-col gap-2">
-          <h1 className="text-[28px] font-semibold tracking-tight text-slate-950">Bookings</h1>
-          <p className="text-sm text-slate-500">Manage all customer bookings and trip schedules.</p>
+          <h1 className="page-heading">Bookings</h1>
+          <p className="page-subtext">Manage all customer bookings and trip schedules.</p>
         </div>
 
         <button
@@ -104,38 +105,38 @@ export default function Bookings() {
         </button>
       </section>
 
-      <section className="overflow-hidden rounded-[12px] border border-slate-200 bg-white">
+      <section className="data-table-wrapper">
         <div className="overflow-x-auto">
           <table className="min-w-full text-left">
-            <thead className="bg-slate-50">
-              <tr>
+            <thead>
+              <tr className="data-table-head">
                 {['Ref', 'Customer', 'Trip', 'Travel Date', 'Status'].map((heading) => (
-                  <th key={heading} className="px-4 py-3 text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">
+                  <th key={heading} className="data-table-th">
                     {heading}
                   </th>
                 ))}
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody>
               {isLoading ? (
                 Array.from({ length: 5 }).map((_, index) => (
-                  <tr key={index}>
+                  <tr key={index} className="border-b border-neutral-100">
                     {Array.from({ length: 5 }).map((_, cell) => (
-                      <td key={cell} className="px-4 py-4"><div className="h-4 animate-pulse rounded bg-slate-100" /></td>
+                      <td key={cell} className="data-table-td"><div className="h-4 animate-pulse rounded bg-neutral-100" /></td>
                     ))}
                   </tr>
                 ))
               ) : bookings.length === 0 ? (
-                <tr><td colSpan={5} className="px-4 py-8 text-sm text-slate-500">No bookings found.</td></tr>
+                <tr><td colSpan={5} className="px-4 py-8 text-sm text-neutral-400">No bookings found.</td></tr>
               ) : (
                 bookings.map((booking) => (
-                  <tr key={booking.id}>
-                    <td className="px-4 py-4 text-sm font-semibold">{booking.bookingRef}</td>
-                    <td className="px-4 py-4 text-sm">{booking.customer?.name}</td>
-                    <td className="px-4 py-4 text-sm text-slate-600">{booking.package?.name || 'Custom'}</td>
-                    <td className="px-4 py-4 text-sm">{formatDate(booking.travelDate)}</td>
-                    <td className="px-4 py-4">
-                      <span className="badge bg-[#ebebeb] text-[#2d2d2d]">{booking.status}</span>
+                  <tr key={booking.id} className="data-table-row">
+                    <td className="data-table-td font-semibold text-neutral-900">{booking.bookingRef}</td>
+                    <td className="data-table-td text-neutral-700">{booking.customer?.name}</td>
+                    <td className="data-table-td text-neutral-500">{booking.package?.name || 'Custom'}</td>
+                    <td className="data-table-td text-neutral-600">{formatDate(booking.travelDate)}</td>
+                    <td className="data-table-td">
+                      <span className={`badge ${getStatusTone(booking.status)}`}>{booking.status}</span>
                     </td>
                   </tr>
                 ))

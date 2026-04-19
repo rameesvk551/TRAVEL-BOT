@@ -9,30 +9,67 @@ export function getInitials(name, fallback = 'FC') {
   );
 }
 
+/**
+ * Returns semantic color classes for lead/booking statuses.
+ * Uses vibrant, distinguishable colors so users can scan at a glance.
+ */
 export function getStatusTone(status) {
   const tones = {
-    JUST_CONTACTED: 'bg-slate-200 text-slate-700',
-    PACKAGE_SEARCHED: 'bg-slate-200 text-slate-700',
-    PACKAGE_INTERESTED: 'bg-slate-300 text-slate-800',
-    CONTACTED: 'bg-slate-300 text-slate-800',
-    CONVERTED: 'bg-[#2d2d2d] text-white',
-    LOST: 'bg-slate-100 text-slate-500',
+    // ── Lead pipeline ──
+    JUST_CONTACTED: 'bg-sky-100 text-sky-700',
+    PACKAGE_SEARCHED: 'bg-amber-100 text-amber-700',
+    PACKAGE_INTERESTED: 'bg-indigo-100 text-indigo-700',
+    CONTACTED: 'bg-violet-100 text-violet-700',
+    CONVERTED: 'bg-emerald-100 text-emerald-700',
+    LOST: 'bg-rose-100 text-rose-700',
     UNKNOWN: 'bg-slate-100 text-slate-500',
-    // Legacy maps for backwards compatibility
-    NEW: 'bg-slate-200 text-slate-700',
-    QUOTED: 'bg-slate-300 text-slate-800',
-    NEGOTIATING: 'bg-slate-300 text-slate-800',
-    CANCELLED: 'bg-slate-100 text-slate-500',
-    PENDING: 'bg-slate-200 text-slate-700',
-    CONFIRMED: 'bg-[#2d2d2d] text-white',
-    COMPLETED: 'bg-[#404040] text-white',
-    FAILED: 'bg-slate-100 text-slate-500',
+
+    // ── Legacy / Booking ──
+    NEW: 'bg-sky-100 text-sky-700',
+    QUOTED: 'bg-indigo-100 text-indigo-700',
+    NEGOTIATING: 'bg-violet-100 text-violet-700',
+    CANCELLED: 'bg-rose-100 text-rose-700',
+    PENDING: 'bg-amber-100 text-amber-700',
+    CONFIRMED: 'bg-emerald-100 text-emerald-700',
+    COMPLETED: 'bg-teal-100 text-teal-700',
+    FAILED: 'bg-rose-100 text-rose-700',
     EXPIRED: 'bg-slate-100 text-slate-500',
-    REFUNDED: 'bg-slate-200 text-slate-600',
-    BOOKED: 'bg-[#404040] text-white',
+    REFUNDED: 'bg-orange-100 text-orange-600',
+    BOOKED: 'bg-emerald-100 text-emerald-700',
+    PAID: 'bg-emerald-100 text-emerald-700',
   };
 
   return tones[status] || 'bg-slate-100 text-slate-600';
+}
+
+/**
+ * Returns a dot-color for Kanban column headers.
+ */
+export function getStatusDotColor(status) {
+  const dots = {
+    JUST_CONTACTED: 'bg-sky-500',
+    PACKAGE_SEARCHED: 'bg-amber-500',
+    PACKAGE_INTERESTED: 'bg-indigo-500',
+    CONTACTED: 'bg-violet-500',
+    CONVERTED: 'bg-emerald-500',
+    LOST: 'bg-rose-500',
+  };
+  return dots[status] || 'bg-slate-400';
+}
+
+/**
+ * Returns a left-accent color for Kanban columns.
+ */
+export function getStatusAccent(status) {
+  const accents = {
+    JUST_CONTACTED: '#0ea5e9',
+    PACKAGE_SEARCHED: '#f59e0b',
+    PACKAGE_INTERESTED: '#6366f1',
+    CONTACTED: '#8b5cf6',
+    CONVERTED: '#10b981',
+    LOST: '#f43f5e',
+  };
+  return accents[status] || '#94a3b8';
 }
 
 export function getRelativeDateLabel(dateValue) {

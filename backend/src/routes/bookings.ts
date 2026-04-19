@@ -12,7 +12,8 @@ const { PERMISSIONS } = require('../constants/permissions');
 const router = Router();
 
 const createBookingSchema = z.object({
-  leadId: z.string().uuid(),
+  leadId: z.string().uuid().optional(),
+  customerId: z.string().uuid().optional(),
   packageId: z.string().uuid().optional(),
   totalAmount: z.number().int().min(1, 'Total amount must be positive'),
   advanceAmount: z.number().int().min(0).optional(),

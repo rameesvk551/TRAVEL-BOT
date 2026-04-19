@@ -8,6 +8,7 @@ const app = require('./app');
 const { sequelize } = require('./models');
 const { startWorker } = require('./services/schedulerService');
 const { ensureProductionSchema } = require('./services/schemaBootstrap');
+const { seedPrebuiltTemplates } = require('./services/templateService');
 
 const PORT = process.env.PORT || 3000;
 
@@ -26,6 +27,8 @@ async function start() {
       await sequelize.sync();
       console.log('Database synced');
     }
+    
+    await seedPrebuiltTemplates();
 
     try {
       startWorker();

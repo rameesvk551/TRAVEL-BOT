@@ -4,6 +4,13 @@ import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts';
+import {
+  BoltIcon,
+  ArrowTrendingUpIcon,
+  PaperAirplaneIcon,
+  CurrencyRupeeIcon,
+  ChartBarIcon,
+} from '@heroicons/react/24/outline';
 import { useAnalyticsSummary, useSalesReport, useLeadFunnelReport } from '../hooks/useAnalytics';
 import { useLiveMessages } from '../hooks/useMessages';
 import { useBookings } from '../hooks/useBookings';
@@ -11,9 +18,9 @@ import { formatDate, formatCurrency } from '../utils/formatters';
 import { getStatusTone } from '../components/uiHelpers';
 
 /* ── Color palette ───────────────────────────────── */
-const DARK = '#2d2d2d';
-const GREY = '#6b6b6b';
-const PIE_COLORS = ['#2d2d2d', '#525252', '#737373', '#8a8a8a', '#a3a3a3', '#b0b0b0', '#d4d4d4', '#404040'];
+const CHART_PRIMARY = '#6366f1';
+const CHART_SECONDARY = '#a78bfa';
+const PIE_COLORS = ['#6366f1', '#8b5cf6', '#0ea5e9', '#10b981', '#f59e0b', '#f43f5e', '#a3a3a3', '#404040'];
 
 /* ── Helpers ──────────────────────────────────────── */
 function statusCount(leadsByStatus, key) {
@@ -35,8 +42,8 @@ const todayFormatted = new Date().toLocaleDateString('en-IN', {
 function ChartTooltip({ active, payload, label, formatter }) {
   if (!active || !payload?.length) return null;
   return (
-    <div className="rounded-xl border border-[#e5e5e5] bg-white/95 px-4 py-3 shadow-xl backdrop-blur-sm">
-      <p className="mb-1.5 text-[11px] font-bold uppercase tracking-widest text-[#8a8a8a]">{label}</p>
+    <div className="rounded-[var(--radius-md)] border border-neutral-200 bg-white/95 px-4 py-3 shadow-xl backdrop-blur-sm">
+      <p className="mb-1.5 text-[11px] font-bold uppercase tracking-widest text-neutral-400">{label}</p>
       {payload.map((p, i) => (
         <p key={i} className="text-sm font-semibold" style={{ color: p.color }}>
           {p.name}: {formatter ? formatter(p.value) : p.value?.toLocaleString('en-IN')}
@@ -47,20 +54,17 @@ function ChartTooltip({ active, payload, label, formatter }) {
 }
 
 /* ── Metric Card ─────────────────────────────────── */
-function MetricCard({ label, value, note, icon, iconBg }) {
+function MetricCard({ label, value, note, icon: Icon, iconBg, iconColor }) {
   return (
-    <div className="group relative overflow-hidden rounded-[16px] border border-[#e5e5e5] bg-white p-5 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_12px_32px_-12px_rgba(0,0,0,0.1)]">
-      {/* Subtle grey accent at top */}
-      <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-[#404040] to-[#8a8a8a]" />
-
+    <div className="kpi-card">
       <div className="flex items-start justify-between">
         <div className="flex-1">
-          <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-[#8a8a8a]">{label}</p>
-          <p className="mt-2.5 text-[32px] font-extrabold tracking-tight text-[#1a1a1a] leading-none">{value}</p>
-          <p className="mt-2 text-[13px] text-[#6b6b6b]">{note}</p>
+          <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-neutral-400">{label}</p>
+          <p className="mt-2.5 text-[32px] font-extrabold tracking-tight text-neutral-900 leading-none">{value}</p>
+          <p className="mt-2 text-[13px] text-neutral-500">{note}</p>
         </div>
-        <div className={`flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-[12px] ${iconBg} text-[20px] transition-transform duration-300 group-hover:scale-110 group-hover:rotate-3`}>
-          {icon}
+        <div className={`kpi-icon ${iconBg} ${iconColor}`}>
+          <Icon className="w-5 h-5" />
         </div>
       </div>
     </div>
@@ -70,11 +74,11 @@ function MetricCard({ label, value, note, icon, iconBg }) {
 /* ── Section wrapper ─────────────────────────────── */
 function DashSection({ title, subtitle, action, children, className = '' }) {
   return (
-    <div className={`rounded-[16px] border border-[#e5e5e5] bg-white shadow-[0_2px_8px_-4px_rgba(0,0,0,0.04)] ${className}`}>
-      <div className="flex items-center justify-between border-b border-[#ebebeb] px-5 py-4">
+    <div className={`section-card ${className}`}>
+      <div className="section-header">
         <div>
-          <h2 className="text-[15px] font-bold text-[#1a1a1a]">{title}</h2>
-          {subtitle && <p className="mt-0.5 text-xs text-[#8a8a8a]">{subtitle}</p>}
+          <h2 className="text-[15px] font-bold text-neutral-900">{title}</h2>
+          {subtitle && <p className="mt-0.5 text-xs text-neutral-400">{subtitle}</p>}
         </div>
         {action}
       </div>
@@ -120,11 +124,11 @@ export default function Dashboard() {
     })), [funnelData.leadsByDay]);
 
   const pipelineStages = [
-    { key: 'JUST_CONTACTED', label: 'Just Contacted', color: '#404040' },
-    { key: 'PACKAGE_SEARCHED', label: 'Package Searched', color: '#525252' },
-    { key: 'PACKAGE_INTERESTED', label: 'Interested', color: '#6b6b6b' },
-    { key: 'CONTACTED', label: 'Contacted', color: '#8a8a8a' },
-    { key: 'BOOKED', label: 'Booked', color: '#2d2d2d' },
+    { key: 'JUST_CONTACTED', label: 'Just Contacted', color: '#0ea5e9' },
+    { key: 'PACKAGE_SEARCHED', label: 'Package Searched', color: '#f59e0b' },
+    { key: 'PACKAGE_INTERESTED', label: 'Interested', color: '#6366f1' },
+    { key: 'CONTACTED', label: 'Contacted', color: '#8b5cf6' },
+    { key: 'BOOKED', label: 'Booked', color: '#10b981' },
   ];
 
   const pipelineBarData = pipelineStages.map((s) => ({
@@ -152,16 +156,16 @@ export default function Dashboard() {
       <section className="flex flex-col gap-1 pb-2">
         <div className="flex items-end justify-between">
           <div>
-            <h1 className="text-[28px] font-extrabold tracking-tight text-[#1a1a1a]">
+            <h1 className="text-[28px] font-extrabold tracking-tight text-neutral-900">
               {getGreeting()} 👋
             </h1>
-            <p className="mt-1 text-sm text-[#8a8a8a]">{todayFormatted}</p>
+            <p className="mt-1 text-sm text-neutral-400">{todayFormatted}</p>
           </div>
           <Link
             to="/analytics"
-            className="inline-flex items-center gap-1.5 rounded-[12px] bg-[#f0f0f0] px-3.5 py-2 text-[13px] font-semibold text-[#404040] transition hover:bg-[#e5e5e5]"
+            className="inline-flex items-center gap-2 rounded-[var(--radius-md)] bg-neutral-100 px-3.5 py-2 text-[13px] font-semibold text-neutral-600 transition hover:bg-neutral-200"
           >
-            <span>📊</span> Full Analytics
+            <ChartBarIcon className="w-4 h-4" /> Full Analytics
           </Link>
         </div>
       </section>
@@ -172,29 +176,33 @@ export default function Dashboard() {
           label="New Leads"
           value={analytics.newLeadsToday || 0}
           note="Created today"
-          icon="🎯"
-          iconBg="bg-[#f0f0f0]"
+          icon={BoltIcon}
+          iconBg="bg-sky-50"
+          iconColor="text-sky-600"
         />
         <MetricCard
           label="Conversion"
           value={`${analytics.conversionRate || 0}%`}
           note="Lead to booking"
-          icon="📈"
-          iconBg="bg-[#f0f0f0]"
+          icon={ArrowTrendingUpIcon}
+          iconBg="bg-emerald-50"
+          iconColor="text-emerald-600"
         />
         <MetricCard
           label="Confirmed Bookings"
           value={analytics.confirmedBookings || 0}
           note="Active departures"
-          icon="✈️"
-          iconBg="bg-[#f0f0f0]"
+          icon={PaperAirplaneIcon}
+          iconBg="bg-indigo-50"
+          iconColor="text-indigo-600"
         />
         <MetricCard
           label="Revenue"
           value={revenueDisplay}
           note="Total confirmed"
-          icon="💰"
-          iconBg="bg-[#f0f0f0]"
+          icon={CurrencyRupeeIcon}
+          iconBg="bg-amber-50"
+          iconColor="text-amber-600"
         />
       </section>
 
@@ -206,13 +214,13 @@ export default function Dashboard() {
           subtitle="Last 30 days"
           className="xl:col-span-3"
           action={
-            <Link to="/analytics" className="text-xs font-semibold text-[#525252] hover:text-[#1a1a1a] transition">
+            <Link to="/analytics" className="text-xs font-semibold text-neutral-500 hover:text-neutral-900 transition">
               View details →
             </Link>
           }
         >
           {revenueChartData.length === 0 ? (
-            <div className="flex h-56 items-center justify-center text-sm text-[#8a8a8a]">
+            <div className="flex h-56 items-center justify-center text-sm text-neutral-400">
               No revenue data yet. Start converting leads!
             </div>
           ) : (
@@ -220,15 +228,15 @@ export default function Dashboard() {
               <AreaChart data={revenueChartData}>
                 <defs>
                   <linearGradient id="dashRevGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor={DARK} stopOpacity={0.15} />
-                    <stop offset="95%" stopColor={DARK} stopOpacity={0} />
+                    <stop offset="5%" stopColor={CHART_PRIMARY} stopOpacity={0.15} />
+                    <stop offset="95%" stopColor={CHART_PRIMARY} stopOpacity={0} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#ebebeb" />
-                <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#8a8a8a' }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 11, fill: '#8a8a8a' }} axisLine={false} tickLine={false} tickFormatter={(v) => v >= 1000 ? `₹${(v / 1000).toFixed(0)}K` : `₹${v}`} />
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#a3a3a3' }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fontSize: 11, fill: '#a3a3a3' }} axisLine={false} tickLine={false} tickFormatter={(v) => v >= 1000 ? `₹${(v / 1000).toFixed(0)}K` : `₹${v}`} />
                 <Tooltip content={<ChartTooltip formatter={(v) => `₹${v.toLocaleString('en-IN')}`} />} />
-                <Area type="monotone" dataKey="revenue" stroke={DARK} strokeWidth={2.5} fill="url(#dashRevGrad)" name="Revenue (₹)" dot={false} activeDot={{ r: 5, fill: DARK, stroke: '#fff', strokeWidth: 2 }} />
+                <Area type="monotone" dataKey="revenue" stroke={CHART_PRIMARY} strokeWidth={2.5} fill="url(#dashRevGrad)" name="Revenue (₹)" dot={false} activeDot={{ r: 5, fill: CHART_PRIMARY, stroke: '#fff', strokeWidth: 2 }} />
               </AreaChart>
             </ResponsiveContainer>
           )}
@@ -246,10 +254,10 @@ export default function Dashboard() {
               return (
                 <div key={stage.name}>
                   <div className="mb-1 flex items-center justify-between">
-                    <span className="text-[13px] font-medium text-[#525252]">{stage.name}</span>
-                    <span className="text-[13px] font-bold text-[#1a1a1a]">{stage.count}</span>
+                    <span className="text-[13px] font-medium text-neutral-600">{stage.name}</span>
+                    <span className="text-[13px] font-bold text-neutral-900">{stage.count}</span>
                   </div>
-                  <div className="h-7 w-full overflow-hidden rounded-lg bg-[#f0f0f0]">
+                  <div className="h-7 w-full overflow-hidden rounded-lg bg-neutral-100">
                     <div
                       className="flex h-full items-center rounded-lg px-2.5 text-[10px] font-bold text-white transition-all duration-700 ease-out"
                       style={{
@@ -272,7 +280,7 @@ export default function Dashboard() {
         {/* Lead Status Donut */}
         <DashSection title="Lead Status Distribution" subtitle="Current breakdown">
           {pieData.length === 0 ? (
-            <div className="flex h-56 items-center justify-center text-sm text-[#8a8a8a]">No lead data yet.</div>
+            <div className="flex h-56 items-center justify-center text-sm text-neutral-400">No lead data yet.</div>
           ) : (
             <div className="flex flex-col items-center gap-4 sm:flex-row">
               <div className="w-full sm:w-1/2">
@@ -306,12 +314,12 @@ export default function Dashboard() {
               </div>
               <div className="w-full space-y-2 sm:w-1/2">
                 {pieData.map((d, i) => (
-                  <div key={i} className="flex items-center justify-between rounded-[10px] bg-[#fafafa] px-3 py-2 transition hover:bg-[#f0f0f0]">
+                  <div key={i} className="flex items-center justify-between rounded-[var(--radius-sm)] bg-neutral-50 px-3 py-2 transition hover:bg-neutral-100">
                     <div className="flex items-center gap-2.5">
                       <span className="h-3 w-3 rounded-full" style={{ background: PIE_COLORS[i % PIE_COLORS.length] }} />
-                      <span className="text-[13px] text-[#525252] capitalize">{d.name.toLowerCase()}</span>
+                      <span className="text-[13px] text-neutral-600 capitalize">{d.name.toLowerCase()}</span>
                     </div>
-                    <span className="text-[13px] font-bold text-[#1a1a1a]">{d.value}</span>
+                    <span className="text-[13px] font-bold text-neutral-900">{d.value}</span>
                   </div>
                 ))}
               </div>
@@ -322,29 +330,29 @@ export default function Dashboard() {
         {/* Leads Over Time */}
         <DashSection title="Leads Over Time" subtitle="Last 30 days new inquiries">
           {leadsChartData.length === 0 ? (
-            <div className="flex h-56 items-center justify-center text-sm text-[#8a8a8a]">No lead trend data yet.</div>
+            <div className="flex h-56 items-center justify-center text-sm text-neutral-400">No lead trend data yet.</div>
           ) : (
             <ResponsiveContainer width="100%" height={220}>
               <AreaChart data={leadsChartData}>
                 <defs>
                   <linearGradient id="dashLeadGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#525252" stopOpacity={0.15} />
-                    <stop offset="95%" stopColor="#525252" stopOpacity={0} />
+                    <stop offset="5%" stopColor={CHART_SECONDARY} stopOpacity={0.15} />
+                    <stop offset="95%" stopColor={CHART_SECONDARY} stopOpacity={0} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#ebebeb" />
-                <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#8a8a8a' }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 11, fill: '#8a8a8a' }} axisLine={false} tickLine={false} allowDecimals={false} />
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#a3a3a3' }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fontSize: 11, fill: '#a3a3a3' }} axisLine={false} tickLine={false} allowDecimals={false} />
                 <Tooltip content={<ChartTooltip />} />
                 <Area
                   type="monotone"
                   dataKey="leads"
-                  stroke="#525252"
+                  stroke={CHART_SECONDARY}
                   strokeWidth={2.5}
                   fill="url(#dashLeadGrad)"
                   name="Leads"
                   dot={false}
-                  activeDot={{ r: 5, fill: '#525252', stroke: '#fff', strokeWidth: 2 }}
+                  activeDot={{ r: 5, fill: CHART_SECONDARY, stroke: '#fff', strokeWidth: 2 }}
                 />
               </AreaChart>
             </ResponsiveContainer>
@@ -357,7 +365,7 @@ export default function Dashboard() {
         title="Upcoming Departures"
         subtitle="Bookings ordered by travel date"
         action={
-          <Link to="/payments" className="inline-flex items-center gap-1 rounded-[10px] bg-[#f0f0f0] px-3 py-1.5 text-xs font-semibold text-[#525252] transition hover:bg-[#e5e5e5] hover:text-[#1a1a1a]">
+          <Link to="/payments" className="inline-flex items-center gap-1 rounded-[var(--radius-sm)] bg-neutral-100 px-3 py-1.5 text-xs font-semibold text-neutral-600 transition hover:bg-neutral-200 hover:text-neutral-900">
             💳 View payments
           </Link>
         }
@@ -365,22 +373,22 @@ export default function Dashboard() {
         <div className="overflow-x-auto -mx-5 px-5">
           <table className="min-w-full">
             <thead>
-              <tr className="border-b border-[#ebebeb]">
+              <tr className="border-b border-neutral-100">
                 {['Traveler', 'Trip', 'Travel Date', 'Status'].map((heading) => (
-                  <th key={heading} className="pb-3 pr-4 text-left text-[11px] font-bold uppercase tracking-[0.2em] text-[#8a8a8a] first:pl-0 last:pr-0 last:text-right">
+                  <th key={heading} className="pb-3 pr-4 text-left text-[11px] font-bold uppercase tracking-[0.15em] text-neutral-400 first:pl-0 last:pr-0 last:text-right">
                     {heading}
                   </th>
                 ))}
               </tr>
             </thead>
-            <tbody className="divide-y divide-[#f5f5f5]">
+            <tbody className="divide-y divide-neutral-50">
               {bookings.length === 0 ? (
                 <tr>
                   <td colSpan={4} className="py-12 text-center">
                     <div className="flex flex-col items-center gap-2">
-                      <span className="text-3xl">✈️</span>
-                      <p className="text-sm text-[#8a8a8a]">No upcoming bookings found.</p>
-                      <Link to="/bookings" className="mt-1 text-xs font-semibold text-[#525252] hover:text-[#1a1a1a]">
+                      <PaperAirplaneIcon className="w-8 h-8 text-neutral-300" />
+                      <p className="text-sm text-neutral-400">No upcoming bookings found.</p>
+                      <Link to="/bookings" className="mt-1 text-xs font-semibold text-indigo-600 hover:text-indigo-700">
                         View all bookings →
                       </Link>
                     </div>
@@ -388,19 +396,19 @@ export default function Dashboard() {
                 </tr>
               ) : (
                 bookings.map((booking) => (
-                  <tr key={booking.id} className="group transition hover:bg-[#fafafa]">
+                  <tr key={booking.id} className="group transition hover:bg-neutral-50/60">
                     <td className="py-3.5 pr-4">
                       <div className="flex items-center gap-3">
-                        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#2d2d2d] text-xs font-bold text-white">
+                        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-indigo-100 text-xs font-bold text-indigo-600">
                           {(booking.customer?.name || booking.bookingRef || '?')[0]?.toUpperCase()}
                         </div>
-                        <span className="text-sm font-semibold text-[#2d2d2d] group-hover:text-[#1a1a1a]">
+                        <span className="text-sm font-semibold text-neutral-800 group-hover:text-neutral-900">
                           {booking.customer?.name || booking.bookingRef}
                         </span>
                       </div>
                     </td>
-                    <td className="py-3.5 pr-4 text-sm text-[#525252]">{booking.package?.name || 'Custom itinerary'}</td>
-                    <td className="py-3.5 pr-4 text-sm text-[#525252]">{formatDate(booking.travelDate)}</td>
+                    <td className="py-3.5 pr-4 text-sm text-neutral-600">{booking.package?.name || 'Custom itinerary'}</td>
+                    <td className="py-3.5 pr-4 text-sm text-neutral-600">{formatDate(booking.travelDate)}</td>
                     <td className="py-3.5 text-right">
                       <span className={`badge ${getStatusTone(booking.status)}`}>{booking.status}</span>
                     </td>

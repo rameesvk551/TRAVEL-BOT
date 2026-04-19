@@ -33,10 +33,10 @@ export default function Itineraries() {
 
   return (
     <div className="w-full space-y-4">
-      <section className="flex items-end justify-between border-b border-slate-200 pb-4">
+      <section className="flex items-end justify-between border-b border-neutral-200 pb-4">
         <div>
-          <h1 className="text-[28px] font-semibold tracking-tight text-slate-950">Itineraries</h1>
-          <p className="text-sm text-slate-500">Create, send, and track stunning day-by-day itineraries.</p>
+          <h1 className="page-heading">Itineraries</h1>
+          <p className="page-subtext">Create, send, and track stunning day-by-day itineraries.</p>
         </div>
         <button type="button" onClick={() => navigate('/itineraries/new')} className="shell-button-primary">
           <PlusIcon className="h-4 w-4" />
@@ -44,19 +44,19 @@ export default function Itineraries() {
         </button>
       </section>
 
-      <div className="rounded-[12px] border border-slate-200 bg-white">
+      <div className="data-table-wrapper">
         <div className="overflow-x-auto">
           <table className="min-w-full text-left">
-            <thead className="bg-slate-50">
-              <tr>
+            <thead>
+              <tr className="data-table-head">
                 {['Name & Client', 'Destination', 'Dates', 'Cost', 'Margin', 'Status', 'Actions'].map((heading) => (
-                  <th key={heading} className="px-4 py-3 text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">
+                  <th key={heading} className="data-table-th">
                     {heading}
                   </th>
                 ))}
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody>
               {isLoading ? (
                 Array.from({ length: 4 }).map((_, index) => (
                   <tr key={index}>
@@ -94,9 +94,9 @@ export default function Itineraries() {
                         <div className="text-sm font-medium text-slate-900">{formatCurrency(it.totalPrice)}</div>
                         <div className="text-xs text-slate-500">Cost: {formatCurrency(it.totalCost)}</div>
                       </td>
-                      <td className="px-4 py-4 text-sm text-[#2d2d2d] font-semibold">{marginPct}%</td>
-                      <td className="px-4 py-4">
-                        <span className={`badge ${it.status === 'CONFIRMED' ? 'bg-[#2d2d2d] text-white' : it.status === 'SENT' ? 'bg-[#ebebeb] text-[#404040]' : 'bg-slate-100 text-slate-600'}`}>
+                      <td className="data-table-td text-sm text-neutral-900 font-semibold">{marginPct}%</td>
+                      <td className="data-table-td">
+                        <span className={`badge ${it.status === 'CONFIRMED' ? 'bg-emerald-50 text-emerald-700' : it.status === 'SENT' ? 'bg-sky-50 text-sky-700' : 'bg-neutral-100 text-neutral-600'}`}>
                           {it.status}
                         </span>
                       </td>

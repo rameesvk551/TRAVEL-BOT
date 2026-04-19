@@ -73,21 +73,15 @@ export default function Sidebar() {
           if (window.innerWidth < 1024) toggleSidebar();
         }}
         title={collapsed ? label : undefined}
-        className={`group relative flex items-center gap-3 rounded-[10px] px-3 py-2.5 text-sm font-medium transition ${
+        className={`group relative flex items-center gap-3 rounded-[var(--radius-sm)] px-3 py-2.5 text-sm font-medium transition-all duration-200 ${
           collapsed ? 'justify-center' : ''
         } ${
           active
-            ? 'bg-[#f0f0f0] text-[#1a1a1a]'
-            : 'text-[#8a8a8a] hover:bg-[#f5f5f5] hover:text-[#1a1a1a]'
+            ? 'bg-neutral-900 text-white shadow-sm'
+            : 'text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900'
         }`}
       >
-        {active && !collapsed && (
-          <span className="absolute inset-y-2 right-0 w-0.5 rounded-full bg-[#2d2d2d]" />
-        )}
-        {active && collapsed && (
-          <span className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-[#2d2d2d]" />
-        )}
-        <Icon className="h-5 w-5 shrink-0" />
+        <Icon className="h-[18px] w-[18px] shrink-0" />
         {!collapsed && <span>{label}</span>}
       </NavLink>
     );
@@ -106,7 +100,7 @@ export default function Sidebar() {
       <aside
         onMouseEnter={() => setSidebarHovered(true)}
         onMouseLeave={() => setSidebarHovered(false)}
-        className={`fixed inset-y-0 left-0 z-40 flex flex-col border-r border-[#e5e5e5] bg-white transition-all duration-300 ${
+        className={`fixed inset-y-0 left-0 z-40 flex flex-col border-r border-neutral-200 bg-white transition-all duration-300 ${
           collapsed ? 'w-[72px] px-2' : 'w-[252px] px-4'
         } py-4 lg:translate-x-0 ${
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
@@ -115,38 +109,47 @@ export default function Sidebar() {
         {/* Agency name + collapse toggle */}
         <div className={`flex items-center ${collapsed ? 'justify-center' : 'justify-between px-2'}`}>
           {!collapsed && (
-            <p className="text-[15px] font-semibold tracking-tight text-[#1a1a1a]">
-              {agency?.name || 'Travel CRM'}
-            </p>
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 rounded-[var(--radius-sm)] bg-indigo-600 flex items-center justify-center shrink-0">
+                <span className="text-white font-bold text-xs">{agency?.name?.[0]?.toUpperCase() || 'T'}</span>
+              </div>
+              <p className="text-[15px] font-semibold tracking-tight text-neutral-900">
+                {agency?.name || 'Travel CRM'}
+              </p>
+            </div>
           )}
-          <button
-            onClick={toggleSidebarCollapse}
-            className="hidden lg:flex h-7 w-7 items-center justify-center rounded-lg text-[#8a8a8a] transition hover:bg-[#f0f0f0] hover:text-[#404040]"
-            title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          >
-            {collapsed ? (
-              <ChevronRightIcon className="h-4 w-4" />
-            ) : (
+          {collapsed && (
+            <div className="w-8 h-8 rounded-[var(--radius-sm)] bg-indigo-600 flex items-center justify-center">
+              <span className="text-white font-bold text-xs">{agency?.name?.[0]?.toUpperCase() || 'T'}</span>
+            </div>
+          )}
+          {!collapsed && (
+            <button
+              onClick={toggleSidebarCollapse}
+              className="hidden lg:flex h-7 w-7 items-center justify-center rounded-lg text-neutral-400 transition hover:bg-neutral-100 hover:text-neutral-600"
+              title="Collapse sidebar"
+            >
               <ChevronLeftIcon className="h-4 w-4" />
-            )}
-          </button>
+            </button>
+          )}
         </div>
 
         {/* Agent info */}
         <div
-          className={`mt-5 flex items-center rounded-[12px] border border-[#e5e5e5] bg-[#fafafa] ${
+          className={`mt-5 flex items-center rounded-[var(--radius-md)] border border-neutral-100 bg-neutral-50 ${
             collapsed ? 'justify-center px-2 py-3' : 'gap-3 px-3 py-3'
           }`}
         >
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#2d2d2d] text-sm font-bold text-white">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 text-xs font-bold text-white shadow-sm">
             {getInitials(agent?.name, 'LC')}
           </div>
           {!collapsed && (
             <div className="min-w-0">
-              <p className="truncate text-sm font-bold text-[#1a1a1a]">
+              <p className="truncate text-sm font-semibold text-neutral-900">
                 {agent?.name || 'Lead Curator'}
               </p>
-              <p className="text-xs text-[#8a8a8a]">
+              <p className="text-xs text-neutral-400 flex items-center gap-1.5">
+                <span className={`w-1.5 h-1.5 rounded-full ${agent?.isOnline ? 'bg-emerald-500' : 'bg-neutral-300'}`} />
                 {agent?.isOnline ? 'Active Now' : 'Offline'}
               </p>
             </div>
@@ -166,7 +169,7 @@ export default function Sidebar() {
             <p className="eyebrow">Workspace</p>
           </div>
         )}
-        {collapsed && <hr className="mx-auto mt-6 w-8 border-[#e5e5e5]" />}
+        {collapsed && <hr className="mx-auto mt-6 w-8 border-neutral-200" />}
         <nav className="mt-2 space-y-1">
           {utilityItems.map((item) => renderNavItem(item))}
         </nav>
@@ -177,7 +180,7 @@ export default function Sidebar() {
             <p className="eyebrow">Marketing</p>
           </div>
         )}
-        {collapsed && <hr className="mx-auto mt-6 w-8 border-[#e5e5e5]" />}
+        {collapsed && <hr className="mx-auto mt-6 w-8 border-neutral-200" />}
         <nav className="mt-2 space-y-1">
           {marketingItems.map((item) => renderNavItem(item))}
         </nav>
@@ -196,7 +199,7 @@ export default function Sidebar() {
           <button
             onClick={() => logoutMutation.mutate()}
             title={collapsed ? 'Logout' : undefined}
-            className={`flex w-full items-center rounded-[10px] px-3 py-2.5 text-sm font-medium text-[#8a8a8a] transition hover:bg-[#f0f0f0] hover:text-[#1a1a1a] ${
+            className={`flex w-full items-center rounded-[var(--radius-sm)] px-3 py-2.5 text-sm font-medium text-neutral-400 transition hover:bg-neutral-100 hover:text-neutral-900 ${
               collapsed ? 'justify-center' : 'gap-3'
             }`}
           >
