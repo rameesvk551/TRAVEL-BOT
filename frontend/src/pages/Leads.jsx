@@ -66,41 +66,41 @@ export default function Leads() {
     <div className="w-full pb-10">
       
       {/* Top Header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-8 animate-fade-in">
         <div>
-          <h1 className="page-heading">Lead Management</h1>
-          <p className="page-subtext mt-1">Track and manage your sales pipeline</p>
+          <h1 className="text-3xl font-extrabold tracking-tight text-neutral-900">Lead Management</h1>
+          <p className="text-neutral-500 mt-1.5 font-medium">Track and manage your sales pipeline with ease</p>
         </div>
         <div className="flex items-center gap-3">
-           <div className="bg-neutral-100 p-1 rounded-[var(--radius-md)] flex items-center">
-             <button onClick={() => setView('list')} className={`px-4 py-1.5 text-sm font-medium rounded-[var(--radius-sm)] transition-all ${view === 'list' ? 'bg-white shadow-sm text-neutral-900' : 'text-neutral-500 hover:text-neutral-700'}`}>Table</button>
-             <button onClick={() => setView('kanban')} className={`px-4 py-1.5 text-sm font-medium rounded-[var(--radius-sm)] transition-all ${view === 'kanban' ? 'bg-white shadow-sm text-neutral-900' : 'text-neutral-500 hover:text-neutral-700'}`}>Kanban</button>
+           <div className="bg-neutral-100/80 p-1 rounded-xl flex items-center shadow-inner border border-neutral-200/50">
+             <button onClick={() => setView('list')} className={`px-5 py-2 text-sm font-bold rounded-[var(--radius-md)] transition-all duration-300 ${view === 'list' ? 'bg-white shadow-md text-neutral-900' : 'text-neutral-500 hover:text-neutral-900'}`}>Table</button>
+             <button onClick={() => setView('kanban')} className={`px-5 py-2 text-sm font-bold rounded-[var(--radius-md)] transition-all duration-300 ${view === 'kanban' ? 'bg-white shadow-md text-neutral-900' : 'text-neutral-500 hover:text-neutral-900'}`}>Kanban</button>
            </div>
            
-           <select className="shell-input-rect bg-white w-32 py-2">
+           <select className="shell-input-rect bg-white w-32 py-2 h-11 border-neutral-200">
              <option>All Sources</option>
            </select>
            
-           <button className="shell-button-secondary py-2">
+           <button className="shell-button-secondary h-11 px-5 border-neutral-200 group">
              Newest First
            </button>
            
-           <button className="shell-button-primary py-2 px-4">
-             <PlusIcon className="w-4 h-4" /> New Lead
+           <button className="shell-button-primary h-11 px-6 bg-neutral-900 hover:bg-black transition-all group">
+             <PlusIcon className="w-5 h-5 group-hover:scale-110 transition-transform" /> <span className="ml-1">New Lead</span>
            </button>
         </div>
       </div>
       
       {/* Search & Tabs */}
-      <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="relative w-full max-w-sm">
-          <MagnifyingGlassIcon className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4.5 h-4.5 text-neutral-400" />
+      <div className="mb-8 flex flex-col sm:flex-row sm:items-center justify-between gap-6">
+        <div className="relative w-full max-w-sm group">
+          <MagnifyingGlassIcon className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-neutral-400 group-focus-within:text-neutral-600 transition-colors" />
           <input 
             type="text" 
             placeholder="Search by name, email, phone..." 
             value={search}
             onChange={e => setSearch(e.target.value)}
-            className="shell-input-rect pl-10 bg-white"
+            className="shell-input-rect pl-11 bg-white h-12 shadow-sm border-neutral-200 focus:border-neutral-400 focus:ring-0 transition-all rounded-xl"
           />
         </div>
         
@@ -193,8 +193,22 @@ export default function Leads() {
                   </tr>
                 ) : filteredLeads.length === 0 ? (
                   <tr>
-                    <td colSpan="7" className="p-16 text-center">
-                      <div className="text-neutral-400 mb-2">No leads found.</div>
+                    <td colSpan="7" className="p-20 text-center">
+                      <div className="flex flex-col items-center justify-center animate-fade-in">
+                        <div className="w-20 h-20 bg-neutral-50 rounded-full flex items-center justify-center mb-4 border border-neutral-100 shadow-inner">
+                          <BriefcaseIcon className="w-10 h-10 text-neutral-300" />
+                        </div>
+                        <h3 className="text-lg font-bold text-neutral-900">No leads found</h3>
+                        <p className="text-sm text-neutral-500 mt-1 max-w-[280px] mx-auto leading-relaxed">
+                          We couldn't find any leads matching your current filters. Try adjusting your search or tabs.
+                        </p>
+                        <button 
+                          onClick={() => {setSearch(''); setActiveTab('All Leads');}}
+                          className="mt-6 text-sm font-bold text-neutral-900 hover:underline decoration-2 underline-offset-4 transition-all"
+                        >
+                          Clear all filters
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ) : (

@@ -1,17 +1,47 @@
 import React, { useState } from 'react';
 import { Plus, Search, MessageSquare, Image as ImageIcon, FileText, CheckCircle, Clock, AlertCircle } from 'lucide-react';
 import { usePrebuiltTemplates, useAgencyTemplates } from '../hooks/useTemplates';
+import TemplateDetailDrawer from '../components/TemplateDetailDrawer';
 
 export default function Templates() {
   const [activeTab, setActiveTab] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('ALL');
 
+  // Drawer State
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [selectedTemplate, setSelectedTemplate] = useState(null);
+  const [isPrebuilt, setIsPrebuilt] = useState(false);
+
   const { data: prebuiltData, isLoading: prebuiltLoading } = usePrebuiltTemplates({ search: searchQuery });
   const { data: agencyData, isLoading: agencyLoading } = useAgencyTemplates({ search: searchQuery });
 
   const prebuiltTemplates = prebuiltData?.data || [];
   const agencyTemplates = agencyData?.data || [];
+
+  const handleNewTemplate = () => {
+    setSelectedTemplate(null);
+    setIsPrebuilt(false);
+    setIsDrawerOpen(true);
+  };
+
+  const handlePreview = (template, prebuilt) => {
+    setSelectedTemplate(template);
+    setIsPrebuilt(prebuilt);
+    setIsDrawerOpen(true);
+  };
+
+  const handleUseTemplate = (template) => {
+    setSelectedTemplate(template);
+    setIsPrebuilt(true);
+    setIsDrawerOpen(true);
+  };
+
+  const handleEdit = (template) => {
+    setSelectedTemplate(template);
+    setIsPrebuilt(false);
+    setIsDrawerOpen(true);
+  };
 
   if (prebuiltLoading || agencyLoading) return <div className="p-8 text-center text-neutral-400">Loading templates...</div>;
 
@@ -22,7 +52,10 @@ export default function Templates() {
           <h1 className="page-heading">Template Messages</h1>
           <p className="page-subtext mt-1">Manage standard replies and marketing broadcasts.</p>
         </div>
-        <button className="shell-button-primary">
+        <button 
+          onClick={handleNewTemplate}
+          className="shell-button-primary"
+        >
           <Plus className="w-4 h-4 mr-2" />
           New Template
         </button>
@@ -107,7 +140,13 @@ export default function Templates() {
                 {prebuiltTemplates
                   .filter(t => categoryFilter === 'ALL' || t.category === categoryFilter)
                   .map(t => (
-                    <TemplateCard key={t.id} template={t} isPrebuilt={true} />
+                    <TemplateCard 
+                      key={t.id} 
+                      template={t} 
+                      isPrebuilt={true} 
+                      onPreview={() => handlePreview(t, true)}
+                      onAction={() => handleUseTemplate(t)}
+                    />
                 ))}
               </div>
             </div>
@@ -129,7 +168,13 @@ export default function Templates() {
                   .filter(t => activeTab === 'All' || t.status.toLowerCase() === activeTab.toLowerCase())
                   .filter(t => categoryFilter === 'ALL' || t.category === categoryFilter)
                   .map(t => (
-                    <TemplateCard key={t.id} template={t} isPrebuilt={false} />
+                    <TemplateCard 
+                      key={t.id} 
+                      template={t} 
+                      isPrebuilt={false} 
+                      onPreview={() => handlePreview(t, false)}
+                      onAction={() => handleEdit(t)}
+                    />
                 ))}
                 
                 {agencyTemplates.length === 0 && (
@@ -143,12 +188,23 @@ export default function Templates() {
         </div>
       </div>
     </div>
+
+    <TemplateDetailDrawer 
+      template={selectedTemplate}
+      isOpen={isDrawerOpen}
+      isPrebuilt={isPrebuilt}
+      onClose={() => setIsDrawerOpen(false)}
+    />
+  </div>
   );
 }
 
-function TemplateCard({ template, isPrebuilt }) {
+function TemplateCard({ template, isPrebuilt, onPreview, onAction }) {
   return (
-    <div className="section-card p-5 hover:shadow-md transition-shadow flex flex-col items-start gap-4 h-full relative cursor-pointer group">
+    <div 
+      className="section-card p-5 hover:shadow-md transition-shadow flex flex-col items-start gap-4 h-full relative cursor-pointer group"
+      onClick={onPreview}
+    >
       <div className="flex items-start justify-between w-full">
           <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xl shadow-sm ring-1 ring-neutral-200 ${isPrebuilt ? 'bg-indigo-50' : 'bg-neutral-50'}`}>
             {template.icon || '💬'}
@@ -171,14 +227,20 @@ function TemplateCard({ template, isPrebuilt }) {
           <span className="text-neutral-400">{template.category}</span>
         </div>
         
-        <p className="text-sm text-neutral-500 line-clamp-3 mt-3">{template.body.replace(/{{[1-9]}}/g, '___')}</p>
+        <p className="text-sm text-neutral-500 line-clamp-3 mt-3">{template.body?.replace(/{{[1-9]}}/g, '___')}</p>
       </div>
 
       <div className="flex gap-2 w-full pt-4 border-t border-neutral-100 mt-auto">
-         <button className="flex-1 py-2 text-sm font-semibold rounded-[var(--radius-sm)] border border-neutral-200 text-neutral-700 hover:bg-neutral-50 transition-colors">
+         <button 
+          onClick={(e) => { e.stopPropagation(); onPreview(); }}
+          className="flex-1 py-2 text-sm font-semibold rounded-[var(--radius-sm)] border border-neutral-200 text-neutral-700 hover:bg-neutral-50 transition-colors"
+        >
           Preview
         </button>
-        <button className="flex-1 py-2 text-sm font-semibold rounded-[var(--radius-sm)] bg-neutral-900 text-white hover:bg-neutral-800 transition-colors">
+        <button 
+          onClick={(e) => { e.stopPropagation(); onAction(); }}
+          className="flex-1 py-2 text-sm font-semibold rounded-[var(--radius-sm)] bg-neutral-900 text-white hover:bg-neutral-800 transition-colors"
+        >
           {isPrebuilt ? 'Use Template' : 'Edit'}
         </button>
       </div>

@@ -350,7 +350,7 @@ export default function CreateCampaign() {
                         ? 'bg-gradient-to-br from-[#8a8a8a] to-[#f5f5f5]0 text-white shadow-md shadow-[#d4d4d4]/40'
                         : 'bg-slate-100 text-slate-400 group-hover:bg-slate-200'
                     }`}>
-                      {isDone ? <Check className="w-4 h-4" strokeWidth={3} /> : <Icon className="w-4.5 h-4.5" />}
+                      {isDone ? <Check className="w-4 h-4" strokeWidth={3} /> : <Icon className="w-5 h-5" />}
                       {isActive && (
                         <span className="absolute inset-0 rounded-2xl animate-ping bg-[#f0f0f0]0/20" style={{ animationDuration: '2s' }} />
                       )}
@@ -603,7 +603,7 @@ export default function CreateCampaign() {
                           ? `bg-gradient-to-br ${m.gradient} text-white shadow-lg`
                           : 'bg-slate-100 text-slate-500 group-hover:bg-slate-200'
                       }`}>
-                        <Icon className="w-4.5 h-4.5" />
+                        <Icon className="w-5 h-5" />
                       </div>
                       <span className={`text-xs font-bold leading-tight transition-colors duration-300 ${isActive ? 'text-[#2d2d2d]' : 'text-slate-700'}`}>{m.label}</span>
                       {isActive && <div className="absolute -bottom-6 -right-6 w-16 h-16 bg-teal-400/10 rounded-full blur-xl" />}

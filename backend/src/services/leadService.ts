@@ -297,7 +297,7 @@ async function findLeastBusyAgent(agencyId) {
       const count = await Lead.count({
         where: {
           assignedAgentId: agent.id,
-          status: { [Op.in]: ['JUST_CONTACTED', 'NEW', 'ENQUIRY', 'CONTACTED', 'QUOTED', 'NEGOTIATING'] },
+          status: { [Op.in]: ['JUST_CONTACTED', 'PACKAGE_SEARCHED', 'PACKAGE_INTERESTED', 'NEW', 'ENQUIRY', 'CONTACTED', 'QUOTED', 'NEGOTIATING'] },
         },
       });
       return { agent, count };

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { PlusIcon, XMarkIcon, UserIcon, ChatBubbleLeftIcon, DocumentIcon, PhoneIcon, CalendarDaysIcon, PencilSquareIcon } from '@heroicons/react/24/outline';
+import { PlusIcon, XMarkIcon, UserIcon, ChatBubbleLeftIcon, DocumentIcon, PhoneIcon, CalendarDaysIcon, PencilSquareIcon, ClockIcon, CheckCircleIcon } from '@heroicons/react/24/outline';
 import { useCustomers, useCreateCustomer } from '../api/customersApi';
 import { useMessages } from '../hooks/useMessages';
 import { formatDate, formatDateTime, formatPhone } from '../utils/formatters';
@@ -190,6 +190,7 @@ function CustomerDrawer({ customer, onClose }) {
     { key: 'Profile', icon: UserIcon },
     { key: 'Messages', icon: ChatBubbleLeftIcon },
     { key: 'Documents', icon: DocumentIcon },
+    { key: 'Timeline', icon: ClockIcon },
   ];
 
   return (
@@ -357,6 +358,61 @@ function CustomerDrawer({ customer, onClose }) {
                   </a>
                 ))
               )}
+            </div>
+          )}
+
+          {/* Timeline Tab */}
+          {activeTab === 'Timeline' && (
+            <div className="space-y-4">
+              {/* Creation Entry */}
+              <div className="bg-white border border-neutral-200 rounded-[var(--radius-md)] p-4 flex gap-4 shadow-sm">
+                <div className="w-6 flex flex-col items-center shrink-0">
+                  <div className="w-6 h-6 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center shrink-0 ring-1 ring-emerald-200">
+                    <CheckCircleIcon className="w-4 h-4" />
+                  </div>
+                  {(messages.length > 0) && <div className="w-px h-full bg-neutral-200 mt-2"></div>}
+                </div>
+                <div className="flex-1 pb-2">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <h4 className="text-sm font-bold text-neutral-800">Customer Registered</h4>
+                      <p className="text-xs text-neutral-400 mt-1">
+                        {customer.name} added to database via {customer.source || 'Manual entry'}
+                      </p>
+                    </div>
+                    <span className="text-xs text-neutral-400">{formatDateTime(customer.createdAt)}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Message Entries */}
+              {messages.map((msg, i) => (
+                <div key={msg.id} className="bg-white border border-neutral-200 rounded-[var(--radius-md)] p-4 flex gap-4 shadow-sm">
+                  <div className="w-6 flex flex-col items-center shrink-0">
+                    <div className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 text-[10px] font-bold ring-1 ${
+                      msg.direction === 'IN' 
+                        ? 'bg-sky-100 text-sky-600 ring-sky-200' 
+                        : 'bg-emerald-100 text-emerald-600 ring-emerald-200'
+                    }`}>
+                      {msg.direction === 'IN' ? 'IN' : 'OUT'}
+                    </div>
+                    {i !== messages.length - 1 && <div className="w-px h-full bg-neutral-200 mt-2"></div>}
+                  </div>
+                  <div className="flex-1 pb-1">
+                    <div className="flex justify-between items-start">
+                      <div className="flex-1">
+                        <h4 className="text-sm font-bold text-neutral-800">
+                          {msg.direction === 'IN' ? 'Message Received' : 'Message Sent'}
+                        </h4>
+                        <p className="text-sm text-neutral-500 mt-1 break-words line-clamp-3">
+                          {msg.content || (msg.mediaUrl ? 'Attachment received' : 'Media message')}
+                        </p>
+                      </div>
+                      <span className="text-xs text-neutral-400 pl-4 shrink-0">{formatDateTime(msg.timestamp)}</span>
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </div>

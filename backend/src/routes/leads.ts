@@ -23,7 +23,7 @@ const createLeadSchema = z.object({
   interest: z.enum(['DOMESTIC', 'INTERNATIONAL']).nullable().optional(),
   assignedAgentId: z.string().uuid().nullable().optional(),
   packageId: z.string().uuid().nullable().optional(),
-  status: z.enum(['JUST_CONTACTED', 'NEW', 'ENQUIRY', 'CONTACTED', 'QUOTED', 'NEGOTIATING', 'BOOKED', 'LOST', 'CANCELLED']).optional(),
+  status: z.enum(['JUST_CONTACTED', 'PACKAGE_SEARCHED', 'PACKAGE_INTERESTED', 'NEW', 'ENQUIRY', 'CONTACTED', 'QUOTED', 'NEGOTIATING', 'BOOKED', 'CONVERTED', 'LOST', 'CANCELLED', 'UNKNOWN']).optional(),
   lostReason: z.string().optional(),
   notes: z.string().optional(),
   travelStart: z.string().datetime().optional(),
@@ -33,7 +33,7 @@ const createLeadSchema = z.object({
 });
 
 const updateLeadSchema = z.object({
-  status: z.enum(['JUST_CONTACTED', 'NEW', 'ENQUIRY', 'CONTACTED', 'QUOTED', 'NEGOTIATING', 'BOOKED', 'LOST', 'CANCELLED']).optional(),
+  status: z.enum(['JUST_CONTACTED', 'PACKAGE_SEARCHED', 'PACKAGE_INTERESTED', 'NEW', 'ENQUIRY', 'CONTACTED', 'QUOTED', 'NEGOTIATING', 'BOOKED', 'CONVERTED', 'LOST', 'CANCELLED', 'UNKNOWN']).optional(),
   assignedAgentId: z.string().uuid().nullable().optional(),
   destination: z.string().optional(),
   travelDates: z.string().optional(),

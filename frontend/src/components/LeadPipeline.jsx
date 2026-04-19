@@ -63,13 +63,26 @@ export default function LeadPipeline({ onLeadClick }) {
 
   if (isLoading) {
     return (
-      <div className="flex gap-4 overflow-x-auto pb-4 hide-scrollbar">
+      <div className="flex gap-6 overflow-x-auto pb-4 hide-scrollbar">
         {LEAD_PIPELINE_COLUMNS.map((col) => (
-          <div key={col.key} className="w-[300px] shrink-0 animate-pulse rounded-[var(--radius-lg)] border border-neutral-200 bg-white p-4">
-            <div className="h-8 bg-neutral-100 rounded-lg mb-3" />
-            <div className="space-y-3">
-              <div className="h-32 bg-neutral-50 rounded-xl" />
-              <div className="h-32 bg-neutral-50 rounded-xl" />
+          <div key={col.key} className="w-[320px] shrink-0 rounded-2xl border border-neutral-200/60 bg-neutral-50/30 p-5">
+            <div className="flex items-center justify-between mb-6">
+              <div className="h-5 bg-neutral-200 rounded-md w-24 animate-pulse" />
+              <div className="h-5 bg-neutral-200 rounded-full w-8 animate-pulse" />
+            </div>
+            <div className="space-y-4">
+              {[1, 2].map((i) => (
+                <div key={i} className="h-40 bg-white rounded-2xl border border-neutral-200/50 p-4 space-y-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-neutral-100 animate-pulse" />
+                    <div className="space-y-2 flex-1">
+                      <div className="h-3 bg-neutral-100 rounded w-1/2 animate-pulse" />
+                      <div className="h-2 bg-neutral-50 rounded w-1/3 animate-pulse" />
+                    </div>
+                  </div>
+                  <div className="h-16 bg-neutral-50/50 rounded-xl animate-pulse" />
+                </div>
+              ))}
             </div>
           </div>
         ))}
@@ -131,9 +144,12 @@ export default function LeadPipeline({ onLeadClick }) {
               ))}
 
               {colLeads.length === 0 && (
-                <div className="flex flex-col items-center justify-center h-32 border border-dashed border-neutral-200 rounded-[var(--radius-md)] bg-neutral-50/50">
-                  <InboxIcon className="w-6 h-6 text-neutral-300 mb-2" />
-                  <p className="text-xs text-neutral-400 font-medium">Drop leads here</p>
+                <div className="flex flex-col items-center justify-center py-10 px-4 border-2 border-dashed border-neutral-200/60 rounded-2xl bg-neutral-50/40 text-center transition-colors group-hover:border-neutral-300 group-hover:bg-neutral-50/60">
+                  <div className="w-12 h-12 rounded-full bg-white flex items-center justify-center shadow-sm border border-neutral-100 mb-3">
+                    <InboxIcon className="w-5 h-5 text-neutral-300" />
+                  </div>
+                  <p className="text-[11px] text-neutral-400 font-bold uppercase tracking-wider mb-1">Empty Column</p>
+                  <p className="text-[10px] text-neutral-400 max-w-[120px] leading-tight">Drag and drop leads here to change status</p>
                 </div>
               )}
             </div>
