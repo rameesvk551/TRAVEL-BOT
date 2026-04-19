@@ -46,6 +46,7 @@ export default function Templates() {
   if (prebuiltLoading || agencyLoading) return <div className="p-8 text-center text-neutral-400">Loading templates...</div>;
 
   return (
+    <>
     <div className="w-full space-y-6 page-enter">
       <div className="flex items-center justify-between">
         <div>
@@ -195,7 +196,7 @@ export default function Templates() {
       isPrebuilt={isPrebuilt}
       onClose={() => setIsDrawerOpen(false)}
     />
-  </div>
+    </>
   );
 }
 
