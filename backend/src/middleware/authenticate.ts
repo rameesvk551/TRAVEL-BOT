@@ -64,6 +64,10 @@ async function authenticate(req, res, next) {
 
     req.agent = agent;
     req.agency = agency;
+    req.user = {
+      ...agent.toJSON(),
+      agencyId: agency.id,
+    };
     next();
   } catch (err) {
     console.error('[authenticate] error:', err.message);
