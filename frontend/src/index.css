@@ -89,9 +89,10 @@
 }
 
 @layer components {
+
   /* ── Panel system ── */
   .shell-panel {
-    @apply rounded-[var(--radius-lg)] border border-neutral-200 bg-white shadow-[0_1px_3px_rgba(0,0,0,0.04)];
+    @apply rounded-[var(--radius-lg)] border border-neutral-200 bg-white shadow-[0_1px_3px_rgba(0, 0, 0, 0.04)];
   }
 
   .shell-panel-soft {
@@ -176,7 +177,7 @@
 
   /* ── KPI Card ── */
   .kpi-card {
-    @apply relative overflow-hidden rounded-[var(--radius-lg)] border border-neutral-200 bg-white p-5 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_8px_24px_-8px_rgba(0,0,0,0.08)];
+    @apply relative overflow-hidden rounded-[var(--radius-lg)] border border-neutral-200 bg-white p-5 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_8px_24px_-8px_rgba(0, 0, 0, 0.08)];
   }
 
   .kpi-icon {
@@ -189,7 +190,7 @@
 
   /* ── Table system ── */
   .data-table-wrapper {
-    @apply overflow-hidden rounded-[var(--radius-lg)] border border-neutral-200 bg-white shadow-[0_1px_3px_rgba(0,0,0,0.04)];
+    @apply overflow-hidden rounded-[var(--radius-lg)] border border-neutral-200 bg-white shadow-[0_1px_3px_rgba(0, 0, 0, 0.04)];
   }
 
   .data-table-head {
@@ -210,7 +211,7 @@
 
   /* ── Section card ── */
   .section-card {
-    @apply rounded-[var(--radius-lg)] border border-neutral-200 bg-white shadow-[0_1px_3px_rgba(0,0,0,0.04)];
+    @apply rounded-[var(--radius-lg)] border border-neutral-200 bg-white shadow-[0_1px_3px_rgba(0, 0, 0, 0.04)];
   }
 
   .section-header {
@@ -241,24 +242,53 @@
 
 /* ── Animations ── */
 @keyframes pageIn {
-  0% { opacity: 0; transform: translateY(8px); }
-  100% { opacity: 1; transform: translateY(0); }
+  0% {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 @keyframes fadeIn {
-  0% { opacity: 0; }
-  100% { opacity: 1; }
+  0% {
+    opacity: 0;
+  }
+
+  100% {
+    opacity: 1;
+  }
 }
 
 @keyframes slideUp {
-  0% { transform: translateY(12px); opacity: 0; }
-  100% { transform: translateY(0); opacity: 1; }
+  0% {
+    transform: translateY(12px);
+    opacity: 0;
+  }
+
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
 }
 
 @keyframes scaleIn {
-  0% { transform: scale(0); opacity: 0; }
-  60% { transform: scale(1.15); }
-  100% { transform: scale(1); opacity: 1; }
+  0% {
+    transform: scale(0);
+    opacity: 0;
+  }
+
+  60% {
+    transform: scale(1.15);
+  }
+
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
 }
 
 .animate-scale-in {
@@ -266,8 +296,15 @@
 }
 
 @keyframes wizardSlideIn {
-  0% { transform: translateY(12px); opacity: 0; }
-  100% { transform: translateY(0); opacity: 1; }
+  0% {
+    transform: translateY(12px);
+    opacity: 0;
+  }
+
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
 }
 
 .animate-wizard-in {
@@ -275,8 +312,13 @@
 }
 
 @keyframes shimmer {
-  0% { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
+  0% {
+    background-position: -200% 0;
+  }
+
+  100% {
+    background-position: 200% 0;
+  }
 }
 
 /* Campaign wizard */

@@ -23,6 +23,7 @@ import CreateCampaign from './pages/CreateCampaign';
 import Reviews from './pages/Reviews';
 import Agents from './pages/Agents';
 import Sidebar from './components/Sidebar';
+import Signup from './pages/Signup';
 
 /**
  * Protected route wrapper — redirects to login if not authenticated.
@@ -68,6 +69,7 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<Login />} />
+        <Route path="/signup" element={<Signup />} />
         <Route
           path="/*"
           element={

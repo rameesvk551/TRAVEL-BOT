@@ -73,13 +73,11 @@ export default function Sidebar() {
           if (window.innerWidth < 1024) toggleSidebar();
         }}
         title={collapsed ? label : undefined}
-        className={`group relative flex items-center gap-3 rounded-[var(--radius-sm)] px-3 py-2.5 text-sm font-medium transition-all duration-200 ${
-          collapsed ? 'justify-center' : ''
-        } ${
-          active
+        className={`group relative flex items-center gap-3 rounded-[var(--radius-sm)] px-3 py-2.5 text-sm font-medium transition-all duration-200 ${collapsed ? 'justify-center' : ''
+          } ${active
             ? 'bg-neutral-900 text-white shadow-sm'
             : 'text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900'
-        }`}
+          }`}
       >
         <Icon className="h-[18px] w-[18px] shrink-0" />
         {!collapsed && <span>{label}</span>}
@@ -91,20 +89,17 @@ export default function Sidebar() {
     <>
       {/* Mobile backdrop */}
       <div
-        className={`fixed inset-0 z-30 bg-black/25 backdrop-blur-sm transition lg:hidden ${
-          sidebarOpen ? 'opacity-100' : 'pointer-events-none opacity-0'
-        }`}
+        className={`fixed inset-0 z-30 bg-black/25 backdrop-blur-sm transition lg:hidden ${sidebarOpen ? 'opacity-100' : 'pointer-events-none opacity-0'
+          }`}
         onClick={toggleSidebar}
       />
 
       <aside
         onMouseEnter={() => setSidebarHovered(true)}
         onMouseLeave={() => setSidebarHovered(false)}
-        className={`fixed inset-y-0 left-0 z-40 flex flex-col border-r border-neutral-200 bg-white transition-all duration-300 ${
-          collapsed ? 'w-[72px] px-2' : 'w-[252px] px-4'
-        } py-4 lg:translate-x-0 ${
-          sidebarOpen ? 'translate-x-0' : '-translate-x-full'
-        }`}
+        className={`fixed inset-y-0 left-0 z-40 flex flex-col border-r border-neutral-200 bg-white transition-all duration-300 ${collapsed ? 'w-[72px] px-2' : 'w-[252px] px-4'
+          } py-4 lg:translate-x-0 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'
+          }`}
       >
         {/* Agency name + collapse toggle */}
         <div className={`flex items-center ${collapsed ? 'justify-center' : 'justify-between px-2'}`}>
@@ -136,9 +131,8 @@ export default function Sidebar() {
 
         {/* Agent info */}
         <div
-          className={`mt-5 flex items-center rounded-[var(--radius-md)] border border-neutral-100 bg-neutral-50 ${
-            collapsed ? 'justify-center px-2 py-3' : 'gap-3 px-3 py-3'
-          }`}
+          className={`mt-5 flex items-center rounded-[var(--radius-md)] border border-neutral-100 bg-neutral-50 ${collapsed ? 'justify-center px-2 py-3' : 'gap-3 px-3 py-3'
+            }`}
         >
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 text-xs font-bold text-white shadow-sm">
             {getInitials(agent?.name, 'LC')}
@@ -199,9 +193,8 @@ export default function Sidebar() {
           <button
             onClick={() => logoutMutation.mutate()}
             title={collapsed ? 'Logout' : undefined}
-            className={`flex w-full items-center rounded-[var(--radius-sm)] px-3 py-2.5 text-sm font-medium text-neutral-400 transition hover:bg-neutral-100 hover:text-neutral-900 ${
-              collapsed ? 'justify-center' : 'gap-3'
-            }`}
+            className={`flex w-full items-center rounded-[var(--radius-sm)] px-3 py-2.5 text-sm font-medium text-neutral-400 transition hover:bg-neutral-100 hover:text-neutral-900 ${collapsed ? 'justify-center' : 'gap-3'
+              }`}
           >
             <ArrowRightOnRectangleIcon className="h-5 w-5 shrink-0" />
             {!collapsed && <span>Logout</span>}

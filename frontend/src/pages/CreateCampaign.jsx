@@ -317,14 +317,6 @@ export default function CreateCampaign() {
     return mode?.label || 'All Clients';
   };
 
-  const goBack = () => {
-    if (step > 0) {
-      setStep(step - 1);
-    } else {
-      navigate('/campaigns');
-    }
-  };
-
   // ── Render ──
   return (
     <div className="min-h-[calc(100vh-48px)] flex flex-col campaign-wizard-page">

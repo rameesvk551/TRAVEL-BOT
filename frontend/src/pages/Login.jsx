@@ -1,127 +1,127 @@
-import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { GlobeAltIcon } from '@heroicons/react/24/outline';
-import { useLogin, useRegister } from '../hooks/useAuth';
-import { loginSchema, registerSchema } from '../utils/validators';
+import { Link } from 'react-router-dom';
+import { 
+  EnvelopeIcon, 
+  LockClosedIcon, 
+  ChevronRightIcon
+} from '@heroicons/react/24/outline';
+import { useLogin } from '../hooks/useAuth';
+import { loginSchema } from '../utils/validators';
+import logo from '../assets/logo.png';
 
 export default function Login() {
-  const [mode, setMode] = useState('login');
   const loginMutation = useLogin();
-  const registerMutation = useRegister();
   const loginForm = useForm({ resolver: zodResolver(loginSchema) });
-  const registerForm = useForm({ resolver: zodResolver(registerSchema) });
 
-  const error = loginMutation.error?.response?.data?.error || registerMutation.error?.response?.data?.error;
+  const error = loginMutation.error?.response?.data?.error;
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(100,100,100,0.08),transparent_28%),linear-gradient(180deg,#f5f5f5_0%,#ebebeb_100%)] px-4 py-12">
-      <div className="mx-auto grid min-h-[calc(100vh-6rem)] max-w-6xl items-center gap-10 lg:grid-cols-[0.95fr_1.05fr]">
-        <section className="px-2">
-          <div className="inline-flex h-16 w-16 items-center justify-center rounded-[24px] bg-[#2d2d2d] text-white shadow-[0_22px_48px_-26px_rgba(0,0,0,0.5)]">
-            <GlobeAltIcon className="h-8 w-8" />
-          </div>
-          <p className="eyebrow mt-8">Travel CRM</p>
-          <h1 className="mt-3 text-balance text-5xl font-extrabold tracking-tight text-[#1a1a1a] sm:text-6xl">
-            Run your concierge desk with a calmer interface.
-          </h1>
-          <p className="mt-5 max-w-xl text-base leading-8 text-[#6b6b6b]">
-            Manage WhatsApp enquiries, quotes, departures, payments, and client follow-up from one bright, editorial workspace designed for travel teams.
-          </p>
-        </section>
+    <div className="min-h-screen bg-white font-inter selection:bg-indigo-100 selection:text-indigo-900">
+      <div className="flex min-h-screen flex-col lg:flex-row">
+        
+        {/* Left Side: Form */}
+        <section className="mesh-gradient-bg flex w-full flex-col justify-center px-6 py-12 lg:w-[45%] lg:px-16 xl:w-[40%] xl:px-24">
+          <div className="mx-auto w-full max-w-md animate-wizard-in">
+            <div className="mb-10 flex items-center gap-3">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-neutral-900 shadow-xl overflow-hidden p-2">
+                <img src={logo} alt="Wayon Logo" className="h-full w-full object-contain brightness-0 invert" />
+              </div>
+              <span className="text-xl font-bold tracking-tight text-neutral-900">WayOn</span>
+            </div>
 
-        <section className="shell-panel mx-auto w-full max-w-xl p-8 sm:p-10">
-          <div className="flex rounded-full bg-[#ebebeb] p-1">
-            <button
-              type="button"
-              onClick={() => setMode('login')}
-              className={`flex-1 rounded-full px-4 py-3 text-sm font-semibold transition ${mode === 'login' ? 'bg-white text-[#1a1a1a] shadow-sm' : 'text-[#6b6b6b]'}`}
-            >
-              Sign In
-            </button>
-            <button
-              type="button"
-              onClick={() => setMode('register')}
-              className={`flex-1 rounded-full px-4 py-3 text-sm font-semibold transition ${mode === 'register' ? 'bg-white text-[#1a1a1a] shadow-sm' : 'text-[#6b6b6b]'}`}
-            >
-              Register
-            </button>
-          </div>
+            <div className="mb-8">
+              <h1 className="text-3xl font-extrabold tracking-tight text-neutral-900 sm:text-4xl">
+                Welcome back
+              </h1>
+              <p className="mt-3 text-neutral-500">
+                Access your premium travel concierge dashboard.
+              </p>
+            </div>
 
-          {error ? (
-            <div className="mt-6 rounded-[22px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div>
-          ) : null}
+            {error ? (
+              <div className="mb-6 animate-shake rounded-xl border border-rose-100 bg-rose-50/50 p-4 text-sm text-rose-600 backdrop-blur-sm">
+                <div className="flex items-center gap-2">
+                  <div className="h-1.5 w-1.5 rounded-full bg-rose-600" />
+                  {error}
+                </div>
+              </div>
+            ) : null}
 
-          {mode === 'login' ? (
-            <form onSubmit={loginForm.handleSubmit((values) => loginMutation.mutate(values))} className="mt-8 space-y-5">
-              <label className="block">
-                <span className="mb-2 block text-sm font-semibold text-[#404040]">Email</span>
-                <input {...loginForm.register('email')} type="email" className="shell-input-rect" placeholder="you@agency.com" />
-                {loginForm.formState.errors.email ? <p className="mt-2 text-xs text-rose-700">{loginForm.formState.errors.email.message}</p> : null}
-              </label>
-
-              <label className="block">
-                <span className="mb-2 block text-sm font-semibold text-[#404040]">Password</span>
-                <input {...loginForm.register('password')} type="password" className="shell-input-rect" placeholder="••••••••" />
-                {loginForm.formState.errors.password ? <p className="mt-2 text-xs text-rose-700">{loginForm.formState.errors.password.message}</p> : null}
-              </label>
-
-              <button type="submit" disabled={loginMutation.isPending} className="shell-button-primary w-full">
-                {loginMutation.isPending ? 'Signing in...' : 'Sign In'}
-              </button>
-            </form>
-          ) : (
-            <form onSubmit={registerForm.handleSubmit((values) => registerMutation.mutate(values))} className="mt-8 space-y-5">
-              <div className="grid gap-4 md:grid-cols-2">
-                <label className="block md:col-span-2">
-                  <span className="mb-2 block text-sm font-semibold text-[#404040]">Agency Name</span>
-                  <input {...registerForm.register('agencyName')} className="shell-input-rect" placeholder="Fluid Concierge" />
-                  {registerForm.formState.errors.agencyName ? <p className="mt-2 text-xs text-rose-700">{registerForm.formState.errors.agencyName.message}</p> : null}
-                </label>
-
-                <label className="block">
-                  <span className="mb-2 block text-sm font-semibold text-[#404040]">Agency Phone</span>
-                  <input {...registerForm.register('agencyPhone')} className="shell-input-rect" placeholder="+919876543210" />
-                  {registerForm.formState.errors.agencyPhone ? <p className="mt-2 text-xs text-rose-700">{registerForm.formState.errors.agencyPhone.message}</p> : null}
-                </label>
-
-                <label className="block">
-                  <span className="mb-2 block text-sm font-semibold text-[#404040]">Agency Email</span>
-                  <input {...registerForm.register('agencyEmail')} type="email" className="shell-input-rect" placeholder="hello@agency.com" />
-                  {registerForm.formState.errors.agencyEmail ? <p className="mt-2 text-xs text-rose-700">{registerForm.formState.errors.agencyEmail.message}</p> : null}
-                </label>
-
-                <label className="block md:col-span-2">
-                  <span className="mb-2 block text-sm font-semibold text-[#404040]">WhatsApp Business Number</span>
-                  <input {...registerForm.register('whatsappNumber')} className="shell-input-rect" placeholder="+919876543210" />
-                  {registerForm.formState.errors.whatsappNumber ? <p className="mt-2 text-xs text-rose-700">{registerForm.formState.errors.whatsappNumber.message}</p> : null}
-                </label>
-
-                <label className="block">
-                  <span className="mb-2 block text-sm font-semibold text-[#404040]">Your Name</span>
-                  <input {...registerForm.register('agentName')} className="shell-input-rect" placeholder="Lead Curator" />
-                  {registerForm.formState.errors.agentName ? <p className="mt-2 text-xs text-rose-700">{registerForm.formState.errors.agentName.message}</p> : null}
-                </label>
-
-                <label className="block">
-                  <span className="mb-2 block text-sm font-semibold text-[#404040]">Your Email</span>
-                  <input {...registerForm.register('agentEmail')} type="email" className="shell-input-rect" placeholder="curator@agency.com" />
-                  {registerForm.formState.errors.agentEmail ? <p className="mt-2 text-xs text-rose-700">{registerForm.formState.errors.agentEmail.message}</p> : null}
-                </label>
-
-                <label className="block md:col-span-2">
-                  <span className="mb-2 block text-sm font-semibold text-[#404040]">Password</span>
-                  <input {...registerForm.register('agentPassword')} type="password" className="shell-input-rect" placeholder="Minimum 8 characters" />
-                  {registerForm.formState.errors.agentPassword ? <p className="mt-2 text-xs text-rose-700">{registerForm.formState.errors.agentPassword.message}</p> : null}
-                </label>
+            <form onSubmit={loginForm.handleSubmit((values) => loginMutation.mutate(values))} className="space-y-5">
+              <div>
+                <label className="mb-1.5 block text-xs font-bold uppercase tracking-widest text-neutral-400">Email Address</label>
+                <div className="input-icon-wrapper">
+                  <EnvelopeIcon className="icon-left" />
+                  <input 
+                    {...loginForm.register('email')} 
+                    type="email" 
+                    className="shell-input-rect input-with-icon border-neutral-200/60 bg-white/50 focus:bg-white" 
+                    placeholder="alex@concierge.com" 
+                  />
+                </div>
+                {loginForm.formState.errors.email ? <p className="mt-1.5 text-xs font-medium text-rose-500">{loginForm.formState.errors.email.message}</p> : null}
               </div>
 
-              <button type="submit" disabled={registerMutation.isPending} className="shell-button-primary w-full">
-                {registerMutation.isPending ? 'Creating account...' : 'Create Account'}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-bold uppercase tracking-widest text-neutral-400">Password</label>
+                  <button type="button" className="text-xs font-semibold text-indigo-600 hover:text-indigo-700 transition">Forgot?</button>
+                </div>
+                <div className="input-icon-wrapper">
+                  <LockClosedIcon className="icon-left" />
+                  <input 
+                    {...loginForm.register('password')} 
+                    type="password" 
+                    className="shell-input-rect input-with-icon border-neutral-200/60 bg-white/50 focus:bg-white" 
+                    placeholder="••••••••" 
+                  />
+                </div>
+                {loginForm.formState.errors.password ? <p className="mt-1.5 text-xs font-medium text-rose-500">{loginForm.formState.errors.password.message}</p> : null}
+              </div>
+
+              <button 
+                type="submit" 
+                disabled={loginMutation.isPending} 
+                className="group relative flex w-full items-center justify-center gap-2 rounded-xl bg-neutral-900 px-8 py-4 text-sm font-bold text-white transition-all hover:bg-neutral-800 active:scale-[0.98] disabled:opacity-70 shadow-lg shadow-neutral-200"
+              >
+                {loginMutation.isPending ? 'Authenticating...' : (
+                  <>
+                    Sign In to Dashboard
+                    <ChevronRightIcon className="h-4 w-4 transition-transform group-hover:translate-x-1" />
+                  </>
+                )}
               </button>
             </form>
-          )}
+
+            <p className="mt-8 text-center text-sm text-neutral-500">
+              Don't have an account? <Link to="/signup" className="font-bold text-neutral-900 hover:underline">Join the elite</Link>
+            </p>
+          </div>
         </section>
+
+        {/* Right Side: Hero Visual */}
+        <section className="hidden relative lg:block lg:flex-1 overflow-hidden bg-neutral-100">
+          <img 
+            src="/login-hero.png" 
+            alt="Premium Travel Workspace" 
+            className="absolute inset-0 h-full w-full object-cover grayscale-[0.2] contrast-[1.1]" 
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-neutral-900/60 via-transparent to-transparent" />
+          
+          <div className="absolute bottom-16 left-16 right-16 animate-page-in">
+            <div className="inline-flex glass-panel rounded-full px-4 py-1.5 mb-6 text-[11px] font-bold uppercase tracking-[0.2em] text-neutral-700">
+              Premium Concierge System
+            </div>
+            <h2 className="text-4xl font-extrabold text-white tracking-tight leading-tight mb-4">
+              Orchestrate stays and journeys <br/> with effortless precision.
+            </h2>
+            <p className="text-lg text-neutral-200 max-w-lg font-medium leading-relaxed">
+              The only editorial workspace built specifically for high-end travel teams to manage the modern concierge desk.
+            </p>
+          </div>
+        </section>
+
       </div>
     </div>
   );
