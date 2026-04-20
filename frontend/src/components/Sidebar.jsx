@@ -22,6 +22,7 @@ import {
   ChevronRightIcon,
 } from '@heroicons/react/24/outline';
 import { getInitials } from './uiHelpers';
+import logo from '../assets/logo.png';
 
 const navItems = [
   { to: '/', icon: HomeIcon, label: 'Dashboard' },
@@ -181,14 +182,15 @@ export default function Sidebar() {
 
         {/* Bottom actions */}
         <div className="mt-auto space-y-2 pt-6">
-          <NavLink
-            to="/packages/new"
-            title={collapsed ? 'New Itinerary' : undefined}
-            className={`shell-button-primary w-full ${collapsed ? '!px-0 justify-center' : ''}`}
-          >
-            <PlusIcon className="h-4 w-4 shrink-0" />
-            {!collapsed && 'New Itinerary'}
-          </NavLink>
+          <div className={`flex flex-col items-center justify-center gap-1.5 pb-2`}>
+            {!collapsed && <span className="text-[9px] font-bold uppercase tracking-[0.2em] text-neutral-400">Powered By</span>}
+            <div className={`flex items-center justify-center ${collapsed ? 'flex-col gap-1' : 'gap-2'}`}>
+              <div className={`flex items-center justify-center rounded-lg bg-neutral-900 shadow-sm overflow-hidden ${collapsed ? 'h-8 w-8 p-1.5' : 'h-6 w-6 p-1.5'}`}>
+                <img src={logo} alt="Wayon Logo" className="h-full w-full object-contain brightness-0 invert" />
+              </div>
+              {!collapsed && <span className="text-[13px] font-bold tracking-tight text-neutral-900">WayOn</span>}
+            </div>
+          </div>
 
           <button
             onClick={() => logoutMutation.mutate()}
