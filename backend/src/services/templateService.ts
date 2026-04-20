@@ -455,13 +455,65 @@ async function deleteTemplate(id, agencyId) {
 }
 
 /**
- * Submit a template for Meta approval (marks as PENDING).
+ * Synchronize templates with Meta (via configured provider).
+ */
+async function syncTemplates(agencyId) {
+  const whatsappService = require('./whatsappService');
+  const metaResult = await whatsappService.syncTemplatesWithMeta(agencyId);
+
+  // Marketing OS returns { data: syncedTemplates, message, total }
+  const metaTemplates = metaResult?.data || [];
+  const syncedIds = [];
+
+  for (const mt of metaTemplates) {
+    const [template, created] = await MessageTemplate.findOrCreate({
+      where: { name: mt.name, agencyId },
+      defaults: {
+        displayName: mt.name.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+        category: mt.category,
+        language: mt.language || 'en',
+        body: mt.components?.find(c => c.type === 'BODY')?.text || '',
+        status: mt.status,
+        metaTemplateId: mt.id,
+        isPrebuilt: false,
+      }
+    });
+
+    if (!created) {
+      // Update existing template with latest status and metadata
+      await template.update({
+        status: mt.status,
+        metaTemplateId: mt.id,
+        rejectionReason: mt.rejected_reason || null,
+        // Optionally update content if it changed on Meta
+        body: mt.components?.find(c => c.type === 'BODY')?.text || template.body,
+      });
+    }
+    syncedIds.push(template.id);
+  }
+
+  return { success: true, count: metaTemplates.length };
+}
+
+/**
+ * Submit a template for Meta approval.
  */
 async function submitForApproval(id, agencyId) {
   const template = await MessageTemplate.findOne({ where: { id, agencyId } });
   if (!template) throw new Error('Template not found');
-  if (template.status === 'APPROVED') throw new Error('Template already approved');
-  return template.update({ status: 'PENDING' });
+  
+  const whatsappService = require('./whatsappService');
+  
+  // Actually submit to Meta
+  try {
+    await whatsappService.submitTemplateToMeta(agencyId, template);
+    return template.update({ status: 'PENDING' });
+  } catch (err) {
+    console.error('[TemplateService] Meta submission failed:', err.message);
+    // Even if submission fails, we mark as pending locally if the user intended to submit
+    // (though better to show the error)
+    throw err;
+  }
 }
 
 module.exports = {
@@ -475,4 +527,5 @@ module.exports = {
   duplicateTemplate,
   deleteTemplate,
   submitForApproval,
+  syncTemplates,
 };

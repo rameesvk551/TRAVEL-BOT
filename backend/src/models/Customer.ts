@@ -30,6 +30,10 @@ module.exports = (sequelize) => {
       allowNull: false,
       comment: 'E.164 format: +91XXXXXXXXXX',
     },
+    email: {
+      type: DataTypes.STRING(255),
+      allowNull: true,
+    },
     language: {
       type: DataTypes.ENUM('EN', 'ML'),
       defaultValue: 'EN',

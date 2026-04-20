@@ -288,10 +288,38 @@ function LeadDrawer({ leadId, onClose, agents }) {
   const [followupDate, setFollowupDate] = useState('');
   const [followupNote, setFollowupNote] = useState('');
 
+  const [isEditing, setIsEditing] = useState(false);
+  const [editState, setEditState] = useState({});
+
   const updateLead = useUpdateLead();
   const addNote = useAddNote();
   const addFollowup = useAddFollowUp();
   const updateFollowup = useUpdateFollowUp();
+
+  const handleEditClick = () => {
+    setEditState({
+      customerName: lead?.customer?.name || '',
+      customerPhone: lead?.customer?.phone || '',
+      customerEmail: lead?.customer?.email || '',
+      source: lead?.source || '',
+      budgetPerPerson: lead?.budgetPerPerson || 0,
+      destination: lead?.destination || '',
+      assignedAgentId: lead?.assignedAgentId || '',
+    });
+    setIsEditing(true);
+  };
+
+  const handleSave = () => {
+    updateLead.mutate({ 
+      id: leadId, 
+      data: {
+        ...editState,
+        // Convert budget back to paise if editing in rupees (though here I used raw paise for simplicity in state)
+      } 
+    }, {
+      onSuccess: () => setIsEditing(false)
+    });
+  };
   
   if (!leadId) return null;
 
@@ -328,9 +356,30 @@ function LeadDrawer({ leadId, onClose, agents }) {
           )}
           
           <div className="flex items-center gap-2 shrink-0">
-            <button className="p-2 text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100 rounded-lg transition-colors">
-              <PencilIcon className="w-5 h-5" />
-            </button>
+            {isEditing ? (
+              <>
+                <button 
+                  onClick={handleSave} 
+                  disabled={updateLead.isPending}
+                  className="px-3 py-1.5 bg-neutral-900 text-white text-xs font-bold rounded-lg hover:bg-black transition-all"
+                >
+                  {updateLead.isPending ? 'Saving...' : 'Save'}
+                </button>
+                <button 
+                   onClick={() => setIsEditing(false)} 
+                   className="px-3 py-1.5 border border-neutral-200 text-neutral-600 text-xs font-bold rounded-lg hover:bg-neutral-50 transition-all"
+                >
+                  Cancel
+                </button>
+              </>
+            ) : (
+              <button 
+                 onClick={handleEditClick}
+                 className="p-2 text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100 rounded-lg transition-colors"
+              >
+                <PencilIcon className="w-5 h-5" />
+              </button>
+            )}
             <button onClick={onClose} className="p-2 text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100 rounded-lg transition-colors">
               <XMarkIcon className="w-5 h-5" />
             </button>
@@ -341,28 +390,91 @@ function LeadDrawer({ leadId, onClose, agents }) {
         {!isLoading && lead && (
           <div className="px-6 py-4 grid grid-cols-2 gap-y-4 gap-x-6 text-sm border-b border-neutral-100">
              <div>
-               <div className="text-neutral-400 text-xs mb-1 font-medium">Project</div>
-               <div className="font-medium text-neutral-900">—</div>
+               <div className="text-neutral-400 text-xs mb-1 font-medium">Destination</div>
+               {isEditing ? (
+                 <input 
+                   type="text" 
+                   value={editState.destination} 
+                   onChange={e => setEditState({...editState, destination: e.target.value})}
+                   className="w-full bg-neutral-50 border-neutral-200 rounded-md py-1 px-2 text-sm focus:ring-0"
+                 />
+               ) : (
+                 <div className="font-medium text-neutral-900">{lead.destination || '—'}</div>
+               )}
              </div>
              <div>
                <div className="text-neutral-400 text-xs mb-1 font-medium">Source</div>
-               <div className="font-medium text-neutral-900">{lead.source?.replace('_', ' ') || 'organic'}</div>
+               {isEditing ? (
+                  <select 
+                    value={editState.source} 
+                    onChange={e => setEditState({...editState, source: e.target.value})}
+                    className="w-full bg-neutral-50 border-neutral-200 rounded-md py-1 px-2 text-sm focus:ring-0"
+                  >
+                    <option value="whatsapp_organic">WhatsApp Organic</option>
+                    <option value="facebook_ad">Facebook Ad</option>
+                    <option value="instagram_ad">Instagram Ad</option>
+                    <option value="google_ad">Google Ad</option>
+                    <option value="referral">Referral</option>
+                    <option value="manual">Manual</option>
+                  </select>
+               ) : (
+                 <div className="font-medium text-neutral-900">{lead.source?.replace(/_/g, ' ') || 'organic'}</div>
+               )}
              </div>
              <div>
                <div className="text-neutral-400 text-xs mb-1 font-medium">Contact Person</div>
-               <div className="font-medium text-neutral-900">{lead.customer?.name}</div>
+               {isEditing ? (
+                 <input 
+                   type="text" 
+                   value={editState.customerName} 
+                   onChange={e => setEditState({...editState, customerName: e.target.value})}
+                   className="w-full bg-neutral-50 border-neutral-200 rounded-md py-1 px-2 text-sm focus:ring-0"
+                 />
+               ) : (
+                 <div className="font-medium text-neutral-900">{lead.customer?.name}</div>
+               )}
              </div>
              <div>
                <div className="text-neutral-400 text-xs mb-1 font-medium">Phone</div>
-               <div className="font-medium text-neutral-900">{lead.customer?.phone || '—'}</div>
+               {isEditing ? (
+                 <input 
+                   type="text" 
+                   value={editState.customerPhone} 
+                   onChange={e => setEditState({...editState, customerPhone: e.target.value})}
+                   className="w-full bg-neutral-50 border-neutral-200 rounded-md py-1 px-2 text-sm focus:ring-0"
+                 />
+               ) : (
+                 <div className="font-medium text-neutral-900">{lead.customer?.phone || '—'}</div>
+               )}
              </div>
              <div>
                <div className="text-neutral-400 text-xs mb-1 font-medium">Email</div>
-               <div className="font-medium text-neutral-900">{lead.customer?.email || '—'}</div>
+               {isEditing ? (
+                 <input 
+                   type="email" 
+                   value={editState.customerEmail} 
+                   onChange={e => setEditState({...editState, customerEmail: e.target.value})}
+                   className="w-full bg-neutral-50 border-neutral-200 rounded-md py-1 px-2 text-sm focus:ring-0"
+                 />
+               ) : (
+                 <div className="font-medium text-neutral-900">{lead.customer?.email || '—'}</div>
+               )}
              </div>
              <div>
-               <div className="text-neutral-400 text-xs mb-1 font-medium">Bill Value</div>
-               <div className="font-medium text-neutral-900">{lead.budgetPerPerson ? `₹${Math.round(lead.budgetPerPerson/100)}` : '—'}</div>
+               <div className="text-neutral-400 text-xs mb-1 font-medium">Budget / Person</div>
+               {isEditing ? (
+                 <div className="relative">
+                   <span className="absolute left-2 top-1.5 text-neutral-400">₹</span>
+                   <input 
+                     type="number" 
+                     value={editState.budgetPerPerson / 100} 
+                     onChange={e => setEditState({...editState, budgetPerPerson: Number(e.target.value) * 100})}
+                     className="w-full bg-neutral-50 border-neutral-200 rounded-md py-1 pl-5 pr-2 text-sm focus:ring-0"
+                   />
+                 </div>
+               ) : (
+                 <div className="font-medium text-neutral-900">{lead.budgetPerPerson ? `₹${Math.round(lead.budgetPerPerson/100)}` : '—'}</div>
+               )}
              </div>
              <div>
                <div className="text-neutral-400 text-xs mb-1 font-medium">Created</div>
@@ -383,14 +495,25 @@ function LeadDrawer({ leadId, onClose, agents }) {
              <div>
                 <div className="text-neutral-400 text-xs mb-1 font-medium">Assigned To</div>
                 <div className="font-medium text-neutral-900 flex items-center gap-2">
-                   <select
-                      className="bg-transparent border-0 font-medium text-neutral-700 appearance-none p-0 cursor-pointer focus:ring-0 text-sm"
-                      value={lead.assignedAgentId || ''}
-                      onChange={(e) => updateLead.mutate({ id: lead.id, data: { assignedAgentId: e.target.value }})}
-                    >
-                      <option value="">— Change</option>
-                      {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-                    </select>
+                   {isEditing ? (
+                      <select
+                        className="w-full bg-neutral-50 border-neutral-200 rounded-md py-1 px-2 text-sm focus:ring-0"
+                        value={editState.assignedAgentId || ''}
+                        onChange={(e) => setEditState({...editState, assignedAgentId: e.target.value})}
+                      >
+                        <option value="">— Unassigned</option>
+                        {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                      </select>
+                   ) : (
+                      <select
+                        className="bg-transparent border-0 font-medium text-neutral-700 appearance-none p-0 cursor-pointer focus:ring-0 text-sm"
+                        value={lead.assignedAgentId || ''}
+                        onChange={(e) => updateLead.mutate({ id: lead.id, data: { assignedAgentId: e.target.value }})}
+                      >
+                        <option value="">— Change</option>
+                        {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                      </select>
+                   )}
                 </div>
              </div>
           </div>

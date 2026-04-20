@@ -102,7 +102,7 @@ export default function Login() {
             {/* Badge Integration */}
             <div className="mt-12 flex flex-col items-center justify-center gap-2 opacity-80 transition hover:opacity-100">
               <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Official Partner</span>
-              <img src={metaBadge} alt="Meta Tech Provider" className="h-10 w-auto grayscale contrast-125" />
+              <img src={metaBadge} alt="Meta Tech Provider" className="h-20 w-auto mix-blend-multiply grayscale contrast-125" />
             </div>
           </div>
         </section>

@@ -89,3 +89,12 @@ exports.submit = async (req, res, next) => {
     next(err);
   }
 };
+
+exports.sync = async (req, res, next) => {
+  try {
+    const result = await templateService.syncTemplates(req.user.agencyId);
+    res.json({ success: true, data: result });
+  } catch (err) {
+    next(err);
+  }
+};

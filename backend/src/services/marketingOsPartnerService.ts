@@ -115,6 +115,24 @@ async function sendTenantWhatsAppReadTyping(tenantToken, payload) {
   return response.data;
 }
 
+async function getTenantWhatsAppTemplates(tenantToken) {
+  const client = getTenantClient(tenantToken);
+  const response = await client.get('/whatsapp/templates');
+  return response.data;
+}
+
+async function submitTenantWhatsAppTemplate(tenantToken, templateId) {
+  const client = getTenantClient(tenantToken);
+  const response = await client.post(`/whatsapp/templates/${encodeURIComponent(templateId)}/submit`);
+  return response.data;
+}
+
+async function syncTenantWhatsAppTemplates(tenantToken) {
+  const client = getTenantClient(tenantToken);
+  const response = await client.post('/whatsapp/templates/sync');
+  return response.data;
+}
+
 module.exports = {
   findTenantByEmail,
   createTenant,
@@ -126,4 +144,7 @@ module.exports = {
   sendTenantWhatsAppInteractive,
   sendTenantWhatsAppMedia,
   sendTenantWhatsAppReadTyping,
+  getTenantWhatsAppTemplates,
+  submitTenantWhatsAppTemplate,
+  syncTenantWhatsAppTemplates,
 };

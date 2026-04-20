@@ -77,3 +77,11 @@ export function useSubmitTemplate() {
     },
   });
 }
+
+export function useSyncTemplates() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => templatesApi.sync(),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['templates'] }),
+  });
+}

@@ -237,12 +237,25 @@ async function updateLead(leadId, agencyId, updates) {
   const allowedFields = [
     'status', 'assignedAgentId', 'destination', 'travelDates',
     'travellers', 'budgetPerPerson', 'packageId', 'notes', 'lostReason',
-    'travelStart', 'travelEnd', 'interest',
+    'travelStart', 'travelEnd', 'interest', 'source',
   ];
 
   const filtered = {};
   for (const key of allowedFields) {
     if (updates[key] !== undefined) filtered[key] = updates[key];
+  }
+
+  // Handle Customer updates
+  const customerUpdates = {};
+  if (updates.customerName !== undefined) customerUpdates.name = updates.customerName;
+  if (updates.customerPhone !== undefined) customerUpdates.phone = updates.customerPhone;
+  if (updates.customerEmail !== undefined) customerUpdates.email = updates.customerEmail;
+
+  if (Object.keys(customerUpdates).length > 0) {
+    const customer = await Customer.findByPk(lead.customerId);
+    if (customer) {
+      await customer.update(customerUpdates);
+    }
   }
 
   const isNewAgentAssigned = updates.assignedAgentId && lead.assignedAgentId !== updates.assignedAgentId;

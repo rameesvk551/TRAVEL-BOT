@@ -15,5 +15,6 @@ router.patch('/:id', authenticate, templateController.update);
 router.delete('/:id', authenticate, templateController.remove);
 router.post('/:id/duplicate', authenticate, templateController.duplicate);
 router.post('/:id/submit', authenticate, templateController.submit);
+router.post('/sync', authenticate, templateController.sync);
 
 module.exports = router;

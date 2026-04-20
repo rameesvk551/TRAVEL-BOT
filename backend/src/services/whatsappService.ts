@@ -917,6 +917,38 @@ async function sendSystemNotificationWhatsApp(phone, content, context = {}) {
   }
 }
 
+async function syncTemplatesWithMeta(agencyId) {
+  const channel = await resolveAgencyChannel({ agencyId });
+  
+  if (canUseMarketingOs(channel)) {
+    const tenantToken = await marketingOsPartnerService.getTenantToken(channel.marketingOsTenantId);
+    return await marketingOsPartnerService.syncTenantWhatsAppTemplates(tenantToken);
+  }
+  
+  if (canUseCloudApi(channel.phoneNumberId)) {
+    // Direct Meta sync would go here
+    throw new Error('Direct Meta template sync not yet implemented in SELF_HOSTED mode');
+  }
+  
+  throw new Error('No WhatsApp provider configured for template sync');
+}
+
+async function submitTemplateToMeta(agencyId, template) {
+  const channel = await resolveAgencyChannel({ agencyId });
+  
+  if (canUseMarketingOs(channel)) {
+    const tenantToken = await marketingOsPartnerService.getTenantToken(channel.marketingOsTenantId);
+    return await marketingOsPartnerService.submitTenantWhatsAppTemplate(tenantToken, template.id);
+  }
+  
+  if (canUseCloudApi(channel.phoneNumberId)) {
+     // Direct Meta submission would go here
+    throw new Error('Direct Meta template submission not yet implemented in SELF_HOSTED mode');
+  }
+  
+  throw new Error('No WhatsApp provider configured for template submission');
+}
+
 module.exports = {
   sendTypingIndicator,
   waitForReplyPacing,
@@ -933,4 +965,6 @@ module.exports = {
   sendFallbackMessage,
   updateMessageStatus,
   sendSystemNotificationWhatsApp,
+  syncTemplatesWithMeta,
+  submitTemplateToMeta,
 };

@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { Plus, Search, MessageSquare, Image as ImageIcon, FileText, CheckCircle, Clock, AlertCircle } from 'lucide-react';
-import { usePrebuiltTemplates, useAgencyTemplates } from '../hooks/useTemplates';
+import { Plus, Search, MessageSquare, Image as ImageIcon, FileText, CheckCircle, Clock, AlertCircle, RefreshCw } from 'lucide-react';
+import { usePrebuiltTemplates, useAgencyTemplates, useSyncTemplates } from '../hooks/useTemplates';
 import TemplateDetailDrawer from '../components/TemplateDetailDrawer';
+import toast from 'react-hot-toast';
 
 export default function Templates() {
   const [activeTab, setActiveTab] = useState('All');
@@ -15,9 +16,21 @@ export default function Templates() {
 
   const { data: prebuiltData, isLoading: prebuiltLoading } = usePrebuiltTemplates({ search: searchQuery });
   const { data: agencyData, isLoading: agencyLoading } = useAgencyTemplates({ search: searchQuery });
+  const { mutate: syncTemplates, isLoading: isSyncing } = useSyncTemplates();
 
   const prebuiltTemplates = prebuiltData?.data || [];
   const agencyTemplates = agencyData?.data || [];
+
+  const handleSync = () => {
+    syncTemplates(null, {
+      onSuccess: (res) => {
+        toast.success(`Successfully synced ${res.data?.count || 0} templates from Meta`);
+      },
+      onError: (err) => {
+        toast.error(err.response?.data?.error || 'Failed to sync templates');
+      }
+    });
+  };
 
   const handleNewTemplate = () => {
     setSelectedTemplate(null);
@@ -74,8 +87,13 @@ export default function Templates() {
             />
           </div>
           <div className="h-8 w-px bg-neutral-200"></div>
-          <button className="px-4 py-2 text-sm font-medium text-neutral-600 hover:bg-neutral-50 rounded-[var(--radius-sm)] transition-colors">
-            ⟳ Sync Status
+          <button 
+            onClick={handleSync}
+            disabled={isSyncing}
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-neutral-600 hover:bg-neutral-50 rounded-[var(--radius-sm)] transition-colors disabled:opacity-50"
+          >
+            <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
+            {isSyncing ? 'Syncing...' : 'Sync Status'}
           </button>
         </div>
 
