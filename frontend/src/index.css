@@ -232,6 +232,32 @@
     -ms-overflow-style: none;
     scrollbar-width: none;
   }
+
+  /* ── Premium UI Extensions ── */
+  .glass-panel {
+    @apply border border-white/20 bg-white/70 shadow-[0_8px_32px_0_rgba(31,38,135,0.07)] backdrop-blur-[12px];
+  }
+
+  .mesh-gradient-bg {
+    background-color: #f8fafc;
+    background-image: 
+      radial-gradient(at 0% 0%, rgba(99, 102, 241, 0.05) 0px, transparent 50%),
+      radial-gradient(at 100% 0%, rgba(129, 140, 248, 0.05) 0px, transparent 50%),
+      radial-gradient(at 100% 100%, rgba(99, 102, 241, 0.05) 0px, transparent 50%),
+      radial-gradient(at 0% 100%, rgba(129, 140, 248, 0.05) 0px, transparent 50%);
+  }
+
+  .input-icon-wrapper {
+    @apply relative flex items-center;
+  }
+
+  .input-with-icon {
+    @apply pl-10;
+  }
+
+  .icon-left {
+    @apply absolute left-3.5 h-5 w-5 text-neutral-400;
+  }
 }
 
 @layer utilities {

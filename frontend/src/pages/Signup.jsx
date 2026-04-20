@@ -57,7 +57,7 @@ export default function Signup() {
                 <div className="sm:col-span-2">
                   <label className="mb-1.5 block text-xs font-bold uppercase tracking-widest text-neutral-400">Agency Name</label>
                   <div className="input-icon-wrapper">
-                    <BuildingOfficeIcon className="icon-left" />
+                    <BuildingOfficeIcon className="icon-left h-5 w-5 absolute left-3" />
                     <input {...registerForm.register('agencyName')} className="shell-input-rect input-with-icon border-neutral-200/60 bg-white/50 focus:bg-white" placeholder="Elite Travels" />
                   </div>
                   {registerForm.formState.errors.agencyName ? <p className="mt-1 text-xs text-rose-500">{registerForm.formState.errors.agencyName.message}</p> : null}
@@ -66,7 +66,7 @@ export default function Signup() {
                 <div>
                   <label className="mb-1.5 block text-xs font-bold uppercase tracking-widest text-neutral-400">Agency Phone</label>
                   <div className="input-icon-wrapper">
-                    <PhoneIcon className="icon-left" />
+                    <PhoneIcon className="icon-left h-5 w-5 absolute left-3" />
                     <input {...registerForm.register('agencyPhone')} className="shell-input-rect input-with-icon border-neutral-200/60 bg-white/50 focus:bg-white" placeholder="+1234567890" />
                   </div>
                   {registerForm.formState.errors.agencyPhone ? <p className="mt-1 text-xs text-rose-500">{registerForm.formState.errors.agencyPhone.message}</p> : null}
@@ -75,7 +75,7 @@ export default function Signup() {
                 <div>
                   <label className="mb-1.5 block text-xs font-bold uppercase tracking-widest text-neutral-400">Agency Email</label>
                   <div className="input-icon-wrapper">
-                    <EnvelopeIcon className="icon-left" />
+                    <EnvelopeIcon className="icon-left h-5 w-5 absolute left-3" />
                     <input {...registerForm.register('agencyEmail')} type="email" className="shell-input-rect input-with-icon border-neutral-200/60 bg-white/50 focus:bg-white" placeholder="hello@agency.com" />
                   </div>
                   {registerForm.formState.errors.agencyEmail ? <p className="mt-1 text-xs text-rose-500">{registerForm.formState.errors.agencyEmail.message}</p> : null}
@@ -84,7 +84,7 @@ export default function Signup() {
                 <div className="sm:col-span-2">
                   <label className="mb-1.5 block text-xs font-bold uppercase tracking-widest text-neutral-400">WhatsApp Business</label>
                   <div className="input-icon-wrapper">
-                    <DevicePhoneMobileIcon className="icon-left" />
+                    <DevicePhoneMobileIcon className="icon-left h-5 w-5 absolute left-3" />
                     <input {...registerForm.register('whatsappNumber')} className="shell-input-rect input-with-icon border-neutral-200/60 bg-white/50 focus:bg-white" placeholder="+1234567890" />
                   </div>
                   {registerForm.formState.errors.whatsappNumber ? <p className="mt-1 text-xs text-rose-500">{registerForm.formState.errors.whatsappNumber.message}</p> : null}
@@ -93,7 +93,7 @@ export default function Signup() {
                 <div>
                   <label className="mb-1.5 block text-xs font-bold uppercase tracking-widest text-neutral-400">Your Name</label>
                   <div className="input-icon-wrapper">
-                    <UserIcon className="icon-left" />
+                    <UserIcon className="icon-left h-5 w-5 absolute left-3" />
                     <input {...registerForm.register('agentName')} className="shell-input-rect input-with-icon border-neutral-200/60 bg-white/50 focus:bg-white" placeholder="John Doe" />
                   </div>
                   {registerForm.formState.errors.agentName ? <p className="mt-1 text-xs text-rose-500">{registerForm.agentName.message}</p> : null}
@@ -102,7 +102,7 @@ export default function Signup() {
                 <div>
                   <label className="mb-1.5 block text-xs font-bold uppercase tracking-widest text-neutral-400">Your Email</label>
                   <div className="input-icon-wrapper">
-                    <EnvelopeIcon className="icon-left" />
+                    <EnvelopeIcon className="icon-left h-5 w-5 absolute left-3" />
                     <input {...registerForm.register('agentEmail')} type="email" className="shell-input-rect input-with-icon border-neutral-200/60 bg-white/50 focus:bg-white" placeholder="john@agency.com" />
                   </div>
                   {registerForm.formState.errors.agentEmail ? <p className="mt-1 text-xs text-rose-500">{registerForm.formState.errors.agentEmail.message}</p> : null}
@@ -111,7 +111,7 @@ export default function Signup() {
                 <div className="sm:col-span-2">
                   <label className="mb-1.5 block text-xs font-bold uppercase tracking-widest text-neutral-400">Password</label>
                   <div className="input-icon-wrapper">
-                    <LockClosedIcon className="icon-left" />
+                    <LockClosedIcon className="icon-left h-5 w-5 absolute left-3" />
                     <input {...registerForm.register('agentPassword')} type="password" className="shell-input-rect input-with-icon border-neutral-200/60 bg-white/50 focus:bg-white" placeholder="Minimum 8 characters" />
                   </div>
                   {registerForm.formState.errors.agentPassword ? <p className="mt-1 text-xs text-rose-500">{registerForm.formState.errors.agentPassword.message}</p> : null}

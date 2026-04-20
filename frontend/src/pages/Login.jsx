@@ -52,7 +52,7 @@ export default function Login() {
               <div>
                 <label className="mb-1.5 block text-xs font-bold uppercase tracking-widest text-neutral-400">Email Address</label>
                 <div className="input-icon-wrapper">
-                  <EnvelopeIcon className="icon-left" />
+                  <EnvelopeIcon className="icon-left h-5 w-5 absolute left-3" />
                   <input 
                     {...loginForm.register('email')} 
                     type="email" 
@@ -69,7 +69,7 @@ export default function Login() {
                   <button type="button" className="text-xs font-semibold text-indigo-600 hover:text-indigo-700 transition">Forgot?</button>
                 </div>
                 <div className="input-icon-wrapper">
-                  <LockClosedIcon className="icon-left" />
+                  <LockClosedIcon className="icon-left h-5 w-5 absolute left-3" />
                   <input 
                     {...loginForm.register('password')} 
                     type="password" 
