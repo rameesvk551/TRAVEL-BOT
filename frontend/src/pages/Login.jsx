@@ -9,6 +9,7 @@ import {
 import { useLogin } from '../hooks/useAuth';
 import { loginSchema } from '../utils/validators';
 import logo from '../assets/logo.png';
+import metaBadge from '../assets/meta_tech_provider_badge.png';
 
 export default function Login() {
   const loginMutation = useLogin();
@@ -97,28 +98,36 @@ export default function Login() {
             <p className="mt-8 text-center text-sm text-neutral-500">
               Don't have an account? <Link to="/signup" className="font-bold text-neutral-900 hover:underline">Join the elite</Link>
             </p>
+
+            {/* Badge Integration */}
+            <div className="mt-12 flex flex-col items-center justify-center gap-2 opacity-80 transition hover:opacity-100">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Official Partner</span>
+              <img src={metaBadge} alt="Meta Tech Provider" className="h-10 w-auto grayscale contrast-125" />
+            </div>
           </div>
         </section>
 
         {/* Right Side: Hero Visual */}
-        <section className="hidden relative lg:block lg:flex-1 overflow-hidden bg-neutral-100">
-          <img 
-            src="/login-hero.png" 
-            alt="Premium Travel Workspace" 
-            className="absolute inset-0 h-full w-full object-cover grayscale-[0.2] contrast-[1.1]" 
-          />
-          <div className="absolute inset-0 bg-gradient-to-t from-neutral-900/60 via-transparent to-transparent" />
-          
-          <div className="absolute bottom-16 left-16 right-16 animate-page-in">
-            <div className="inline-flex glass-panel rounded-full px-4 py-1.5 mb-6 text-[11px] font-bold uppercase tracking-[0.2em] text-neutral-700">
-              Premium Concierge System
+        <section className="hidden lg:block lg:flex-1 bg-white p-4">
+          <div className="relative h-full w-full overflow-hidden rounded-[2rem] shadow-2xl">
+            <img 
+              src="/login-hero.png" 
+              alt="Premium Travel Workspace" 
+              className="absolute inset-0 h-full w-full object-cover grayscale-[0.1]" 
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
+            
+            <div className="absolute bottom-16 left-16 right-16 animate-page-in">
+              <div className="inline-flex glass-panel rounded-full px-4 py-1.5 mb-6 text-[11px] font-bold uppercase tracking-[0.2em] text-white/90">
+                Premium Concierge System
+              </div>
+              <h2 className="text-4xl font-extrabold text-white tracking-tight leading-tight mb-4">
+                Orchestrate stays and journeys <br/> with effortless precision.
+              </h2>
+              <p className="text-lg text-neutral-200 max-w-lg font-medium leading-relaxed">
+                The only editorial workspace built specifically for high-end travel teams to manage the modern concierge desk.
+              </p>
             </div>
-            <h2 className="text-4xl font-extrabold text-white tracking-tight leading-tight mb-4">
-              Orchestrate stays and journeys <br/> with effortless precision.
-            </h2>
-            <p className="text-lg text-neutral-200 max-w-lg font-medium leading-relaxed">
-              The only editorial workspace built specifically for high-end travel teams to manage the modern concierge desk.
-            </p>
           </div>
         </section>
 

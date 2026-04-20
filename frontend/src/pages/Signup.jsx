@@ -13,6 +13,7 @@ import {
 import { useRegister } from '../hooks/useAuth';
 import { registerSchema } from '../utils/validators';
 import logo from '../assets/logo.png';
+import metaBadge from '../assets/meta_tech_provider_badge.png';
 
 export default function Signup() {
   const registerMutation = useRegister();
@@ -135,28 +136,36 @@ export default function Signup() {
             <p className="mt-8 text-center text-sm text-neutral-500">
               Already have an account? <Link to="/login" className="font-bold text-neutral-900 hover:underline">Sign in</Link>
             </p>
+
+            {/* Badge Integration */}
+            <div className="mt-12 flex flex-col items-center justify-center gap-2 opacity-80 transition hover:opacity-100">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Official Partner</span>
+              <img src={metaBadge} alt="Meta Tech Provider" className="h-10 w-auto grayscale contrast-125" />
+            </div>
           </div>
         </section>
 
         {/* Right Side: Hero Visual */}
-        <section className="hidden relative lg:block lg:flex-1 overflow-hidden bg-neutral-100">
-          <img 
-            src="/signup-hero.png" 
-            alt="Premium Travel Lounge" 
-            className="absolute inset-0 h-full w-full object-cover grayscale-[0.2] contrast-[1.1]" 
-          />
-          <div className="absolute inset-0 bg-gradient-to-t from-neutral-900/60 via-transparent to-transparent" />
-          
-          <div className="absolute bottom-16 left-16 right-16 animate-page-in">
-            <div className="inline-flex glass-panel rounded-full px-4 py-1.5 mb-6 text-[11px] font-bold uppercase tracking-[0.2em] text-neutral-700">
-              Join the Network
+        <section className="hidden lg:block lg:flex-1 bg-white p-4">
+          <div className="relative h-full w-full overflow-hidden rounded-[2rem] shadow-2xl">
+            <img 
+              src="/signup-hero.png" 
+              alt="Premium Travel Lounge" 
+              className="absolute inset-0 h-full w-full object-cover grayscale-[0.1]" 
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
+            
+            <div className="absolute bottom-16 left-16 right-16 animate-page-in">
+              <div className="inline-flex glass-panel rounded-full px-4 py-1.5 mb-6 text-[11px] font-bold uppercase tracking-[0.2em] text-white/90">
+                Join the Network
+              </div>
+              <h2 className="text-4xl font-extrabold text-white tracking-tight leading-tight mb-4">
+                Expand your agency <br/> beyond horizons.
+              </h2>
+              <p className="text-lg text-neutral-200 max-w-lg font-medium leading-relaxed">
+                Unlock the tools used by the world's leading travel concierges to deliver unforgettable experiences.
+              </p>
             </div>
-            <h2 className="text-4xl font-extrabold text-white tracking-tight leading-tight mb-4">
-              Expand your agency <br/> beyond horizons.
-            </h2>
-            <p className="text-lg text-neutral-200 max-w-lg font-medium leading-relaxed">
-              Unlock the tools used by the world's leading travel concierges to deliver unforgettable experiences.
-            </p>
           </div>
         </section>
 
