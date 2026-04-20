@@ -8,7 +8,6 @@ import {
 } from '@heroicons/react/24/outline';
 import { useLogin } from '../hooks/useAuth';
 import { loginSchema } from '../utils/validators';
-import logo from '../assets/logo.png';
 import metaBadge from '../assets/meta_tech_provider_badge.png';
 
 export default function Login() {
@@ -18,20 +17,20 @@ export default function Login() {
   const error = loginMutation.error?.response?.data?.error;
 
   return (
-    <div className="min-h-screen bg-white font-inter selection:bg-indigo-100 selection:text-indigo-900">
+    <div className="min-h-screen bg-[#f8fafc] font-inter selection:bg-indigo-100 selection:text-indigo-900">
       <div className="flex min-h-screen flex-col lg:flex-row">
         
         {/* Left Side: Form */}
-        <section className="mesh-gradient-bg flex w-full flex-col justify-center px-6 py-12 lg:w-[45%] lg:px-16 xl:w-[40%] xl:px-24">
+        <section className="bg-[#f8fafc] flex w-full flex-col justify-center px-6 py-12 lg:w-[45%] lg:px-16 xl:w-[40%] xl:px-24">
           <div className="mx-auto w-full max-w-md animate-wizard-in">
-            <div className="mb-10 flex items-center gap-3">
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-neutral-900 shadow-xl overflow-hidden p-2">
-                <img src={logo} alt="Wayon Logo" className="h-full w-full object-contain brightness-0 invert" />
+            <div className="mb-12 flex flex-col items-center justify-center gap-4 text-center">
+              <div className="flex h-20 w-20 items-center justify-center rounded-[2rem] bg-white border border-neutral-200 shadow-xl shadow-neutral-100 overflow-hidden p-4 transition-transform hover:scale-105 duration-500">
+                <img src="/favicon.png" alt="Wayon Logo" className="h-full w-full object-contain" />
               </div>
-              <span className="text-xl font-bold tracking-tight text-neutral-900">WayOn</span>
+              <span className="text-2xl font-black tracking-tighter text-neutral-900 uppercase">WayOn</span>
             </div>
 
-            <div className="mb-8">
+            <div className="mb-8 text-center text-balance">
               <h1 className="text-3xl font-extrabold tracking-tight text-neutral-900 sm:text-4xl">
                 Welcome back
               </h1>
@@ -57,7 +56,7 @@ export default function Login() {
                   <input 
                     {...loginForm.register('email')} 
                     type="email" 
-                    className="shell-input-rect input-with-icon border-neutral-200/60 bg-white/50 focus:bg-white" 
+                    className="shell-input-rect input-with-icon border-neutral-200/60 bg-white focus:bg-white" 
                     placeholder="alex@concierge.com" 
                   />
                 </div>
@@ -74,7 +73,7 @@ export default function Login() {
                   <input 
                     {...loginForm.register('password')} 
                     type="password" 
-                    className="shell-input-rect input-with-icon border-neutral-200/60 bg-white/50 focus:bg-white" 
+                    className="shell-input-rect input-with-icon border-neutral-200/60 bg-white focus:bg-white" 
                     placeholder="••••••••" 
                   />
                 </div>
@@ -100,15 +99,20 @@ export default function Login() {
             </p>
 
             {/* Badge Integration */}
-            <div className="mt-12 flex flex-col items-center justify-center gap-2 opacity-80 transition hover:opacity-100">
-              <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Official Partner</span>
-              <img src={metaBadge} alt="Meta Tech Provider" className="h-20 w-auto mix-blend-multiply grayscale contrast-125" />
+            <div className="mt-12 flex flex-col items-center justify-center gap-2 opacity-90 transition hover:opacity-100">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-[#0668E1] drop-shadow-sm">Meta Official Tech Provider</span>
+              <img 
+                src={metaBadge} 
+                alt="Meta Tech Provider" 
+                className="h-20 w-auto mix-blend-multiply" 
+                style={{ filter: 'invert(27%) sepia(91%) saturate(2352%) hue-rotate(202deg) brightness(96%) contrast(101%)' }}
+              />
             </div>
           </div>
         </section>
 
         {/* Right Side: Hero Visual */}
-        <section className="hidden lg:block lg:flex-1 bg-white p-4">
+        <section className="hidden lg:block lg:flex-1 bg-[#f8fafc] p-4">
           <div className="relative h-full w-full overflow-hidden rounded-[2rem] shadow-2xl">
             <img 
               src="/login-hero.png" 

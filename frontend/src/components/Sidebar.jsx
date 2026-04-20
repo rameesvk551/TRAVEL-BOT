@@ -22,7 +22,6 @@ import {
   ChevronRightIcon,
 } from '@heroicons/react/24/outline';
 import { getInitials } from './uiHelpers';
-import logo from '../assets/logo.png';
 
 const navItems = [
   { to: '/', icon: HomeIcon, label: 'Dashboard' },
@@ -105,18 +104,21 @@ export default function Sidebar() {
         {/* Agency name + collapse toggle */}
         <div className={`flex items-center ${collapsed ? 'justify-center' : 'justify-between px-2'}`}>
           {!collapsed && (
-            <div className="flex items-center gap-2">
-              <div className="w-7 h-7 rounded-[var(--radius-sm)] bg-indigo-600 flex items-center justify-center shrink-0">
-                <span className="text-white font-bold text-xs">{agency?.name?.[0]?.toUpperCase() || 'T'}</span>
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-neutral-900 shadow-xl overflow-hidden p-1.5 shrink-0">
+                <img src="/favicon.png" alt="Logo" className="h-full w-full object-contain brightness-0 invert" />
               </div>
-              <p className="text-[15px] font-semibold tracking-tight text-neutral-900">
-                {agency?.name || 'Travel CRM'}
-              </p>
+              <div>
+                <p className="text-[15px] font-bold tracking-tight text-neutral-900 leading-tight">
+                  {agency?.name || 'Travel CRM'}
+                </p>
+                <p className="text-[10px] font-medium text-neutral-400 uppercase tracking-wider">Concierge</p>
+              </div>
             </div>
           )}
           {collapsed && (
-            <div className="w-8 h-8 rounded-[var(--radius-sm)] bg-indigo-600 flex items-center justify-center">
-              <span className="text-white font-bold text-xs">{agency?.name?.[0]?.toUpperCase() || 'T'}</span>
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-neutral-900 shadow-lg overflow-hidden p-1.5">
+              <img src="/favicon.png" alt="Logo" className="h-full w-full object-contain brightness-0 invert" />
             </div>
           )}
           {!collapsed && (
@@ -132,7 +134,7 @@ export default function Sidebar() {
 
         {/* Agent info */}
         <div
-          className={`mt-5 flex items-center rounded-[var(--radius-md)] border border-neutral-100 bg-neutral-50 ${collapsed ? 'justify-center px-2 py-3' : 'gap-3 px-3 py-3'
+          className={`mt-4 flex items-center rounded-[var(--radius-md)] border border-neutral-100 bg-neutral-50 ${collapsed ? 'justify-center px-2 py-3' : 'gap-3 px-3 py-3'
             }`}
         >
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 text-xs font-bold text-white shadow-sm">
@@ -182,13 +184,13 @@ export default function Sidebar() {
 
         {/* Bottom actions */}
         <div className="mt-auto space-y-2 pt-6">
-          <div className={`flex flex-col items-center justify-center gap-1.5 pb-2`}>
+          <div className={`flex flex-col items-center justify-center gap-1.5 pb-2 border-t border-neutral-100 pt-6`}>
             {!collapsed && <span className="text-[9px] font-bold uppercase tracking-[0.2em] text-neutral-400">Powered By</span>}
-            <div className={`flex items-center justify-center ${collapsed ? 'flex-col gap-1' : 'gap-2'}`}>
-              <div className={`flex items-center justify-center rounded-lg bg-neutral-900 shadow-sm overflow-hidden ${collapsed ? 'h-8 w-8 p-1.5' : 'h-6 w-6 p-1.5'}`}>
-                <img src={logo} alt="Wayon Logo" className="h-full w-full object-contain brightness-0 invert" />
+            <div className={`flex items-center justify-center ${collapsed ? 'flex-col gap-1' : 'gap-2.5'}`}>
+              <div className={`flex items-center justify-center rounded-lg bg-neutral-900 shadow-sm overflow-hidden ${collapsed ? 'h-8 w-8 p-1.5' : 'h-7 w-7 p-1.5'}`}>
+                <img src="/favicon.png" alt="Wayon Logo" className="h-full w-full object-contain brightness-0 invert opacity-90" />
               </div>
-              {!collapsed && <span className="text-[13px] font-bold tracking-tight text-neutral-900">WayOn</span>}
+              {!collapsed && <span className="text-[14px] font-bold tracking-tight text-neutral-900 italic">WayOn</span>}
             </div>
           </div>
 
