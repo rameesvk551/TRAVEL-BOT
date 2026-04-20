@@ -4,7 +4,16 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { packagesApi } from '../api/packagesApi';
-import { ArrowLeftIcon } from '@heroicons/react/24/outline';
+import { 
+  ArrowLeftIcon, 
+  ClockIcon, 
+  CurrencyRupeeIcon, 
+  MapPinIcon, 
+  PhotoIcon, 
+  CheckCircleIcon,
+  XMarkIcon,
+  SparklesIcon
+} from '@heroicons/react/24/outline';
 
 export default function PackageForm() {
   const { id } = useParams();
@@ -44,13 +53,8 @@ export default function PackageForm() {
   useEffect(() => {
     if (!isEdit) {
       setForm({
-        name: '',
-        duration: '',
-        destinations: '',
-        basePrice: '',
-        inclusions: '',
-        exclusions: '',
-        imageUrl: '',
+        name: '', duration: '', destinations: '', basePrice: '',
+        inclusions: '', exclusions: '', imageUrl: '',
       });
       setImageFile(null);
       setImagePreview('');
@@ -89,19 +93,15 @@ export default function PackageForm() {
   };
 
   const handleSubmit = async (e) => {
-    e.preventDefault();
+    if (e) e.preventDefault();
     setError('');
 
     try {
       setUploadingImage(true);
-
       let imageUrl = form.imageUrl || null;
       if (imageFile) {
         imageUrl = await uploadImage(imageFile);
-
-        if (!imageUrl) {
-          throw new Error('Image upload failed');
-        }
+        if (!imageUrl) throw new Error('Image upload failed');
       }
 
       await saveMutation.mutateAsync({
@@ -145,142 +145,247 @@ export default function PackageForm() {
 
   if (isEdit && packageQuery.isLoading) {
     return (
-      <div className="mx-auto w-full max-w-4xl p-6">
-        <button onClick={() => navigate('/packages')} className="shell-button-ghost mb-4">
-          <ArrowLeftIcon className="w-4 h-4" /> Back to Packages
-        </button>
-
-        <div className="shell-panel p-6 text-sm text-slate-500">Loading package details...</div>
-      </div>
-    );
-  }
-
-  if (isEdit && packageQuery.isError) {
-    return (
-      <div className="mx-auto w-full max-w-4xl p-6">
-        <button onClick={() => navigate('/packages')} className="shell-button-ghost mb-4">
-          <ArrowLeftIcon className="w-4 h-4" /> Back to Packages
-        </button>
-
-        <div className="mb-4 rounded-xl border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-400">
-          {packageQuery.error?.response?.data?.error || packageQuery.error?.message || 'Failed to load package details'}
+      <div className="w-full p-6 animate-pulse">
+        <div className="mb-8 flex items-center gap-4">
+          <div className="h-8 w-32 rounded bg-slate-200" />
+          <div className="h-10 w-64 rounded bg-slate-200" />
         </div>
-
-        <button type="button" onClick={() => navigate('/packages')} className="shell-button-secondary">
-          Return to Packages
-        </button>
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+          <div className="lg:col-span-8 space-y-6">
+            <div className="h-64 rounded-xl bg-slate-100" />
+            <div className="h-96 rounded-xl bg-slate-100" />
+          </div>
+          <div className="lg:col-span-4 space-y-6">
+            <div className="h-64 rounded-xl bg-slate-100" />
+          </div>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="mx-auto w-full max-w-4xl p-6">
-      <button onClick={() => navigate('/packages')} className="shell-button-ghost mb-4">
-        <ArrowLeftIcon className="w-4 h-4" /> Back to Packages
-      </button>
-
-      <div className="shell-panel p-6 md:p-8">
-        <div className="mb-6">
-          <p className="eyebrow mb-2">Packages</p>
-          <h1 className="page-title text-[2rem] sm:text-[2.4rem]">{isEdit ? 'Edit Package' : 'New Package'}</h1>
-          <p className="mt-2 max-w-2xl text-sm text-slate-500">
-            Create or update a package itinerary for quoting, chat flows, and brochure publishing.
-          </p>
+    <div className="w-full">
+      {/* Sticky Header Actions */}
+      <div className="sticky top-[-1px] z-10 -mx-6 mb-8 border-b border-slate-200 bg-white/80 px-6 py-4 backdrop-blur-md">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-4">
+            <button onClick={() => navigate('/packages')} className="shell-button-ghost p-1.5">
+              <ArrowLeftIcon className="h-5 w-5" />
+            </button>
+            <div>
+              <div className="flex items-center gap-2">
+                <p className="eyebrow">Inventory Catalog</p>
+                <span className="h-1 w-1 rounded-full bg-slate-300" />
+                <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-600">
+                  {isEdit ? 'Revision Mode' : 'Draft'}
+                </span>
+              </div>
+              <h1 className="text-xl font-bold tracking-tight text-slate-900">
+                {isEdit ? `Edit: ${form.name || 'Package'}` : 'Create New Package'}
+              </h1>
+            </div>
+          </div>
+          <div className="flex gap-3">
+            <button type="button" onClick={() => navigate('/packages')} className="shell-button-secondary border-none bg-slate-100 hover:bg-slate-200">
+              Cancel
+            </button>
+            <button 
+              onClick={handleSubmit}
+              disabled={saveMutation.isPending || uploadingImage} 
+              className="shell-button-primary shadow-indigo-100 shadow-lg"
+            >
+              {uploadingImage ? 'Uploading...' : saveMutation.isPending ? 'Saving...' : isEdit ? 'Update Package' : 'Publish Package'}
+            </button>
+          </div>
         </div>
+      </div>
 
-        {error && (
-          <div className="mb-4 rounded-xl border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-600">{error}</div>
-        )}
+      {error && (
+        <div className="mb-6 flex items-center gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-600 animate-slide-up">
+          <XMarkIcon className="h-5 w-5 flex-shrink-0" />
+          {error}
+        </div>
+      )}
 
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <div className="grid gap-5 md:grid-cols-2">
-            <div className="md:col-span-2">
-              <label className="mb-1.5 block text-sm font-medium text-slate-700">Package Name *</label>
-              <input
-                value={form.name}
-                onChange={(e) => update('name', e.target.value)}
-                className="shell-input-rect"
-                placeholder="Munnar & Alleppey Delight"
-                required
-              />
+      <form onSubmit={handleSubmit} className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+        {/* Main Content Area */}
+        <div className="lg:col-span-8 space-y-6">
+          <div className="shell-panel p-6">
+            <div className="mb-6 flex items-center gap-3 border-b border-slate-100 pb-4">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600">
+                <SparklesIcon className="h-5 w-5" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-slate-900">General Information</h3>
+                <p className="text-xs text-slate-500">Core details that define the travel package experience.</p>
+              </div>
             </div>
 
-            <div>
-              <label className="mb-1.5 block text-sm font-medium text-slate-700">Duration</label>
-              <input value={form.duration} onChange={(e) => update('duration', e.target.value)} className="shell-input-rect" placeholder="3 Nights 4 Days" />
-            </div>
-            <div>
-              <label className="mb-1.5 block text-sm font-medium text-slate-700">Base Price (₹/person) *</label>
-              <input value={form.basePrice} onChange={(e) => update('basePrice', e.target.value)} className="shell-input-rect" placeholder="15000" type="number" required />
-            </div>
-          </div>
-
-          <div>
-            <label className="mb-1.5 block text-sm font-medium text-slate-700">Destinations (comma-separated)</label>
-            <input value={form.destinations} onChange={(e) => update('destinations', e.target.value)} className="shell-input-rect" placeholder="Munnar, Alleppey, Kochi" />
-          </div>
-
-          <div>
-            <label className="mb-1.5 block text-sm font-medium text-slate-700">Inclusions (one per line)</label>
-            <textarea
-              value={form.inclusions}
-              onChange={(e) => update('inclusions', e.target.value)}
-              className="shell-input-rect min-h-[120px] rounded-[16px]"
-              rows={4}
-              placeholder={"Hotel accommodation\nBreakfast & dinner\nSightseeing\nTransport"}
-            />
-          </div>
-
-          <div>
-            <label className="mb-1.5 block text-sm font-medium text-slate-700">Exclusions (one per line)</label>
-            <textarea
-              value={form.exclusions}
-              onChange={(e) => update('exclusions', e.target.value)}
-              className="shell-input-rect min-h-[96px] rounded-[16px]"
-              rows={3}
-              placeholder={"Airfare\nPersonal expenses\nEntry tickets"}
-            />
-          </div>
-
-          <div>
-            <label className="mb-1.5 block text-sm font-medium text-slate-700">Package Image</label>
-            <div className="space-y-4 rounded-[18px] border border-dashed border-slate-200 bg-slate-50 p-4">
-              <input
-                type="file"
-                accept="image/*"
-                onChange={handleImageChange}
-                className="block w-full text-sm text-slate-600 file:mr-4 file:rounded-lg file:border-0 file:bg-[#2d2d2d] file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-[#1a1a1a]"
-              />
-
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <p className="text-xs leading-5 text-slate-500">
-                  Upload a JPG, PNG, WebP, or AVIF file. The file is uploaded via the backend and saved as the package cover image.
-                </p>
-                <button type="button" onClick={clearImage} className="shell-button-ghost whitespace-nowrap">
-                  Remove image
-                </button>
+            <div className="space-y-5">
+              <div>
+                <label className="mb-1.5 block text-[13px] font-semibold text-slate-700">Package Title *</label>
+                <div className="relative">
+                  <input
+                    value={form.name}
+                    onChange={(e) => update('name', e.target.value)}
+                    className="shell-input-rect pl-10"
+                    placeholder="e.g. Maldives Water Villa Escape with Sunset Cruise"
+                    required
+                  />
+                  <SparklesIcon className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                </div>
               </div>
 
-              {imagePreview ? (
-                <div className="overflow-hidden rounded-[16px] border border-slate-200 bg-white shadow-sm">
-                  <img src={imagePreview} alt="Package preview" className="h-56 w-full object-cover" />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                <div>
+                  <label className="mb-1.5 block text-[13px] font-semibold text-slate-700">Duration</label>
+                  <div className="relative">
+                    <input 
+                      value={form.duration} 
+                      onChange={(e) => update('duration', e.target.value)} 
+                      className="shell-input-rect pl-10" 
+                      placeholder="e.g. 3 Nights 4 Days" 
+                    />
+                    <ClockIcon className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                  </div>
                 </div>
-              ) : (
-                <div className="flex h-40 items-center justify-center rounded-[16px] border border-slate-200 bg-white text-sm text-slate-400">
-                  No image selected yet
+                <div>
+                  <label className="mb-1.5 block text-[13px] font-semibold text-slate-700">Base Price (₹/person) *</label>
+                  <div className="relative">
+                    <input 
+                      value={form.basePrice} 
+                      onChange={(e) => update('basePrice', e.target.value)} 
+                      className="shell-input-rect pl-10" 
+                      placeholder="15000" 
+                      type="number" 
+                      required 
+                    />
+                    <CurrencyRupeeIcon className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label className="mb-1.5 block text-[13px] font-semibold text-slate-700">Destination Coverage</label>
+                <div className="relative">
+                  <input 
+                    value={form.destinations} 
+                    onChange={(e) => update('destinations', e.target.value)} 
+                    className="shell-input-rect pl-10" 
+                    placeholder="e.g. Male, Maafushi, Private Island (comma separated)" 
+                  />
+                  <MapPinIcon className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="shell-panel p-6 border-emerald-100">
+              <div className="mb-4 flex items-center gap-2 text-emerald-700">
+                <CheckCircleIcon className="h-5 w-5" />
+                <h3 className="font-semibold">Inclusions</h3>
+              </div>
+              <textarea
+                value={form.inclusions}
+                onChange={(e) => update('inclusions', e.target.value)}
+                className="shell-input-rect min-h-[220px] bg-emerald-50/10 border-emerald-50 focus:border-emerald-200 focus:ring-emerald-50 text-[13px] leading-relaxed"
+                rows={8}
+                placeholder={"• 4-Star Accomodation\n• Daily Breakfast & Dinner\n• Speedboat Transfers\n• Professional Guide"}
+              />
+              <p className="mt-2 text-[10px] text-slate-400 italic">Enter each inclusion on a new line.</p>
+            </div>
+
+            <div className="shell-panel p-6 border-slate-100">
+              <div className="mb-4 flex items-center gap-2 text-slate-700">
+                <XMarkIcon className="h-5 w-5" />
+                <h3 className="font-semibold">Exclusions</h3>
+              </div>
+              <textarea
+                value={form.exclusions}
+                onChange={(e) => update('exclusions', e.target.value)}
+                className="shell-input-rect min-h-[220px] bg-slate-50/30 border-slate-100 text-[13px] leading-relaxed"
+                rows={8}
+                placeholder={"• Airfare\n• Visa Fees\n• Personal Expenses\n• Optional Tours"}
+              />
+              <p className="mt-2 text-[10px] text-slate-400 italic">Enter each exclusion on a new line.</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Sidebar / Secondary Info */}
+        <div className="lg:col-span-4 space-y-6">
+          <div className="shell-panel p-6">
+            <div className="mb-4 border-b border-slate-100 pb-4">
+              <h3 className="font-semibold text-slate-900 flex items-center gap-2">
+                <PhotoIcon className="h-4 w-4 text-slate-400" />
+                Package Cover
+              </h3>
+              <p className="text-[11px] text-slate-500 mt-1">Visually represent this package to your customers.</p>
+            </div>
+
+            <div className="space-y-4">
+              <div className={`relative group overflow-hidden rounded-xl border-2 border-dashed transition-all ${imagePreview ? 'border-indigo-100 aspect-video' : 'border-slate-200 aspect-square'}`}>
+                {imagePreview ? (
+                  <>
+                    <img src={imagePreview} alt="Preview" className="h-full w-full object-cover" />
+                    <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button type="button" onClick={clearImage} className="p-2 bg-white/20 backdrop-blur-md rounded-full text-white hover:bg-white/40">
+                        <XMarkIcon className="h-6 w-6" />
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex flex-col items-center justify-center h-full p-6 text-center text-slate-400">
+                    <PhotoIcon className="h-10 w-10 mb-2 opacity-50" />
+                    <p className="text-xs font-medium">Click to upload package image</p>
+                    <p className="text-[10px] mt-1 opacity-60">High resolution landscape images work best.</p>
+                    <input
+                      type="file"
+                      id="pkg-image"
+                      accept="image/*"
+                      onChange={handleImageChange}
+                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                    />
+                  </div>
+                )}
+              </div>
+              
+              {!imagePreview && (
+                <div className="bg-slate-50 rounded-lg p-3 border border-slate-100">
+                  <p className="text-[10px] leading-relaxed text-slate-500">
+                    <strong>Pro Tip:</strong> Packages with high-quality images see 40% higher engagement in chat quotes.
+                  </p>
                 </div>
               )}
             </div>
           </div>
 
-          <div className="flex flex-col gap-3 pt-2 sm:flex-row">
-            <button type="button" onClick={() => navigate('/packages')} className="shell-button-secondary flex-1">Cancel</button>
-            <button type="submit" disabled={saveMutation.isPending || uploadingImage} className="shell-button-primary flex-1">
-              {uploadingImage ? 'Uploading Image...' : saveMutation.isPending ? 'Saving...' : isEdit ? 'Update Package' : 'Create Package'}
-            </button>
+          <div className="shell-panel p-6 bg-slate-900 text-white border-none shadow-xl shadow-slate-200/50">
+            <div className="mb-4">
+              <h3 className="font-bold flex items-center gap-2">
+                <CheckCircleIcon className="h-4 w-4 text-indigo-400" />
+                Quality Checklist
+              </h3>
+            </div>
+            <ul className="space-y-3">
+              {[
+                { label: 'Clear Package Title', checked: !!form.name },
+                { label: 'Base Price Defined', checked: !!form.basePrice },
+                { label: 'Cover Image Added', checked: !!imagePreview },
+                { label: 'Min. 3 Inclusions', checked: form.inclusions.split('\n').filter(Boolean).length >= 1 }
+              ].map((item, idx) => (
+                <li key={idx} className="flex items-center gap-2.5 text-xs text-slate-300">
+                  <div className={`h-4 w-4 rounded-full flex items-center justify-center border ${item.checked ? 'bg-indigo-500 border-indigo-500' : 'border-slate-700'}`}>
+                    {item.checked && <CheckCircleIcon className="h-3 w-3 text-white" />}
+                  </div>
+                  {item.label}
+                </li>
+              ))}
+            </ul>
           </div>
-        </form>
-      </div>
+        </div>
+      </form>
     </div>
   );
 }

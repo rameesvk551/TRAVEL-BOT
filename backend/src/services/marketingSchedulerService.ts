@@ -3,7 +3,7 @@
 const { Queue, Worker } = require('bullmq');
 const IORedis = require('ioredis');
 const dripService = require('./dripService');
-const { Campaign, CampaignRecipient, Customer, MessageTemplate, BotSession } = require('../models');
+const { Campaign, CampaignRecipient, Customer, MessageTemplate, BotSession, Message } = require('../models');
 const whatsappService = require('./whatsappService');
 const { Op } = require('sequelize');
 
@@ -20,6 +20,19 @@ const BATCH_DELAY_MS = 2000; // 2 seconds between batches
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Resolve template body placeholders with actual values.
+ */
+function resolveTemplateBody(body, variables) {
+  if (!body) return '';
+  let resolved = body;
+  (variables || []).forEach((v, i) => {
+    const placeholder = `{{${i + 1}}}`;
+    resolved = resolved.split(placeholder).join(v);
+  });
+  return resolved;
 }
 
 /**
@@ -49,13 +62,36 @@ async function sendToRecipient(recipient, campaign, template, agencyId) {
         return v;
       });
 
-      result = await whatsappService.sendTemplateMessage(
-        customer.phone,
-        template.name,
-        template.language || 'en',
-        variables,
-        agencyId
-      );
+      // 24h Window Optimization: If customer messaged in last 24h, send as text
+      let isIn24hWindow = false;
+      try {
+        const lastIncoming = await Message.findOne({
+          where: { customerId: customer.id, direction: 'IN' },
+          order: [['createdAt', 'DESC']]
+        });
+        if (lastIncoming && (new Date() - new Date(lastIncoming.createdAt) < 24 * 3600 * 1000)) {
+          isIn24hWindow = true;
+        }
+      } catch (e) {
+        console.warn('Failed to check 24h window:', e.message);
+      }
+
+      if (isIn24hWindow && template.body) {
+        const renderedBody = resolveTemplateBody(template.body, variables);
+        result = await whatsappService.sendTextMessage(
+          customer.phone,
+          renderedBody,
+          agencyId
+        );
+      } else {
+        result = await whatsappService.sendTemplateMessage(
+          customer.phone,
+          template.name,
+          template.language || 'en',
+          variables,
+          agencyId
+        );
+      }
     } else if (campaign.messageBody) {
       // Send text message (non-template)
       const body = (campaign.messageBody || '')

@@ -201,6 +201,12 @@ async function createLead(data, agencyId) {
 
   const fullLead = await getLeadById(lead.id, agencyId);
 
+  if (lead.status === 'CONVERTED') {
+    if (customer && !customer.isCustomer) {
+      await customer.update({ isCustomer: true });
+    }
+  }
+
   if (assignedAgentId) {
     const agent = fullLead.assignedAgent;
     if (agent && agent.phone) {

@@ -115,6 +115,19 @@ export default function CreateCampaign() {
     ...(prebuiltTemplates?.data || []),
   ];
 
+  // Auto-select specialized template for Review Collection
+  useEffect(() => {
+    if (formData.type === 'REVIEW_COLLECTION' && allTemplates.length > 0 && !formData.templateId) {
+      const reviewTemplate = allTemplates.find(t => 
+        (t.name === 'review_collection_campaign' || t.name === 'Automated Review Collection')
+      );
+      if (reviewTemplate) {
+        setFormData(prev => ({ ...prev, templateId: reviewTemplate.id, messageBody: '' }));
+        setSelectedTemplate(reviewTemplate);
+      }
+    }
+  }, [formData.type, allTemplates.length]);
+
   const filteredTemplates = allTemplates.filter((t) =>
     (t.displayName || t.name || '').toLowerCase().includes(templateSearch.toLowerCase())
   );
@@ -250,6 +263,23 @@ export default function CreateCampaign() {
     return true;
   };
 
+  const handleNext = () => {
+    if (step === 0 && formData.type === 'REVIEW_COLLECTION') {
+      setStep(2); // Skip Step 1 (Template)
+    } else {
+      setStep(step + 1);
+    }
+  };
+
+  const goBack = () => {
+    if (step === 2 && formData.type === 'REVIEW_COLLECTION') {
+      setStep(0); // Skip Step 1 back to Details
+    } else if (step > 0) {
+      setStep(step - 1);
+    } else {
+      navigate('/campaigns');
+    }
+  };
   const handleSubmit = async () => {
     setSending(true);
     try {
@@ -852,6 +882,20 @@ export default function CreateCampaign() {
                         />
                       </div>
                       <div>
+                        <label className="block text-xs font-bold uppercase tracking-[0.15em] text-slate-500 mb-1.5">Booked After</label>
+                        <input type="date" className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm bg-slate-50/50 focus:bg-white focus:border-teal-400 focus:ring-4 focus:ring-[#f0f0f0]0/10 outline-none transition-all duration-300"
+                          value={formData.audienceFilter.bookedAfter || ''}
+                          onChange={(e) => updateAdvancedFilter('bookedAfter', e.target.value)}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold uppercase tracking-[0.15em] text-slate-500 mb-1.5">Booked Before</label>
+                        <input type="date" className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm bg-slate-50/50 focus:bg-white focus:border-teal-400 focus:ring-4 focus:ring-[#f0f0f0]0/10 outline-none transition-all duration-300"
+                          value={formData.audienceFilter.bookedBefore || ''}
+                          onChange={(e) => updateAdvancedFilter('bookedBefore', e.target.value)}
+                        />
+                      </div>
+                      <div>
                         <label className="block text-xs font-bold uppercase tracking-[0.15em] text-slate-500 mb-1.5">Spam Protection (days)</label>
                         <input type="number" placeholder="e.g. 7"
                           className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm bg-slate-50/50 focus:bg-white focus:border-teal-400 focus:ring-4 focus:ring-[#f0f0f0]0/10 outline-none transition-all duration-300"
@@ -1012,7 +1056,7 @@ export default function CreateCampaign() {
           </button>
           {step < STEPS.length - 1 ? (
             <button
-              onClick={() => setStep(step + 1)}
+              onClick={handleNext}
               disabled={!canProceed()}
               className="group flex items-center gap-2 rounded-xl bg-gradient-to-r from-[#2d2d2d] to-[#404040] px-6 py-2.5 text-sm font-bold text-white shadow-lg shadow-[#f0f0f0]0/20 hover:shadow-xl hover:shadow-[#f0f0f0]0/30 hover:scale-[1.02] transition-all duration-300 disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none disabled:hover:scale-100"
             >

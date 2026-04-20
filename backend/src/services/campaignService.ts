@@ -16,6 +16,7 @@ async function buildAudience(agencyId, filter = {}) {
     excludeCampaignDays,
     packageId, bookingStatus, leadStatus,
     manualCustomerIds,
+    bookedAfter, bookedBefore,
   } = filter;
 
   // Manual selection mode — specific customer IDs provided (e.g. from import)
@@ -145,6 +146,23 @@ async function buildAudience(agencyId, filter = {}) {
       raw: true,
     });
     const ids = valueCustomers.map((c) => c.customerId);
+    if (ids.length === 0) return [];
+    where.id = where.id ? { [Op.and]: [where.id, { [Op.in]: ids }] } : { [Op.in]: ids };
+  }
+
+  // Filter by booking date (when the booking was made)
+  if (bookedAfter || bookedBefore) {
+    const bDateWhere = { agencyId, status: { [Op.notIn]: ['CANCELLED'] } };
+    if (bookedAfter) bDateWhere.createdAt = { ...bDateWhere.createdAt, [Op.gte]: new Date(bookedAfter) };
+    if (bookedBefore) bDateWhere.createdAt = { ...bDateWhere.createdAt, [Op.lte]: new Date(bookedBefore) };
+
+    const datedCustomerIds = await Booking.findAll({
+      where: bDateWhere,
+      attributes: ['customerId'],
+      group: ['customerId'],
+      raw: true,
+    });
+    const ids = datedCustomerIds.map((b) => b.customerId);
     if (ids.length === 0) return [];
     where.id = where.id ? { [Op.and]: [where.id, { [Op.in]: ids }] } : { [Op.in]: ids };
   }
