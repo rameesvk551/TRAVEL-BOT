@@ -448,6 +448,10 @@ async function syncTemplateToMarketingOs(agencyId, template, options = {}) {
   return whatsappService.upsertTemplateWithMeta(agencyId, template, options);
 }
 
+function extractProviderTemplateId(result) {
+  return result?.data?.id || result?.data?.data?.id || result?.id || result?.template?.id || null;
+}
+
 /**
  * List prebuilt template library.
  */
@@ -518,7 +522,11 @@ async function createTemplate(agencyId, data) {
   });
 
   try {
-    await syncTemplateToMarketingOs(agencyId, template, { mode: 'create' });
+    const result = await syncTemplateToMarketingOs(agencyId, template, { mode: 'create' });
+    const providerTemplateId = extractProviderTemplateId(result);
+    if (providerTemplateId) {
+      await template.update({ metaTemplateId: providerTemplateId });
+    }
     return template;
   } catch (err) {
     await template.destroy().catch(() => {});
@@ -558,7 +566,11 @@ async function usePrebuiltTemplate(agencyId, prebuiltId, overrides = {}) {
   });
 
   try {
-    await syncTemplateToMarketingOs(agencyId, template, { mode: 'create' });
+    const result = await syncTemplateToMarketingOs(agencyId, template, { mode: 'create' });
+    const providerTemplateId = extractProviderTemplateId(result);
+    if (providerTemplateId) {
+      await template.update({ metaTemplateId: providerTemplateId });
+    }
     return template;
   } catch (err) {
     await template.destroy().catch(() => {});
@@ -590,10 +602,14 @@ async function updateTemplate(id, agencyId, data) {
     nextData.rejectionReason = null;
   }
 
-  await syncTemplateToMarketingOs(agencyId, {
+  const result = await syncTemplateToMarketingOs(agencyId, {
     ...template.toJSON(),
     ...nextData,
   });
+  const providerTemplateId = extractProviderTemplateId(result);
+  if (providerTemplateId) {
+    nextData.metaTemplateId = providerTemplateId;
+  }
 
   return template.update(nextData);
 }
@@ -710,7 +726,11 @@ async function submitForApproval(id, agencyId) {
   const whatsappService = require('./whatsappService');
   
   try {
-    await syncTemplateToMarketingOs(agencyId, template);
+    const result = await syncTemplateToMarketingOs(agencyId, template);
+    const providerTemplateId = extractProviderTemplateId(result);
+    if (providerTemplateId) {
+      template.metaTemplateId = providerTemplateId;
+    }
     await whatsappService.submitTemplateToMeta(agencyId, template);
     return template.update({ status: 'PENDING', rejectionReason: null });
   } catch (err) {

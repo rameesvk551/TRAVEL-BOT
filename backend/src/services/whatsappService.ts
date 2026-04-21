@@ -1027,8 +1027,10 @@ async function upsertTemplateWithMeta(agencyId, template, { mode = 'upsert' } = 
       return marketingOsPartnerService.createTenantWhatsAppTemplate(tenantToken, payload);
     }
 
+    const providerTemplateId = template.metaTemplateId || template.meta_template_id || template.id;
+
     try {
-      return await marketingOsPartnerService.updateTenantWhatsAppTemplate(tenantToken, template.id, payload);
+      return await marketingOsPartnerService.updateTenantWhatsAppTemplate(tenantToken, providerTemplateId, payload);
     } catch (err) {
       const status = err.response?.status;
       if (status && status !== 404) throw err;
@@ -1048,7 +1050,8 @@ async function submitTemplateToMeta(agencyId, template) {
   
   if (canUseMarketingOs(channel)) {
     const tenantToken = await marketingOsPartnerService.getTenantToken(channel.marketingOsTenantId);
-    return await marketingOsPartnerService.submitTenantWhatsAppTemplate(tenantToken, template.id);
+    const providerTemplateId = template.metaTemplateId || template.meta_template_id || template.id;
+    return await marketingOsPartnerService.submitTenantWhatsAppTemplate(tenantToken, providerTemplateId);
   }
   
   if (canUseCloudApi(channel.phoneNumberId)) {
@@ -1064,7 +1067,8 @@ async function deleteTemplateFromMeta(agencyId, template) {
 
   if (canUseMarketingOs(channel)) {
     const tenantToken = await marketingOsPartnerService.getTenantToken(channel.marketingOsTenantId);
-    return marketingOsPartnerService.deleteTenantWhatsAppTemplate(tenantToken, template.id);
+    const providerTemplateId = template.metaTemplateId || template.meta_template_id || template.id;
+    return marketingOsPartnerService.deleteTenantWhatsAppTemplate(tenantToken, providerTemplateId);
   }
 
   if (canUseCloudApi(channel.phoneNumberId)) {
