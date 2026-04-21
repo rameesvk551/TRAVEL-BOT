@@ -7,6 +7,7 @@ require('dotenv').config({ path: require('path').resolve(__dirname, '../../.env'
 const app = require('./app');
 const { sequelize } = require('./models');
 const { startWorker } = require('./services/schedulerService');
+const { startMarketingWorkers } = require('./services/marketingSchedulerService');
 const { ensureProductionSchema } = require('./services/schemaBootstrap');
 const { seedPrebuiltTemplates } = require('./services/templateService');
 
@@ -35,6 +36,13 @@ async function start() {
       console.log('Scheduler worker started');
     } catch (err) {
       console.warn('Scheduler worker failed to start (Redis may be unavailable):', err.message);
+    }
+
+    try {
+      startMarketingWorkers();
+      console.log('Marketing workers started');
+    } catch (err) {
+      console.warn('Marketing workers failed to start (Redis may be unavailable):', err.message);
     }
 
     app.listen(PORT, () => {
