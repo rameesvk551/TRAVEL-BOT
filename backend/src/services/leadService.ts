@@ -18,7 +18,7 @@ function isAdmin(requester) {
 
 function scopedLeadWhere(agencyId, requester, extra = {}) {
   const where = { agencyId, ...extra };
-  if (!isAdmin(requester)) {
+  if (requester?.id && !isAdmin(requester)) {
     where.assignedAgentId = requester?.id;
   }
   return where;

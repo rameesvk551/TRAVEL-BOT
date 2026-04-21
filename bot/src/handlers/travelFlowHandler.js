@@ -554,10 +554,6 @@ async function showMainMenu(session, customer, agency) {
     { id: 'menu_international', title: 'International' },
   ];
 
-  if (agency.whatsappCatalogId) {
-    buttons.push({ id: 'menu_catalog', title: '🛒 Shop Catalog' });
-  }
-
   return whatsappService.sendButtonsMessage(
     customer.phone,
     greeting,

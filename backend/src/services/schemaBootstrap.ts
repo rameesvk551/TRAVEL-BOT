@@ -78,9 +78,29 @@ async function ensureLeadsSchema() {
     'CANCELLED',
     'UNKNOWN',
   ]);
+
+  await ensureColumn('leads', 'ad_id', {
+    type: Sequelize.STRING(255),
+    allowNull: true,
+  });
+
+  await ensureColumn('leads', 'ad_headline', {
+    type: Sequelize.STRING(500),
+    allowNull: true,
+  });
+
+  await ensureColumn('leads', 'ad_source_url', {
+    type: Sequelize.TEXT,
+    allowNull: true,
+  });
 }
 
 async function ensureCustomersSchema() {
+  await ensureColumn('customers', 'email', {
+    type: Sequelize.STRING(255),
+    allowNull: true,
+  });
+
   await ensureColumn('customers', 'is_customer', {
     type: Sequelize.BOOLEAN,
     allowNull: false,
