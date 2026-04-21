@@ -135,6 +135,16 @@ async function ensureItinerariesSchema() {
   });
 }
 
+async function ensureCampaignsSchema() {
+  await ensureEnumValues('enum_campaigns_type', [
+    'BROADCAST',
+    'PROMOTIONAL',
+    'RE_ENGAGEMENT',
+    'SEASONAL',
+    'REVIEW_COLLECTION',
+  ]);
+}
+
 async function ensureFollowUpsTable() {
   const queryInterface = sequelize.getQueryInterface();
 
@@ -255,6 +265,7 @@ async function ensureProductionSchema() {
   await ensureCustomersSchema();
   await ensureBookingsSchema();
   await ensureItinerariesSchema();
+  await ensureCampaignsSchema();
   await ensureFollowUpsTable();
   await ensureLeadNotesTable();
 }
