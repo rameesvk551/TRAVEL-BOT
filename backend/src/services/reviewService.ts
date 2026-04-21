@@ -5,8 +5,15 @@ const { Review, Customer, Booking } = require('../models');
 
 async function saveReview(data) {
   const { agencyId, customerId, bookingId, rating, testimonial, destination } = data;
+  const reviewKey = { agencyId, customerId };
 
-  const existing = await Review.findOne({ where: { agencyId, customerId, bookingId } });
+  if (bookingId) {
+    reviewKey.bookingId = bookingId;
+  } else {
+    reviewKey.bookingId = null;
+  }
+
+  const existing = await Review.findOne({ where: reviewKey });
   if (existing) {
     return existing.update({ rating, testimonial, destination });
   }
@@ -14,7 +21,7 @@ async function saveReview(data) {
   return Review.create({
     agencyId,
     customerId,
-    bookingId,
+    bookingId: bookingId || null,
     rating,
     testimonial,
     destination,
