@@ -254,7 +254,6 @@ async function sendViaMarketingOs(phone, payload, tenantId) {
     data = await marketingOsPartnerService.sendTenantWhatsAppMessage(tenantToken, {
       tenantId,
       to: toMetaRecipient(phone),
-      body: `[Template: ${payload.templateName}]`,
       templateName: payload.templateName,
       language: payload.languageCode || 'en',
       variables: payload.variables || {},
