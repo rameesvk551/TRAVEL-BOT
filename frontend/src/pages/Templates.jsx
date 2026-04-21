@@ -148,7 +148,7 @@ export default function Templates() {
           <div className="flex-1 space-y-8">
 
             {/* Preset Gallery */}
-            {(activeTab === 'All' || activeTab === 'Approved') && prebuiltTemplates.length > 0 && (
+            {activeTab === 'All' && prebuiltTemplates.length > 0 && (
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <div>
