@@ -140,9 +140,13 @@ async function sendToRecipient(recipient, campaign, template, agencyId) {
       if (session) {
         await session.update({ currentStep: 'REVIEW', isHandedOff: false });
       }
-      await sendReviewRatingPrompt(customer, agencyId).catch((err) => {
-        console.error(`[CampaignBroadcast] Failed to send review rating prompt to ${customer.phone}:`, err.message);
-      });
+
+      const canSendInteractivePrompt = await whatsappService.isCustomerIn24hWindow(context);
+      if (canSendInteractivePrompt) {
+        await sendReviewRatingPrompt(customer, agencyId).catch((err) => {
+          console.error(`[CampaignBroadcast] Failed to send review rating prompt to ${customer.phone}:`, err.message);
+        });
+      }
     }
 
     return 'SENT';
