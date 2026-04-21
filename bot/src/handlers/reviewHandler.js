@@ -5,6 +5,34 @@ const path = require('path');
 const whatsappService = require(path.resolve(__dirname, '../../../backend/src/services/whatsappService.ts'));
 const { updateSession } = require('../utils/sessionManager');
 
+async function sendReviewRatingPrompt(customer, agency) {
+  const ctx = { customerId: customer.id, agencyId: agency.id };
+  const body = `Please rate your ${customer.destination || 'trip'} experience.`;
+
+  return whatsappService.sendListMessage(
+    customer.phone,
+    body,
+    'Rate Trip',
+    [
+      {
+        title: 'Your rating',
+        rows: [
+          { id: 'review_rating_5', title: '5 Stars', description: 'Amazing experience' },
+          { id: 'review_rating_4', title: '4 Stars', description: 'Good experience' },
+          { id: 'review_rating_3', title: '3 Stars', description: 'Average experience' },
+          { id: 'review_rating_2', title: '2 Stars', description: 'Could be better' },
+          { id: 'review_rating_1', title: '1 Star', description: 'Poor experience' },
+        ],
+      },
+    ],
+    ctx,
+    {
+      headerText: 'Share Your Review',
+      footerText: 'You can also type a number from 1 to 5.',
+    }
+  );
+}
+
 /**
  * Handles post-trip review collection.
  * @param {object} session - BotSession instance
@@ -75,6 +103,7 @@ async function handleReview(session, messageText, customer, agency) {
   // Didn't understand
   const response = 'Please rate your experience from 1 to 5 ⭐ or share your thoughts about the trip.';
   await whatsappService.sendTextMessage(customer.phone, response, ctx);
+  await sendReviewRatingPrompt(customer, agency).catch(console.error);
 }
 
-module.exports = { handleReview };
+module.exports = { handleReview, sendReviewRatingPrompt };

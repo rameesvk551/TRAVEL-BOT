@@ -71,6 +71,11 @@ async function routeMessage(session, incoming, customer, agency) {
     return;
   }
 
+  if (session.currentStep === 'REVIEW' || session.currentStep === 'REVIEW_TESTIMONIAL') {
+    await handleReview(session, messageText, customer, agency);
+    return;
+  }
+
   // Interactive WhatsApp replies should reach the flow handler first so CTA clicks
   // like "Call Now" or Flow submissions are not mistaken for generic handoff keywords.
   if (actionId) {
@@ -90,10 +95,6 @@ async function routeMessage(session, incoming, customer, agency) {
   switch (session.currentStep) {
     case 'PAYMENT_PENDING':
       await handlePaymentMessage(session, messageText, customer, agency);
-      return;
-
-    case 'REVIEW':
-      await handleReview(session, messageText, customer, agency);
       return;
 
     default:

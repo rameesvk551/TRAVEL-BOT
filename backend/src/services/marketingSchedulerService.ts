@@ -45,6 +45,33 @@ function buildTemplateVariables(template, customer) {
   return variables;
 }
 
+async function sendReviewRatingPrompt(customer, agencyId) {
+  const context = { customerId: customer.id, agencyId };
+
+  return whatsappService.sendListMessage(
+    customer.phone,
+    'Please tap a rating for your trip experience.',
+    'Rate Trip',
+    [
+      {
+        title: 'Your rating',
+        rows: [
+          { id: 'review_rating_5', title: '5 Stars', description: 'Amazing experience' },
+          { id: 'review_rating_4', title: '4 Stars', description: 'Good experience' },
+          { id: 'review_rating_3', title: '3 Stars', description: 'Average experience' },
+          { id: 'review_rating_2', title: '2 Stars', description: 'Could be better' },
+          { id: 'review_rating_1', title: '1 Star', description: 'Poor experience' },
+        ],
+      },
+    ],
+    context,
+    {
+      headerText: 'Share Your Review',
+      footerText: 'You can also type a number from 1 to 5.',
+    }
+  );
+}
+
 /**
  * Process a single recipient: send WhatsApp message and update status.
  */
@@ -113,6 +140,9 @@ async function sendToRecipient(recipient, campaign, template, agencyId) {
       if (session) {
         await session.update({ currentStep: 'REVIEW', isHandedOff: false });
       }
+      await sendReviewRatingPrompt(customer, agencyId).catch((err) => {
+        console.error(`[CampaignBroadcast] Failed to send review rating prompt to ${customer.phone}:`, err.message);
+      });
     }
 
     return 'SENT';
