@@ -391,6 +391,7 @@ function normalizeProviderTemplate(mt) {
     || mt.body_content
     || extractBodyFromComponents(mt.components)
     || '';
+  const status = normalizeStatus(mt.status);
 
   return {
     id: mt.id || mt.metaTemplateId || mt.meta_template_id || name,
@@ -403,8 +404,8 @@ function normalizeProviderTemplate(mt) {
     body,
     footer: mt.footer || mt.footerContent || mt.footer_content || null,
     buttons: normalizeButtons(mt.buttons),
-    status: normalizeStatus(mt.status),
-    rejectionReason: mt.rejectionReason || mt.rejection_reason || mt.rejected_reason || null,
+    status,
+    rejectionReason: status === 'REJECTED' ? (mt.rejectionReason || mt.rejection_reason || mt.rejected_reason || null) : null,
     variableCount: mt.variableCount || mt.variable_count || countBodyVariables(body),
     sampleVariables: Array.isArray(mt.variables) ? mt.variables : [],
   };
