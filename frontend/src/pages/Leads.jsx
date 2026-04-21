@@ -51,6 +51,7 @@ import {
 } from '../utils/leadInsights';
 import { getInitials, getStatusTone } from '../components/uiHelpers';
 import LeadPipeline from '../components/LeadPipeline';
+import NewLeadModal from '../components/NewLeadModal';
 
 const TABS = [
   { key: 'Needs Attention', label: 'Needs Attention' },
@@ -62,6 +63,7 @@ const EMPTY = '-';
 
 export default function Leads() {
   const [activeTab, setActiveTab] = useState('Needs Attention');
+  const [isNewLeadModalOpen, setIsNewLeadModalOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [view, setView] = useState('list');
   const [selectedLeadId, setSelectedLeadId] = useState(null);
@@ -226,7 +228,10 @@ export default function Leads() {
             ))}
           </select>
 
-          <button className="shell-button-primary h-11 px-5 bg-neutral-900 hover:bg-black">
+          <button
+            onClick={() => setIsNewLeadModalOpen(true)}
+            className="shell-button-primary h-11 px-5 bg-neutral-900 hover:bg-black"
+          >
             <PlusIcon className="h-5 w-5" />
             New Lead
           </button>
@@ -317,6 +322,12 @@ export default function Leads() {
         agents={agents}
         leadId={selectedLeadId}
         onClose={() => setSelectedLeadId(null)}
+      />
+
+      <NewLeadModal
+        isOpen={isNewLeadModalOpen}
+        onClose={() => setIsNewLeadModalOpen(false)}
+        agents={agents}
       />
     </div>
   );

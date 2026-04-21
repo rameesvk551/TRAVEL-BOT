@@ -105,6 +105,19 @@ module.exports = (sequelize) => {
       defaultValue: 0,
       comment: 'Predicted conversion score 0-100',
     },
+    adId: {
+      type: DataTypes.STRING(255),
+      allowNull: true,
+      comment: 'Meta Ad ID if the lead originated from a Click-to-WhatsApp ad',
+    },
+    adHeadline: {
+      type: DataTypes.STRING(255),
+      allowNull: true,
+    },
+    adSourceUrl: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+    },
   }, {
     tableName: 'leads',
     indexes: [

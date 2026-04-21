@@ -43,6 +43,7 @@ const utilityItems = [
 const marketingItems = [
   { to: '/templates', icon: QueueListIcon, label: 'Templates' },
   { to: '/campaigns', icon: MegaphoneIcon, label: 'Campaigns' },
+  { to: '/ads', icon: CubeIcon, label: 'Social Ads' },
   { to: '/reviews', icon: StarIcon, label: 'Reviews' },
 ];
 

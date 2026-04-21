@@ -21,6 +21,8 @@ import ItineraryBuilder from './pages/ItineraryBuilder';
 import Campaigns from './pages/Campaigns';
 import CampaignDetail from './pages/CampaignDetail';
 import CreateCampaign from './pages/CreateCampaign';
+import AdsDashboard from './pages/AdsDashboard';
+import CreateAd from './pages/CreateAd';
 import Reviews from './pages/Reviews';
 import Agents from './pages/Agents';
 import Sidebar from './components/Sidebar';
@@ -97,6 +99,8 @@ export default function App() {
                   <Route path="/campaigns/new" element={<CreateCampaign />} />
                   <Route path="/campaigns/:id/edit" element={<CreateCampaign />} />
                   <Route path="/campaigns/:id" element={<CampaignDetail />} />
+                  <Route path="/ads" element={<AdsDashboard />} />
+                  <Route path="/ads/new" element={<CreateAd />} />
                   <Route path="/reviews" element={<Reviews />} />
                   <Route path="/payments" element={<Payments />} />
                   <Route path="/analytics" element={<Analytics />} />
