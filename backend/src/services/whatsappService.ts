@@ -1,6 +1,8 @@
 const axios = require('axios');
-const { Agency, Message } = require('../models');
+const { Op } = require('sequelize');
+const { Agency, Customer, Message } = require('../models');
 const marketingOsPartnerService = require('./marketingOsPartnerService');
+const { normalizePhone } = require('../utils/phoneUtils');
 
 const interaktClient = axios.create({
   baseURL: process.env.INTERAKT_BASE_URL || 'https://api.interakt.ai/v1/public',
@@ -88,9 +90,34 @@ async function markMessageFailed(message, scope, err) {
 async function isCustomerIn24hWindow(context = {}) {
   if (!context?.customerId || !context?.agencyId) return false;
 
+  const customerIds = new Set([context.customerId]);
+  const customer = await Customer.findOne({
+    where: { id: context.customerId, agencyId: context.agencyId },
+    attributes: ['id', 'phone'],
+  });
+
+  if (customer?.phone) {
+    const normalizedPhone = normalizePhone(customer.phone);
+    const phoneCandidates = Array.from(new Set([
+      customer.phone,
+      normalizedPhone,
+      normalizedPhone?.replace(/^\+91/, ''),
+    ].filter(Boolean)));
+
+    const matchingCustomers = await Customer.findAll({
+      where: {
+        agencyId: context.agencyId,
+        phone: { [Op.in]: phoneCandidates },
+      },
+      attributes: ['id'],
+    });
+
+    matchingCustomers.forEach((matchingCustomer) => customerIds.add(matchingCustomer.id));
+  }
+
   const lastIncoming = await Message.findOne({
     where: {
-      customerId: context.customerId,
+      customerId: { [Op.in]: Array.from(customerIds) },
       agencyId: context.agencyId,
       direction: 'IN',
     },
