@@ -10,7 +10,7 @@ import {
   Inbox, UserCheck, Star, ArrowLeft, Zap, Target,
 } from 'lucide-react';
 import { useCreateCampaign, useUpdateCampaign, usePreviewAudience, useCampaign } from '../hooks/useCampaigns';
-import { useAgencyTemplates, usePrebuiltTemplates } from '../hooks/useTemplates';
+import { useAgencyTemplates } from '../hooks/useTemplates';
 import { packagesApi } from '../api/packagesApi';
 import { campaignsApi } from '../api/campaignsApi';
 
@@ -108,17 +108,13 @@ export default function CreateCampaign() {
   const updateMutation = useUpdateCampaign();
   const previewMutation = usePreviewAudience();
   const { data: agencyTemplates } = useAgencyTemplates();
-  const { data: prebuiltTemplates } = usePrebuiltTemplates();
 
-  const allTemplates = [
-    ...(agencyTemplates?.data || []),
-    ...(prebuiltTemplates?.data || []),
-  ];
+  const approvedTemplates = (agencyTemplates?.data || []).filter((template) => template.status === 'APPROVED');
 
   // Auto-select specialized template for Review Collection
   useEffect(() => {
-    if (formData.type === 'REVIEW_COLLECTION' && allTemplates.length > 0 && !formData.templateId) {
-      const reviewTemplate = allTemplates.find(t => 
+    if (formData.type === 'REVIEW_COLLECTION' && approvedTemplates.length > 0 && !formData.templateId) {
+      const reviewTemplate = approvedTemplates.find(t =>
         (t.name === 'review_collection_campaign' || t.name === 'Automated Review Collection')
       );
       if (reviewTemplate) {
@@ -126,9 +122,9 @@ export default function CreateCampaign() {
         setSelectedTemplate(reviewTemplate);
       }
     }
-  }, [formData.type, allTemplates.length]);
+  }, [formData.type, approvedTemplates.length]);
 
-  const filteredTemplates = allTemplates.filter((t) =>
+  const filteredTemplates = approvedTemplates.filter((t) =>
     (t.displayName || t.name || '').toLowerCase().includes(templateSearch.toLowerCase())
   );
 
