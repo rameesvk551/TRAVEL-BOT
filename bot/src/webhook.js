@@ -206,6 +206,10 @@ async function processMessage(msg, metadata) {
     timestamp,
   });
 
+  await whatsappService.markLatestCampaignReply(customer.id, agency.id).catch((err) => {
+    console.warn('[Webhook] Could not mark campaign reply:', err.message);
+  });
+
   // If this is a document or image, sync it to the customer record
   if (incoming.mediaId && (incoming.type === 'DOCUMENT' || incoming.type === 'IMAGE')) {
     try {

@@ -1,6 +1,6 @@
 const axios = require('axios');
 const { Op } = require('sequelize');
-const { Agency, Customer, Message } = require('../models');
+const { Agency, Campaign, CampaignRecipient, Customer, Message } = require('../models');
 const marketingOsPartnerService = require('./marketingOsPartnerService');
 const { normalizePhone } = require('../utils/phoneUtils');
 
@@ -933,6 +933,80 @@ async function updateMessageStatus(waMessageId, newStatus) {
     { status },
     { where: { waMessageId } }
   );
+
+  const recipientUpdates = {};
+  if (status === 'DELIVERED') {
+    recipientUpdates.status = 'DELIVERED';
+    recipientUpdates.deliveredAt = new Date();
+  } else if (status === 'READ') {
+    recipientUpdates.status = 'READ';
+    recipientUpdates.readAt = new Date();
+  } else if (status === 'FAILED') {
+    recipientUpdates.status = 'FAILED';
+  }
+
+  if (Object.keys(recipientUpdates).length) {
+    await CampaignRecipient.update(
+      recipientUpdates,
+      { where: { waMessageId } }
+    );
+    await refreshCampaignStatsForMessage(waMessageId);
+  }
+}
+
+async function refreshCampaignStats(campaignId) {
+  if (!campaignId) return;
+
+  const [sent, delivered, read, replied, failed] = await Promise.all([
+    CampaignRecipient.count({ where: { campaignId, status: 'SENT' } }),
+    CampaignRecipient.count({ where: { campaignId, status: 'DELIVERED' } }),
+    CampaignRecipient.count({ where: { campaignId, status: 'READ' } }),
+    CampaignRecipient.count({ where: { campaignId, status: 'REPLIED' } }),
+    CampaignRecipient.count({ where: { campaignId, status: 'FAILED' } }),
+  ]);
+
+  await Campaign.update(
+    { sent, delivered, read, replied, failed },
+    { where: { id: campaignId } }
+  );
+}
+
+async function refreshCampaignStatsForMessage(waMessageId) {
+  const recipient = await CampaignRecipient.findOne({
+    where: { waMessageId },
+    attributes: ['campaignId'],
+  });
+
+  if (recipient?.campaignId) {
+    await refreshCampaignStats(recipient.campaignId);
+  }
+}
+
+async function markLatestCampaignReply(customerId, agencyId) {
+  if (!customerId || !agencyId) return;
+
+  const recipient = await CampaignRecipient.findOne({
+    include: [{
+      model: Campaign,
+      as: 'campaign',
+      where: { agencyId },
+      attributes: ['id'],
+      required: true,
+    }],
+    where: {
+      customerId,
+      status: { [Op.in]: ['SENT', 'DELIVERED', 'READ'] },
+    },
+    order: [['sentAt', 'DESC']],
+  });
+
+  if (!recipient) return;
+
+  await recipient.update({
+    status: 'REPLIED',
+    repliedAt: new Date(),
+  });
+  await refreshCampaignStats(recipient.campaignId);
 }
 
 async function sendSystemNotificationWhatsApp(phone, content, context = {}) {
@@ -1136,6 +1210,7 @@ module.exports = {
   sendCatalogMessage,
   sendFallbackMessage,
   updateMessageStatus,
+  markLatestCampaignReply,
   sendSystemNotificationWhatsApp,
   syncTemplatesWithMeta,
   upsertTemplateWithMeta,
