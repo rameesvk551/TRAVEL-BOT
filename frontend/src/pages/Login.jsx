@@ -8,6 +8,7 @@ import {
 } from '@heroicons/react/24/outline';
 import { useLogin } from '../hooks/useAuth';
 import { loginSchema } from '../utils/validators';
+import logo from '../assets/logo.png';
 import metaBadge from '../assets/meta_tech_provider_badge.png';
 
 export default function Login() {
@@ -24,9 +25,11 @@ export default function Login() {
         <section className="bg-[#f8fafc] flex w-full flex-col justify-center px-6 py-12 lg:w-[45%] lg:px-16 xl:w-[40%] xl:px-24">
           <div className="mx-auto w-full max-w-md animate-wizard-in">
             <div className="mb-12 flex flex-col items-center justify-center gap-4 text-center">
-              <div className="flex h-20 w-20 items-center justify-center rounded-[2rem] bg-white border border-neutral-200 shadow-xl shadow-neutral-100 overflow-hidden p-4 transition-transform hover:scale-105 duration-500">
-                <img src="/favicon.png" alt="Wayon Logo" className="h-full w-full object-contain" />
-              </div>
+              <img
+                src={logo}
+                alt="Wayon Logo"
+                className="h-28 w-44 object-contain transition-transform duration-500 hover:scale-105"
+              />
               <span className="text-2xl font-black tracking-tighter text-neutral-900 uppercase">WayOn</span>
             </div>
 
