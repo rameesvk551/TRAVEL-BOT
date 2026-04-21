@@ -115,7 +115,11 @@ export default function CreateCampaign() {
   useEffect(() => {
     if (formData.type === 'REVIEW_COLLECTION' && approvedTemplates.length > 0 && !formData.templateId) {
       const reviewTemplate = approvedTemplates.find(t =>
-        (t.name === 'review_collection_campaign' || t.name === 'Automated Review Collection')
+        t.name === 'review_collection_campaign'
+        || t.name === 'review_request'
+        || t.displayName === 'Automated Review Collection'
+        || t.displayName === 'Review Request'
+        || (t.tags || []).some((tag) => ['review', 'feedback', 'post-trip'].includes(tag))
       );
       if (reviewTemplate) {
         setFormData(prev => ({ ...prev, templateId: reviewTemplate.id, messageBody: '' }));

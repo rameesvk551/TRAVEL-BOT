@@ -231,7 +231,29 @@ async function importContacts(agencyId, contacts) {
  * Create campaign.
  */
 async function createCampaign(agencyId, data) {
-  return Campaign.create({ ...data, agencyId, status: 'DRAFT' });
+  const payload = { ...data };
+
+  if (payload.type === 'REVIEW_COLLECTION' && !payload.templateId && !payload.messageBody) {
+    const reviewTemplate = await MessageTemplate.findOne({
+      where: {
+        agencyId,
+        status: 'APPROVED',
+        [Op.or]: [
+          { name: 'review_request' },
+          { name: 'review_collection_campaign' },
+          { displayName: 'Review Request' },
+          { displayName: 'Automated Review Collection' },
+        ],
+      },
+      order: [['updatedAt', 'DESC']],
+    });
+
+    if (reviewTemplate) {
+      payload.templateId = reviewTemplate.id;
+    }
+  }
+
+  return Campaign.create({ ...payload, agencyId, status: 'DRAFT' });
 }
 
 /**
