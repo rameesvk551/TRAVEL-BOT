@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Plus, Gift, CreditCard, TrendingUp, Copy } from 'lucide-react';
 import { useReferrals, useReferralStats } from '../hooks/useReferrals';
 import { formatCurrency, formatDate } from '../utils/formatters';
+import MobileRecordCard, { MobileField } from '../components/MobileRecordCard';
 
 export default function Referrals() {
   const { data: listData, isLoading: listLoading } = useReferrals();
@@ -11,15 +12,15 @@ export default function Referrals() {
   const stats = statsData?.data || { totalCodes: 0, activeCodes: 0, totalUses: 0, totalRevenue: 0, topReferrers: [] };
 
   return (
-   <div className="p-8 space-y-6 animate-in fade-in">
-      <div className="flex items-center justify-between">
+   <div className="space-y-6 animate-in fade-in md:p-2">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
            <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-3">
               <Gift className="w-6 h-6 text-pink-500" /> Referral Program
            </h1>
           <p className="text-slate-500 mt-1">Manage discount codes and reward enthusiastic travelers.</p>
         </div>
-        <button className="shell-button-primary bg-pink-600 hover:bg-pink-700">
+        <button className="shell-button-primary w-full bg-pink-600 hover:bg-pink-700 sm:w-auto">
           <Plus className="w-4 h-4 mr-2" />
           Generate Code
         </button>
@@ -43,9 +44,9 @@ export default function Referrals() {
          </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
          {/* Code List */}
-         <div className="col-span-2 shell-panel p-0 overflow-hidden">
+         <div className="shell-panel overflow-hidden p-0 xl:col-span-2">
              <div className="p-4 px-6 border-b border-slate-100 flex items-center justify-between bg-slate-50">
                <h3 className="font-semibold text-slate-800">All Referral Codes</h3>
              </div>
@@ -53,7 +54,23 @@ export default function Referrals() {
              {listLoading ? (
                 <div className="p-8 text-center text-slate-500">Loading...</div>
              ) : (
-             <div className="overflow-x-auto min-h-[300px]">
+             <>
+             <div className="mobile-card-list min-h-[300px] p-3">
+               {codes.length === 0 ? (
+                 <div className="mobile-record-card text-center text-sm text-slate-500">No referral codes active</div>
+               ) : codes.map((c) => (
+                 <MobileRecordCard
+                   key={c.id}
+                   title={c.code}
+                   subtitle={`${c.customer?.name || 'Customer'} · ${c.customer?.phone || ''}`}
+                   badge={<span className={`badge ${c.isActive ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{c.isActive ? 'Active' : 'Inactive'}</span>}
+                 >
+                   <MobileField label="Discount" value={c.discountType === 'FLAT' ? formatCurrency(c.discountValue) : `${c.discountValue}% OFF`} />
+                   <MobileField label="Uses" value={`${c.usedCount} / ${c.maxUses}`} />
+                 </MobileRecordCard>
+               ))}
+             </div>
+             <div className="hidden min-h-[300px] overflow-x-auto md:block">
                <table className="w-full text-left">
                  <thead>
                    <tr className="bg-slate-50 text-slate-400 text-xs uppercase tracking-wider font-semibold border-b border-slate-100">
@@ -95,6 +112,7 @@ export default function Referrals() {
                  </tbody>
                </table>
              </div>
+             </>
              )}
          </div>
 

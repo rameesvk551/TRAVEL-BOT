@@ -6,16 +6,20 @@ import { useQuery } from '@tanstack/react-query';
 import client from '../api/client';
 import LeadCard from './LeadCard';
 import { LEAD_PIPELINE_COLUMNS } from '../utils/leadStatuses';
-import { getStatusDotColor, getStatusAccent } from './uiHelpers';
+import { getStatusDotColor } from './uiHelpers';
 import { InboxIcon } from '@heroicons/react/24/outline';
+import { formatCurrency } from '../utils/formatters';
+import { getAttentionBadges, getPipelineValue } from '../utils/leadInsights';
 
-export default function LeadPipeline({ onLeadClick }) {
+export default function LeadPipeline({ onLeadClick, leads: providedLeads }) {
   const { data, isLoading } = useLeads({ pageSize: 100 });
   const updateLead = useUpdateLead();
   const [draggedLead, setDraggedLead] = useState(null);
   const [dragOverCol, setDragOverCol] = useState(null);
+  const [mobileStatus, setMobileStatus] = useState(LEAD_PIPELINE_COLUMNS[0]?.key);
 
-  const leads = data?.data?.data || [];
+  const hasProvidedLeads = Array.isArray(providedLeads);
+  const leads = hasProvidedLeads ? providedLeads : data?.data?.data || [];
 
   const { data: agentsResponse } = useQuery({
     queryKey: ['agents'],
@@ -61,7 +65,7 @@ export default function LeadPipeline({ onLeadClick }) {
     updateLead.mutate({ id: leadId, data: { assignedAgentId: agentId || null } });
   }
 
-  if (isLoading) {
+  if (!hasProvidedLeads && isLoading) {
     return (
       <div className="flex gap-6 overflow-x-auto pb-4 hide-scrollbar">
         {LEAD_PIPELINE_COLUMNS.map((col) => (
@@ -90,12 +94,56 @@ export default function LeadPipeline({ onLeadClick }) {
     );
   }
 
+  const activeMobileColumn = LEAD_PIPELINE_COLUMNS.find((col) => col.key === mobileStatus) || LEAD_PIPELINE_COLUMNS[0];
+  const mobileLeads = getLeadsByStatus(activeMobileColumn?.key);
+
   return (
-    <div className="flex gap-4 overflow-x-auto pb-4 hide-scrollbar">
+    <>
+    <div className="md:hidden">
+      <div className="-mx-1 mb-3 flex gap-1 overflow-x-auto px-1 hide-scrollbar">
+        {LEAD_PIPELINE_COLUMNS.map((col) => (
+          <button
+            key={col.key}
+            type="button"
+            onClick={() => setMobileStatus(col.key)}
+            className={`shrink-0 rounded-[var(--radius-md)] px-3 py-2 text-xs font-bold transition ${
+              mobileStatus === col.key ? 'bg-neutral-900 text-white' : 'border border-neutral-200 bg-white text-neutral-500'
+            }`}
+          >
+            {col.label} ({getLeadsByStatus(col.key).length})
+          </button>
+        ))}
+      </div>
+
+      <div className="space-y-3">
+        {mobileLeads.length === 0 ? (
+          <div className="mobile-record-card text-center">
+            <InboxIcon className="mx-auto mb-2 h-7 w-7 text-neutral-300" />
+            <p className="text-sm font-semibold text-neutral-700">No leads in {activeMobileColumn?.label}</p>
+          </div>
+        ) : (
+          mobileLeads.map((lead) => (
+            <LeadCard
+              key={lead.id}
+              lead={lead}
+              onClick={onLeadClick}
+              onStatusChange={handleStatusChange}
+              onAssignAgent={handleAssignAgent}
+              agents={agents}
+            />
+          ))
+        )}
+      </div>
+    </div>
+
+    <div className="hidden gap-4 overflow-x-auto pb-4 md:flex hide-scrollbar">
       {LEAD_PIPELINE_COLUMNS.map((col) => {
         const colLeads = getLeadsByStatus(col.key);
         const isDragOver = dragOverCol === col.key;
-        const accentColor = getStatusAccent(col.key);
+        const overdueCount = colLeads.filter((lead) =>
+          getAttentionBadges(lead).some((badge) => badge.key === 'overdue')
+        ).length;
+        const pipelineValue = getPipelineValue(colLeads);
 
         return (
           <div
@@ -110,18 +158,30 @@ export default function LeadPipeline({ onLeadClick }) {
             onDrop={(e) => handleDrop(e, col.key)}
           >
             {/* Column header */}
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2.5">
-                <div
-                  className={`w-2.5 h-2.5 rounded-full ${getStatusDotColor(col.key)}`}
-                />
-                <h3 className="text-sm font-semibold text-neutral-800">
-                  {col.label}
-                </h3>
+            <div className="mb-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div
+                    className={`w-2.5 h-2.5 rounded-full ${getStatusDotColor(col.key)}`}
+                  />
+                  <h3 className="text-sm font-semibold text-neutral-800">
+                    {col.label}
+                  </h3>
+                </div>
+                <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-neutral-100 text-neutral-600 min-w-[24px] text-center">
+                  {colLeads.length}
+                </span>
               </div>
-              <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-neutral-100 text-neutral-600 min-w-[24px] text-center">
-                {colLeads.length}
-              </span>
+              <div className="mt-3 flex items-center justify-between gap-2 rounded-[var(--radius-sm)] bg-neutral-50 px-3 py-2">
+                <span className="text-[11px] font-semibold text-neutral-500">
+                  {pipelineValue > 0 ? formatCurrency(pipelineValue) : 'No value'}
+                </span>
+                {overdueCount > 0 && (
+                  <span className="rounded-full bg-rose-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-rose-700">
+                    {overdueCount} overdue
+                  </span>
+                )}
+              </div>
             </div>
 
             {/* Cards */}
@@ -157,5 +217,6 @@ export default function LeadPipeline({ onLeadClick }) {
         );
       })}
     </div>
+    </>
   );
 }

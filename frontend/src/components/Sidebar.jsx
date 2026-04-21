@@ -15,6 +15,7 @@ import {
   Cog6ToothIcon,
   ArrowRightOnRectangleIcon,
   PlusIcon,
+  ClockIcon,
   MegaphoneIcon,
   QueueListIcon,
   StarIcon,
@@ -26,6 +27,7 @@ import { getInitials } from './uiHelpers';
 const navItems = [
   { to: '/', icon: HomeIcon, label: 'Dashboard' },
   { to: '/leads', icon: QueueListIcon, label: 'Leads' },
+  { to: '/follow-ups', icon: ClockIcon, label: 'Follow-ups' },
   { to: '/bookings', icon: CalendarDaysIcon, label: 'Bookings' },
   { to: '/customers', icon: UserGroupIcon, label: 'Customers' },
   { to: '/agents', icon: UsersIcon, label: 'Users' },
@@ -95,10 +97,10 @@ export default function Sidebar() {
       />
 
       <aside
-        onMouseEnter={() => setSidebarHovered(true)}
-        onMouseLeave={() => setSidebarHovered(false)}
+        onMouseEnter={() => window.innerWidth >= 1024 && setSidebarHovered(true)}
+        onMouseLeave={() => window.innerWidth >= 1024 && setSidebarHovered(false)}
         className={`fixed inset-y-0 left-0 z-40 flex flex-col border-r border-neutral-200 bg-white transition-all duration-300 ${collapsed ? 'w-[72px] px-2' : 'w-[252px] px-4'
-          } py-4 lg:translate-x-0 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'
+          } overflow-y-auto py-4 pt-[calc(1rem+env(safe-area-inset-top))] lg:translate-x-0 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'
           }`}
       >
         {/* Agency name + collapse toggle */}

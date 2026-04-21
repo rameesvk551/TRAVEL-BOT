@@ -316,6 +316,138 @@ async function seedPrebuiltTemplates() {
   console.log(`[TemplateService] Seeded ${PREBUILT_TEMPLATES.length} prebuilt templates.`);
 }
 
+function slugifyTemplateName(value) {
+  const slug = String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 80);
+
+  return slug || `template_${Date.now()}`;
+}
+
+async function makeUniqueTemplateName(agencyId, baseName, excludeId = null) {
+  const base = slugifyTemplateName(baseName);
+  let candidate = base;
+  let suffix = 1;
+
+  while (true) {
+    const where = { agencyId, name: candidate };
+    if (excludeId) where.id = { [Op.ne]: excludeId };
+    const existing = await MessageTemplate.findOne({ where, attributes: ['id'] });
+    if (!existing) return candidate;
+    suffix += 1;
+    candidate = `${base}_${suffix}`;
+  }
+}
+
+function countBodyVariables(body) {
+  const matches = String(body || '').match(/\{\{\s*(\d+)\s*\}\}/g) || [];
+  return matches.reduce((max, token) => {
+    const value = parseInt(token.replace(/[^\d]/g, ''), 10);
+    return Number.isFinite(value) ? Math.max(max, value) : max;
+  }, 0);
+}
+
+function normalizeStatus(status) {
+  const normalized = String(status || 'DRAFT').toUpperCase().replace(/\s+/g, '_');
+  if (['APPROVED', 'PENDING', 'REJECTED', 'PAUSED', 'DRAFT'].includes(normalized)) return normalized;
+  if (['IN_REVIEW', 'SUBMITTED', 'UNDER_REVIEW'].includes(normalized)) return 'PENDING';
+  if (['DISABLED', 'DELETED'].includes(normalized)) return 'PAUSED';
+  return 'DRAFT';
+}
+
+function normalizeCategory(category) {
+  const normalized = String(category || 'MARKETING').toUpperCase();
+  return ['MARKETING', 'UTILITY', 'AUTHENTICATION'].includes(normalized) ? normalized : 'MARKETING';
+}
+
+function normalizeHeaderType(headerType) {
+  const normalized = String(headerType || 'NONE').toUpperCase();
+  return ['NONE', 'TEXT', 'IMAGE', 'DOCUMENT', 'VIDEO'].includes(normalized) ? normalized : 'NONE';
+}
+
+function normalizeButtons(buttons) {
+  if (!Array.isArray(buttons)) return [];
+  return buttons
+    .map((button) => ({
+      type: String(button.type || 'QUICK_REPLY').toUpperCase(),
+      text: String(button.text || button.title || '').trim(),
+      url: button.url || null,
+      phoneNumber: button.phoneNumber || button.phone_number || null,
+    }))
+    .filter((button) => button.text);
+}
+
+function extractBodyFromComponents(components = []) {
+  if (!Array.isArray(components)) return '';
+  return components.find((component) => String(component.type || '').toUpperCase() === 'BODY')?.text || '';
+}
+
+function normalizeProviderTemplate(mt) {
+  const name = mt.name || mt.templateName || mt.template_name;
+  const body = mt.body
+    || mt.bodyContent
+    || mt.body_content
+    || extractBodyFromComponents(mt.components)
+    || '';
+
+  return {
+    id: mt.id || mt.metaTemplateId || mt.meta_template_id || name,
+    name,
+    displayName: mt.displayName || mt.display_name || String(name || '').replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase()),
+    category: normalizeCategory(mt.category),
+    language: mt.language || mt.languageCode || mt.language_code || 'en',
+    headerType: normalizeHeaderType(mt.headerType || mt.header_type),
+    headerContent: mt.headerContent || mt.header_content || null,
+    body,
+    footer: mt.footer || mt.footerContent || mt.footer_content || null,
+    buttons: normalizeButtons(mt.buttons),
+    status: normalizeStatus(mt.status),
+    rejectionReason: mt.rejectionReason || mt.rejection_reason || mt.rejected_reason || null,
+    variableCount: mt.variableCount || mt.variable_count || countBodyVariables(body),
+    sampleVariables: Array.isArray(mt.variables) ? mt.variables : [],
+  };
+}
+
+function extractProviderTemplates(result) {
+  if (Array.isArray(result)) return result;
+  if (Array.isArray(result?.data)) return result.data;
+  if (Array.isArray(result?.templates)) return result.templates;
+  if (Array.isArray(result?.data?.templates)) return result.data.templates;
+  if (Array.isArray(result?.data?.data)) return result.data.data;
+  if (Array.isArray(result?.data?.data?.templates)) return result.data.data.templates;
+  return [];
+}
+
+function buildTemplateData(data, existing = null) {
+  const body = data.body ?? existing?.body ?? '';
+  const variableCount = countBodyVariables(body);
+
+  return {
+    displayName: String(data.displayName ?? existing?.displayName ?? '').trim(),
+    name: data.name || existing?.name,
+    category: normalizeCategory(data.category ?? existing?.category),
+    language: data.language || existing?.language || 'en',
+    headerType: normalizeHeaderType(data.headerType ?? existing?.headerType),
+    headerContent: data.headerContent ?? existing?.headerContent ?? null,
+    body,
+    footer: data.footer ?? existing?.footer ?? null,
+    buttons: normalizeButtons(data.buttons ?? existing?.buttons),
+    variableCount,
+    sampleVariables: Array.isArray(data.sampleVariables)
+      ? data.sampleVariables
+      : (existing?.sampleVariables || Array.from({ length: variableCount }, (_, index) => `Sample ${index + 1}`)),
+    tags: Array.isArray(data.tags) ? data.tags : (existing?.tags || []),
+    icon: data.icon ?? existing?.icon ?? '💬',
+  };
+}
+
+async function syncTemplateToMarketingOs(agencyId, template, options = {}) {
+  const whatsappService = require('./whatsappService');
+  return whatsappService.upsertTemplateWithMeta(agencyId, template, options);
+}
+
 /**
  * List prebuilt template library.
  */
@@ -372,12 +504,26 @@ async function getTemplate(id) {
  * Create an agency template (optionally from a prebuilt template).
  */
 async function createTemplate(agencyId, data) {
-  return MessageTemplate.create({
-    ...data,
+  const payload = buildTemplateData(data);
+  if (!payload.displayName) throw new Error('Template display name is required');
+  if (!payload.body) throw new Error('Template body is required');
+  payload.name = await makeUniqueTemplateName(agencyId, payload.name || payload.displayName);
+
+  const template = await MessageTemplate.create({
+    ...payload,
     agencyId,
     isPrebuilt: false,
-    status: data.status || 'DRAFT',
+    status: 'DRAFT',
+    metaTemplateId: null,
   });
+
+  try {
+    await syncTemplateToMarketingOs(agencyId, template, { mode: 'create' });
+    return template;
+  } catch (err) {
+    await template.destroy().catch(() => {});
+    throw err;
+  }
 }
 
 /**
@@ -397,15 +543,27 @@ async function usePrebuiltTemplate(agencyId, prebuiltId, overrides = {}) {
   delete data.createdAt;
   delete data.updatedAt;
 
-  return MessageTemplate.create({
+  const payload = buildTemplateData({ ...data, ...overrides });
+  payload.name = await makeUniqueTemplateName(agencyId, payload.name || payload.displayName || data.name);
+
+  const template = await MessageTemplate.create({
     ...data,
     ...overrides,
+    ...payload,
     agencyId,
     isPrebuilt: false,
     status: 'DRAFT',
     metaTemplateId: null,
     usageCount: 0,
   });
+
+  try {
+    await syncTemplateToMarketingOs(agencyId, template, { mode: 'create' });
+    return template;
+  } catch (err) {
+    await template.destroy().catch(() => {});
+    throw err;
+  }
 }
 
 /**
@@ -414,12 +572,30 @@ async function usePrebuiltTemplate(agencyId, prebuiltId, overrides = {}) {
 async function updateTemplate(id, agencyId, data) {
   const template = await MessageTemplate.findOne({ where: { id, agencyId } });
   if (!template) throw new Error('Template not found');
-  if (template.status === 'APPROVED') {
-    // Re-submit for approval after edits
-    data.status = 'DRAFT';
-    data.metaTemplateId = null;
+  if (template.status === 'PENDING') {
+    throw new Error('Pending templates cannot be edited until Meta finishes review');
   }
-  return template.update(data);
+
+  const nextData = buildTemplateData(data, template);
+  if (data.name && data.name !== template.name) {
+    nextData.name = await makeUniqueTemplateName(agencyId, data.name, id);
+  }
+
+  if (template.status === 'APPROVED') {
+    nextData.status = 'DRAFT';
+    nextData.metaTemplateId = null;
+    nextData.rejectionReason = null;
+  } else if (template.status === 'REJECTED') {
+    nextData.status = 'DRAFT';
+    nextData.rejectionReason = null;
+  }
+
+  await syncTemplateToMarketingOs(agencyId, {
+    ...template.toJSON(),
+    ...nextData,
+  });
+
+  return template.update(nextData);
 }
 
 /**
@@ -450,6 +626,17 @@ async function duplicateTemplate(id, agencyId) {
 async function deleteTemplate(id, agencyId) {
   const template = await MessageTemplate.findOne({ where: { id, agencyId } });
   if (!template) throw new Error('Template not found');
+  if (template.status === 'PENDING') {
+    throw new Error('Pending templates cannot be deleted until Meta finishes review');
+  }
+
+  const whatsappService = require('./whatsappService');
+  try {
+    await whatsappService.deleteTemplateFromMeta(agencyId, template);
+  } catch (err) {
+    console.warn('[TemplateService] Marketing OS template deletion failed:', err.message);
+  }
+
   await template.destroy();
   return { success: true };
 }
@@ -461,38 +648,54 @@ async function syncTemplates(agencyId) {
   const whatsappService = require('./whatsappService');
   const metaResult = await whatsappService.syncTemplatesWithMeta(agencyId);
 
-  // Marketing OS returns { data: syncedTemplates, message, total }
-  const metaTemplates = metaResult?.data || [];
+  const rawTemplates = extractProviderTemplates(metaResult);
   const syncedIds = [];
 
-  for (const mt of metaTemplates) {
+  for (const rawTemplate of rawTemplates) {
+    const mt = normalizeProviderTemplate(rawTemplate);
+    if (!mt.name) continue;
+
     const [template, created] = await MessageTemplate.findOrCreate({
       where: { name: mt.name, agencyId },
       defaults: {
-        displayName: mt.name.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+        displayName: mt.displayName,
         category: mt.category,
-        language: mt.language || 'en',
-        body: mt.components?.find(c => c.type === 'BODY')?.text || '',
+        language: mt.language,
+        headerType: mt.headerType,
+        headerContent: mt.headerContent,
+        body: mt.body,
+        footer: mt.footer,
+        buttons: mt.buttons,
+        variableCount: mt.variableCount,
+        sampleVariables: mt.sampleVariables,
         status: mt.status,
         metaTemplateId: mt.id,
+        rejectionReason: mt.rejectionReason,
         isPrebuilt: false,
       }
     });
 
     if (!created) {
-      // Update existing template with latest status and metadata
       await template.update({
+        displayName: mt.displayName || template.displayName,
+        category: mt.category,
+        language: mt.language,
+        headerType: mt.headerType,
+        headerContent: mt.headerContent,
         status: mt.status,
         metaTemplateId: mt.id,
-        rejectionReason: mt.rejected_reason || null,
-        // Optionally update content if it changed on Meta
-        body: mt.components?.find(c => c.type === 'BODY')?.text || template.body,
+        rejectionReason: mt.rejectionReason,
+        body: mt.body || template.body,
+        footer: mt.footer,
+        buttons: mt.buttons,
+        variableCount: mt.variableCount,
+        sampleVariables: mt.sampleVariables.length ? mt.sampleVariables : template.sampleVariables,
       });
     }
     syncedIds.push(template.id);
   }
 
-  return { success: true, count: metaTemplates.length };
+  return { success: true, count: rawTemplates.length, syncedIds };
 }
 
 /**
@@ -501,17 +704,17 @@ async function syncTemplates(agencyId) {
 async function submitForApproval(id, agencyId) {
   const template = await MessageTemplate.findOne({ where: { id, agencyId } });
   if (!template) throw new Error('Template not found');
+  if (template.status === 'PENDING') return template;
+  if (!template.body || !template.name) throw new Error('Template is incomplete');
   
   const whatsappService = require('./whatsappService');
   
-  // Actually submit to Meta
   try {
+    await syncTemplateToMarketingOs(agencyId, template);
     await whatsappService.submitTemplateToMeta(agencyId, template);
-    return template.update({ status: 'PENDING' });
+    return template.update({ status: 'PENDING', rejectionReason: null });
   } catch (err) {
     console.error('[TemplateService] Meta submission failed:', err.message);
-    // Even if submission fails, we mark as pending locally if the user intended to submit
-    // (though better to show the error)
     throw err;
   }
 }

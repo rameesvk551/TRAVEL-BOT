@@ -1,5 +1,3 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -44,8 +42,12 @@
     min-height: 100%;
   }
 
+  html {
+    overflow-x: hidden;
+  }
+
   body {
-    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    font-family: 'Manrope', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     color: var(--c-900);
@@ -57,6 +59,14 @@
   textarea,
   select {
     font: inherit;
+  }
+
+  button,
+  a,
+  input,
+  textarea,
+  select {
+    min-width: 0;
   }
 
   a {
@@ -92,7 +102,7 @@
 
   /* ── Panel system ── */
   .shell-panel {
-    @apply rounded-[var(--radius-lg)] border border-neutral-200 bg-white shadow-[0_1px_3px_rgba(0, 0, 0, 0.04)];
+    @apply rounded-[var(--radius-lg)] border border-neutral-200 bg-white shadow-[0_1px_3px_rgba(0,0,0,0.04)];
   }
 
   .shell-panel-soft {
@@ -110,11 +120,11 @@
 
   /* ── Buttons ── */
   .shell-button-primary {
-    @apply inline-flex items-center justify-center gap-2 rounded-[var(--radius-md)] bg-neutral-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-all hover:bg-neutral-800 active:scale-[0.98];
+    @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-[var(--radius-md)] bg-neutral-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-all hover:bg-neutral-800 active:scale-[0.98];
   }
 
   .shell-button-secondary {
-    @apply inline-flex items-center justify-center gap-2 rounded-[var(--radius-md)] border border-neutral-200 bg-white px-4 py-2.5 text-sm font-semibold text-neutral-700 transition-all hover:border-neutral-300 hover:bg-neutral-50 active:scale-[0.98];
+    @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-[var(--radius-md)] border border-neutral-200 bg-white px-4 py-2.5 text-sm font-semibold text-neutral-700 transition-all hover:border-neutral-300 hover:bg-neutral-50 active:scale-[0.98];
   }
 
   .shell-button-ghost {
@@ -127,7 +137,7 @@
   }
 
   .page-heading {
-    @apply text-2xl font-bold tracking-tight text-neutral-900;
+    @apply text-[26px] font-bold leading-tight tracking-tight text-neutral-900 sm:text-2xl;
   }
 
   .page-subtext {
@@ -177,7 +187,7 @@
 
   /* ── KPI Card ── */
   .kpi-card {
-    @apply relative overflow-hidden rounded-[var(--radius-lg)] border border-neutral-200 bg-white p-5 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_8px_24px_-8px_rgba(0, 0, 0, 0.08)];
+    @apply relative overflow-hidden rounded-[var(--radius-lg)] border border-neutral-200 bg-white p-5 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_8px_24px_-8px_rgba(0,0,0,0.08)];
   }
 
   .kpi-icon {
@@ -190,7 +200,31 @@
 
   /* ── Table system ── */
   .data-table-wrapper {
-    @apply overflow-hidden rounded-[var(--radius-lg)] border border-neutral-200 bg-white shadow-[0_1px_3px_rgba(0, 0, 0, 0.04)];
+    @apply overflow-hidden rounded-[var(--radius-lg)] border border-neutral-200 bg-white shadow-[0_1px_3px_rgba(0,0,0,0.04)];
+  }
+
+  .mobile-card-list {
+    @apply grid gap-3 md:hidden;
+  }
+
+  .mobile-record-card {
+    @apply rounded-[var(--radius-lg)] border border-neutral-200 bg-white p-4 shadow-[0_1px_3px_rgba(0,0,0,0.04)];
+  }
+
+  .mobile-field-grid {
+    @apply mt-3 grid grid-cols-2 gap-3 text-sm;
+  }
+
+  .mobile-field-label {
+    @apply text-[10px] font-bold uppercase tracking-[0.15em] text-neutral-400;
+  }
+
+  .mobile-field-value {
+    @apply mt-1 min-w-0 break-words text-sm font-semibold text-neutral-800;
+  }
+
+  .desktop-table {
+    @apply hidden md:block;
   }
 
   .data-table-head {
@@ -211,11 +245,11 @@
 
   /* ── Section card ── */
   .section-card {
-    @apply rounded-[var(--radius-lg)] border border-neutral-200 bg-white shadow-[0_1px_3px_rgba(0, 0, 0, 0.04)];
+    @apply rounded-[var(--radius-lg)] border border-neutral-200 bg-white shadow-[0_1px_3px_rgba(0,0,0,0.04)];
   }
 
   .section-header {
-    @apply flex items-center justify-between border-b border-neutral-100 px-5 py-4;
+    @apply flex flex-col gap-3 border-b border-neutral-100 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5;
   }
 
   /* ── Page animation ── */
@@ -257,6 +291,23 @@
 
   .icon-left {
     @apply absolute left-3.5 h-5 w-5 text-neutral-400;
+  }
+}
+
+@media (max-width: 767px) {
+  .kpi-card {
+    padding: 1rem;
+  }
+
+  .section-card,
+  .shell-panel,
+  .data-table-wrapper {
+    border-radius: var(--radius-md);
+  }
+
+  .shell-input,
+  .shell-input-rect {
+    min-height: 44px;
   }
 }
 

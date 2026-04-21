@@ -16,6 +16,7 @@ import { useLiveMessages } from '../hooks/useMessages';
 import { useBookings } from '../hooks/useBookings';
 import { formatDate, formatCurrency } from '../utils/formatters';
 import { getStatusTone } from '../components/uiHelpers';
+import MobileRecordCard, { MobileField } from '../components/MobileRecordCard';
 
 /* ── Color palette ───────────────────────────────── */
 const CHART_PRIMARY = '#6366f1';
@@ -370,7 +371,28 @@ export default function Dashboard() {
           </Link>
         }
       >
-        <div className="overflow-x-auto -mx-5 px-5">
+        <div className="mobile-card-list">
+          {bookings.length === 0 ? (
+            <div className="mobile-record-card text-center">
+              <PaperAirplaneIcon className="mx-auto mb-2 h-8 w-8 text-neutral-300" />
+              <p className="text-sm text-neutral-400">No upcoming bookings found.</p>
+            </div>
+          ) : (
+            bookings.map((booking) => (
+              <MobileRecordCard
+                key={booking.id}
+                title={booking.customer?.name || booking.bookingRef}
+                subtitle={booking.package?.name || 'Custom itinerary'}
+                badge={<span className={`badge ${getStatusTone(booking.status)}`}>{booking.status}</span>}
+              >
+                <MobileField label="Ref" value={booking.bookingRef} />
+                <MobileField label="Travel" value={formatDate(booking.travelDate)} />
+              </MobileRecordCard>
+            ))
+          )}
+        </div>
+
+        <div className="-mx-5 hidden overflow-x-auto px-5 md:block">
           <table className="min-w-full">
             <thead>
               <tr className="border-b border-neutral-100">

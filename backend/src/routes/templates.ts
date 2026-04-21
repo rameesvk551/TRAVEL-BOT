@@ -7,6 +7,7 @@ const router = Router();
 
 router.get('/prebuilt', authenticate, templateController.listPrebuilt);
 router.post('/prebuilt/:id/use', authenticate, templateController.usePrebuilt);
+router.post('/sync', authenticate, templateController.sync);
 
 router.get('/', authenticate, templateController.listAgency);
 router.post('/', authenticate, templateController.create);
@@ -15,6 +16,5 @@ router.patch('/:id', authenticate, templateController.update);
 router.delete('/:id', authenticate, templateController.remove);
 router.post('/:id/duplicate', authenticate, templateController.duplicate);
 router.post('/:id/submit', authenticate, templateController.submit);
-router.post('/sync', authenticate, templateController.sync);
 
 module.exports = router;

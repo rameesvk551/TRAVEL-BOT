@@ -9,8 +9,10 @@ import {
    useCreateTemplate,
    useUpdateTemplate,
    useUsePrebuiltTemplate,
-   useDeleteTemplate
+   useDeleteTemplate,
+   useSubmitTemplate
 } from '../hooks/useTemplates';
+import toast from 'react-hot-toast';
 
 export default function TemplateDetailDrawer({
    template: initialTemplate,
@@ -34,6 +36,7 @@ export default function TemplateDetailDrawer({
    const updateMutation = useUpdateTemplate();
    const usePrebuiltMutation = useUsePrebuiltTemplate();
    const deleteMutation = useDeleteTemplate();
+   const submitMutation = useSubmitTemplate();
 
    useEffect(() => {
       if (initialTemplate) {
@@ -90,10 +93,25 @@ export default function TemplateDetailDrawer({
          onClose();
       } catch (err) {
          console.error('Failed to save template:', err);
+         toast.error(err.response?.data?.error || 'Failed to save template');
       }
    };
 
-   const isPending = createMutation.isPending || updateMutation.isPending || usePrebuiltMutation.isPending;
+   const handleSubmitForApproval = async () => {
+      if (!initialTemplate?.id || initialIsPrebuilt) return;
+
+      try {
+         await submitMutation.mutateAsync(initialTemplate.id);
+         toast.success('Template submitted to Meta for approval');
+         onClose();
+      } catch (err) {
+         console.error('Failed to submit template:', err);
+         toast.error(err.response?.data?.error || 'Failed to submit template');
+      }
+   };
+
+   const isPending = createMutation.isPending || updateMutation.isPending || usePrebuiltMutation.isPending || submitMutation.isPending;
+   const canSubmit = !initialIsPrebuilt && initialTemplate?.id && ['DRAFT', 'REJECTED', 'PAUSED'].includes(initialTemplate.status);
 
    return (
       <div className="fixed inset-0 z-50 flex items-center justify-end pointer-events-auto overflow-hidden">
@@ -102,9 +120,9 @@ export default function TemplateDetailDrawer({
             onClick={onClose}
          />
 
-         <aside className="relative h-full w-full max-w-2xl bg-white shadow-2xl flex flex-col transform transition-transform duration-300 ease-out border-l border-neutral-200">
+         <aside className="relative flex h-full w-full transform flex-col border-l border-neutral-200 bg-white shadow-2xl transition-transform duration-300 ease-out md:max-w-2xl">
             {/* Header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-100 bg-white sticky top-0 z-10">
+            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-neutral-100 bg-white px-4 py-4 sm:px-6">
                <div className="flex items-center gap-3">
                   <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xl shadow-sm ring-1 ring-neutral-200 ${initialIsPrebuilt ? 'bg-indigo-50' : 'bg-neutral-50'}`}>
                      {formData.icon || '💬'}
@@ -115,6 +133,9 @@ export default function TemplateDetailDrawer({
                      </h2>
                      {initialIsPrebuilt && mode === 'view' && (
                         <span className="text-[10px] font-bold text-indigo-500 uppercase tracking-widest mt-1 block">Prebuilt Library</span>
+                     )}
+                     {!initialIsPrebuilt && initialTemplate?.status && (
+                        <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest mt-1 block">{initialTemplate.status}</span>
                      )}
                   </div>
                </div>
@@ -145,9 +166,9 @@ export default function TemplateDetailDrawer({
                </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto overflow-x-hidden flex flex-col md:flex-row bg-neutral-50/50">
+            <div className="flex flex-1 flex-col overflow-y-auto overflow-x-hidden bg-neutral-50/50 md:flex-row">
                {/* Main Form Section */}
-               <div className={`flex-1 p-6 space-y-6 ${mode === 'view' ? 'hidden md:block opacity-50 pointer-events-none' : ''}`}>
+               <div className={`flex-1 space-y-6 p-4 sm:p-6 ${mode === 'view' ? 'hidden md:block opacity-50 pointer-events-none' : ''}`}>
                   <section className="space-y-4">
                      <div className="flex items-center gap-2 mb-2">
                         <Type className="w-4 h-4 text-neutral-400" />
@@ -165,7 +186,7 @@ export default function TemplateDetailDrawer({
                         />
                      </div>
 
-                     <div className="grid grid-cols-2 gap-4">
+                     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                         <div>
                            <label className="block text-xs font-bold text-neutral-500 mb-1">Category</label>
                            <select
@@ -242,7 +263,7 @@ export default function TemplateDetailDrawer({
 
                      <div className="space-y-2">
                         {formData.buttons.map((btn, idx) => (
-                           <div key={idx} className="flex gap-2 items-center group">
+                           <div key={idx} className="flex flex-col gap-2 rounded-[var(--radius-md)] border border-neutral-100 bg-neutral-50 p-2 group sm:flex-row sm:items-center">
                               <div className="bg-neutral-100 p-2 rounded cursor-grab">
                                  <GripVertical className="w-3 h-3 text-neutral-400" />
                               </div>
@@ -253,7 +274,7 @@ export default function TemplateDetailDrawer({
                                     newBtns[idx].type = e.target.value;
                                     setFormData({ ...formData, buttons: newBtns });
                                  }}
-                                 className="w-32 bg-white border border-neutral-200 rounded px-2 py-1.5 text-xs focus:ring-0 focus:outline-none"
+                                 className="w-full rounded border border-neutral-200 bg-white px-2 py-1.5 text-xs focus:outline-none focus:ring-0 sm:w-32"
                               >
                                  <option value="QUICK_REPLY">Quick Reply</option>
                                  <option value="URL">Visit Website</option>
@@ -291,8 +312,8 @@ export default function TemplateDetailDrawer({
                </div>
 
                {/* Preview Section */}
-               <div className="w-full md:w-[280px] lg:w-[320px] bg-neutral-100/50 border-l border-neutral-100 flex flex-col">
-                  <div className="p-6 h-full">
+               <div className="flex w-full flex-col border-l border-neutral-100 bg-neutral-100/50 md:w-[280px] lg:w-[320px]">
+                  <div className="h-full p-4 sm:p-6">
                      <div className="sticky top-6 flex flex-col gap-4">
                         <div className="flex items-center gap-2 mb-2">
                            <Smartphone className="w-4 h-4 text-neutral-400" />
@@ -300,7 +321,7 @@ export default function TemplateDetailDrawer({
                         </div>
 
                         {/* Phone Mockup */}
-                        <div className="w-full aspect-[9/19.5] max-h-[600px] bg-[#EFEAE2] rounded-[38px] border-[10px] border-neutral-900 shadow-2xl relative overflow-hidden flex flex-col scale-[0.95] origin-top">
+                        <div className="relative mx-auto flex aspect-[9/19.5] max-h-[560px] w-full max-w-[300px] origin-top scale-100 flex-col overflow-hidden rounded-[32px] border-[8px] border-neutral-900 bg-[#EFEAE2] shadow-2xl md:scale-[0.95]">
                            {/* Phone Notch */}
                            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-28 h-6 bg-neutral-900 rounded-b-2xl z-30" />
 
@@ -453,7 +474,7 @@ export default function TemplateDetailDrawer({
             </div>
 
             {/* Footer Actions */}
-            <div className="p-6 border-t border-neutral-100 bg-white flex items-center justify-between gap-4">
+            <div className="flex items-center justify-between gap-3 border-t border-neutral-100 bg-white p-4 sm:p-6">
                {mode === 'edit' || initialIsPrebuilt ? (
                   <>
                      <button
@@ -476,13 +497,26 @@ export default function TemplateDetailDrawer({
                      </button>
                   </>
                ) : (
-                  <button
-                     onClick={() => setMode('edit')}
-                     className="w-full shell-button-primary py-2.5 flex items-center justify-center gap-2"
-                  >
-                     <Edit3 className="w-4 h-4" />
-                     Edit Template Content
-                  </button>
+                  <div className="flex w-full flex-col gap-2 sm:flex-row">
+                     <button
+                        onClick={() => setMode('edit')}
+                        disabled={initialTemplate?.status === 'PENDING'}
+                        className="flex-1 shell-button-primary py-2.5 flex items-center justify-center gap-2 disabled:cursor-not-allowed disabled:opacity-50"
+                     >
+                        <Edit3 className="w-4 h-4" />
+                        Edit Template Content
+                     </button>
+                     {canSubmit && (
+                        <button
+                           onClick={handleSubmitForApproval}
+                           disabled={isPending}
+                           className="flex-1 rounded-[var(--radius-sm)] bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50 flex items-center justify-center gap-2"
+                        >
+                           <Send className="w-4 h-4" />
+                           {submitMutation.isPending ? 'Submitting...' : 'Submit to Meta'}
+                        </button>
+                     )}
+                  </div>
                )}
             </div>
          </aside>

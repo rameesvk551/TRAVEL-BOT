@@ -7,6 +7,7 @@ import { useUiStore } from './store/uiStore';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Leads from './pages/Leads';
+import FollowUps from './pages/FollowUps';
 import Bookings from './pages/Bookings';
 import Customers from './pages/Customers';
 import Packages from './pages/Packages';
@@ -23,6 +24,7 @@ import CreateCampaign from './pages/CreateCampaign';
 import Reviews from './pages/Reviews';
 import Agents from './pages/Agents';
 import Sidebar from './components/Sidebar';
+import AppTopbar from './components/AppTopbar';
 import Signup from './pages/Signup';
 
 /**
@@ -52,13 +54,16 @@ function AppLayout({ children }) {
   const isCollapsed = sidebarCollapsed && !sidebarHovered;
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[#f5f5f5] text-[#1a1a1a]">
+    <div className="flex min-h-dvh overflow-hidden bg-[#f5f5f5] text-[#1a1a1a]">
       <Sidebar />
+      <AppTopbar />
       <main
-        className="flex-1 overflow-y-auto bg-[#f5f5f5] transition-[padding] duration-300"
+        className="flex-1 overflow-y-auto bg-[#f5f5f5] pt-16 transition-[padding] duration-300 lg:pt-0"
         style={{ paddingLeft: isDesktop ? (isCollapsed ? 72 : 252) : 0 }}
       >
-        <div className="page-enter min-h-full p-4 md:p-6">{children}</div>
+        <div className="page-enter min-h-full px-3 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-3 sm:px-4 md:p-6">
+          {children}
+        </div>
       </main>
     </div>
   );
@@ -78,6 +83,7 @@ export default function App() {
                 <Routes>
                   <Route path="/" element={<Dashboard />} />
                   <Route path="/leads" element={<Leads />} />
+                  <Route path="/follow-ups" element={<FollowUps />} />
                   <Route path="/bookings" element={<Bookings />} />
                   <Route path="/customers" element={<Customers />} />
                   <Route path="/packages" element={<Packages />} />

@@ -10,6 +10,7 @@ export const leadsApi = {
   delete: (id) => client.delete(`/leads/${id}`).then((r) => r.data),
 
   // Follow-ups
+  listFollowUps: (params) => client.get('/leads/followups', { params }).then((r) => r.data),
   addFollowUp: (id, data) => client.post(`/leads/${id}/followups`, data).then((r) => r.data),
   updateFollowUp: (id, followUpId, data) => client.patch(`/leads/${id}/followups/${followUpId}`, data).then((r) => r.data),
   deleteFollowUp: (id, followUpId) => client.delete(`/leads/${id}/followups/${followUpId}`).then((r) => r.data),

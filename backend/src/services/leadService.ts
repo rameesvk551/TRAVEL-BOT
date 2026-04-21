@@ -12,10 +12,22 @@ const whatsappService = require('./whatsappService');
  * @param {object} filters - { status, agentId, search, dateFrom, dateTo, page, pageSize }
  * @returns {Promise<object>} { data, total, page, pageSize }
  */
-async function listLeads(agencyId, filters = {}) {
+function isAdmin(requester) {
+  return requester?.role === 'ADMIN';
+}
+
+function scopedLeadWhere(agencyId, requester, extra = {}) {
+  const where = { agencyId, ...extra };
+  if (!isAdmin(requester)) {
+    where.assignedAgentId = requester?.id;
+  }
+  return where;
+}
+
+async function listLeads(agencyId, filters = {}, requester = null) {
   const { status, agentId, search, dateFrom, dateTo, page = 1, pageSize = 20 } = filters;
 
-  const where = { agencyId };
+  const where = scopedLeadWhere(agencyId, requester);
 
   if (status) {
     if (Array.isArray(status)) {
@@ -25,7 +37,7 @@ async function listLeads(agencyId, filters = {}) {
     }
   }
 
-  if (agentId) where.assignedAgentId = agentId;
+  if (agentId && isAdmin(requester)) where.assignedAgentId = agentId;
 
   if (dateFrom || dateTo) {
     where.createdAt = {};
@@ -66,9 +78,9 @@ async function listLeads(agencyId, filters = {}) {
  * @param {string} agencyId - Agency ID (for scoping)
  * @returns {Promise<object>} Lead with all relations
  */
-async function getLeadById(leadId, agencyId) {
+async function getLeadById(leadId, agencyId, requester = null) {
   const lead = await Lead.findOne({
-    where: { id: leadId, agencyId },
+    where: scopedLeadWhere(agencyId, requester, { id: leadId }),
     include: [
       { model: Customer, as: 'customer' },
       { model: Agent, as: 'assignedAgent', attributes: ['id', 'name', 'email', 'phone'] },
@@ -228,8 +240,8 @@ async function createLead(data, agencyId) {
  * @param {object} updates - Allowed fields to update
  * @returns {Promise<object>} Updated lead
  */
-async function updateLead(leadId, agencyId, updates) {
-  const lead = await Lead.findOne({ where: { id: leadId, agencyId } });
+async function updateLead(leadId, agencyId, updates, requester = null) {
+  const lead = await Lead.findOne({ where: scopedLeadWhere(agencyId, requester, { id: leadId }) });
   if (!lead) {
     throw Object.assign(new Error('Lead not found'), { statusCode: 404, code: 'NOT_FOUND' });
   }
@@ -269,7 +281,7 @@ async function updateLead(leadId, agencyId, updates) {
   }
 
   if (isNewAgentAssigned) {
-    const fullLead = await getLeadById(lead.id, agencyId);
+    const fullLead = await getLeadById(lead.id, agencyId, { role: 'ADMIN' });
     const agent = fullLead.assignedAgent;
     if (agent && agent.phone) {
       const pkgName = fullLead.package ? fullLead.package.name : 'None';
@@ -288,8 +300,8 @@ async function updateLead(leadId, agencyId, updates) {
  * @param {string} leadId - Lead ID
  * @param {string} agencyId - Agency ID
  */
-async function deleteLead(leadId, agencyId) {
-  const lead = await Lead.findOne({ where: { id: leadId, agencyId } });
+async function deleteLead(leadId, agencyId, requester = null) {
+  const lead = await Lead.findOne({ where: scopedLeadWhere(agencyId, requester, { id: leadId }) });
   if (!lead) {
     throw Object.assign(new Error('Lead not found'), { statusCode: 404, code: 'NOT_FOUND' });
   }
@@ -331,15 +343,15 @@ async function findLeastBusyAgent(agencyId) {
 /**
  * Follow Ups
  */
-async function addFollowUp(leadId, agencyId, data) {
+async function addFollowUp(leadId, agencyId, data, requester = null) {
   const { scheduledAt, note, agentId } = data;
-  const lead = await Lead.findOne({ where: { id: leadId, agencyId } });
+  const lead = await Lead.findOne({ where: scopedLeadWhere(agencyId, requester, { id: leadId }) });
   if (!lead) throw Object.assign(new Error('Lead not found'), { statusCode: 404 });
 
   const followUp = await FollowUp.create({
     leadId,
     agencyId,
-    agentId: agentId || lead.assignedAgentId || null,
+    agentId: isAdmin(requester) ? (agentId || lead.assignedAgentId || null) : requester?.id,
     scheduledAt,
     note,
     status: 'Scheduled',
@@ -348,20 +360,95 @@ async function addFollowUp(leadId, agencyId, data) {
   return followUp;
 }
 
-async function updateFollowUp(leadId, followUpId, agencyId, updates) {
-  const followUp = await FollowUp.findOne({ where: { id: followUpId, leadId, agencyId } });
+async function listFollowUps(agencyId, filters = {}, requester = null) {
+  const {
+    status,
+    agentId,
+    search,
+    dateFrom,
+    dateTo,
+    page = 1,
+    pageSize = 50,
+  } = filters;
+
+  const where = { agencyId };
+  const leadWhere = { agencyId };
+
+  if (status && status !== 'All') where.status = status;
+  if (isAdmin(requester) && agentId) where.agentId = agentId;
+  if (!isAdmin(requester)) where.agentId = requester?.id;
+
+  if (dateFrom || dateTo) {
+    where.scheduledAt = {};
+    if (dateFrom) where.scheduledAt[Op.gte] = new Date(dateFrom);
+    if (dateTo) where.scheduledAt[Op.lte] = new Date(dateTo);
+  }
+
+  if (search) {
+    const matchedLeads = await Lead.findAll({
+      attributes: ['id'],
+      where: {
+        agencyId,
+        [Op.or]: [
+          { destination: { [Op.iLike]: `%${search}%` } },
+          { '$customer.name$': { [Op.iLike]: `%${search}%` } },
+          { '$customer.phone$': { [Op.iLike]: `%${search}%` } },
+          { '$customer.email$': { [Op.iLike]: `%${search}%` } },
+        ],
+      },
+      include: [{ model: Customer, as: 'customer', attributes: [], required: false }],
+      raw: true,
+    });
+    where.leadId = { [Op.in]: matchedLeads.map((lead) => lead.id) };
+  }
+
+  const limit = Math.min(parseInt(pageSize, 10) || 50, 200);
+  const currentPage = parseInt(page, 10) || 1;
+  const offset = (currentPage - 1) * limit;
+
+  const { count, rows } = await FollowUp.findAndCountAll({
+    where,
+    include: [
+      {
+        model: Lead,
+        as: 'lead',
+        required: true,
+        where: leadWhere,
+        include: [
+          { model: Customer, as: 'customer' },
+          { model: Package, as: 'package', attributes: ['id', 'name', 'basePrice'] },
+          { model: Agent, as: 'assignedAgent', attributes: ['id', 'name', 'email'] },
+        ],
+      },
+      { model: Agent, as: 'agent', attributes: ['id', 'name', 'email', 'phone'] },
+    ],
+    order: [['scheduledAt', 'ASC']],
+    limit,
+    offset,
+  });
+
+  return { data: rows, total: count, page: currentPage, pageSize: limit };
+}
+
+async function updateFollowUp(leadId, followUpId, agencyId, updates, requester = null) {
+  const where = { id: followUpId, leadId, agencyId };
+  if (!isAdmin(requester)) where.agentId = requester?.id;
+  const followUp = await FollowUp.findOne({ where });
   if (!followUp) throw Object.assign(new Error('FollowUp not found'), { statusCode: 404 });
 
   const allowed = ['status', 'scheduledAt', 'note', 'agentId'];
   const filtered = {};
   for(const k of allowed) if (updates[k] !== undefined) filtered[k] = updates[k];
+  if (!isAdmin(requester)) delete filtered.agentId;
 
   await followUp.update(filtered);
   return followUp;
 }
 
-async function deleteFollowUp(leadId, followUpId, agencyId) {
-  const followUp = await FollowUp.findOne({ where: { id: followUpId, leadId, agencyId } });
+async function deleteFollowUp(leadId, followUpId, agencyId, requester = null) {
+  const where = { id: followUpId, leadId, agencyId };
+  if (!isAdmin(requester)) where.agentId = requester?.id;
+  const followUp = await FollowUp.findOne({ where });
   if (!followUp) throw Object.assign(new Error('FollowUp not found'), { statusCode: 404 });
   await followUp.destroy();
   return { success: true };
@@ -392,6 +479,7 @@ module.exports = {
   updateLead,
   deleteLead,
   findLeastBusyAgent,
+  listFollowUps,
   addFollowUp,
   updateFollowUp,
   deleteFollowUp,

@@ -4,6 +4,7 @@ import { PlusIcon, MapPinIcon } from '@heroicons/react/24/outline';
 import { packagesApi } from '../api/packagesApi';
 import { formatCurrency } from '../utils/formatters';
 import { useAuthStore } from '../store/authStore';
+import MobileRecordCard, { MobileField } from '../components/MobileRecordCard';
 
 export default function Packages() {
   const navigate = useNavigate();
@@ -24,7 +25,7 @@ export default function Packages() {
 
   return (
     <div className="w-full space-y-4">
-      <section className="flex items-end justify-between border-b border-slate-200 pb-4">
+      <section className="flex flex-col gap-4 border-b border-slate-200 pb-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="text-[28px] font-semibold tracking-tight text-slate-950">Packages</h1>
           <p className="text-sm text-slate-500">Maintain the itinerary catalog used for quoting and chat flows.</p>
@@ -43,7 +44,49 @@ export default function Packages() {
         </div>
       ) : null}
 
-      <div className="rounded-[12px] border border-slate-200 bg-white">
+      <div className="mobile-card-list">
+        {isLoading ? (
+          Array.from({ length: 6 }).map((_, index) => (
+            <div key={index} className="mobile-record-card">
+              <div className="h-5 w-2/3 animate-pulse rounded bg-slate-100" />
+              <div className="mt-4 grid grid-cols-2 gap-3">
+                {Array.from({ length: 4 }).map((__, cell) => <div key={cell} className="h-10 animate-pulse rounded bg-slate-100" />)}
+              </div>
+            </div>
+          ))
+        ) : packages.length === 0 ? (
+          <div className="mobile-record-card text-center text-sm text-slate-500">No packages created yet.</div>
+        ) : (
+          packages.map((pkg) => (
+            <MobileRecordCard
+              key={pkg.id}
+              title={pkg.name}
+              subtitle={pkg.summary || pkg.destinations?.join(', ') || 'Travel package'}
+              avatar={pkg.imageUrl ? (
+                <img src={pkg.imageUrl} alt={pkg.name} className="h-12 w-12 rounded-lg border border-slate-200 object-cover" />
+              ) : (
+                <div className="flex h-12 w-12 items-center justify-center rounded-lg border border-slate-200 bg-slate-50">
+                  <MapPinIcon className="h-5 w-5 text-slate-300" />
+                </div>
+              )}
+              badge={<span className={`badge ${pkg.isActive ? 'bg-[#ebebeb] text-[#2d2d2d]' : 'bg-slate-100 text-slate-600'}`}>{pkg.isActive ? 'Active' : 'Inactive'}</span>}
+              actions={canManagePackages ? (
+                <>
+                  <button type="button" onClick={() => navigate(`/packages/${pkg.id}/edit`)} className="shell-button-secondary flex-1 py-2 text-xs">Edit</button>
+                  <button type="button" onClick={() => deleteMutation.mutate(pkg.id)} className="shell-button-secondary flex-1 py-2 text-xs">{pkg.isActive ? 'Deactivate' : 'Activate'}</button>
+                </>
+              ) : null}
+            >
+              <MobileField label="Category" value={pkg.category || '-'} />
+              <MobileField label="Duration" value={pkg.duration || '-'} />
+              <MobileField label="Price" value={formatCurrency(pkg.basePrice)} />
+              <MobileField label="Catalog" value={pkg.catalogSyncStatus || 'Not synced'} />
+            </MobileRecordCard>
+          ))
+        )}
+      </div>
+
+      <div className="hidden rounded-[12px] border border-slate-200 bg-white md:block">
         <div className="overflow-x-auto">
           <table className="min-w-full text-left">
             <thead className="bg-slate-50">

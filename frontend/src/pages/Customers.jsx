@@ -4,6 +4,7 @@ import { useCustomers, useCreateCustomer } from '../api/customersApi';
 import { useMessages } from '../hooks/useMessages';
 import { formatDate, formatDateTime, formatPhone } from '../utils/formatters';
 import { getInitials } from '../components/uiHelpers';
+import MobileRecordCard, { MobileField } from '../components/MobileRecordCard';
 
 const EMPTY_CUSTOMER_FORM = {
   name: '',
@@ -35,7 +36,7 @@ export default function Customers() {
   return (
     <div className="w-full pb-10">
       {/* Header */}
-      <div className="mb-4 flex items-center justify-between">
+      <div className="mb-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="page-heading">Customers</h1>
           <p className="page-subtext">View CONVERTED leads and manually created customers.</p>
@@ -50,7 +51,43 @@ export default function Customers() {
       </div>
 
       {/* Customer Table */}
-      <div className="data-table-wrapper">
+      <div className="mobile-card-list">
+        {isLoading ? (
+          Array.from({ length: 6 }).map((_, index) => (
+            <div key={index} className="mobile-record-card">
+              <div className="h-5 w-2/3 animate-pulse rounded bg-neutral-100" />
+              <div className="mt-4 grid grid-cols-2 gap-3">
+                {Array.from({ length: 4 }).map((__, cell) => <div key={cell} className="h-10 animate-pulse rounded bg-neutral-100" />)}
+              </div>
+            </div>
+          ))
+        ) : customers.length === 0 ? (
+          <div className="mobile-record-card text-center text-sm text-neutral-400">
+            <div className="mb-2">No customers yet.</div>
+            <button onClick={() => setIsCreateOpen(true)} className="font-semibold text-neutral-800 underline underline-offset-2">Create your first customer</button>
+          </div>
+        ) : (
+          customers.map((customer) => (
+            <MobileRecordCard
+              key={customer.id}
+              title={customer.name || 'Traveler'}
+              subtitle={formatPhone(customer.phone)}
+              onClick={() => setSelectedCustomerId(customer.id)}
+              avatar={
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-neutral-100 text-xs font-bold text-neutral-600 ring-1 ring-neutral-200">
+                  {getInitials(customer.name, 'C')}
+                </div>
+              }
+              badge={customer.documents?.length > 0 ? <span className="badge bg-emerald-50 text-emerald-700">{customer.documents.length} file{customer.documents.length > 1 ? 's' : ''}</span> : null}
+            >
+              <MobileField label="Created" value={formatDate(customer.createdAt)} />
+              <MobileField label="Notes" value={customer.notes || '-'} />
+            </MobileRecordCard>
+          ))
+        )}
+      </div>
+
+      <div className="data-table-wrapper desktop-table">
         <div className="overflow-x-auto hide-scrollbar">
           <table className="w-full text-left border-collapse min-w-[700px]">
             <thead>
@@ -117,8 +154,8 @@ export default function Customers() {
 
       {/* Create Customer Modal */}
       {isCreateOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-[18px] border border-slate-200 bg-white p-6 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.35)]">
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+          <div className="max-h-[92dvh] w-full overflow-y-auto rounded-t-[18px] border border-slate-200 bg-white p-4 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.35)] sm:max-w-md sm:rounded-[18px] sm:p-6">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="text-xs font-bold uppercase tracking-[0.15em] text-neutral-400">New Customer</p>
@@ -197,10 +234,10 @@ function CustomerDrawer({ customer, onClose }) {
     <div className="fixed inset-0 z-50 pointer-events-auto">
       <div className="absolute inset-0 bg-black/20 backdrop-blur-sm transition-opacity" onClick={onClose} />
 
-      <aside className="absolute right-0 top-0 h-full w-full max-w-[520px] border-l border-neutral-200 bg-white shadow-2xl flex flex-col transform transition-transform duration-300">
+      <aside className="absolute right-0 top-0 flex h-full w-full transform flex-col border-l border-neutral-200 bg-white shadow-2xl transition-transform duration-300 sm:max-w-[520px]">
 
         {/* Drawer Header */}
-        <div className="p-6 border-b border-neutral-100 flex items-start justify-between">
+        <div className="flex items-start justify-between border-b border-neutral-100 p-4 sm:p-6">
           <div className="flex items-center gap-4 w-full">
             <div className="w-12 h-12 rounded-full bg-neutral-100 text-neutral-600 font-bold flex items-center justify-center text-lg shrink-0 ring-2 ring-neutral-200">
               {getInitials(customer.name, 'C')}
@@ -225,7 +262,7 @@ function CustomerDrawer({ customer, onClose }) {
         </div>
 
         {/* Quick Info Grid */}
-        <div className="px-6 py-4 grid grid-cols-2 gap-y-4 gap-x-6 text-sm border-b border-neutral-100">
+        <div className="grid grid-cols-1 gap-y-4 gap-x-6 border-b border-neutral-100 px-4 py-4 text-sm sm:grid-cols-2 sm:px-6">
           <div>
             <div className="text-neutral-400 text-xs mb-1 font-medium flex items-center gap-1.5">
               <PhoneIcon className="w-3.5 h-3.5" />Phone
@@ -247,7 +284,7 @@ function CustomerDrawer({ customer, onClose }) {
         </div>
 
         {/* Tabs Row */}
-        <div className="border-b border-neutral-100 px-6 flex gap-6 overflow-x-auto hide-scrollbar shrink-0">
+        <div className="flex shrink-0 gap-6 overflow-x-auto border-b border-neutral-100 px-4 sm:px-6 hide-scrollbar">
           {DRAWER_TABS.map(tab => (
             <button
               key={tab.key}
@@ -263,7 +300,7 @@ function CustomerDrawer({ customer, onClose }) {
         </div>
 
         {/* Tab Content Area */}
-        <div className="flex-1 overflow-y-auto px-6 py-6 bg-neutral-50/50 hide-scrollbar">
+        <div className="flex-1 overflow-y-auto bg-neutral-50/50 px-4 py-4 sm:px-6 sm:py-6 hide-scrollbar">
 
           {/* Profile Tab */}
           {activeTab === 'Profile' && (

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { PlusIcon, DocumentDuplicateIcon } from '@heroicons/react/24/outline';
 import { itinerariesApi } from '../api/itinerariesApi';
 import { formatCurrency, formatDate } from '../utils/formatters';
+import MobileRecordCard, { MobileField } from '../components/MobileRecordCard';
 
 export default function Itineraries() {
   const navigate = useNavigate();
@@ -33,7 +34,7 @@ export default function Itineraries() {
 
   return (
     <div className="w-full space-y-4">
-      <section className="flex items-end justify-between border-b border-neutral-200 pb-4">
+      <section className="flex flex-col gap-4 border-b border-neutral-200 pb-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="page-heading">Itineraries</h1>
           <p className="page-subtext">Create, send, and track stunning day-by-day itineraries.</p>
@@ -44,7 +45,49 @@ export default function Itineraries() {
         </button>
       </section>
 
-      <div className="data-table-wrapper">
+      <div className="mobile-card-list">
+        {isLoading ? (
+          Array.from({ length: 4 }).map((_, index) => (
+            <div key={index} className="mobile-record-card">
+              <div className="h-5 w-2/3 animate-pulse rounded bg-slate-100" />
+              <div className="mt-4 grid grid-cols-2 gap-3">
+                {Array.from({ length: 4 }).map((__, cell) => <div key={cell} className="h-10 animate-pulse rounded bg-slate-100" />)}
+              </div>
+            </div>
+          ))
+        ) : itineraries.length === 0 ? (
+          <div className="mobile-record-card text-center text-sm text-slate-500">
+            <DocumentDuplicateIcon className="mx-auto mb-2 h-8 w-8 text-slate-300" />
+            No itineraries created yet.
+          </div>
+        ) : (
+          itineraries.map((it) => {
+            const marginPct = it.totalCost > 0 ? Math.round(((it.totalPrice - it.totalCost) / it.totalPrice) * 100) : 0;
+            return (
+              <MobileRecordCard
+                key={it.id}
+                title={it.name}
+                subtitle={it.customer?.name ? `Client: ${it.customer.name}` : it.destination || 'Custom itinerary'}
+                badge={<span className={`badge ${it.status === 'CONFIRMED' ? 'bg-emerald-50 text-emerald-700' : it.status === 'SENT' ? 'bg-sky-50 text-sky-700' : 'bg-neutral-100 text-neutral-600'}`}>{it.status}</span>}
+                actions={
+                  <>
+                    <button type="button" onClick={() => navigate(`/itineraries/${it.id}/edit`)} className="shell-button-secondary flex-1 py-2 text-xs">Edit</button>
+                    <button type="button" onClick={() => duplicateMutation.mutate(it.id)} className="shell-button-secondary flex-1 py-2 text-xs">Duplicate</button>
+                    <button type="button" onClick={() => { if (window.confirm('Delete itinerary?')) deleteMutation.mutate(it.id); }} className="shell-button-secondary flex-1 py-2 text-xs text-rose-600">Delete</button>
+                  </>
+                }
+              >
+                <MobileField label="Destination" value={it.destination || '-'} />
+                <MobileField label="Date" value={it.travelStartDate ? formatDate(it.travelStartDate) : '-'} />
+                <MobileField label="Price" value={formatCurrency(it.totalPrice)} />
+                <MobileField label="Margin" value={`${marginPct}%`} />
+              </MobileRecordCard>
+            );
+          })
+        )}
+      </div>
+
+      <div className="data-table-wrapper desktop-table">
         <div className="overflow-x-auto">
           <table className="min-w-full text-left">
             <thead>

@@ -85,6 +85,22 @@ async function markMessageFailed(message, scope, err) {
   return message;
 }
 
+async function isCustomerIn24hWindow(context = {}) {
+  if (!context?.customerId || !context?.agencyId) return false;
+
+  const lastIncoming = await Message.findOne({
+    where: {
+      customerId: context.customerId,
+      agencyId: context.agencyId,
+      direction: 'IN',
+    },
+    order: [['timestamp', 'DESC']],
+  });
+
+  if (!lastIncoming?.timestamp) return false;
+  return Date.now() - new Date(lastIncoming.timestamp).getTime() < 24 * 60 * 60 * 1000;
+}
+
 async function resolveAgencyChannel(context = {}) {
   if (!context?.agencyId) {
     return {
@@ -793,6 +809,16 @@ async function sendTemplateMessage(phone, templateName, variables, context) {
   }
 }
 
+async function sendTemplateOrTextIn24hWindow(phone, { templateName, variables = [], text, context }) {
+  const in24hWindow = await isCustomerIn24hWindow(context);
+
+  if (in24hWindow && text) {
+    return sendTextMessage(phone, text, context);
+  }
+
+  return sendTemplateMessage(phone, templateName, variables, context);
+}
+
 async function sendFallbackMessage(phone, agencyPhone, context) {
   const content = `Hi! We received your message. Our team will get back to you shortly. For urgent help, call ${agencyPhone}.`;
   return sendTextMessage(phone, content, context);
@@ -933,6 +959,90 @@ async function syncTemplatesWithMeta(agencyId) {
   throw new Error('No WhatsApp provider configured for template sync');
 }
 
+function buildTemplateComponents(template) {
+  const components = [];
+  const headerType = String(template.headerType || 'NONE').toUpperCase();
+
+  if (headerType !== 'NONE') {
+    const header = { type: 'HEADER', format: headerType };
+    if (headerType === 'TEXT') header.text = template.headerContent || '';
+    components.push(header);
+  }
+
+  components.push({ type: 'BODY', text: template.body || '' });
+
+  if (template.footer) {
+    components.push({ type: 'FOOTER', text: template.footer });
+  }
+
+  if (Array.isArray(template.buttons) && template.buttons.length > 0) {
+    components.push({
+      type: 'BUTTONS',
+      buttons: template.buttons.map((button) => ({
+        type: button.type,
+        text: button.text,
+        url: button.url || undefined,
+        phone_number: button.phoneNumber || undefined,
+      })),
+    });
+  }
+
+  return components;
+}
+
+async function upsertTemplateWithMeta(agencyId, template, { mode = 'upsert' } = {}) {
+  const channel = await resolveAgencyChannel({ agencyId });
+
+  if (canUseMarketingOs(channel)) {
+    const tenantToken = await marketingOsPartnerService.getTenantToken(channel.marketingOsTenantId);
+    const components = buildTemplateComponents(template);
+    const payload = {
+      id: template.id,
+      name: template.name,
+      templateName: template.name,
+      template_name: template.name,
+      category: template.category,
+      useCase: 'CUSTOM',
+      use_case: 'CUSTOM',
+      language: template.language || 'en',
+      status: template.status || 'DRAFT',
+      headerType: template.headerType || 'NONE',
+      header_type: template.headerType || 'NONE',
+      headerContent: template.headerContent || null,
+      header_content: template.headerContent || null,
+      body: template.body,
+      bodyContent: template.body,
+      body_content: template.body,
+      footer: template.footer || null,
+      footerContent: template.footer || null,
+      footer_content: template.footer || null,
+      buttons: template.buttons || [],
+      components,
+      variables: template.sampleVariables || [],
+      triggerEvents: template.tags || [],
+      trigger_events: template.tags || [],
+    };
+
+    if (mode === 'create') {
+      return marketingOsPartnerService.createTenantWhatsAppTemplate(tenantToken, payload);
+    }
+
+    try {
+      return await marketingOsPartnerService.updateTenantWhatsAppTemplate(tenantToken, template.id, payload);
+    } catch (err) {
+      const status = err.response?.status;
+      if (status && status !== 404) throw err;
+      return marketingOsPartnerService.createTenantWhatsAppTemplate(tenantToken, payload);
+    }
+  }
+
+  if (canUseCloudApi(channel.phoneNumberId)) {
+    throw new Error('Direct Meta template upsert not yet implemented in SELF_HOSTED mode');
+  }
+
+  throw new Error('No WhatsApp provider configured for template upsert');
+}
+
 async function submitTemplateToMeta(agencyId, template) {
   const channel = await resolveAgencyChannel({ agencyId });
   
@@ -949,6 +1059,21 @@ async function submitTemplateToMeta(agencyId, template) {
   throw new Error('No WhatsApp provider configured for template submission');
 }
 
+async function deleteTemplateFromMeta(agencyId, template) {
+  const channel = await resolveAgencyChannel({ agencyId });
+
+  if (canUseMarketingOs(channel)) {
+    const tenantToken = await marketingOsPartnerService.getTenantToken(channel.marketingOsTenantId);
+    return marketingOsPartnerService.deleteTenantWhatsAppTemplate(tenantToken, template.id);
+  }
+
+  if (canUseCloudApi(channel.phoneNumberId)) {
+    throw new Error('Direct Meta template deletion not yet implemented in SELF_HOSTED mode');
+  }
+
+  throw new Error('No WhatsApp provider configured for template deletion');
+}
+
 module.exports = {
   sendTypingIndicator,
   waitForReplyPacing,
@@ -961,10 +1086,14 @@ module.exports = {
   sendDocumentMessage,
   sendFlowMessage,
   sendTemplateMessage,
+  sendTemplateOrTextIn24hWindow,
+  isCustomerIn24hWindow,
   sendCatalogMessage,
   sendFallbackMessage,
   updateMessageStatus,
   sendSystemNotificationWhatsApp,
   syncTemplatesWithMeta,
+  upsertTemplateWithMeta,
   submitTemplateToMeta,
+  deleteTemplateFromMeta,
 };

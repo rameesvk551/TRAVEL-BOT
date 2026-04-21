@@ -131,7 +131,7 @@ export default function ChatPanel({ customerId, customerName, customerPhone, isH
       {/* Quick actions */}
       {isHandedOff && (
         <div className="px-4 py-2 border-t border-surface-700/30 flex gap-2 overflow-x-auto">
-          {['Send Quote ↗', 'Request Payment ↗', 'Send Itinerary ↗', 'Transfer ↗'].map((action) => (
+          {['Send Quote', 'Request Payment', 'Send Itinerary', 'Transfer'].map((action) => (
             <button
               key={action}
               className="shrink-0 px-3 py-1 text-xs bg-surface-800/50 text-surface-300 hover:text-white hover:bg-surface-700 rounded-lg transition-colors border border-surface-700/30"

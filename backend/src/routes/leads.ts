@@ -53,6 +53,11 @@ const updateLeadSchema = z.object({
 router.get('/', authenticate, requirePermission(PERMISSIONS.LEADS_VIEW), leadController.list);
 
 /**
+ * GET /api/leads/followups - List follow-ups for the current user, or all for admins
+ */
+router.get('/followups', authenticate, requirePermission(PERMISSIONS.LEADS_VIEW), leadController.listFollowUps);
+
+/**
  * GET /api/leads/:id - Get lead by ID with full details
  */
 router.get('/:id', authenticate, requirePermission(PERMISSIONS.LEADS_VIEW), leadController.getById);
@@ -75,21 +80,21 @@ router.delete('/:id', authenticate, requirePermission(PERMISSIONS.LEADS_MANAGE),
 /**
  * POST /api/leads/:id/followups
  */
-router.post('/:id/followups', authenticate, leadController.addFollowUp);
+router.post('/:id/followups', authenticate, requirePermission(PERMISSIONS.LEADS_MANAGE), leadController.addFollowUp);
 
 /**
  * PATCH /api/leads/:id/followups/:followUpId
  */
-router.patch('/:id/followups/:followUpId', authenticate, leadController.updateFollowUp);
+router.patch('/:id/followups/:followUpId', authenticate, requirePermission(PERMISSIONS.LEADS_MANAGE), leadController.updateFollowUp);
 
 /**
  * DELETE /api/leads/:id/followups/:followUpId
  */
-router.delete('/:id/followups/:followUpId', authenticate, leadController.deleteFollowUp);
+router.delete('/:id/followups/:followUpId', authenticate, requirePermission(PERMISSIONS.LEADS_MANAGE), leadController.deleteFollowUp);
 
 /**
  * POST /api/leads/:id/notes
  */
-router.post('/:id/notes', authenticate, leadController.addNote);
+router.post('/:id/notes', authenticate, requirePermission(PERMISSIONS.LEADS_MANAGE), leadController.addNote);
 
 module.exports = router;

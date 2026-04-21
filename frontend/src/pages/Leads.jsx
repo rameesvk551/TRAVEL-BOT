@@ -1,293 +1,527 @@
-import { useState, useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
-  MagnifyingGlassIcon,
-  PlusIcon,
-  XMarkIcon,
-  PencilIcon,
-  CheckCircleIcon,
+  ArrowPathIcon,
+  BanknotesIcon,
   BriefcaseIcon,
-  BuildingOffice2Icon,
+  CalendarDaysIcon,
+  ChatBubbleLeftRightIcon,
+  CheckCircleIcon,
+  ClockIcon,
+  ExclamationTriangleIcon,
+  FunnelIcon,
+  MagnifyingGlassIcon,
+  PaperAirplaneIcon,
+  PencilIcon,
+  PhoneIcon,
+  PlusIcon,
   TrophyIcon,
+  UserPlusIcon,
   XCircleIcon,
+  XMarkIcon,
 } from '@heroicons/react/24/outline';
 import client from '../api/client';
-import { useLeads, useLead, useCreateLead, useUpdateLead, useAddFollowUp, useUpdateFollowUp, useDeleteFollowUp, useAddNote } from '../hooks/useLeads';
-import { formatDate, formatDateTime, formatPhone, formatTime, timeAgo } from '../utils/formatters';
+import {
+  useAddFollowUp,
+  useAddNote,
+  useLead,
+  useLeads,
+  useUpdateFollowUp,
+  useUpdateLead,
+} from '../hooks/useLeads';
+import { useAuthStore } from '../store/authStore';
+import { formatCurrency, formatDate, formatDateTime, formatPhone, timeAgo } from '../utils/formatters';
 import { LEAD_STATUS_OPTIONS, LEAD_PIPELINE_COLUMNS } from '../utils/leadStatuses';
+import {
+  DATE_RANGE_OPTIONS,
+  SORT_OPTIONS,
+  SOURCE_OPTIONS,
+  formatSource,
+  formatStatus,
+  getActivityLabel,
+  getAttentionBadges,
+  getLeadValueLabel,
+  getNextAction,
+  getNextFollowUp,
+  matchesAgent,
+  matchesDateRange,
+  matchesSource,
+  needsAttention,
+  sortLeads,
+} from '../utils/leadInsights';
 import { getInitials, getStatusTone } from '../components/uiHelpers';
 import LeadPipeline from '../components/LeadPipeline';
 
-const TABS = ['All Leads', 'Just Contacted', 'Package Searched', 'Package Interested', 'Contacted', 'Booked', 'Converted', 'Lost'];
+const TABS = [
+  { key: 'Needs Attention', label: 'Needs Attention' },
+  { key: 'All Leads', label: 'All Leads' },
+  ...LEAD_PIPELINE_COLUMNS.map((column) => ({ key: column.key, label: column.label })),
+];
+
+const EMPTY = '-';
 
 export default function Leads() {
-  const [activeTab, setActiveTab] = useState('All Leads');
+  const [activeTab, setActiveTab] = useState('Needs Attention');
   const [search, setSearch] = useState('');
-  const [view, setView] = useState('list'); // list or kanban
+  const [view, setView] = useState('list');
   const [selectedLeadId, setSelectedLeadId] = useState(null);
-  
-  // Data Fetching
+  const [sourceFilter, setSourceFilter] = useState('all');
+  const [sortBy, setSortBy] = useState('overdue');
+  const [dateRange, setDateRange] = useState('all');
+  const [agentFilter, setAgentFilter] = useState('all');
+
+  const currentAgent = useAuthStore((state) => state.agent);
   const leadsQuery = useLeads({ pageSize: 200 });
   const leads = leadsQuery.data?.data?.data || [];
-  
+
   const { data: agentsResponse } = useQuery({
     queryKey: ['agents'],
-    queryFn: () => client.get('/agents').then((r) => r.data),
+    queryFn: () => client.get('/agents').then((response) => response.data),
   });
   const agents = agentsResponse?.data || [];
-  
   const updateLead = useUpdateLead();
 
-  // Derived Data
+  const tabCounts = useMemo(() => {
+    const counts = {
+      'Needs Attention': leads.filter(needsAttention).length,
+      'All Leads': leads.length,
+    };
+    LEAD_PIPELINE_COLUMNS.forEach((column) => {
+      counts[column.key] = leads.filter((lead) => lead.status === column.key).length;
+    });
+    return counts;
+  }, [leads]);
+
   const filteredLeads = useMemo(() => {
-    let filtered = leads;
-    if (activeTab !== 'All Leads') {
-      filtered = filtered.filter(l => l.status.toLowerCase().replace('_', ' ') === activeTab.toLowerCase());
-    }
-    if (search) {
-      filtered = filtered.filter(l => 
-        l.customer?.name?.toLowerCase().includes(search.toLowerCase()) || 
-        l.customer?.phone?.includes(search) ||
-        l.customer?.email?.toLowerCase().includes(search.toLowerCase())
+    const query = search.trim().toLowerCase();
+    const byTab = leads.filter((lead) => {
+      if (activeTab === 'Needs Attention') return needsAttention(lead);
+      if (activeTab === 'All Leads') return true;
+      return lead.status === activeTab;
+    });
+
+    const filtered = byTab.filter((lead) => {
+      const searchable = [
+        lead.customer?.name,
+        lead.customer?.phone,
+        lead.customer?.email,
+        lead.destination,
+        lead.source,
+        lead.assignedAgent?.name,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+
+      return (
+        (!query || searchable.includes(query)) &&
+        matchesSource(lead, sourceFilter) &&
+        matchesAgent(lead, agentFilter, currentAgent?.id) &&
+        matchesDateRange(lead, dateRange)
       );
-    }
-    return filtered;
-  }, [leads, activeTab, search]);
+    });
+
+    return sortLeads(filtered, sortBy);
+  }, [activeTab, agentFilter, currentAgent?.id, dateRange, leads, search, sortBy, sourceFilter]);
 
   const metrics = useMemo(() => {
+    const attention = leads.filter(needsAttention);
+    const overdue = leads.filter((lead) =>
+      getAttentionBadges(lead).some((badge) => badge.key === 'overdue')
+    );
+    const pipelineValue = leads.reduce((total, lead) => {
+      const travellers = Number(lead.travellers || 1);
+      return total + Number(lead.budgetPerPerson || 0) * travellers;
+    }, 0);
+
     return {
       totalDeals: leads.length,
-      won: leads.filter(l => l.status === 'CONVERTED').length,
-      lost: leads.filter(l => l.status === 'LOST').length,
+      attention: attention.length,
+      overdue: overdue.length,
+      won: leads.filter((lead) => lead.status === 'CONVERTED').length,
+      lost: leads.filter((lead) => lead.status === 'LOST').length,
+      pipelineValue,
     };
   }, [leads]);
 
+  function clearFilters() {
+    setSearch('');
+    setActiveTab('All Leads');
+    setSourceFilter('all');
+    setSortBy('newest');
+    setDateRange('all');
+    setAgentFilter('all');
+  }
+
+  function updateLeadField(leadId, data) {
+    updateLead.mutate({ id: leadId, data });
+  }
+
   return (
     <div className="w-full pb-10">
-      
-      {/* Top Header */}
-      <div className="flex items-center justify-between mb-8 animate-fade-in">
+      <div className="mb-8 flex flex-col gap-5 animate-fade-in xl:flex-row xl:items-start xl:justify-between">
         <div>
           <h1 className="text-3xl font-extrabold tracking-tight text-neutral-900">Lead Management</h1>
-          <p className="text-neutral-500 mt-1.5 font-medium">Track and manage your sales pipeline with ease</p>
+          <p className="mt-1.5 max-w-2xl text-sm font-medium text-neutral-500">
+            Prioritize urgent enquiries, assign owners, and keep follow-ups moving from one workspace.
+          </p>
         </div>
-        <div className="flex items-center gap-3">
-           <div className="bg-neutral-100/80 p-1 rounded-xl flex items-center shadow-inner border border-neutral-200/50">
-             <button onClick={() => setView('list')} className={`px-5 py-2 text-sm font-bold rounded-[var(--radius-md)] transition-all duration-300 ${view === 'list' ? 'bg-white shadow-md text-neutral-900' : 'text-neutral-500 hover:text-neutral-900'}`}>Table</button>
-             <button onClick={() => setView('kanban')} className={`px-5 py-2 text-sm font-bold rounded-[var(--radius-md)] transition-all duration-300 ${view === 'kanban' ? 'bg-white shadow-md text-neutral-900' : 'text-neutral-500 hover:text-neutral-900'}`}>Kanban</button>
-           </div>
-           
-           <select className="shell-input-rect bg-white w-32 py-2 h-11 border-neutral-200">
-             <option>All Sources</option>
-           </select>
-           
-           <button className="shell-button-secondary h-11 px-5 border-neutral-200 group">
-             Newest First
-           </button>
-           
-           <button className="shell-button-primary h-11 px-6 bg-neutral-900 hover:bg-black transition-all group">
-             <PlusIcon className="w-5 h-5 group-hover:scale-110 transition-transform" /> <span className="ml-1">New Lead</span>
-           </button>
-        </div>
-      </div>
-      
-      {/* Search & Tabs */}
-      <div className="mb-8 flex flex-col sm:flex-row sm:items-center justify-between gap-6">
-        <div className="relative w-full max-w-sm group">
-          <MagnifyingGlassIcon className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-neutral-400 group-focus-within:text-neutral-600 transition-colors" />
-          <input 
-            type="text" 
-            placeholder="Search by name, email, phone..." 
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            className="shell-input-rect pl-11 bg-white h-12 shadow-sm border-neutral-200 focus:border-neutral-400 focus:ring-0 transition-all rounded-xl"
-          />
-        </div>
-        
-        <div className="flex gap-1 overflow-x-auto hide-scrollbar">
-          {TABS.map(tab => (
-            <button 
-              key={tab} 
-              onClick={() => setActiveTab(tab)}
-              className={`px-4 py-2 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
-                activeTab === tab 
-                  ? 'border-neutral-900 text-neutral-900' 
-                  : 'border-transparent text-neutral-400 hover:text-neutral-600 hover:border-neutral-300'
+
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center rounded-[var(--radius-md)] border border-neutral-200 bg-neutral-100/80 p-1 shadow-inner">
+            <button
+              onClick={() => setView('list')}
+              className={`px-4 py-2 text-sm font-bold rounded-[var(--radius-sm)] transition-all ${
+                view === 'list' ? 'bg-white shadow-sm text-neutral-900' : 'text-neutral-500 hover:text-neutral-900'
               }`}
             >
-              {tab}
+              Table
+            </button>
+            <button
+              onClick={() => setView('kanban')}
+              className={`px-4 py-2 text-sm font-bold rounded-[var(--radius-sm)] transition-all ${
+                view === 'kanban' ? 'bg-white shadow-sm text-neutral-900' : 'text-neutral-500 hover:text-neutral-900'
+              }`}
+            >
+              Kanban
+            </button>
+          </div>
+
+          <select
+            value={sourceFilter}
+            onChange={(event) => setSourceFilter(event.target.value)}
+            className="shell-input-rect h-11 w-40 bg-white py-2"
+          >
+            {SOURCE_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+
+          <select
+            value={agentFilter}
+            onChange={(event) => setAgentFilter(event.target.value)}
+            className="shell-input-rect h-11 w-44 bg-white py-2"
+          >
+            <option value="all">All Agents</option>
+            {currentAgent?.id && <option value="mine">Assigned To Me</option>}
+            <option value="unassigned">Unassigned</option>
+            {agents.map((agent) => (
+              <option key={agent.id} value={agent.id}>
+                {agent.name}
+              </option>
+            ))}
+          </select>
+
+          <select
+            value={sortBy}
+            onChange={(event) => setSortBy(event.target.value)}
+            className="shell-input-rect h-11 w-44 bg-white py-2"
+          >
+            {SORT_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+
+          <button className="shell-button-primary h-11 px-5 bg-neutral-900 hover:bg-black">
+            <PlusIcon className="h-5 w-5" />
+            New Lead
+          </button>
+        </div>
+      </div>
+
+      <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
+        <MetricCard icon={ExclamationTriangleIcon} tone="bg-amber-50 text-amber-600" value={metrics.attention} label="Needs Attention" />
+        <MetricCard icon={ClockIcon} tone="bg-rose-50 text-rose-600" value={metrics.overdue} label="Overdue" />
+        <MetricCard icon={BriefcaseIcon} tone="bg-sky-50 text-sky-600" value={metrics.totalDeals} label="Total Leads" />
+        <MetricCard icon={TrophyIcon} tone="bg-emerald-50 text-emerald-600" value={metrics.won} label="Converted" />
+        <MetricCard icon={BanknotesIcon} tone="bg-indigo-50 text-indigo-600" value={formatCurrency(metrics.pipelineValue)} label="Pipeline Value" />
+      </div>
+
+      <div className="mb-6 flex flex-col gap-4">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="relative w-full max-w-md group">
+            <MagnifyingGlassIcon className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-neutral-400 transition-colors group-focus-within:text-neutral-600" />
+            <input
+              type="text"
+              placeholder="Search name, phone, email, destination..."
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              className="shell-input-rect h-12 rounded-xl border-neutral-200 bg-white pl-11 shadow-sm focus:border-neutral-400 focus:ring-0"
+            />
+          </div>
+
+          <div className="flex items-center gap-2 overflow-x-auto hide-scrollbar">
+            {DATE_RANGE_OPTIONS.map((option) => (
+              <button
+                key={option.value}
+                onClick={() => setDateRange(option.value)}
+                className={`shrink-0 rounded-[var(--radius-sm)] px-3 py-2 text-xs font-bold transition-all ${
+                  dateRange === option.value
+                    ? 'bg-neutral-900 text-white shadow-sm'
+                    : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'
+                }`}
+              >
+                {option.label}
+              </button>
+            ))}
+            <button
+              onClick={clearFilters}
+              className="shell-button-secondary h-9 shrink-0 px-3 py-1.5 text-xs"
+            >
+              <FunnelIcon className="h-4 w-4" />
+              Reset
+            </button>
+          </div>
+        </div>
+
+        <div className="flex gap-1 overflow-x-auto hide-scrollbar">
+          {TABS.map((tab) => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              className={`flex shrink-0 items-center gap-2 border-b-2 px-4 py-2 text-sm font-semibold whitespace-nowrap transition-colors ${
+                activeTab === tab.key
+                  ? 'border-neutral-900 text-neutral-900'
+                  : 'border-transparent text-neutral-400 hover:border-neutral-300 hover:text-neutral-600'
+              }`}
+            >
+              {tab.label}
+              <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] font-bold text-neutral-500">
+                {tabCounts[tab.key] || 0}
+              </span>
             </button>
           ))}
         </div>
       </div>
-      
-      {/* Metrics Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-         <div className="kpi-card">
-           <div className="flex items-center gap-4">
-             <div className="kpi-icon bg-sky-50 text-sky-600">
-               <BriefcaseIcon className="w-5 h-5" />
-             </div>
-             <div>
-               <div className="text-2xl font-bold text-neutral-900 leading-none">{metrics.totalDeals}</div>
-               <div className="text-[11px] font-semibold text-neutral-400 mt-1 uppercase tracking-wider">Total Deals</div>
-             </div>
-           </div>
-         </div>
-         <div className="kpi-card">
-           <div className="flex items-center gap-4">
-             <div className="kpi-icon bg-emerald-50 text-emerald-600">
-               <TrophyIcon className="w-5 h-5" />
-             </div>
-             <div>
-               <div className="text-2xl font-bold text-neutral-900 leading-none">{metrics.won}</div>
-               <div className="text-[11px] font-semibold text-neutral-400 mt-1 uppercase tracking-wider">Won</div>
-             </div>
-           </div>
-         </div>
-         <div className="kpi-card">
-           <div className="flex items-center gap-4">
-             <div className="kpi-icon bg-rose-50 text-rose-600">
-               <XCircleIcon className="w-5 h-5" />
-             </div>
-             <div>
-               <div className="text-2xl font-bold text-neutral-900 leading-none">{metrics.lost}</div>
-               <div className="text-[11px] font-semibold text-neutral-400 mt-1 uppercase tracking-wider">Lost</div>
-             </div>
-           </div>
-         </div>
-      </div>
-      
-      {/* Filters secondary */}
-      <div className="flex justify-end mb-4 gap-2">
-        <div className="bg-neutral-100 rounded-[var(--radius-sm)] p-0.5 inline-flex text-xs font-medium text-neutral-600">
-          <button className="px-3 py-1.5 bg-neutral-900 text-white rounded-md shadow-sm transition-all">All</button>
-          <button className="px-3 py-1.5 hover:bg-neutral-200 rounded-md transition-colors">Month</button>
-          <button className="px-3 py-1.5 hover:bg-neutral-200 rounded-md transition-colors">Year</button>
-          <button className="px-3 py-1.5 hover:bg-neutral-200 rounded-md transition-colors">Custom</button>
-        </div>
-      </div>
 
-      {/* Main Content Area */}
       {view === 'kanban' ? (
-        <LeadPipeline onLeadClick={(lead) => setSelectedLeadId(lead.id)} />
+        <LeadPipeline leads={filteredLeads} onLeadClick={(lead) => setSelectedLeadId(lead.id)} />
       ) : (
-        <div className="data-table-wrapper">
-          <div className="overflow-x-auto hide-scrollbar">
-            <table className="w-full text-left border-collapse min-w-[800px]">
-              <thead>
-                <tr className="data-table-head">
-                  <th className="data-table-th w-16">SL NO</th>
-                  <th className="data-table-th">LEAD</th>
-                  <th className="data-table-th">CONTACT</th>
-                  <th className="data-table-th">SOURCE</th>
-                  <th className="data-table-th">NEXT CONTACT</th>
-                  <th className="data-table-th">ASSIGNED TO</th>
-                  <th className="data-table-th">STATUS</th>
-                </tr>
-              </thead>
-              <tbody>
-                {leadsQuery.isLoading ? (
-                  <tr>
-                    <td colSpan="7" className="p-8 text-center text-sm text-neutral-400">Loading leads...</td>
-                  </tr>
-                ) : filteredLeads.length === 0 ? (
-                  <tr>
-                    <td colSpan="7" className="p-20 text-center">
-                      <div className="flex flex-col items-center justify-center animate-fade-in">
-                        <div className="w-20 h-20 bg-neutral-50 rounded-full flex items-center justify-center mb-4 border border-neutral-100 shadow-inner">
-                          <BriefcaseIcon className="w-10 h-10 text-neutral-300" />
-                        </div>
-                        <h3 className="text-lg font-bold text-neutral-900">No leads found</h3>
-                        <p className="text-sm text-neutral-500 mt-1 max-w-[280px] mx-auto leading-relaxed">
-                          We couldn't find any leads matching your current filters. Try adjusting your search or tabs.
-                        </p>
-                        <button 
-                          onClick={() => {setSearch(''); setActiveTab('All Leads');}}
-                          className="mt-6 text-sm font-bold text-neutral-900 hover:underline decoration-2 underline-offset-4 transition-all"
-                        >
-                          Clear all filters
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ) : (
-                  filteredLeads.map((lead, i) => (
-                    <tr 
-                      key={lead.id} 
-                      className="data-table-row group"
-                      onClick={() => setSelectedLeadId(lead.id)}
-                    >
-                      <td className="data-table-td text-neutral-400 font-medium">#{i + 1}</td>
-                      <td className="data-table-td">
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-full bg-neutral-100 text-neutral-600 font-bold flex items-center justify-center text-xs shrink-0 ring-1 ring-neutral-200">
-                            {getInitials(lead.customer?.name, 'L')}
-                          </div>
-                          <span className="font-semibold text-neutral-900 text-sm">{lead.customer?.name || 'Unnamed Lead'}</span>
-                        </div>
-                      </td>
-                      <td className="data-table-td text-neutral-500">
-                        <div className="flex flex-col gap-0.5 text-xs">
-                          {lead.customer?.phone && <span>{lead.customer.phone}</span>}
-                          {lead.customer?.email && <span className="text-neutral-400">{lead.customer.email}</span>}
-                        </div>
-                      </td>
-                      <td className="data-table-td text-neutral-600">{lead.source?.replace('_', ' ') || 'Direct'}</td>
-                      <td className="data-table-td text-neutral-600">
-                        {lead.followUps?.length > 0 
-                          ? formatDateTime(lead.followUps[0].scheduledAt) 
-                          : <span className="text-neutral-300">—</span>}
-                      </td>
-                      <td className="data-table-td" onClick={e => e.stopPropagation()}>
-                        <select
-                          className="bg-transparent border-0 text-sm font-medium text-neutral-600 cursor-pointer focus:ring-0 appearance-none hover:bg-neutral-50 rounded-md py-1 px-2 transition-colors"
-                          value={lead.assignedAgentId || ''}
-                          onChange={(e) => updateLead.mutate({ id: lead.id, data: { assignedAgentId: e.target.value }})}
-                        >
-                          <option value="">Unassigned</option>
-                          {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-                        </select>
-                      </td>
-                      <td className="data-table-td" onClick={e => e.stopPropagation()}>
-                        <select
-                           className={`border-0 appearance-none text-[10px] font-bold rounded-full px-3 py-1 cursor-pointer focus:ring-0 ${getStatusTone(lead.status)}`}
-                           value={lead.status}
-                           onChange={(e) => updateLead.mutate({ id: lead.id, data: { status: e.target.value }})}
-                        >
-                           {LEAD_STATUS_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-                        </select>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
+        <LeadTable
+          agents={agents}
+          clearFilters={clearFilters}
+          isError={leadsQuery.isError}
+          isLoading={leadsQuery.isLoading}
+          leads={filteredLeads}
+          onLeadClick={(lead) => setSelectedLeadId(lead.id)}
+          onRetry={() => leadsQuery.refetch()}
+          onUpdateLead={updateLeadField}
+        />
       )}
 
-      {/* Slide-out Drawer */}
-      <LeadDrawer 
-        leadId={selectedLeadId} 
-        onClose={() => setSelectedLeadId(null)} 
-        agents={agents} 
+      <LeadDrawer
+        agents={agents}
+        leadId={selectedLeadId}
+        onClose={() => setSelectedLeadId(null)}
       />
-
     </div>
+  );
+}
+
+function MetricCard({ icon: Icon, tone, value, label }) {
+  return (
+    <div className="kpi-card">
+      <div className="flex items-center gap-4">
+        <div className={`kpi-icon ${tone}`}>
+          <Icon className="h-5 w-5" />
+        </div>
+        <div className="min-w-0">
+          <div className="truncate text-2xl font-bold leading-none text-neutral-900">{value}</div>
+          <div className="mt-1 text-[11px] font-semibold uppercase tracking-wider text-neutral-400">{label}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LeadTable({ agents, clearFilters, isError, isLoading, leads, onLeadClick, onRetry, onUpdateLead }) {
+  return (
+    <div className="data-table-wrapper">
+      <div className="overflow-x-auto hide-scrollbar">
+        <table className="w-full min-w-[1120px] border-collapse text-left">
+          <thead>
+            <tr className="data-table-head">
+              <th className="data-table-th w-16">SL NO</th>
+              <th className="data-table-th">Lead</th>
+              <th className="data-table-th">Attention</th>
+              <th className="data-table-th">Contact</th>
+              <th className="data-table-th">Trip</th>
+              <th className="data-table-th">Next Action</th>
+              <th className="data-table-th">Last Activity</th>
+              <th className="data-table-th">Assigned To</th>
+              <th className="data-table-th">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {isLoading && <LeadTableSkeleton />}
+
+            {isError && !isLoading && (
+              <tr>
+                <td colSpan="9" className="p-16 text-center">
+                  <div className="mx-auto flex max-w-sm flex-col items-center">
+                    <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full border border-rose-100 bg-rose-50">
+                      <XCircleIcon className="h-8 w-8 text-rose-500" />
+                    </div>
+                    <h3 className="text-lg font-bold text-neutral-900">Could not load leads</h3>
+                    <p className="mt-1 text-sm text-neutral-500">Refresh the data and try again.</p>
+                    <button onClick={onRetry} className="shell-button-secondary mt-5">
+                      <ArrowPathIcon className="h-4 w-4" />
+                      Retry
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            )}
+
+            {!isLoading && !isError && leads.length === 0 && (
+              <tr>
+                <td colSpan="9" className="p-20 text-center">
+                  <div className="mx-auto flex max-w-sm flex-col items-center">
+                    <div className="mb-4 flex h-20 w-20 items-center justify-center rounded-full border border-neutral-100 bg-neutral-50 shadow-inner">
+                      <BriefcaseIcon className="h-10 w-10 text-neutral-300" />
+                    </div>
+                    <h3 className="text-lg font-bold text-neutral-900">No leads found</h3>
+                    <p className="mt-1 text-sm leading-relaxed text-neutral-500">
+                      No lead matches the current search, filters, and tab.
+                    </p>
+                    <button
+                      onClick={clearFilters}
+                      className="mt-6 text-sm font-bold text-neutral-900 underline-offset-4 transition-all hover:underline"
+                    >
+                      Clear all filters
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            )}
+
+            {!isLoading &&
+              !isError &&
+              leads.map((lead, index) => (
+                <LeadTableRow
+                  agents={agents}
+                  index={index}
+                  key={lead.id}
+                  lead={lead}
+                  onLeadClick={onLeadClick}
+                  onUpdateLead={onUpdateLead}
+                />
+              ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function LeadTableSkeleton() {
+  return Array.from({ length: 5 }).map((_, index) => (
+    <tr key={index} className="border-b border-neutral-100">
+      <td colSpan="9" className="px-4 py-4">
+        <div className="h-12 animate-pulse rounded-[var(--radius-md)] bg-neutral-100" />
+      </td>
+    </tr>
+  ));
+}
+
+function LeadTableRow({ agents, index, lead, onLeadClick, onUpdateLead }) {
+  const attentionBadges = getAttentionBadges(lead);
+  const nextFollowUp = getNextFollowUp(lead);
+
+  return (
+    <tr className="data-table-row group" onClick={() => onLeadClick(lead)}>
+      <td className="data-table-td font-medium text-neutral-400">#{index + 1}</td>
+      <td className="data-table-td">
+        <div className="flex items-center gap-3">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-neutral-100 text-xs font-bold text-neutral-600 ring-1 ring-neutral-200">
+            {getInitials(lead.customer?.name, 'L')}
+          </div>
+          <div className="min-w-0">
+            <div className="truncate text-sm font-semibold text-neutral-900">{lead.customer?.name || 'Unnamed Lead'}</div>
+            <div className="mt-0.5 text-xs text-neutral-400">{formatSource(lead.source)}</div>
+          </div>
+        </div>
+      </td>
+      <td className="data-table-td">
+        {attentionBadges.length > 0 ? (
+          <div className="flex max-w-[220px] flex-wrap gap-1.5">
+            {attentionBadges.slice(0, 3).map((badge) => (
+              <span
+                key={badge.key}
+                className={`rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${badge.className}`}
+              >
+                {badge.label}
+              </span>
+            ))}
+          </div>
+        ) : (
+          <span className="text-xs text-neutral-300">{EMPTY}</span>
+        )}
+      </td>
+      <td className="data-table-td text-neutral-500">
+        <div className="flex flex-col gap-0.5 text-xs">
+          <span>{formatPhone(lead.customer?.phone) || EMPTY}</span>
+          {lead.customer?.email && <span className="text-neutral-400">{lead.customer.email}</span>}
+        </div>
+      </td>
+      <td className="data-table-td">
+        <div className="flex flex-col gap-0.5 text-xs">
+          <span className="font-semibold text-neutral-700">{lead.destination || 'Destination not set'}</span>
+          <span className="text-neutral-400">{getLeadValueLabel(lead)}</span>
+        </div>
+      </td>
+      <td className="data-table-td">
+        <div className="flex flex-col gap-0.5 text-xs">
+          <span className="font-semibold text-neutral-700">{getNextAction(lead)}</span>
+          <span className="text-neutral-400">
+            {nextFollowUp ? formatDateTime(nextFollowUp.scheduledAt) : 'No follow-up scheduled'}
+          </span>
+        </div>
+      </td>
+      <td className="data-table-td text-xs text-neutral-500">{getActivityLabel(lead)}</td>
+      <td className="data-table-td" onClick={(event) => event.stopPropagation()}>
+        <select
+          className="cursor-pointer appearance-none rounded-md border-0 bg-transparent px-2 py-1 text-sm font-medium text-neutral-600 transition-colors hover:bg-neutral-50 focus:ring-0"
+          value={lead.assignedAgentId || ''}
+          onChange={(event) => onUpdateLead(lead.id, { assignedAgentId: event.target.value || null })}
+        >
+          <option value="">Unassigned</option>
+          {agents.map((agent) => (
+            <option key={agent.id} value={agent.id}>
+              {agent.name}
+            </option>
+          ))}
+        </select>
+      </td>
+      <td className="data-table-td" onClick={(event) => event.stopPropagation()}>
+        <select
+          className={`cursor-pointer appearance-none rounded-full border-0 px-3 py-1 text-[10px] font-bold focus:ring-0 ${getStatusTone(lead.status)}`}
+          value={lead.status}
+          onChange={(event) => onUpdateLead(lead.id, { status: event.target.value })}
+        >
+          {LEAD_STATUS_OPTIONS.map((option) => (
+            <option key={option} value={option}>
+              {formatStatus(option)}
+            </option>
+          ))}
+        </select>
+      </td>
+    </tr>
   );
 }
 
 function LeadDrawer({ leadId, onClose, agents }) {
   const { data, isLoading } = useLead(leadId);
   const lead = data?.data;
-  
+
   const [activeTab, setActiveTab] = useState('Notes');
   const [noteContent, setNoteContent] = useState('');
-  
   const [followupDate, setFollowupDate] = useState('');
   const [followupNote, setFollowupNote] = useState('');
-
   const [isEditing, setIsEditing] = useState(false);
   const [editState, setEditState] = useState({});
 
@@ -295,6 +529,15 @@ function LeadDrawer({ leadId, onClose, agents }) {
   const addNote = useAddNote();
   const addFollowup = useAddFollowUp();
   const updateFollowup = useUpdateFollowUp();
+
+  const nextFollowUp = getNextFollowUp(lead);
+  const attentionBadges = lead ? getAttentionBadges(lead) : [];
+  const tabItems = [
+    { key: 'Notes', label: `Notes ${lead?.notesList?.length || 0}` },
+    { key: 'Follow-ups', label: `Follow-ups ${lead?.followUps?.length || 0}` },
+    { key: 'Activity', label: 'Activity' },
+    { key: 'Timeline', label: 'Timeline' },
+  ];
 
   const handleEditClick = () => {
     setEditState({
@@ -310,392 +553,519 @@ function LeadDrawer({ leadId, onClose, agents }) {
   };
 
   const handleSave = () => {
-    updateLead.mutate({ 
-      id: leadId, 
-      data: {
-        ...editState,
-        // Convert budget back to paise if editing in rupees (though here I used raw paise for simplicity in state)
-      } 
-    }, {
-      onSuccess: () => setIsEditing(false)
-    });
+    updateLead.mutate(
+      {
+        id: leadId,
+        data: {
+          ...editState,
+          assignedAgentId: editState.assignedAgentId || null,
+        },
+      },
+      {
+        onSuccess: () => setIsEditing(false),
+      }
+    );
   };
-  
+
+  const openWhatsApp = () => {
+    const phone = lead?.customer?.phone?.replace(/\D/g, '');
+    if (phone) window.open(`https://wa.me/${phone}`, '_blank', 'noopener,noreferrer');
+  };
+
+  const openCall = () => {
+    if (lead?.customer?.phone) window.location.href = `tel:${lead.customer.phone}`;
+  };
+
   if (!leadId) return null;
 
   return (
     <div className="fixed inset-0 z-50 pointer-events-auto">
       <div className="absolute inset-0 bg-black/20 backdrop-blur-sm transition-opacity" onClick={onClose} />
-      
-      <aside className="absolute right-0 top-0 h-full w-full max-w-[500px] border-l border-neutral-200 bg-white shadow-2xl flex flex-col transform transition-transform duration-300">
-        
-        {/* Drawer Header */}
-        <div className="p-6 border-b border-neutral-100 flex items-start justify-between">
-          {isLoading ? (
-            <div className="animate-pulse flex gap-4 w-full">
-              <div className="h-12 w-12 rounded-full bg-neutral-100 shrink-0"></div>
-              <div className="space-y-2 flex-1">
-                <div className="h-4 bg-neutral-100 rounded w-1/2"></div>
-                <div className="h-3 bg-neutral-100 rounded w-1/3"></div>
-              </div>
-            </div>
-          ) : (
-            <div className="flex items-center gap-4 w-full">
-              <div className="w-12 h-12 rounded-full bg-neutral-100 text-neutral-600 font-bold flex items-center justify-center text-lg shrink-0 ring-2 ring-neutral-200">
-                {getInitials(lead?.customer?.name, 'L')}
-              </div>
-              <div className="flex-1 min-w-0">
-                <h2 className="text-xl font-bold tracking-tight text-neutral-900 truncate">
-                  {lead?.customer?.name || 'Unnamed Lead'}
-                </h2>
-                <div className="text-sm text-neutral-400 flex items-center gap-2 mt-0.5">
-                  <span className={`badge ${getStatusTone(lead?.status)} text-[10px] px-2 py-0.5`}>{lead?.status?.replace(/_/g, ' ')}</span>
+
+      <aside className="absolute right-0 top-0 flex h-full w-full max-w-[560px] flex-col border-l border-neutral-200 bg-white shadow-2xl">
+        <div className="border-b border-neutral-100 p-6">
+          <div className="flex items-start justify-between gap-4">
+            {isLoading ? (
+              <div className="flex w-full animate-pulse gap-4">
+                <div className="h-12 w-12 shrink-0 rounded-full bg-neutral-100" />
+                <div className="flex-1 space-y-2">
+                  <div className="h-4 w-1/2 rounded bg-neutral-100" />
+                  <div className="h-3 w-1/3 rounded bg-neutral-100" />
                 </div>
               </div>
+            ) : (
+              <div className="flex min-w-0 flex-1 items-center gap-4">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-neutral-100 text-lg font-bold text-neutral-600 ring-2 ring-neutral-200">
+                  {getInitials(lead?.customer?.name, 'L')}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <h2 className="truncate text-xl font-bold tracking-tight text-neutral-900">
+                    {lead?.customer?.name || 'Unnamed Lead'}
+                  </h2>
+                  <div className="mt-1 flex flex-wrap items-center gap-2">
+                    <span className={`badge ${getStatusTone(lead?.status)} px-2 py-0.5 text-[10px]`}>
+                      {formatStatus(lead?.status)}
+                    </span>
+                    {attentionBadges.slice(0, 2).map((badge) => (
+                      <span
+                        key={badge.key}
+                        className={`rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${badge.className}`}
+                      >
+                        {badge.label}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="flex shrink-0 items-center gap-2">
+              {isEditing ? (
+                <>
+                  <button
+                    onClick={handleSave}
+                    disabled={updateLead.isPending}
+                    className="rounded-lg bg-neutral-900 px-3 py-1.5 text-xs font-bold text-white transition-all hover:bg-black disabled:opacity-60"
+                  >
+                    {updateLead.isPending ? 'Saving...' : 'Save'}
+                  </button>
+                  <button
+                    onClick={() => setIsEditing(false)}
+                    className="rounded-lg border border-neutral-200 px-3 py-1.5 text-xs font-bold text-neutral-600 transition-all hover:bg-neutral-50"
+                  >
+                    Cancel
+                  </button>
+                </>
+              ) : (
+                <button
+                  onClick={handleEditClick}
+                  className="rounded-lg p-2 text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-600"
+                >
+                  <PencilIcon className="h-5 w-5" />
+                </button>
+              )}
+              <button onClick={onClose} className="rounded-lg p-2 text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-600">
+                <XMarkIcon className="h-5 w-5" />
+              </button>
+            </div>
+          </div>
+
+          {!isLoading && lead && (
+            <div className="mt-5 grid grid-cols-4 gap-2">
+              <QuickAction icon={ChatBubbleLeftRightIcon} label="WhatsApp" onClick={openWhatsApp} />
+              <QuickAction icon={PhoneIcon} label="Call" onClick={openCall} />
+              <QuickAction icon={CalendarDaysIcon} label="Follow-up" onClick={() => setActiveTab('Follow-ups')} />
+              <QuickAction icon={PaperAirplaneIcon} label="Quote" onClick={() => setActiveTab('Activity')} />
+              <QuickAction icon={CheckCircleIcon} label="Convert" onClick={() => updateLead.mutate({ id: lead.id, data: { status: 'CONVERTED' } })} />
+              <QuickAction icon={XCircleIcon} label="Lost" onClick={() => updateLead.mutate({ id: lead.id, data: { status: 'LOST' } })} />
+              <QuickAction icon={UserPlusIcon} label="Assign" onClick={handleEditClick} />
+              <QuickAction icon={PencilIcon} label="Note" onClick={() => setActiveTab('Notes')} />
             </div>
           )}
-          
-          <div className="flex items-center gap-2 shrink-0">
-            {isEditing ? (
-              <>
-                <button 
-                  onClick={handleSave} 
-                  disabled={updateLead.isPending}
-                  className="px-3 py-1.5 bg-neutral-900 text-white text-xs font-bold rounded-lg hover:bg-black transition-all"
-                >
-                  {updateLead.isPending ? 'Saving...' : 'Save'}
-                </button>
-                <button 
-                   onClick={() => setIsEditing(false)} 
-                   className="px-3 py-1.5 border border-neutral-200 text-neutral-600 text-xs font-bold rounded-lg hover:bg-neutral-50 transition-all"
-                >
-                  Cancel
-                </button>
-              </>
-            ) : (
-              <button 
-                 onClick={handleEditClick}
-                 className="p-2 text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100 rounded-lg transition-colors"
-              >
-                <PencilIcon className="w-5 h-5" />
-              </button>
-            )}
-            <button onClick={onClose} className="p-2 text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100 rounded-lg transition-colors">
-              <XMarkIcon className="w-5 h-5" />
-            </button>
-          </div>
         </div>
 
-        {/* Lead Properties Grid */}
         {!isLoading && lead && (
-          <div className="px-6 py-4 grid grid-cols-2 gap-y-4 gap-x-6 text-sm border-b border-neutral-100">
-             <div>
-               <div className="text-neutral-400 text-xs mb-1 font-medium">Destination</div>
-               {isEditing ? (
-                 <input 
-                   type="text" 
-                   value={editState.destination} 
-                   onChange={e => setEditState({...editState, destination: e.target.value})}
-                   className="w-full bg-neutral-50 border-neutral-200 rounded-md py-1 px-2 text-sm focus:ring-0"
-                 />
-               ) : (
-                 <div className="font-medium text-neutral-900">{lead.destination || '—'}</div>
-               )}
-             </div>
-             <div>
-               <div className="text-neutral-400 text-xs mb-1 font-medium">Source</div>
-               {isEditing ? (
-                  <select 
-                    value={editState.source} 
-                    onChange={e => setEditState({...editState, source: e.target.value})}
-                    className="w-full bg-neutral-50 border-neutral-200 rounded-md py-1 px-2 text-sm focus:ring-0"
-                  >
-                    <option value="whatsapp_organic">WhatsApp Organic</option>
-                    <option value="facebook_ad">Facebook Ad</option>
-                    <option value="instagram_ad">Instagram Ad</option>
-                    <option value="google_ad">Google Ad</option>
-                    <option value="referral">Referral</option>
-                    <option value="manual">Manual</option>
-                  </select>
-               ) : (
-                 <div className="font-medium text-neutral-900">{lead.source?.replace(/_/g, ' ') || 'organic'}</div>
-               )}
-             </div>
-             <div>
-               <div className="text-neutral-400 text-xs mb-1 font-medium">Contact Person</div>
-               {isEditing ? (
-                 <input 
-                   type="text" 
-                   value={editState.customerName} 
-                   onChange={e => setEditState({...editState, customerName: e.target.value})}
-                   className="w-full bg-neutral-50 border-neutral-200 rounded-md py-1 px-2 text-sm focus:ring-0"
-                 />
-               ) : (
-                 <div className="font-medium text-neutral-900">{lead.customer?.name}</div>
-               )}
-             </div>
-             <div>
-               <div className="text-neutral-400 text-xs mb-1 font-medium">Phone</div>
-               {isEditing ? (
-                 <input 
-                   type="text" 
-                   value={editState.customerPhone} 
-                   onChange={e => setEditState({...editState, customerPhone: e.target.value})}
-                   className="w-full bg-neutral-50 border-neutral-200 rounded-md py-1 px-2 text-sm focus:ring-0"
-                 />
-               ) : (
-                 <div className="font-medium text-neutral-900">{lead.customer?.phone || '—'}</div>
-               )}
-             </div>
-             <div>
-               <div className="text-neutral-400 text-xs mb-1 font-medium">Email</div>
-               {isEditing ? (
-                 <input 
-                   type="email" 
-                   value={editState.customerEmail} 
-                   onChange={e => setEditState({...editState, customerEmail: e.target.value})}
-                   className="w-full bg-neutral-50 border-neutral-200 rounded-md py-1 px-2 text-sm focus:ring-0"
-                 />
-               ) : (
-                 <div className="font-medium text-neutral-900">{lead.customer?.email || '—'}</div>
-               )}
-             </div>
-             <div>
-               <div className="text-neutral-400 text-xs mb-1 font-medium">Budget / Person</div>
-               {isEditing ? (
-                 <div className="relative">
-                   <span className="absolute left-2 top-1.5 text-neutral-400">₹</span>
-                   <input 
-                     type="number" 
-                     value={editState.budgetPerPerson / 100} 
-                     onChange={e => setEditState({...editState, budgetPerPerson: Number(e.target.value) * 100})}
-                     className="w-full bg-neutral-50 border-neutral-200 rounded-md py-1 pl-5 pr-2 text-sm focus:ring-0"
-                   />
-                 </div>
-               ) : (
-                 <div className="font-medium text-neutral-900">{lead.budgetPerPerson ? `₹${Math.round(lead.budgetPerPerson/100)}` : '—'}</div>
-               )}
-             </div>
-             <div>
-               <div className="text-neutral-400 text-xs mb-1 font-medium">Created</div>
-               <div className="font-medium text-neutral-900">{formatDate(lead.createdAt)}</div>
-             </div>
-             <div>
-               <div className="text-neutral-400 text-xs mb-1 font-medium">Last Contact</div>
-               <div className="font-medium text-neutral-900">
-                 {lead.messages?.length > 0 ? formatDate(lead.messages[0].createdAt) : '—'}
-               </div>
-             </div>
-             <div>
-               <div className="text-neutral-400 text-xs mb-1 font-medium">Next Contact</div>
-               <div className="font-medium text-neutral-900">
-                 {lead.followUps?.find(f => f.status === 'Scheduled') ? formatDate(lead.followUps.find(f => f.status === 'Scheduled').scheduledAt) : '—'}
-               </div>
-             </div>
-             <div>
-                <div className="text-neutral-400 text-xs mb-1 font-medium">Assigned To</div>
-                <div className="font-medium text-neutral-900 flex items-center gap-2">
-                   {isEditing ? (
-                      <select
-                        className="w-full bg-neutral-50 border-neutral-200 rounded-md py-1 px-2 text-sm focus:ring-0"
-                        value={editState.assignedAgentId || ''}
-                        onChange={(e) => setEditState({...editState, assignedAgentId: e.target.value})}
-                      >
-                        <option value="">— Unassigned</option>
-                        {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-                      </select>
-                   ) : (
-                      <select
-                        className="bg-transparent border-0 font-medium text-neutral-700 appearance-none p-0 cursor-pointer focus:ring-0 text-sm"
-                        value={lead.assignedAgentId || ''}
-                        onChange={(e) => updateLead.mutate({ id: lead.id, data: { assignedAgentId: e.target.value }})}
-                      >
-                        <option value="">— Change</option>
-                        {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-                      </select>
-                   )}
-                </div>
-             </div>
+          <div className="grid grid-cols-2 gap-x-6 gap-y-4 border-b border-neutral-100 px-6 py-4 text-sm">
+            <LeadField
+              isEditing={isEditing}
+              label="Destination"
+              value={lead.destination || EMPTY}
+              editControl={
+                <input
+                  type="text"
+                  value={editState.destination}
+                  onChange={(event) => setEditState({ ...editState, destination: event.target.value })}
+                  className="w-full rounded-md border-neutral-200 bg-neutral-50 px-2 py-1 text-sm focus:ring-0"
+                />
+              }
+            />
+            <LeadField
+              isEditing={isEditing}
+              label="Source"
+              value={formatSource(lead.source)}
+              editControl={
+                <select
+                  value={editState.source}
+                  onChange={(event) => setEditState({ ...editState, source: event.target.value })}
+                  className="w-full rounded-md border-neutral-200 bg-neutral-50 px-2 py-1 text-sm focus:ring-0"
+                >
+                  <option value="whatsapp_organic">WhatsApp Organic</option>
+                  <option value="facebook_ad">Facebook Ad</option>
+                  <option value="instagram_ad">Instagram Ad</option>
+                  <option value="google_ad">Google Ad</option>
+                  <option value="referral">Referral</option>
+                  <option value="manual">Manual</option>
+                </select>
+              }
+            />
+            <LeadField
+              isEditing={isEditing}
+              label="Contact Person"
+              value={lead.customer?.name || EMPTY}
+              editControl={
+                <input
+                  type="text"
+                  value={editState.customerName}
+                  onChange={(event) => setEditState({ ...editState, customerName: event.target.value })}
+                  className="w-full rounded-md border-neutral-200 bg-neutral-50 px-2 py-1 text-sm focus:ring-0"
+                />
+              }
+            />
+            <LeadField
+              isEditing={isEditing}
+              label="Phone"
+              value={formatPhone(lead.customer?.phone) || EMPTY}
+              editControl={
+                <input
+                  type="text"
+                  value={editState.customerPhone}
+                  onChange={(event) => setEditState({ ...editState, customerPhone: event.target.value })}
+                  className="w-full rounded-md border-neutral-200 bg-neutral-50 px-2 py-1 text-sm focus:ring-0"
+                />
+              }
+            />
+            <LeadField
+              isEditing={isEditing}
+              label="Email"
+              value={lead.customer?.email || EMPTY}
+              editControl={
+                <input
+                  type="email"
+                  value={editState.customerEmail}
+                  onChange={(event) => setEditState({ ...editState, customerEmail: event.target.value })}
+                  className="w-full rounded-md border-neutral-200 bg-neutral-50 px-2 py-1 text-sm focus:ring-0"
+                />
+              }
+            />
+            <LeadField
+              isEditing={isEditing}
+              label="Budget / Person"
+              value={lead.budgetPerPerson ? formatCurrency(lead.budgetPerPerson) : EMPTY}
+              editControl={
+                <input
+                  type="number"
+                  value={editState.budgetPerPerson / 100}
+                  onChange={(event) => setEditState({ ...editState, budgetPerPerson: Number(event.target.value) * 100 })}
+                  className="w-full rounded-md border-neutral-200 bg-neutral-50 px-2 py-1 text-sm focus:ring-0"
+                />
+              }
+            />
+            <LeadField label="Created" value={formatDate(lead.createdAt)} />
+            <LeadField label="Last Activity" value={getActivityLabel(lead)} />
+            <LeadField label="Next Contact" value={nextFollowUp ? formatDateTime(nextFollowUp.scheduledAt) : EMPTY} />
+            <LeadField
+              isEditing={isEditing}
+              label="Assigned To"
+              value={lead.assignedAgent?.name || 'Unassigned'}
+              editControl={
+                <select
+                  className="w-full rounded-md border-neutral-200 bg-neutral-50 px-2 py-1 text-sm focus:ring-0"
+                  value={editState.assignedAgentId || ''}
+                  onChange={(event) => setEditState({ ...editState, assignedAgentId: event.target.value })}
+                >
+                  <option value="">Unassigned</option>
+                  {agents.map((agent) => (
+                    <option key={agent.id} value={agent.id}>
+                      {agent.name}
+                    </option>
+                  ))}
+                </select>
+              }
+            />
           </div>
         )}
 
-        {/* Tabs Row */}
-        <div className="border-b border-neutral-100 px-6 flex gap-6 overflow-x-auto hide-scrollbar shrink-0">
-          {['Notes', 'Follow-ups', 'Activity Reports', 'Timeline'].map(tab => (
+        <div className="flex shrink-0 gap-6 overflow-x-auto border-b border-neutral-100 px-6 hide-scrollbar">
+          {tabItems.map((tab) => (
             <button
-               key={tab}
-               onClick={() => setActiveTab(tab)}
-               className={`py-3 text-sm font-semibold border-b-2 transition-colors whitespace-nowrap ${
-                 activeTab === tab ? 'border-neutral-900 text-neutral-900' : 'border-transparent text-neutral-400 hover:text-neutral-600'
-               }`}
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              className={`whitespace-nowrap border-b-2 py-3 text-sm font-semibold transition-colors ${
+                activeTab === tab.key ? 'border-neutral-900 text-neutral-900' : 'border-transparent text-neutral-400 hover:text-neutral-600'
+              }`}
             >
-              {tab}
+              {tab.label}
             </button>
           ))}
         </div>
 
-        {/* Tab Content Area */}
-        <div className="flex-1 overflow-y-auto px-6 py-6 bg-neutral-50/50 hide-scrollbar">
+        <div className="flex-1 overflow-y-auto bg-neutral-50/50 px-6 py-6 hide-scrollbar">
           {!isLoading && lead && (
             <>
               {activeTab === 'Notes' && (
-                <div className="space-y-4">
-                  <div className="bg-white rounded-[var(--radius-md)] p-1 border border-neutral-200 flex flex-col gap-2 shadow-sm">
-                    <textarea 
-                      placeholder="Add a new note..."
-                      className="w-full text-sm outline-none border-0 px-3 py-2 bg-transparent resize-none focus:ring-0"
-                      rows="3"
-                      value={noteContent}
-                      onChange={e => setNoteContent(e.target.value)}
-                    />
-                    <div className="flex justify-end px-2 pb-2">
-                      <button 
-                        disabled={addNote.isPending || !noteContent.trim()}
-                        onClick={() => {
-                          addNote.mutate({ id: lead.id, data: { content: noteContent.trim() }});
-                          setNoteContent('');
-                        }}
-                        className="shell-button-primary py-1.5 px-4 text-xs"
-                      >
-                        {addNote.isPending ? 'Adding...' : 'Add Note'}
-                      </button>
-                    </div>
-                  </div>
-                  
-                  {(!lead.notesList || lead.notesList.length === 0) ? (
-                    <div className="text-center py-10 bg-white border border-neutral-200 rounded-[var(--radius-md)] mt-4">
-                      <div className="text-neutral-400 text-sm">No notes yet. Add your first note above.</div>
-                    </div>
-                  ) : (
-                    <div className="space-y-3 mt-4">
-                      {lead.notesList.map(note => (
-                        <div key={note.id} className="bg-white border text-sm border-neutral-200 rounded-[var(--radius-md)] p-4 shadow-sm">
-                          <div className="whitespace-pre-wrap text-neutral-600">{note.content}</div>
-                          <div className="mt-3 text-xs text-neutral-400 font-medium flex justify-between">
-                            <span>{note.agent?.name || 'Agent'}</span>
-                            <span>{formatDateTime(note.createdAt)}</span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                <NotesPanel
+                  addNote={addNote}
+                  lead={lead}
+                  noteContent={noteContent}
+                  setNoteContent={setNoteContent}
+                />
               )}
 
               {activeTab === 'Follow-ups' && (
-                <div className="space-y-4">
-                  <form 
-                     className="bg-white rounded-[var(--radius-md)] p-4 border border-neutral-200 shadow-sm flex flex-col gap-3"
-                     onSubmit={(e) => {
-                       e.preventDefault();
-                       addFollowup.mutate({ id: lead.id, data: { scheduledAt: new Date(followupDate).toISOString(), note: followupNote }});
-                       setFollowupDate(''); setFollowupNote('');
-                     }}
-                  >
-                    <h4 className="text-sm font-bold text-neutral-800">Schedule Follow-Up</h4>
-                    <input 
-                      type="datetime-local" 
-                      required
-                      value={followupDate}
-                      onChange={e => setFollowupDate(e.target.value)}
-                      className="shell-input-rect bg-neutral-50 text-sm"
-                    />
-                    <textarea 
-                      placeholder="Follow-up note (e.g., Call him back regarding pricing)"
-                      className="shell-input-rect bg-neutral-50 text-sm py-2 resize-none"
-                      rows="2"
-                      required
-                      value={followupNote}
-                      onChange={e => setFollowupNote(e.target.value)}
-                    />
-                    <button type="submit" disabled={addFollowup.isPending} className="shell-button-primary w-full">
-                       {addFollowup.isPending ? 'Scheduling...' : 'Schedule Follow-Up'}
-                    </button>
-                  </form>
-
-                  {(!lead.followUps || lead.followUps.length === 0) ? (
-                    <div className="text-center py-10 bg-white border border-neutral-200 rounded-[var(--radius-md)]">
-                      <div className="text-neutral-400 text-sm">No follow-ups scheduled</div>
-                    </div>
-                  ) : (
-                    <div className="space-y-3 mt-4">
-                       {lead.followUps.map(f => (
-                         <div key={f.id} className={`bg-white border p-4 rounded-[var(--radius-md)] flex flex-col gap-2 relative overflow-hidden shadow-sm ${f.status === 'Done' ? 'border-neutral-100 opacity-60' : 'border-neutral-200'}`}>
-                           {f.status === 'Scheduled' && <div className="absolute top-0 left-0 w-1 h-full bg-indigo-500" />}
-                           <div className="flex items-center justify-between">
-                             <div className="text-xs font-bold uppercase tracking-wider text-neutral-400">{f.status}</div>
-                             <div className="text-sm font-semibold text-neutral-700">{formatDateTime(f.scheduledAt)}</div>
-                           </div>
-                           <p className="text-sm text-neutral-600">{f.note}</p>
-                           {f.status === 'Scheduled' && (
-                             <div className="flex justify-end mt-2">
-                               <button 
-                                 className="text-xs font-semibold bg-neutral-100 text-neutral-600 px-3 py-1.5 rounded-lg flex items-center gap-1 hover:bg-neutral-200 transition-colors"
-                                 onClick={() => updateFollowup.mutate({ id: lead.id, followUpId: f.id, data: { status: 'Done' }})}
-                               >
-                                 <CheckCircleIcon className="w-4 h-4" /> Mark Done
-                               </button>
-                             </div>
-                           )}
-                         </div>
-                       ))}
-                    </div>
-                  )}
-                </div>
+                <FollowUpsPanel
+                  addFollowup={addFollowup}
+                  followupDate={followupDate}
+                  followupNote={followupNote}
+                  lead={lead}
+                  setFollowupDate={setFollowupDate}
+                  setFollowupNote={setFollowupNote}
+                  updateFollowup={updateFollowup}
+                />
               )}
 
-              {activeTab === 'Activity Reports' && (
-                 <div className="text-center py-10 bg-white border border-neutral-200 rounded-[var(--radius-md)]">
-                   <div className="text-neutral-400 text-sm">No activity reports generated yet.</div>
-                 </div>
+              {activeTab === 'Activity' && (
+                <ActivityPanel lead={lead} />
               )}
 
               {activeTab === 'Timeline' && (
-                 <div className="space-y-4">
-                   <div className="bg-white border border-neutral-200 rounded-[var(--radius-md)] p-4 flex gap-4 shadow-sm">
-                     <div className="w-6 flex flex-col items-center shrink-0">
-                       <div className="w-6 h-6 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center shrink-0">
-                         <CheckCircleIcon className="w-4 h-4" />
-                       </div>
-                       <div className="w-px h-full bg-neutral-200 mt-2"></div>
-                     </div>
-                     <div className="flex-1 pb-4">
-                        <div className="flex justify-between items-start">
-                           <div>
-                             <h4 className="text-sm font-bold text-neutral-800">Lead Created</h4>
-                             <p className="text-xs text-neutral-400 mt-1">Lead {lead.customer?.name} created via {lead.source || 'Bot'}</p>
-                           </div>
-                           <span className="text-xs text-neutral-400">{formatDateTime(lead.createdAt)}</span>
-                        </div>
-                     </div>
-                   </div>
-
-                   {lead.messages?.map((msg, i) => (
-                     <div key={msg.id} className="bg-white border border-neutral-200 rounded-[var(--radius-md)] p-4 flex gap-4 shadow-sm">
-                       <div className="w-6 flex flex-col items-center shrink-0">
-                         <div className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 text-[10px] font-bold ${msg.direction === 'IN' ? 'bg-sky-100 text-sky-600' : 'bg-violet-100 text-violet-600'}`}>
-                           {msg.direction === 'IN' ? 'IN' : 'OUT'}
-                         </div>
-                         {i !== lead.messages.length - 1 && <div className="w-px h-full bg-neutral-200 mt-2"></div>}
-                       </div>
-                       <div className="flex-1 pb-2">
-                          <div className="flex justify-between items-start">
-                             <div className="flex-1">
-                               <h4 className="text-sm font-bold text-neutral-800">{msg.direction === 'IN' ? 'Message Received' : 'Message Sent'}</h4>
-                               <p className="text-sm text-neutral-500 mt-1 break-words line-clamp-3">{msg.content}</p>
-                             </div>
-                             <span className="text-xs text-neutral-400 pl-4 shrink-0">{formatDateTime(msg.timestamp)}</span>
-                          </div>
-                       </div>
-                     </div>
-                   ))}
-                 </div>
+                <TimelinePanel lead={lead} />
               )}
             </>
           )}
         </div>
-
       </aside>
+    </div>
+  );
+}
+
+function QuickAction({ icon: Icon, label, onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      className="flex min-h-[64px] flex-col items-center justify-center gap-1 rounded-[var(--radius-md)] border border-neutral-200 bg-neutral-50 px-2 py-2 text-xs font-bold text-neutral-600 transition-all hover:border-neutral-300 hover:bg-white hover:text-neutral-900"
+      type="button"
+    >
+      <Icon className="h-5 w-5" />
+      <span className="truncate">{label}</span>
+    </button>
+  );
+}
+
+function LeadField({ editControl, isEditing = false, label, value }) {
+  return (
+    <div className="min-w-0">
+      <div className="mb-1 text-xs font-medium text-neutral-400">{label}</div>
+      {isEditing && editControl ? (
+        editControl
+      ) : (
+        <div className="truncate font-medium text-neutral-900">{value}</div>
+      )}
+    </div>
+  );
+}
+
+function NotesPanel({ addNote, lead, noteContent, setNoteContent }) {
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-col gap-2 rounded-[var(--radius-md)] border border-neutral-200 bg-white p-1 shadow-sm">
+        <textarea
+          placeholder="Add a new note..."
+          className="w-full resize-none border-0 bg-transparent px-3 py-2 text-sm outline-none focus:ring-0"
+          rows="3"
+          value={noteContent}
+          onChange={(event) => setNoteContent(event.target.value)}
+        />
+        <div className="flex justify-end px-2 pb-2">
+          <button
+            disabled={addNote.isPending || !noteContent.trim()}
+            onClick={() => {
+              addNote.mutate({ id: lead.id, data: { content: noteContent.trim() } });
+              setNoteContent('');
+            }}
+            className="shell-button-primary px-4 py-1.5 text-xs disabled:opacity-60"
+          >
+            {addNote.isPending ? 'Adding...' : 'Add Note'}
+          </button>
+        </div>
+      </div>
+
+      {(!lead.notesList || lead.notesList.length === 0) ? (
+        <EmptyPanel text="No notes yet. Add your first note above." />
+      ) : (
+        <div className="mt-4 space-y-3">
+          {lead.notesList.map((note) => (
+            <div key={note.id} className="rounded-[var(--radius-md)] border border-neutral-200 bg-white p-4 text-sm shadow-sm">
+              <div className="whitespace-pre-wrap text-neutral-600">{note.content}</div>
+              <div className="mt-3 flex justify-between text-xs font-medium text-neutral-400">
+                <span>{note.agent?.name || 'Agent'}</span>
+                <span>{formatDateTime(note.createdAt)}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FollowUpsPanel({
+  addFollowup,
+  followupDate,
+  followupNote,
+  lead,
+  setFollowupDate,
+  setFollowupNote,
+  updateFollowup,
+}) {
+  return (
+    <div className="space-y-4">
+      <form
+        className="flex flex-col gap-3 rounded-[var(--radius-md)] border border-neutral-200 bg-white p-4 shadow-sm"
+        onSubmit={(event) => {
+          event.preventDefault();
+          addFollowup.mutate({
+            id: lead.id,
+            data: { scheduledAt: new Date(followupDate).toISOString(), note: followupNote },
+          });
+          setFollowupDate('');
+          setFollowupNote('');
+        }}
+      >
+        <h4 className="text-sm font-bold text-neutral-800">Schedule Follow-Up</h4>
+        <input
+          type="datetime-local"
+          required
+          value={followupDate}
+          onChange={(event) => setFollowupDate(event.target.value)}
+          className="shell-input-rect bg-neutral-50 text-sm"
+        />
+        <textarea
+          placeholder="Follow-up note (e.g. Call back regarding pricing)"
+          className="shell-input-rect resize-none bg-neutral-50 py-2 text-sm"
+          rows="2"
+          required
+          value={followupNote}
+          onChange={(event) => setFollowupNote(event.target.value)}
+        />
+        <button type="submit" disabled={addFollowup.isPending} className="shell-button-primary w-full disabled:opacity-60">
+          {addFollowup.isPending ? 'Scheduling...' : 'Schedule Follow-Up'}
+        </button>
+      </form>
+
+      {(!lead.followUps || lead.followUps.length === 0) ? (
+        <EmptyPanel text="No follow-ups scheduled" />
+      ) : (
+        <div className="mt-4 space-y-3">
+          {lead.followUps.map((followUp) => {
+            const isDone = followUp.status === 'Done';
+            const isOverdue = followUp.status === 'Scheduled' && new Date(followUp.scheduledAt).getTime() < Date.now();
+
+            return (
+              <div
+                key={followUp.id}
+                className={`relative flex flex-col gap-2 overflow-hidden rounded-[var(--radius-md)] border bg-white p-4 shadow-sm ${
+                  isDone ? 'border-neutral-100 opacity-60' : isOverdue ? 'border-rose-200' : 'border-neutral-200'
+                }`}
+              >
+                {followUp.status === 'Scheduled' && (
+                  <div className={`absolute left-0 top-0 h-full w-1 ${isOverdue ? 'bg-rose-500' : 'bg-indigo-500'}`} />
+                )}
+                <div className="flex items-center justify-between gap-3">
+                  <div className={`text-xs font-bold uppercase tracking-wider ${isOverdue ? 'text-rose-600' : 'text-neutral-400'}`}>
+                    {isOverdue ? 'Overdue' : followUp.status}
+                  </div>
+                  <div className="text-sm font-semibold text-neutral-700">{formatDateTime(followUp.scheduledAt)}</div>
+                </div>
+                <p className="text-sm text-neutral-600">{followUp.note}</p>
+                {followUp.status === 'Scheduled' && (
+                  <div className="mt-2 flex justify-end">
+                    <button
+                      className="flex items-center gap-1 rounded-lg bg-neutral-100 px-3 py-1.5 text-xs font-semibold text-neutral-600 transition-colors hover:bg-neutral-200"
+                      onClick={() => updateFollowup.mutate({ id: lead.id, followUpId: followUp.id, data: { status: 'Done' } })}
+                    >
+                      <CheckCircleIcon className="h-4 w-4" />
+                      Mark Done
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ActivityPanel({ lead }) {
+  return (
+    <div className="space-y-3">
+      <div className="rounded-[var(--radius-md)] border border-neutral-200 bg-white p-4 shadow-sm">
+        <div className="text-xs font-bold uppercase tracking-wider text-neutral-400">Recommended Next Action</div>
+        <div className="mt-2 text-lg font-bold text-neutral-900">{getNextAction(lead)}</div>
+        <p className="mt-1 text-sm text-neutral-500">
+          Based on owner, follow-up timing, status, and recent inbound activity.
+        </p>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <ActivityStat label="Lead Value" value={getLeadValueLabel(lead)} />
+        <ActivityStat label="Last Activity" value={getActivityLabel(lead)} />
+        <ActivityStat label="Created" value={timeAgo(lead.createdAt)} />
+        <ActivityStat label="Source" value={formatSource(lead.source)} />
+      </div>
+    </div>
+  );
+}
+
+function ActivityStat({ label, value }) {
+  return (
+    <div className="rounded-[var(--radius-md)] border border-neutral-200 bg-white p-4 shadow-sm">
+      <div className="text-xs font-bold uppercase tracking-wider text-neutral-400">{label}</div>
+      <div className="mt-1 text-sm font-semibold text-neutral-800">{value}</div>
+    </div>
+  );
+}
+
+function TimelinePanel({ lead }) {
+  return (
+    <div className="space-y-4">
+      <TimelineItem
+        icon={<CheckCircleIcon className="h-4 w-4" />}
+        iconClass="bg-emerald-100 text-emerald-600"
+        title="Lead Created"
+        description={`Lead ${lead.customer?.name || 'Unnamed Lead'} created via ${formatSource(lead.source)}`}
+        time={formatDateTime(lead.createdAt)}
+      />
+
+      {lead.messages?.map((message) => (
+        <TimelineItem
+          key={message.id}
+          icon={message.direction === 'IN' ? 'IN' : 'OUT'}
+          iconClass={message.direction === 'IN' ? 'bg-sky-100 text-sky-600' : 'bg-violet-100 text-violet-600'}
+          title={message.direction === 'IN' ? 'Message Received' : 'Message Sent'}
+          description={message.content}
+          time={formatDateTime(message.timestamp)}
+        />
+      ))}
+    </div>
+  );
+}
+
+function TimelineItem({ description, icon, iconClass, time, title }) {
+  return (
+    <div className="flex gap-4 rounded-[var(--radius-md)] border border-neutral-200 bg-white p-4 shadow-sm">
+      <div className="flex w-6 shrink-0 flex-col items-center">
+        <div className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${iconClass}`}>
+          {icon}
+        </div>
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0 flex-1">
+            <h4 className="text-sm font-bold text-neutral-800">{title}</h4>
+            <p className="mt-1 line-clamp-3 break-words text-sm text-neutral-500">{description}</p>
+          </div>
+          <span className="shrink-0 text-xs text-neutral-400">{time}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EmptyPanel({ text }) {
+  return (
+    <div className="mt-4 rounded-[var(--radius-md)] border border-neutral-200 bg-white py-10 text-center">
+      <div className="text-sm text-neutral-400">{text}</div>
     </div>
   );
 }

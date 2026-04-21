@@ -5,6 +5,7 @@ import { bookingsApi } from '../api/bookingsApi';
 import client from '../api/client';
 import { formatCurrency, formatDate } from '../utils/formatters';
 import { getStatusTone } from '../components/uiHelpers';
+import MobileRecordCard, { MobileField } from '../components/MobileRecordCard';
 
 const EMPTY_BOOKING_FORM = {
   customerId: '',
@@ -105,7 +106,38 @@ export default function Bookings() {
         </button>
       </section>
 
-      <section className="data-table-wrapper">
+      <section className="mobile-card-list">
+        {isLoading ? (
+          Array.from({ length: 5 }).map((_, index) => (
+            <div key={index} className="mobile-record-card">
+              <div className="h-5 w-2/3 animate-pulse rounded bg-neutral-100" />
+              <div className="mt-4 grid grid-cols-2 gap-3">
+                {Array.from({ length: 4 }).map((__, cell) => (
+                  <div key={cell} className="h-10 animate-pulse rounded bg-neutral-100" />
+                ))}
+              </div>
+            </div>
+          ))
+        ) : bookings.length === 0 ? (
+          <div className="mobile-record-card text-sm text-neutral-400">No bookings found.</div>
+        ) : (
+          bookings.map((booking) => (
+            <MobileRecordCard
+              key={booking.id}
+              title={booking.bookingRef}
+              subtitle={booking.customer?.name || 'Traveler'}
+              badge={<span className={`badge ${getStatusTone(booking.status)}`}>{booking.status}</span>}
+            >
+              <MobileField label="Trip" value={booking.package?.name || 'Custom'} />
+              <MobileField label="Travel" value={formatDate(booking.travelDate)} />
+              <MobileField label="Total" value={formatCurrency(booking.totalAmount)} />
+              <MobileField label="Advance" value={formatCurrency(booking.advanceAmount)} />
+            </MobileRecordCard>
+          ))
+        )}
+      </section>
+
+      <section className="data-table-wrapper desktop-table">
         <div className="overflow-x-auto">
           <table className="min-w-full text-left">
             <thead>
@@ -147,8 +179,8 @@ export default function Bookings() {
       </section>
 
       {isCreateOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-2xl rounded-[18px] border border-slate-200 bg-white p-6 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.35)]">
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+          <div className="max-h-[92dvh] w-full overflow-y-auto rounded-t-[18px] border border-slate-200 bg-white p-4 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.35)] sm:max-w-2xl sm:rounded-[18px] sm:p-6">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="text-xs font-bold uppercase tracking-[0.22em] text-slate-400">New Booking</p>

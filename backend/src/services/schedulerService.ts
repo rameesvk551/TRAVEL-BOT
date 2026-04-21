@@ -138,6 +138,10 @@ function composeFollowUpMessage(payload, slot, packageName) {
   return `Hello! Still interested in ${destination}${payload.datesLabel ? ` for ${payload.datesLabel}` : ''}? I can help you review the options again, and our team can lock the latest available rate. Reply STOP to opt out.`;
 }
 
+function composeReviewRequestText(customerName, tripName) {
+  return `Welcome back, ${customerName}!\n\nHow was your ${tripName} trip? We'd love to hear about it!\n\nRate your experience from 1-5 and share a quick review.\n\nYour feedback helps us serve you better!`;
+}
+
 async function startReminderWorker() {
   const worker = new Worker(
     'reminders',
@@ -185,11 +189,14 @@ async function startReminderWorker() {
             );
             break;
           case 'REVIEW_REQUEST':
-            await whatsappService.sendTemplateMessage(
+            await whatsappService.sendTemplateOrTextIn24hWindow(
               booking.customer.phone,
-              'review_request',
-              [customerName, booking.notes || 'your trip'],
-              context
+              {
+                templateName: 'review_request',
+                variables: [customerName, booking.notes || 'recent'],
+                text: composeReviewRequestText(customerName, booking.notes || 'recent'),
+                context,
+              }
             );
             await BotSession.update(
               { currentStep: 'REVIEW' },

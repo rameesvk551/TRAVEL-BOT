@@ -121,17 +121,7 @@ export default function Login() {
             />
             <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
             
-            <div className="absolute bottom-16 left-16 right-16 animate-page-in">
-              <div className="inline-flex glass-panel rounded-full px-4 py-1.5 mb-6 text-[11px] font-bold uppercase tracking-[0.2em] text-white/90">
-                Premium Concierge System
-              </div>
-              <h2 className="text-4xl font-extrabold text-white tracking-tight leading-tight mb-4">
-                Orchestrate stays and journeys <br/> with effortless precision.
-              </h2>
-              <p className="text-lg text-neutral-200 max-w-lg font-medium leading-relaxed">
-                The only editorial workspace built specifically for high-end travel teams to manage the modern concierge desk.
-              </p>
-            </div>
+
           </div>
         </section>
 

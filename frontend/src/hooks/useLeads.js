@@ -51,11 +51,19 @@ export function useDeleteLead() {
 }
 
 // FollowUp hooks
+export function useFollowUps(params = {}) {
+  return useQuery({
+    queryKey: ['followups', params],
+    queryFn: () => leadsApi.listFollowUps(params),
+  });
+}
+
 export function useAddFollowUp() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id, data }) => leadsApi.addFollowUp(id, data),
     onSuccess: (_, { id }) => {
+      qc.invalidateQueries({ queryKey: ['followups'] });
       qc.invalidateQueries({ queryKey: ['lead', id] });
     },
   });
@@ -66,6 +74,7 @@ export function useUpdateFollowUp() {
   return useMutation({
     mutationFn: ({ id, followUpId, data }) => leadsApi.updateFollowUp(id, followUpId, data),
     onSuccess: (_, { id }) => {
+      qc.invalidateQueries({ queryKey: ['followups'] });
       qc.invalidateQueries({ queryKey: ['lead', id] });
     },
   });
@@ -76,6 +85,7 @@ export function useDeleteFollowUp() {
   return useMutation({
     mutationFn: ({ id, followUpId }) => leadsApi.deleteFollowUp(id, followUpId),
     onSuccess: (_, { id }) => {
+      qc.invalidateQueries({ queryKey: ['followups'] });
       qc.invalidateQueries({ queryKey: ['lead', id] });
     },
   });

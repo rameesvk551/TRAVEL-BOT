@@ -8,6 +8,7 @@ import {
   useCampaigns, useSendCampaign, useDuplicateCampaign, useDeleteCampaign,
 } from '../hooks/useCampaigns';
 import { formatDateTime } from '../utils/formatters';
+import MobileRecordCard, { MobileField } from '../components/MobileRecordCard';
 
 const STATUS_FILTERS = [
   { key: '', label: 'All' },
@@ -60,7 +61,7 @@ export default function Campaigns() {
   const handleRowClick = (id) => navigate(`/campaigns/${id}`);
 
   return (
-    <div className="p-6 md:p-8 space-y-6 animate-in fade-in">
+    <div className="space-y-6 animate-in fade-in md:p-2">
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
@@ -69,7 +70,7 @@ export default function Campaigns() {
         </div>
         <button
           onClick={() => navigate('/campaigns/new')}
-          className="shell-button-primary self-start"
+          className="shell-button-primary w-full self-start sm:w-auto"
         >
           <Plus className="w-4 h-4" />
           Create Campaign
@@ -140,7 +141,7 @@ export default function Campaigns() {
           </div>
 
           {/* Search */}
-          <div className="relative flex-1 max-w-sm ml-auto">
+          <div className="relative w-full flex-1 sm:ml-auto sm:max-w-sm">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               type="text"
@@ -153,7 +154,50 @@ export default function Campaigns() {
         </div>
 
         {/* Table */}
-        <div className="overflow-x-auto min-h-[300px]">
+        <div className="mobile-card-list min-h-[300px] p-3">
+          {isLoading ? (
+            <div className="mobile-record-card text-center text-sm text-slate-500">Loading campaigns...</div>
+          ) : filtered.length === 0 ? (
+            <div className="mobile-record-card text-center text-slate-500">
+              <Megaphone className="mx-auto mb-3 h-8 w-8 text-slate-400" />
+              <p className="text-base font-bold text-slate-900">{searchQuery ? 'No campaigns match your search' : 'No campaigns yet'}</p>
+              <button onClick={() => navigate('/campaigns/new')} className="mt-4 shell-button-primary">Create Campaign</button>
+            </div>
+          ) : (
+            filtered.map((c) => {
+              const TypeIcon = TYPE_ICONS[c.type] || Megaphone;
+              const readRate = Math.round((c.read / Math.max(1, c.totalRecipients)) * 100);
+              return (
+                <MobileRecordCard
+                  key={c.id}
+                  title={c.name}
+                  subtitle={c.type.replace('_', '-')}
+                  onClick={() => handleRowClick(c.id)}
+                  avatar={<div className="flex h-10 w-10 items-center justify-center rounded-lg bg-slate-100 text-slate-500"><TypeIcon className="h-5 w-5" /></div>}
+                  badge={<span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-bold ${STATUS_BADGE[c.status] || ''}`}>{c.status}</span>}
+                  actions={
+                    <>
+                      {['DRAFT', 'SCHEDULED'].includes(c.status) && (
+                        <button type="button" onClick={() => sendMutation.mutate(c.id)} className="shell-button-secondary flex-1 py-2 text-xs">Send</button>
+                      )}
+                      <button type="button" onClick={() => duplicateMutation.mutate(c.id)} className="shell-button-secondary flex-1 py-2 text-xs">Duplicate</button>
+                      {c.status === 'DRAFT' && (
+                        <button type="button" onClick={() => { if (confirm('Delete this draft campaign?')) deleteMutation.mutate(c.id); }} className="shell-button-secondary flex-1 py-2 text-xs text-rose-600">Delete</button>
+                      )}
+                    </>
+                  }
+                >
+                  <MobileField label="Recipients" value={c.totalRecipients.toLocaleString()} />
+                  <MobileField label="Read Rate" value={c.status === 'DRAFT' || c.totalRecipients === 0 ? '-' : `${readRate}%`} />
+                  <MobileField label="Template" value={c.template?.displayName || 'Custom'} />
+                  <MobileField label="Date" value={c.status === 'SENT' ? formatDateTime(c.sentAt) : c.status === 'SCHEDULED' ? formatDateTime(c.scheduledAt) : formatDateTime(c.createdAt)} />
+                </MobileRecordCard>
+              );
+            })
+          )}
+        </div>
+
+        <div className="hidden min-h-[300px] overflow-x-auto md:block">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-slate-50/80 text-[11px] font-bold uppercase tracking-[0.15em] text-slate-400 border-b border-slate-200">

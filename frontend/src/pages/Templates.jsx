@@ -16,7 +16,7 @@ export default function Templates() {
 
   const { data: prebuiltData, isLoading: prebuiltLoading } = usePrebuiltTemplates({ search: searchQuery });
   const { data: agencyData, isLoading: agencyLoading } = useAgencyTemplates({ search: searchQuery });
-  const { mutate: syncTemplates, isLoading: isSyncing } = useSyncTemplates();
+  const { mutate: syncTemplates, isPending: isSyncing } = useSyncTemplates();
 
   const prebuiltTemplates = prebuiltData?.data || [];
   const agencyTemplates = agencyData?.data || [];
@@ -61,21 +61,21 @@ export default function Templates() {
   return (
     <>
       <div className="w-full space-y-6 page-enter">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="page-heading">Template Messages</h1>
             <p className="page-subtext mt-1">Manage standard replies and marketing broadcasts.</p>
           </div>
           <button
             onClick={handleNewTemplate}
-            className="shell-button-primary"
+            className="shell-button-primary w-full sm:w-auto"
           >
             <Plus className="w-4 h-4 mr-2" />
             New Template
           </button>
         </div>
 
-        <div className="flex items-center gap-4 bg-white p-2 rounded-[var(--radius-md)] border border-neutral-200 shadow-sm">
+        <div className="flex flex-col gap-2 rounded-[var(--radius-md)] border border-neutral-200 bg-white p-2 shadow-sm sm:flex-row sm:items-center sm:gap-4">
           <div className="flex-1 relative">
             <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" />
             <input
@@ -86,7 +86,7 @@ export default function Templates() {
               className="w-full pl-10 pr-4 py-2 bg-transparent border-none focus:ring-0 focus:outline-none text-sm"
             />
           </div>
-          <div className="h-8 w-px bg-neutral-200"></div>
+          <div className="hidden h-8 w-px bg-neutral-200 sm:block"></div>
           <button 
             onClick={handleSync}
             disabled={isSyncing}
@@ -97,7 +97,7 @@ export default function Templates() {
           </button>
         </div>
 
-        <div className="flex border-b border-neutral-200">
+        <div className="flex overflow-x-auto border-b border-neutral-200 hide-scrollbar">
           {['All', 'Draft', 'Pending', 'Approved', 'Rejected'].map((tab) => (
             <button
               key={tab}
@@ -112,10 +112,11 @@ export default function Templates() {
           ))}
         </div>
 
-        <div className="flex gap-8 items-start">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:gap-8">
           {/* Categories Sidebar */}
-          <div className="w-64 shrink-0 space-y-1">
-            <p className="eyebrow mb-3 px-3">Categories</p>
+          <div className="w-full shrink-0 space-y-2 lg:w-64 lg:space-y-1">
+            <p className="eyebrow px-1 lg:mb-3 lg:px-3">Categories</p>
+            <div className="flex gap-2 overflow-x-auto lg:block lg:space-y-1 hide-scrollbar">
             {[
               { id: 'ALL', name: 'All Templates', icon: MessageSquare },
               { id: 'MARKETING', name: 'Marketing', icon: MessageSquare },
@@ -136,6 +137,7 @@ export default function Templates() {
                 </button>
               );
             })}
+            </div>
           </div>
 
           {/* Template Grid */}
@@ -182,7 +184,7 @@ export default function Templates() {
 
               <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
                 {agencyTemplates
-                  .filter(t => activeTab === 'All' || t.status.toLowerCase() === activeTab.toLowerCase())
+                  .filter(t => activeTab === 'All' || String(t.status || 'DRAFT').toLowerCase() === activeTab.toLowerCase())
                   .filter(t => categoryFilter === 'ALL' || t.category === categoryFilter)
                   .map(t => (
                     <TemplateCard
@@ -245,6 +247,11 @@ function TemplateCard({ template, isPrebuilt, onPreview, onAction }) {
         </div>
 
         <p className="text-sm text-neutral-500 line-clamp-3 mt-3">{template.body?.replace(/{{[1-9]}}/g, '___')}</p>
+        {template.status === 'REJECTED' && template.rejectionReason && (
+          <p className="rounded-[var(--radius-sm)] bg-rose-50 px-3 py-2 text-xs font-medium text-rose-700 line-clamp-2">
+            {template.rejectionReason}
+          </p>
+        )}
       </div>
 
       <div className="flex gap-2 w-full pt-4 border-t border-neutral-100 mt-auto">

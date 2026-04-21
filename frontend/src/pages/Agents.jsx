@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { PlusIcon, PencilIcon, TrashIcon } from '@heroicons/react/24/outline';
 import { agentsApi } from '../api/agentsApi';
 import { useAuthStore } from '../store/authStore';
+import MobileRecordCard, { MobileField } from '../components/MobileRecordCard';
 
 export default function Agents() {
   const qc = useQueryClient();
@@ -59,7 +60,7 @@ export default function Agents() {
 
   return (
     <div className="w-full space-y-4">
-      <section className="flex items-end justify-between border-b border-neutral-200 pb-4">
+      <section className="flex flex-col gap-4 border-b border-neutral-200 pb-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="page-heading">Users</h1>
           <p className="page-subtext">Manage team members and their access levels.</p>
@@ -78,7 +79,44 @@ export default function Agents() {
         </div>
       ) : null}
 
-      <div className="data-table-wrapper">
+      <div className="mobile-card-list">
+        {isLoading ? (
+          Array.from({ length: 6 }).map((_, index) => (
+            <div key={index} className="mobile-record-card">
+              <div className="h-5 w-1/2 animate-pulse rounded bg-slate-100" />
+              <div className="mt-4 grid grid-cols-2 gap-3">
+                {Array.from({ length: 4 }).map((__, cell) => <div key={cell} className="h-10 animate-pulse rounded bg-slate-100" />)}
+              </div>
+            </div>
+          ))
+        ) : agents.length === 0 ? (
+          <div className="mobile-record-card text-sm text-slate-500">No agents yet.</div>
+        ) : (
+          agents.map((agent) => (
+            <MobileRecordCard
+              key={agent.id}
+              title={agent.name}
+              subtitle={agent.email}
+              badge={<span className={`badge ${agent.isOnline ? 'bg-emerald-50 text-emerald-700' : 'bg-neutral-100 text-neutral-500'}`}>{agent.isOnline ? 'Online' : 'Offline'}</span>}
+              actions={canManageAgents ? (
+                <>
+                  <button type="button" onClick={() => openEdit(agent)} className="shell-button-secondary flex-1 py-2 text-xs">
+                    <PencilIcon className="h-4 w-4" /> Edit
+                  </button>
+                  <button type="button" onClick={() => deleteMutation.mutate(agent.id)} className="shell-button-secondary flex-1 py-2 text-xs text-rose-600">
+                    <TrashIcon className="h-4 w-4" /> Deactivate
+                  </button>
+                </>
+              ) : null}
+            >
+              <MobileField label="Phone" value={agent.phone || '-'} />
+              <MobileField label="Role" value={agent.role} />
+            </MobileRecordCard>
+          ))
+        )}
+      </div>
+
+      <div className="data-table-wrapper desktop-table">
         <div className="overflow-x-auto">
           <table className="min-w-full text-left">
             <thead>
@@ -138,8 +176,8 @@ export default function Agents() {
       </div>
 
       {(showCreateModal || editingAgent) ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-[32px] border border-white/80 bg-white p-6 shadow-[0_34px_90px_-50px_rgba(15,23,42,0.55)]">
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/45 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+          <div className="max-h-[92dvh] w-full overflow-y-auto rounded-t-[24px] border border-white/80 bg-white p-5 shadow-[0_34px_90px_-50px_rgba(15,23,42,0.55)] sm:max-w-md sm:rounded-[32px] sm:p-6">
             <h3 className="text-xl font-extrabold text-slate-950">{editingAgent ? 'Edit User' : 'Add User'}</h3>
             <form onSubmit={handleSubmit} className="mt-6 space-y-4">
               <div>

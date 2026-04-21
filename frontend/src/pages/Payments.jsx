@@ -3,6 +3,7 @@ import { CreditCardIcon } from '@heroicons/react/24/outline';
 import client from '../api/client';
 import { formatCurrency, formatDate } from '../utils/formatters';
 import PaymentBadge from '../components/PaymentBadge';
+import MobileRecordCard, { MobileField } from '../components/MobileRecordCard';
 
 export default function Payments() {
   const { data, isLoading } = useQuery({
@@ -16,7 +17,7 @@ export default function Payments() {
     <div className="w-full space-y-5">
       <section>
         <p className="eyebrow">Collections</p>
-        <h1 className="mt-2 text-5xl font-extrabold tracking-tight text-slate-950">Payments</h1>
+        <h1 className="mt-2 text-[34px] font-extrabold leading-tight tracking-tight text-slate-950 sm:text-5xl">Payments</h1>
         <p className="mt-2 text-sm text-slate-500">Track deposits, balances, and payment status across every active booking.</p>
       </section>
 
@@ -25,7 +26,39 @@ export default function Payments() {
           <h2 className="text-xl font-extrabold text-slate-950">Payment overview</h2>
         </div>
 
-        <div className="overflow-x-auto">
+        <div className="mobile-card-list p-3">
+          {isLoading ? (
+            Array.from({ length: 6 }).map((_, index) => (
+              <div key={index} className="mobile-record-card">
+                <div className="h-5 w-2/3 animate-pulse rounded bg-slate-100" />
+                <div className="mt-4 grid grid-cols-2 gap-3">
+                  {Array.from({ length: 4 }).map((__, cell) => <div key={cell} className="h-10 animate-pulse rounded bg-slate-100" />)}
+                </div>
+              </div>
+            ))
+          ) : bookings.length === 0 ? (
+            <div className="mobile-record-card text-center text-sm text-slate-500">
+              <CreditCardIcon className="mx-auto mb-3 h-8 w-8 text-slate-300" />
+              No payment records yet.
+            </div>
+          ) : (
+            bookings.map((booking) => (
+              <MobileRecordCard
+                key={booking.id}
+                title={booking.bookingRef}
+                subtitle={booking.customer?.name || 'Traveler'}
+                badge={<PaymentBadge status={booking.status} />}
+              >
+                <MobileField label="Total" value={formatCurrency(booking.totalAmount)} />
+                <MobileField label="Paid" value={formatCurrency(booking.advancePaid)} />
+                <MobileField label="Balance" value={formatCurrency(booking.totalAmount - booking.advancePaid)} />
+                <MobileField label="Travel" value={formatDate(booking.travelDate)} />
+              </MobileRecordCard>
+            ))
+          )}
+        </div>
+
+        <div className="hidden overflow-x-auto md:block">
           <table className="min-w-full text-left">
             <thead className="bg-slate-50/80">
               <tr>

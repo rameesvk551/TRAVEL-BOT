@@ -22,7 +22,7 @@ export default function PackageForm() {
   const isEdit = !!id;
 
   const [form, setForm] = useState({
-    name: '', duration: '', destinations: '', basePrice: '',
+    name: '', category: 'DOMESTIC', duration: '', destinations: '', basePrice: '',
     inclusions: '', exclusions: '', imageUrl: '',
   });
   const [imageFile, setImageFile] = useState(null);
@@ -53,7 +53,7 @@ export default function PackageForm() {
   useEffect(() => {
     if (!isEdit) {
       setForm({
-        name: '', duration: '', destinations: '', basePrice: '',
+        name: '', category: 'DOMESTIC', duration: '', destinations: '', basePrice: '',
         inclusions: '', exclusions: '', imageUrl: '',
       });
       setImageFile(null);
@@ -66,6 +66,7 @@ export default function PackageForm() {
 
     setForm({
       name: packageData.name || '',
+      category: packageData.category || 'DOMESTIC',
       duration: packageData.duration || '',
       destinations: packageData.destinations?.join(', ') || '',
       basePrice: packageData.basePrice ? String(packageData.basePrice / 100) : '',
@@ -106,6 +107,7 @@ export default function PackageForm() {
 
       await saveMutation.mutateAsync({
         name: form.name,
+        category: form.category,
         duration: form.duration,
         destinations: form.destinations.split(',').map((d) => d.trim()).filter(Boolean),
         basePrice: Number.parseInt(form.basePrice, 10) * 100,
@@ -236,7 +238,19 @@ export default function PackageForm() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                <div>
+                  <label className="mb-1.5 block text-[13px] font-semibold text-slate-700">Category *</label>
+                  <select
+                    value={form.category}
+                    onChange={(e) => update('category', e.target.value)}
+                    className="shell-input-rect w-full"
+                    required
+                  >
+                    <option value="DOMESTIC">Domestic</option>
+                    <option value="INTERNATIONAL">International</option>
+                  </select>
+                </div>
                 <div>
                   <label className="mb-1.5 block text-[13px] font-semibold text-slate-700">Duration</label>
                   <div className="relative">

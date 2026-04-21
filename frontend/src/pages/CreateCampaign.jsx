@@ -319,19 +319,19 @@ export default function CreateCampaign() {
 
   // ── Render ──
   return (
-    <div className="min-h-[calc(100vh-48px)] flex flex-col campaign-wizard-page">
+    <div className="flex min-h-[calc(100dvh-80px)] flex-col campaign-wizard-page">
 
       {/* ── Decorative background orbs ── */}
-      <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
+      <div className="fixed inset-0 pointer-events-none z-0 hidden overflow-hidden md:block">
         <div className="absolute -top-32 -right-32 w-96 h-96 rounded-full bg-gradient-to-br from-teal-400/8 to-[#f5f5f5]0/5 blur-3xl animate-pulse-soft" />
         <div className="absolute -bottom-48 -left-48 w-[500px] h-[500px] rounded-full bg-gradient-to-tr from-indigo-400/6 to-violet-500/4 blur-3xl animate-pulse-soft" style={{ animationDelay: '1s' }} />
       </div>
 
       {/* ── Page Header ── */}
-      <div className="relative z-10 flex items-center gap-4 mb-5">
+      <div className="relative z-10 mb-4 flex items-center gap-3 sm:mb-5 sm:gap-4">
         <button
           onClick={() => navigate('/campaigns')}
-          className="group flex items-center justify-center w-11 h-11 rounded-2xl border border-slate-200/80 bg-white/80 backdrop-blur-sm text-slate-400 hover:bg-white hover:text-slate-700 hover:border-slate-300 hover:shadow-lg hover:shadow-slate-200/50 transition-all duration-300"
+          className="group flex h-11 w-11 shrink-0 items-center justify-center rounded-[var(--radius-md)] border border-slate-200/80 bg-white/80 text-slate-400 backdrop-blur-sm transition-all duration-300 hover:bg-white hover:text-slate-700"
         >
           <ArrowLeft className="w-5 h-5 group-hover:-translate-x-0.5 transition-transform duration-200" />
         </button>
@@ -347,11 +347,11 @@ export default function CreateCampaign() {
       </div>
 
       {/* ── Main Card ── */}
-      <div className="relative z-10 flex-1 flex flex-col rounded-2xl border border-slate-200/80 bg-white/90 backdrop-blur-sm shadow-[0_8px_40px_-12px_rgba(15,23,42,0.12)] overflow-hidden">
+      <div className="relative z-10 flex flex-1 flex-col overflow-hidden rounded-[var(--radius-md)] border border-slate-200/80 bg-white/90 shadow-[0_8px_40px_-12px_rgba(15,23,42,0.12)] backdrop-blur-sm sm:rounded-2xl">
 
         {/* ── Step Indicator Bar ── */}
-        <div className="relative px-6 py-5 border-b border-slate-100 bg-gradient-to-r from-slate-50/80 via-white to-slate-50/80">
-          <div className="flex items-center justify-between max-w-2xl mx-auto">
+        <div className="relative overflow-x-auto border-b border-slate-100 bg-gradient-to-r from-slate-50/80 via-white to-slate-50/80 px-4 py-4 sm:px-6 sm:py-5 hide-scrollbar">
+          <div className="mx-auto flex min-w-[560px] items-center justify-between sm:max-w-2xl">
             {STEPS.map((s, i) => {
               const Icon = s.icon;
               const isActive = i === step;
@@ -404,7 +404,7 @@ export default function CreateCampaign() {
         </div>
 
         {/* ── Step Content ── */}
-        <div className="flex-1 overflow-y-auto p-6 lg:p-8">
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
           {/* ───── Step 1: Details ───── */}
           {step === 0 && (
             <div className="max-w-2xl mx-auto space-y-6 animate-fade-in">
@@ -602,7 +602,7 @@ export default function CreateCampaign() {
               </div>
 
               {/* Audience Mode Cards */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+              <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
                 {AUDIENCE_MODES.map((m) => {
                   const Icon = m.icon;
                   const isActive = audienceMode === m.value;
@@ -925,10 +925,10 @@ export default function CreateCampaign() {
                 <p className="text-sm text-slate-500 mt-0.5">Choose immediate delivery or schedule for the perfect time.</p>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <button
                   onClick={() => setFormData({ ...formData, scheduleMode: 'now' })}
-                  className={`group relative flex flex-col items-center gap-4 rounded-2xl border-2 p-8 transition-all duration-300 overflow-hidden ${
+                    className={`group relative flex flex-col items-center gap-4 overflow-hidden rounded-2xl border-2 p-5 transition-all duration-300 sm:p-8 ${
                     formData.scheduleMode === 'now'
                       ? 'border-[#2d2d2d] bg-gradient-to-b from-[#f0f0f0] to-[#f5f5f5]/60 shadow-xl shadow-[#e5e5e5] scale-[1.01]'
                       : 'border-slate-200/80 hover:border-slate-300 hover:shadow-lg'
@@ -950,7 +950,7 @@ export default function CreateCampaign() {
 
                 <button
                   onClick={() => setFormData({ ...formData, scheduleMode: 'scheduled' })}
-                  className={`group relative flex flex-col items-center gap-4 rounded-2xl border-2 p-8 transition-all duration-300 overflow-hidden ${
+                  className={`group relative flex flex-col items-center gap-4 overflow-hidden rounded-2xl border-2 p-5 transition-all duration-300 sm:p-8 ${
                     formData.scheduleMode === 'scheduled'
                       ? 'border-[#2d2d2d] bg-gradient-to-b from-[#f0f0f0] to-[#f5f5f5]/60 shadow-xl shadow-[#e5e5e5] scale-[1.01]'
                       : 'border-slate-200/80 hover:border-slate-300 hover:shadow-lg'
@@ -1038,7 +1038,7 @@ export default function CreateCampaign() {
         </div>
 
         {/* ── Footer ── */}
-        <div className="relative flex items-center justify-between border-t border-slate-100 px-6 py-4 bg-gradient-to-r from-white via-slate-50/30 to-white">
+        <div className="relative flex items-center justify-between gap-3 border-t border-slate-100 bg-gradient-to-r from-white via-slate-50/30 to-white px-4 py-3 sm:px-6 sm:py-4">
           <button
             onClick={goBack}
             className="group flex items-center gap-2 rounded-xl border border-slate-200/80 bg-white/80 backdrop-blur-sm px-5 py-2.5 text-sm font-bold text-slate-600 hover:bg-white hover:shadow-md hover:border-slate-300 transition-all duration-300"
