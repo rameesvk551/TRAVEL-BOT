@@ -962,14 +962,25 @@ async function syncTemplatesWithMeta(agencyId) {
 function buildTemplateComponents(template) {
   const components = [];
   const headerType = String(template.headerType || 'NONE').toUpperCase();
+  const variableSamples = Array.isArray(template.sampleVariables) ? template.sampleVariables : [];
 
   if (headerType !== 'NONE') {
     const header = { type: 'HEADER', format: headerType };
-    if (headerType === 'TEXT') header.text = template.headerContent || '';
+    if (headerType === 'TEXT') {
+      header.text = template.headerContent || '';
+      if (countTemplateVariables(header.text) > 0 && variableSamples.length > 0) {
+        header.example = { header_text: [variableSamples[0]] };
+      }
+    }
     components.push(header);
   }
 
-  components.push({ type: 'BODY', text: template.body || '' });
+  const body = { type: 'BODY', text: template.body || '' };
+  const bodyVariableCount = countTemplateVariables(body.text);
+  if (bodyVariableCount > 0 && variableSamples.length >= bodyVariableCount) {
+    body.example = { body_text: [variableSamples.slice(0, bodyVariableCount)] };
+  }
+  components.push(body);
 
   if (template.footer) {
     components.push({ type: 'FOOTER', text: template.footer });
@@ -988,6 +999,10 @@ function buildTemplateComponents(template) {
   }
 
   return components;
+}
+
+function countTemplateVariables(text = '') {
+  return new Set(String(text).match(/{{\s*\d+\s*}}/g) || []).size;
 }
 
 async function upsertTemplateWithMeta(agencyId, template, { mode = 'upsert' } = {}) {
