@@ -20,11 +20,15 @@ export default function Templates() {
 
   const prebuiltTemplates = prebuiltData?.data || [];
   const agencyTemplates = agencyData?.data || [];
+  const filteredAgencyTemplates = agencyTemplates
+    .filter(t => activeTab === 'All' || String(t.status || 'DRAFT').toLowerCase() === activeTab.toLowerCase())
+    .filter(t => categoryFilter === 'ALL' || t.category === categoryFilter);
 
   const handleSync = () => {
     syncTemplates(null, {
       onSuccess: (res) => {
         toast.success(`Successfully synced ${res.data?.count || 0} templates from Meta`);
+        setActiveTab('Approved');
       },
       onError: (err) => {
         toast.error(err.response?.data?.error || 'Failed to sync templates');
@@ -183,9 +187,7 @@ export default function Templates() {
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
-                {agencyTemplates
-                  .filter(t => activeTab === 'All' || String(t.status || 'DRAFT').toLowerCase() === activeTab.toLowerCase())
-                  .filter(t => categoryFilter === 'ALL' || t.category === categoryFilter)
+                {filteredAgencyTemplates
                   .map(t => (
                     <TemplateCard
                       key={t.id}
@@ -196,9 +198,9 @@ export default function Templates() {
                     />
                   ))}
 
-                {agencyTemplates.length === 0 && (
+                {filteredAgencyTemplates.length === 0 && (
                   <div className="col-span-full py-12 text-center text-neutral-400 border-2 border-dashed border-neutral-200 rounded-[var(--radius-lg)]">
-                    No templates found matching your criteria.
+                    No {activeTab === 'All' ? '' : activeTab.toLowerCase()} templates found matching your criteria.
                   </div>
                 )}
               </div>
