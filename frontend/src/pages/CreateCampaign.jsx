@@ -474,7 +474,7 @@ export default function CreateCampaign() {
                   Message Content
                 </div>
                 <h2 className="text-lg font-bold text-slate-900">Choose a template or compose your message</h2>
-                <p className="text-sm text-slate-500 mt-0.5">Select an approved template for reliable delivery, or write a custom message.</p>
+                <p className="text-sm text-slate-500 mt-0.5">Select a Meta-approved saved template for reliable delivery, or write a custom message.</p>
               </div>
 
               <div className="relative">
@@ -528,6 +528,11 @@ export default function CreateCampaign() {
                     </button>
                   );
                 })}
+                {filteredTemplates.length === 0 && (
+                  <div className="col-span-full rounded-2xl border border-dashed border-slate-200 bg-slate-50/70 px-5 py-8 text-center text-sm text-slate-500">
+                    No Meta-approved saved templates found.
+                  </div>
+                )}
               </div>
 
               <div className="border-t border-slate-100 pt-5">
