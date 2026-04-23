@@ -12,6 +12,9 @@ import Bookings from './pages/Bookings';
 import Customers from './pages/Customers';
 import Packages from './pages/Packages';
 import PackageForm from './pages/PackageForm';
+import Properties from './pages/Properties';
+import PropertyDetails from './pages/PropertyDetails';
+import PropertyForm from './pages/PropertyForm';
 import Payments from './pages/Payments';
 import Analytics from './pages/Analytics';
 import Settings from './pages/Settings';
@@ -24,6 +27,7 @@ import CreateCampaign from './pages/CreateCampaign';
 import AdsDashboard from './pages/AdsDashboard';
 import CreateAd from './pages/CreateAd';
 import Reviews from './pages/Reviews';
+import SocialMedia from './pages/SocialMedia';
 import Agents from './pages/Agents';
 import Sidebar from './components/Sidebar';
 import AppTopbar from './components/AppTopbar';
@@ -91,6 +95,10 @@ export default function App() {
                   <Route path="/packages" element={<Packages />} />
                   <Route path="/packages/new" element={<PackageForm />} />
                   <Route path="/packages/:id/edit" element={<PackageForm />} />
+                  <Route path="/properties" element={<Properties />} />
+                  <Route path="/properties/new" element={<PropertyForm />} />
+                  <Route path="/properties/:id/edit" element={<PropertyForm />} />
+                  <Route path="/properties/:id" element={<PropertyDetails />} />
                   <Route path="/itineraries" element={<Itineraries />} />
                   <Route path="/itineraries/new" element={<ItineraryBuilder />} />
                   <Route path="/itineraries/:id/edit" element={<ItineraryBuilder />} />
@@ -101,6 +109,7 @@ export default function App() {
                   <Route path="/campaigns/:id" element={<CampaignDetail />} />
                   <Route path="/ads" element={<AdsDashboard />} />
                   <Route path="/ads/new" element={<CreateAd />} />
+                  <Route path="/social" element={<SocialMedia />} />
                   <Route path="/reviews" element={<Reviews />} />
                   <Route path="/payments" element={<Payments />} />
                   <Route path="/analytics" element={<Analytics />} />

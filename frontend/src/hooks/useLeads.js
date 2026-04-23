@@ -42,6 +42,17 @@ export function useUpdateLead() {
   });
 }
 
+export function useBulkAssignLeads() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ leadIds, agentId }) => leadsApi.bulkAssign(leadIds, agentId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['leads'] });
+      qc.invalidateQueries({ queryKey: ['lead'] });
+    },
+  });
+}
+
 export function useDeleteLead() {
   const qc = useQueryClient();
   return useMutation({

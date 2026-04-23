@@ -109,6 +109,28 @@ async function sendTenantWhatsAppMedia(tenantToken, payload) {
   return response.data;
 }
 
+async function sendTenantInstagramMessage(tenantToken, payload) {
+  const client = getTenantClient(tenantToken);
+  // payload expects { tenantId, accountId?, recipientId, text }
+  const response = await client.post('/messages/instagram/send', payload, {
+    headers: payload.tenantId ? { 'x-tenant-id': payload.tenantId } : undefined,
+  });
+  return response.data;
+}
+
+async function sendTenantInstagramPrivateReply(tenantToken, payload) {
+  const client = getTenantClient(tenantToken);
+  // payload expects { accountId, commentId, text, quickReplies? }
+  const response = await client.post(
+    `/instagram/comments/${encodeURIComponent(payload.accountId)}/${encodeURIComponent(payload.commentId)}/private-reply`,
+    {
+      text: payload.text,
+      quickReplies: payload.quickReplies || [],
+    }
+  );
+  return response.data;
+}
+
 async function sendTenantWhatsAppReadTyping(tenantToken, payload) {
   const client = getTenantClient(tenantToken);
   const response = await client.post('/whatsapp/messages/read-typing', payload);
@@ -151,6 +173,24 @@ async function syncTenantWhatsAppTemplates(tenantToken) {
   return response.data;
 }
 
+async function getTenantInstagramConnection(tenantToken) {
+  const client = getTenantClient(tenantToken);
+  const response = await client.get('/instagram/connection');
+  return response.data;
+}
+
+async function connectTenantInstagram(tenantToken, payload) {
+  const client = getTenantClient(tenantToken);
+  const response = await client.post('/instagram/connect', payload);
+  return response.data;
+}
+
+async function disconnectTenantInstagram(tenantToken, accountId) {
+  const client = getTenantClient(tenantToken);
+  const response = await client.delete(`/instagram/disconnect/${encodeURIComponent(accountId)}`);
+  return response.data;
+}
+
 module.exports = {
   findTenantByEmail,
   createTenant,
@@ -161,6 +201,8 @@ module.exports = {
   sendTenantWhatsAppMessage,
   sendTenantWhatsAppInteractive,
   sendTenantWhatsAppMedia,
+  sendTenantInstagramMessage,
+  sendTenantInstagramPrivateReply,
   sendTenantWhatsAppReadTyping,
   getTenantWhatsAppTemplates,
   createTenantWhatsAppTemplate,
@@ -168,4 +210,7 @@ module.exports = {
   submitTenantWhatsAppTemplate,
   deleteTenantWhatsAppTemplate,
   syncTenantWhatsAppTemplates,
+  getTenantInstagramConnection,
+  connectTenantInstagram,
+  disconnectTenantInstagram,
 };

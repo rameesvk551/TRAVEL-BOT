@@ -8,6 +8,7 @@ export const leadsApi = {
   create: (data) => client.post('/leads', data).then((r) => r.data),
   update: (id, data) => client.patch(`/leads/${id}`, data).then((r) => r.data),
   delete: (id) => client.delete(`/leads/${id}`).then((r) => r.data),
+  bulkAssign: (leadIds, agentId) => client.post('/leads/bulk-assign', { leadIds, agentId }).then((r) => r.data),
 
   // Follow-ups
   listFollowUps: (params) => client.get('/leads/followups', { params }).then((r) => r.data),

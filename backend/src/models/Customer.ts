@@ -26,9 +26,9 @@ module.exports = (sequelize) => {
       comment: 'Collected during lead capture',
     },
     phone: {
-      type: DataTypes.STRING(20),
+      type: DataTypes.STRING(50),
       allowNull: false,
-      comment: 'E.164 format: +91XXXXXXXXXX',
+      comment: 'E.164 format: +91XXXXXXXXXX or Instagram ID: ig_XXXXX',
     },
     email: {
       type: DataTypes.STRING(255),

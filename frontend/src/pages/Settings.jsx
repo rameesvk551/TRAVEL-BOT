@@ -10,6 +10,7 @@ import {
   LinkIcon,
   PhoneIcon,
   XMarkIcon,
+  CameraIcon,
 } from '@heroicons/react/24/outline';
 
 function loadFacebookSdk(appId) {
@@ -81,6 +82,35 @@ function runEmbeddedSignup(embeddedSignup) {
 
       resolve(code);
     }, loginOptions);
+  }));
+}
+
+function runInstagramSignup(appId) {
+  return loadFacebookSdk(appId).then((FB) => new Promise((resolve, reject) => {
+    FB.login((response) => {
+      const authResponse = response?.authResponse;
+      if (!authResponse?.accessToken) {
+        reject(new Error('Facebook login was cancelled or no access token was returned'));
+        return;
+      }
+      resolve({
+        accessToken: authResponse.accessToken,
+        igUserId: authResponse.userID,
+      });
+    }, {
+      scope: [
+        'instagram_business_basic',
+        'instagram_business_manage_messages',
+        'instagram_business_content_publish',
+        'instagram_business_manage_insights',
+        'instagram_business_manage_comments',
+        'pages_show_list',
+        'pages_manage_metadata',
+        'pages_manage_ads',
+        'ads_read',
+      ].join(','),
+      return_scopes: true,
+    });
   }));
 }
 
@@ -177,6 +207,51 @@ export default function Settings() {
       setSuccess('');
     },
   });
+
+  const instagramConnectionQuery = useQuery({
+    queryKey: ['instagram-connection'],
+    queryFn: () => client.get('/agencies/me/instagram-connection').then((response) => response.data.data),
+  });
+
+  const connectIgMutation = useMutation({
+    mutationFn: (payload) => client.post('/agencies/me/instagram-connection/connect', payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['instagram-connection'] });
+      setSuccess('Instagram connected successfully.');
+      setError('');
+    },
+    onError: (err) => {
+      setError(err.response?.data?.error || err.response?.data?.message || 'Failed to connect Instagram');
+      setSuccess('');
+    },
+  });
+
+  const disconnectIgMutation = useMutation({
+    mutationFn: (accountId) => client.delete(`/agencies/me/instagram-connection/${encodeURIComponent(accountId)}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['instagram-connection'] });
+      setSuccess('Instagram disconnected.');
+      setError('');
+    },
+    onError: (err) => {
+      setError(err.response?.data?.error || err.response?.data?.message || 'Failed to disconnect Instagram');
+      setSuccess('');
+    },
+  });
+
+  const handleConnectInstagram = async () => {
+    try {
+      // Using WhatsApp connect to trigger Marketing OS tenant handshake and get appId
+      const { data } = await client.post('/agencies/me/whatsapp-connection/connect');
+      const appId = data?.data?.embeddedSignup?.appId;
+      if (!appId) throw new Error('Facebook App ID not found in Marketing OS config');
+
+      const { accessToken, igUserId } = await runInstagramSignup(appId);
+      connectIgMutation.mutate({ accessToken, igUserId });
+    } catch (err) {
+      setError(err.message || 'Failed to start Instagram connection');
+    }
+  };
 
   const handleSubmit = (event) => {
     event.preventDefault();
@@ -453,6 +528,57 @@ export default function Settings() {
               3. TravelBot syncs the approved phone number, Meta IDs, and final status back into this workspace.
             </div>
           </article>
+
+          <article className="shell-panel p-6">
+            <div className="flex items-center gap-3">
+              <CameraIcon className="h-5 w-5 text-[#2d2d2d]" />
+              <h2 className="text-xl font-extrabold text-slate-950">Instagram Connection</h2>
+            </div>
+            <p className="mt-3 text-sm text-slate-500">Connect your Instagram Professional accounts to sync DMs and comments directly into TravelBot.</p>
+
+            <div className="mt-6">
+              {instagramConnectionQuery.data?.accounts?.length > 0 ? (
+                <div className="grid gap-4">
+                  {instagramConnectionQuery.data.accounts.map(acc => (
+                    <div key={acc.id} className="shell-panel-soft p-4 flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        {acc.profilePictureUrl && <img src={acc.profilePictureUrl} alt="" className="w-10 h-10 rounded-full" />}
+                        <div>
+                          <p className="text-sm font-semibold text-slate-900">{acc.name || acc.username}</p>
+                          <p className="text-xs text-slate-500">@{acc.username}</p>
+                        </div>
+                      </div>
+                      <button 
+                        type="button"
+                        className="text-xs text-rose-600 hover:text-rose-700 font-semibold"
+                        onClick={() => disconnectIgMutation.mutate(acc.id)}
+                        disabled={disconnectIgMutation.isPending}
+                      >
+                        Disconnect
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-8 text-center">
+                  <p className="text-sm text-slate-500">No Instagram accounts connected.</p>
+                </div>
+              )}
+            </div>
+
+            <div className="mt-6 flex flex-wrap gap-3">
+              <button 
+                type="button" 
+                onClick={handleConnectInstagram} 
+                disabled={connectIgMutation.isPending} 
+                className="shell-button-primary"
+              >
+                <LinkIcon className="h-4 w-4" />
+                {connectIgMutation.isPending ? 'Connecting...' : 'Connect Instagram'}
+              </button>
+            </div>
+          </article>
+
 
           <button type="submit" disabled={updateMutation.isPending} className="shell-button-primary w-full">
             {updateMutation.isPending ? 'Saving...' : 'Save Settings'}

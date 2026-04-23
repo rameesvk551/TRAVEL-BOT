@@ -72,6 +72,33 @@ router.post(
 );
 
 /**
+ * GET /api/agencies/me/instagram-connection - Get Instagram connection status
+ */
+router.get('/me/instagram-connection', authenticate, requirePermission(PERMISSIONS.AGENCY_VIEW), agencyController.getInstagramConnection);
+
+/**
+ * POST /api/agencies/me/instagram-connection/connect - Connect Instagram account
+ */
+router.post(
+  '/me/instagram-connection/connect',
+  authenticate,
+  requireRole('ADMIN'),
+  requirePermission(PERMISSIONS.AGENCY_MANAGE),
+  agencyController.connectInstagram
+);
+
+/**
+ * DELETE /api/agencies/me/instagram-connection/:accountId - Disconnect Instagram account
+ */
+router.delete(
+  '/me/instagram-connection/:accountId',
+  authenticate,
+  requireRole('ADMIN'),
+  requirePermission(PERMISSIONS.AGENCY_MANAGE),
+  agencyController.disconnectInstagram
+);
+
+/**
  * PATCH /api/agencies/me - Update agency settings (ADMIN only)
  */
 router.patch('/me', authenticate, requireRole('ADMIN'), requirePermission(PERMISSIONS.AGENCY_MANAGE), validateBody(updateAgencySchema), agencyController.updateMe);

@@ -28,6 +28,15 @@ export function useCampaignStats(id) {
   });
 }
 
+export function useCampaignReport(id) {
+  return useQuery({
+    queryKey: ['campaign-report', id],
+    queryFn: () => campaignsApi.getReport(id),
+    enabled: !!id,
+    refetchInterval: 15000,
+  });
+}
+
 export function useCampaignAnalytics(params = {}) {
   return useQuery({
     queryKey: ['campaign-analytics', params],

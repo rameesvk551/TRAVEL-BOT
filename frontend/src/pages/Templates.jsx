@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plus, Search, MessageSquare, Image as ImageIcon, FileText, CheckCircle, Clock, AlertCircle, RefreshCw } from 'lucide-react';
+import { Plus, Search, MessageSquare, Image as ImageIcon, FileText, CheckCircle, Clock, AlertCircle, RefreshCw, Layers } from 'lucide-react';
 import { usePrebuiltTemplates, useAgencyTemplates, useSyncTemplates } from '../hooks/useTemplates';
 import TemplateDetailDrawer from '../components/TemplateDetailDrawer';
 import toast from 'react-hot-toast';
@@ -221,6 +221,9 @@ export default function Templates() {
 }
 
 function TemplateCard({ template, isPrebuilt, onPreview, onAction }) {
+  const isCarousel = String(template.templateType || '').toUpperCase() === 'CAROUSEL';
+  const carouselCardCount = Array.isArray(template.carouselCards) ? template.carouselCards.length : 0;
+
   return (
     <div
       className="section-card p-5 hover:shadow-md transition-shadow flex flex-col items-start gap-4 h-full relative cursor-pointer group"
@@ -241,11 +244,17 @@ function TemplateCard({ template, isPrebuilt, onPreview, onAction }) {
         <h3 className="font-bold text-neutral-900">{template.displayName}</h3>
         <div className="flex flex-wrap gap-2 text-xs font-medium uppercase tracking-wider">
           <span className="flex items-center gap-1 text-neutral-600">
-            {template.headerType !== 'NONE' ? <ImageIcon className="w-3 h-3" /> : <MessageSquare className="w-3 h-3" />}
-            {template.headerType === 'NONE' ? 'TEXT' : template.headerType}
+            {isCarousel ? <Layers className="w-3 h-3" /> : template.headerType !== 'NONE' ? <ImageIcon className="w-3 h-3" /> : <MessageSquare className="w-3 h-3" />}
+            {isCarousel ? 'CAROUSEL' : template.headerType === 'NONE' ? 'TEXT' : template.headerType}
           </span>
           <span className="text-neutral-300">•</span>
           <span className="text-neutral-400">{template.category}</span>
+          {isCarousel && (
+            <>
+              <span className="text-neutral-300">•</span>
+              <span className="text-neutral-400">{carouselCardCount} cards</span>
+            </>
+          )}
         </div>
 
         <p className="text-sm text-neutral-500 line-clamp-3 mt-3">{template.body?.replace(/{{[1-9]}}/g, '___')}</p>

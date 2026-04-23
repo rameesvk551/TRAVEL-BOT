@@ -20,14 +20,27 @@ export default function TemplateDetailDrawer({
    onClose,
    isPrebuilt: initialIsPrebuilt
 }) {
+   const newCarouselCard = () => ({
+      title: '',
+      body: '',
+      mediaType: 'IMAGE',
+      mediaUrl: '',
+      buttons: [
+         { type: 'QUICK_REPLY', text: 'Enquiry' },
+         { type: 'QUICK_REPLY', text: 'See Others' },
+      ],
+   });
+
    const [mode, setMode] = useState('view'); // 'view' or 'edit'
    const [formData, setFormData] = useState({
       displayName: '',
       category: 'MARKETING',
+      templateType: 'STANDARD',
       headerType: 'NONE',
       body: '',
       footer: '',
       buttons: [],
+      carouselCards: [],
       icon: '💬',
       tags: []
    });
@@ -43,10 +56,12 @@ export default function TemplateDetailDrawer({
          setFormData({
             displayName: initialTemplate.displayName || '',
             category: initialTemplate.category || 'MARKETING',
+            templateType: initialTemplate.templateType || 'STANDARD',
             headerType: initialTemplate.headerType || 'NONE',
             body: initialTemplate.body || '',
             footer: initialTemplate.footer || '',
             buttons: initialTemplate.buttons || [],
+            carouselCards: initialTemplate.carouselCards || [],
             icon: initialTemplate.icon || '💬',
             tags: initialTemplate.tags || []
          });
@@ -59,10 +74,12 @@ export default function TemplateDetailDrawer({
          setFormData({
             displayName: '',
             category: 'MARKETING',
+            templateType: 'STANDARD',
             headerType: 'NONE',
             body: '',
             footer: '',
             buttons: [],
+            carouselCards: [],
             icon: '💬',
             tags: []
          });
@@ -112,6 +129,34 @@ export default function TemplateDetailDrawer({
 
    const isPending = createMutation.isPending || updateMutation.isPending || usePrebuiltMutation.isPending || submitMutation.isPending;
    const canSubmit = !initialIsPrebuilt && initialTemplate?.id && ['DRAFT', 'REJECTED', 'PAUSED'].includes(initialTemplate.status);
+   const isCarousel = String(formData.templateType || '').toUpperCase() === 'CAROUSEL';
+   const canSave = !!formData.displayName
+      && !!formData.body
+      && (!isCarousel || (
+         formData.carouselCards.length >= 2
+         && formData.carouselCards.length <= 10
+         && formData.carouselCards.every((card) => card.mediaUrl && card.body)
+      ));
+
+   const updateCarouselCard = (index, updates) => {
+      setFormData((current) => ({
+         ...current,
+         carouselCards: current.carouselCards.map((card, idx) => (idx === index ? { ...card, ...updates } : card)),
+      }));
+   };
+
+   const updateCarouselCardButton = (cardIndex, buttonIndex, updates) => {
+      setFormData((current) => ({
+         ...current,
+         carouselCards: current.carouselCards.map((card, idx) => {
+            if (idx !== cardIndex) return card;
+            const buttons = (card.buttons || []).map((button, buttonIdx) =>
+               buttonIdx === buttonIndex ? { ...button, ...updates } : button
+            );
+            return { ...card, buttons };
+         }),
+      }));
+   };
 
    return (
       <div className="fixed inset-0 z-50 flex items-center justify-end pointer-events-auto overflow-hidden">
@@ -169,6 +214,78 @@ export default function TemplateDetailDrawer({
             <div className="flex flex-1 flex-col overflow-y-auto overflow-x-hidden bg-neutral-50/50 md:flex-row">
                {/* Main Form Section */}
                <div className={`flex-1 space-y-6 p-4 sm:p-6 ${mode === 'view' ? 'hidden md:block opacity-50 pointer-events-none' : ''}`}>
+                  {isCarousel && (
+                     <section className="space-y-4">
+                        <div className="flex items-center justify-between gap-2 mb-2">
+                           <div className="flex items-center gap-2">
+                              <List className="w-4 h-4 text-neutral-400" />
+                              <h3 className="text-sm font-bold text-neutral-700 uppercase tracking-wider">Carousel Cards</h3>
+                           </div>
+                           <button
+                              onClick={() => setFormData({ ...formData, carouselCards: [...formData.carouselCards, newCarouselCard()].slice(0, 10) })}
+                              disabled={formData.carouselCards.length >= 10}
+                              className="p-1 px-2 text-[10px] bg-neutral-900 text-white rounded font-bold hover:bg-neutral-800 transition-colors disabled:opacity-40"
+                           >
+                              + Add Card
+                           </button>
+                        </div>
+
+                        <div className="space-y-3">
+                           {formData.carouselCards.map((card, idx) => (
+                              <div key={idx} className="space-y-3 rounded-[var(--radius-md)] border border-neutral-100 bg-neutral-50 p-3">
+                                 <div className="flex items-center justify-between">
+                                    <p className="text-xs font-bold uppercase tracking-wider text-neutral-500">Card {idx + 1}</p>
+                                    <button
+                                       onClick={() => setFormData({ ...formData, carouselCards: formData.carouselCards.filter((_, cardIdx) => cardIdx !== idx) })}
+                                       className="p-1 text-neutral-400 hover:text-rose-500"
+                                    >
+                                       <Trash2 className="w-4 h-4" />
+                                    </button>
+                                 </div>
+                                 <input
+                                    type="text"
+                                    value={card.title || ''}
+                                    onChange={e => updateCarouselCard(idx, { title: e.target.value })}
+                                    placeholder="Card title, e.g. Bali Family Escape"
+                                    className="w-full rounded border border-neutral-200 bg-white px-3 py-2 text-xs focus:outline-none"
+                                 />
+                                 <textarea
+                                    rows={3}
+                                    value={card.body || ''}
+                                    onChange={e => updateCarouselCard(idx, { body: e.target.value })}
+                                    placeholder="Short package/property description"
+                                    className="w-full rounded border border-neutral-200 bg-white px-3 py-2 text-xs focus:outline-none resize-none"
+                                 />
+                                 <input
+                                    type="url"
+                                    value={card.mediaUrl || ''}
+                                    onChange={e => updateCarouselCard(idx, { mediaUrl: e.target.value })}
+                                    placeholder="Public image URL required by Meta"
+                                    className="w-full rounded border border-neutral-200 bg-white px-3 py-2 text-xs focus:outline-none"
+                                 />
+                                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                                    {(card.buttons || []).slice(0, 2).map((button, buttonIdx) => (
+                                       <input
+                                          key={buttonIdx}
+                                          type="text"
+                                          value={button.text || ''}
+                                          onChange={e => updateCarouselCardButton(idx, buttonIdx, { text: e.target.value })}
+                                          placeholder={buttonIdx === 0 ? 'Enquiry' : 'See Others'}
+                                          className="rounded border border-neutral-200 bg-white px-3 py-2 text-xs focus:outline-none"
+                                       />
+                                    ))}
+                                 </div>
+                              </div>
+                           ))}
+                           {formData.carouselCards.length === 0 && (
+                              <div className="text-center py-4 border-2 border-dashed border-neutral-200 rounded text-neutral-400 text-[11px] font-medium">
+                                 Add 2 to 10 carousel cards with images.
+                              </div>
+                           )}
+                        </div>
+                     </section>
+                  )}
+
                   <section className="space-y-4">
                      <div className="flex items-center gap-2 mb-2">
                         <Type className="w-4 h-4 text-neutral-400" />
@@ -188,6 +305,27 @@ export default function TemplateDetailDrawer({
 
                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                         <div>
+                           <label className="block text-xs font-bold text-neutral-500 mb-1">Template Format</label>
+                           <select
+                              value={formData.templateType}
+                              onChange={e => {
+                                 const nextType = e.target.value;
+                                 setFormData({
+                                    ...formData,
+                                    templateType: nextType,
+                                    headerType: nextType === 'CAROUSEL' ? 'IMAGE' : formData.headerType,
+                                    carouselCards: nextType === 'CAROUSEL' && formData.carouselCards.length === 0
+                                       ? [newCarouselCard(), newCarouselCard()]
+                                       : formData.carouselCards,
+                                 });
+                              }}
+                              className="shell-input-rect bg-white"
+                           >
+                              <option value="STANDARD">Standard Message</option>
+                              <option value="CAROUSEL">Carousel Cards</option>
+                           </select>
+                        </div>
+                        <div>
                            <label className="block text-xs font-bold text-neutral-500 mb-1">Category</label>
                            <select
                               value={formData.category}
@@ -199,6 +337,7 @@ export default function TemplateDetailDrawer({
                               <option value="AUTHENTICATION">Authentication</option>
                            </select>
                         </div>
+                        {!isCarousel && (
                         <div>
                            <label className="block text-xs font-bold text-neutral-500 mb-1">Header Type</label>
                            <select
@@ -213,6 +352,7 @@ export default function TemplateDetailDrawer({
                               <option value="TEXT">Text Header</option>
                            </select>
                         </div>
+                        )}
                      </div>
                   </section>
 
@@ -247,6 +387,7 @@ export default function TemplateDetailDrawer({
                      </div>
                   </section>
 
+                  {!isCarousel && (
                   <section className="space-y-4">
                      <div className="flex items-center justify-between gap-2 mb-2">
                         <div className="flex items-center gap-2">
@@ -309,6 +450,7 @@ export default function TemplateDetailDrawer({
                         )}
                      </div>
                   </section>
+                  )}
                </div>
 
                {/* Preview Section */}
@@ -419,6 +561,33 @@ export default function TemplateDetailDrawer({
                                           </div>
                                        )}
 
+                                       {isCarousel && formData.carouselCards.length > 0 && (
+                                          <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
+                                             {formData.carouselCards.slice(0, 4).map((card, idx) => (
+                                                <div key={idx} className="w-32 flex-shrink-0 overflow-hidden rounded-[8px] border border-black/10 bg-white/70">
+                                                   <div className="flex aspect-[4/3] items-center justify-center bg-black/5">
+                                                      {card.mediaUrl ? (
+                                                         <img src={card.mediaUrl} alt="" className="h-full w-full object-cover" />
+                                                      ) : (
+                                                         <ImageIcon className="w-6 h-6 text-black/20" />
+                                                      )}
+                                                   </div>
+                                                   <div className="p-2">
+                                                      <p className="truncate text-[11px] font-bold text-[#111b21]">{card.title || `Card ${idx + 1}`}</p>
+                                                      <p className="mt-1 line-clamp-2 text-[10px] text-[#54656f]">{card.body || 'Card description'}</p>
+                                                      <div className="mt-2 space-y-1">
+                                                         {(card.buttons || []).slice(0, 2).map((button, buttonIdx) => (
+                                                            <div key={buttonIdx} className="rounded border border-[#00a5f4]/20 px-1 py-0.5 text-center text-[9px] font-medium text-[#00a5f4]">
+                                                               {button.text || (buttonIdx === 0 ? 'Enquiry' : 'See Others')}
+                                                            </div>
+                                                         ))}
+                                                      </div>
+                                                   </div>
+                                                </div>
+                                             ))}
+                                          </div>
+                                       )}
+
                                        {/* Time and Status */}
                                        <div className="flex justify-end items-center gap-1 mt-0.5 ml-auto">
                                           <span className="text-[10px] text-[#667781]">12:30 PM</span>
@@ -427,7 +596,7 @@ export default function TemplateDetailDrawer({
                                     </div>
 
                                     {/* Interactive Buttons (Inside the bubble but at the bottom) */}
-                                    {formData.buttons.length > 0 && (
+                                    {!isCarousel && formData.buttons.length > 0 && (
                                        <div className="border-t border-black/5 mt-1">
                                           {formData.buttons.map((btn, idx) => (
                                              <div
@@ -485,7 +654,7 @@ export default function TemplateDetailDrawer({
                      </button>
                      <button
                         onClick={handleSave}
-                        disabled={isPending || !formData.displayName || !formData.body}
+                        disabled={isPending || !canSave}
                         className="flex-1 shell-button-primary py-2.5 flex items-center justify-center gap-2"
                      >
                         {isPending ? 'Saving...' : (

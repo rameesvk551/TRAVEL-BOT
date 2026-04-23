@@ -47,6 +47,30 @@ module.exports = (sequelize) => {
       type: DataTypes.DATE,
       allowNull: true,
     },
+    clickedAt: {
+      type: DataTypes.DATE,
+      allowNull: true,
+    },
+    clickedAction: {
+      type: DataTypes.STRING(100),
+      allowNull: true,
+    },
+    selectedItemType: {
+      type: DataTypes.ENUM('PACKAGE', 'PROPERTY', 'CUSTOM_TRIP'),
+      allowNull: true,
+    },
+    selectedItemId: {
+      type: DataTypes.UUID,
+      allowNull: true,
+    },
+    leadId: {
+      type: DataTypes.UUID,
+      allowNull: true,
+    },
+    flowSubmittedAt: {
+      type: DataTypes.DATE,
+      allowNull: true,
+    },
     errorMessage: {
       type: DataTypes.TEXT,
       allowNull: true,
@@ -57,6 +81,8 @@ module.exports = (sequelize) => {
       { fields: ['campaign_id', 'status'] },
       { fields: ['campaign_id', 'customer_id'], unique: true },
       { fields: ['wa_message_id'] },
+      { fields: ['campaign_id', 'clicked_action'] },
+      { fields: ['lead_id'] },
     ],
   });
 

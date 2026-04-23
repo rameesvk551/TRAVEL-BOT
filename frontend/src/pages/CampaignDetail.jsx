@@ -5,14 +5,14 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Send, Ban, Copy, Trash2, Users, CheckCircle2,
   Eye, MessageCircle, XCircle, BarChart2, ChevronDown, Clock3,
-  Activity, Smartphone,
+  Activity, Smartphone, Package, Home,
 } from 'lucide-react';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
 import {
   useCampaign, useCampaignStats,
-  useSendCampaign, useCancelCampaign, useDuplicateCampaign, useDeleteCampaign,
+  useCampaignReport, useSendCampaign, useCancelCampaign, useDuplicateCampaign, useDeleteCampaign,
 } from '../hooks/useCampaigns';
 import { formatDateTime } from '../utils/formatters';
 
@@ -50,6 +50,21 @@ function percent(count, total) {
 
 function formatPct(count, total) {
   return `${percent(count, total).toFixed(1)}%`;
+}
+
+function formatMoneyPaise(value) {
+  return new Intl.NumberFormat('en-IN', {
+    style: 'currency',
+    currency: 'INR',
+    maximumFractionDigits: 0,
+  }).format(Number(value || 0) / 100);
+}
+
+function formatAction(action) {
+  return String(action || '-')
+    .replace(/^campaign_/, '')
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
 function MetricCard({ label, value, total, icon: Icon, color, hint }) {
@@ -116,6 +131,23 @@ function Panel({ title, subtitle, children, action }) {
   );
 }
 
+function OutcomeCard({ label, value, hint, icon: Icon }) {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-400">{label}</p>
+          <p className="mt-2 text-2xl font-bold tracking-tight text-slate-950">{value}</p>
+        </div>
+        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-slate-100 text-slate-700">
+          <Icon className="h-5 w-5" />
+        </div>
+      </div>
+      {hint && <p className="mt-3 text-xs text-slate-500">{hint}</p>}
+    </div>
+  );
+}
+
 function TimeValue({ value }) {
   return <span className="text-xs text-slate-500">{value ? formatDateTime(value) : '-'}</span>;
 }
@@ -129,6 +161,7 @@ export default function CampaignDetail() {
 
   const { data: campaignData, isLoading } = useCampaign(id);
   const { data: statsData } = useCampaignStats(id);
+  const { data: reportData } = useCampaignReport(id);
   const sendMutation = useSendCampaign();
   const cancelMutation = useCancelCampaign();
   const duplicateMutation = useDuplicateCampaign();
@@ -137,6 +170,10 @@ export default function CampaignDetail() {
   const campaign = campaignData?.data;
   const stats = statsData?.data?.stats;
   const timeline = statsData?.data?.timeline || [];
+  const report = reportData?.data;
+  const reportSummary = report?.summary || {};
+  const itemPerformance = report?.itemPerformance || [];
+  const actionPerformance = report?.actionPerformance || [];
 
   const timelineChart = useMemo(() => timeline.map((t) => ({
     hour: new Date(t.hour).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }),
@@ -144,6 +181,10 @@ export default function CampaignDetail() {
     delivered: Number(t.delivered || 0),
     read: Number(t.read || 0),
   })), [timeline]);
+
+  const reportRecipientsById = useMemo(() => new Map(
+    (report?.recipients || []).map((recipient) => [recipient.id, recipient])
+  ), [report?.recipients]);
 
   if (isLoading) {
     return (
@@ -174,6 +215,10 @@ export default function CampaignDetail() {
   const read = stats?.read ?? campaign.read ?? 0;
   const replied = stats?.replied ?? campaign.replied ?? 0;
   const failed = stats?.failed ?? campaign.failed ?? 0;
+  const clicked = stats?.clicked ?? reportSummary.clicked ?? 0;
+  const leadCount = stats?.leads ?? reportSummary.leads ?? 0;
+  const bookingCount = stats?.bookings ?? reportSummary.bookings ?? 0;
+  const revenue = stats?.revenue ?? reportSummary.revenue ?? 0;
 
   const metrics = [
     { label: 'Total', value: total, icon: Users, color: COLORS.ink, hint: 'Resolved campaign audience' },
@@ -307,6 +352,35 @@ export default function CampaignDetail() {
           </div>
         )}
 
+        {(clicked > 0 || leadCount > 0 || bookingCount > 0 || revenue > 0) && (
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <OutcomeCard
+              label="Clicks"
+              value={clicked.toLocaleString()}
+              hint={`${formatPct(clicked, total)} of recipients tapped a campaign action`}
+              icon={Activity}
+            />
+            <OutcomeCard
+              label="Leads"
+              value={leadCount.toLocaleString()}
+              hint={`${formatPct(leadCount, total)} recipient-to-lead conversion`}
+              icon={MessageCircle}
+            />
+            <OutcomeCard
+              label="Bookings"
+              value={bookingCount.toLocaleString()}
+              hint={`${leadCount ? formatPct(bookingCount, leadCount) : '0.0%'} lead-to-booking conversion`}
+              icon={CheckCircle2}
+            />
+            <OutcomeCard
+              label="Revenue"
+              value={formatMoneyPaise(revenue)}
+              hint="Confirmed campaign-attributed booking value"
+              icon={BarChart2}
+            />
+          </div>
+        )}
+
         {total > 0 ? (
           <div className="grid grid-cols-1 gap-6 2xl:grid-cols-[minmax(420px,0.8fr)_minmax(680px,1.2fr)]">
             <Panel title="Delivery Funnel" subtitle="Recipient movement across WhatsApp delivery states">
@@ -379,10 +453,80 @@ export default function CampaignDetail() {
           </Panel>
         )}
 
+        {(actionPerformance.length > 0 || itemPerformance.length > 0) && (
+          <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(320px,0.7fr)_minmax(620px,1.3fr)]">
+            <Panel title="CTA Performance" subtitle="Which campaign actions customers tapped">
+              <div className="p-5">
+                {actionPerformance.length > 0 ? (
+                  <div className="space-y-3">
+                    {actionPerformance.map((action) => (
+                      <div key={action.action} className="flex items-center justify-between rounded-lg border border-slate-200 px-4 py-3">
+                        <span className="text-sm font-semibold text-slate-700">{formatAction(action.action)}</span>
+                        <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700">
+                          {Number(action.count || 0).toLocaleString()} clicks
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="rounded-lg bg-slate-50 p-6 text-center text-sm text-slate-500">
+                    CTA clicks will appear here after customers interact.
+                  </div>
+                )}
+              </div>
+            </Panel>
+
+            <Panel title="Package & Property Performance" subtitle="Lead and booking outcomes by selected item">
+              <div className="overflow-x-auto">
+                {itemPerformance.length > 0 ? (
+                  <table className="w-full min-w-[760px] text-left">
+                    <thead>
+                      <tr className="border-b border-slate-200 bg-slate-50 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">
+                        <th className="px-5 py-3">Item</th>
+                        <th className="px-5 py-3">Type</th>
+                        <th className="px-5 py-3">Clicks</th>
+                        <th className="px-5 py-3">Leads</th>
+                        <th className="px-5 py-3">Bookings</th>
+                        <th className="px-5 py-3">Revenue</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 bg-white">
+                      {itemPerformance.map((item) => {
+                        const ItemIcon = item.itemType === 'PROPERTY' ? Home : Package;
+                        return (
+                          <tr key={`${item.itemType}-${item.itemId}`} className="transition hover:bg-slate-50">
+                            <td className="px-5 py-4">
+                              <div className="flex items-center gap-3">
+                                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
+                                  <ItemIcon className="h-4 w-4" />
+                                </div>
+                                <span className="font-semibold text-slate-900">{item.name}</span>
+                              </div>
+                            </td>
+                            <td className="px-5 py-4 text-sm text-slate-500">{item.itemType?.replace('_', ' ')}</td>
+                            <td className="px-5 py-4 text-sm font-semibold text-slate-900">{Number(item.clicks || 0).toLocaleString()}</td>
+                            <td className="px-5 py-4 text-sm font-semibold text-slate-900">{Number(item.leads || 0).toLocaleString()}</td>
+                            <td className="px-5 py-4 text-sm font-semibold text-slate-900">{Number(item.bookings || 0).toLocaleString()}</td>
+                            <td className="px-5 py-4 text-sm font-semibold text-slate-900">{formatMoneyPaise(item.revenue)}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                ) : (
+                  <div className="p-10 text-center text-sm text-slate-500">
+                    Selected package and property outcomes will appear after customer actions create leads.
+                  </div>
+                )}
+              </div>
+            </Panel>
+          </div>
+        )}
+
         {(campaign.recipients || []).length > 0 && (
           <Panel
             title="Recipient Activity"
-            subtitle="Latest 100 recipients with delivery, read, and reply timestamps"
+            subtitle="Latest recipients with delivery, click, selection, and reply timestamps"
             action={(
               <div className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-500">
                 <Smartphone className="h-4 w-4" />
@@ -391,12 +535,14 @@ export default function CampaignDetail() {
             )}
           >
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[980px] text-left">
+              <table className="w-full min-w-[1180px] text-left">
                 <thead>
                   <tr className="border-b border-slate-200 bg-slate-50 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">
                     <th className="px-5 py-3">Recipient</th>
                     <th className="px-5 py-3">Phone</th>
                     <th className="px-5 py-3">Status</th>
+                    <th className="px-5 py-3">Click</th>
+                    <th className="px-5 py-3">Selected</th>
                     <th className="px-5 py-3">Sent</th>
                     <th className="px-5 py-3">Delivered</th>
                     <th className="px-5 py-3">Read / Opened</th>
@@ -404,23 +550,36 @@ export default function CampaignDetail() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 bg-white">
-                  {campaign.recipients.map((r) => (
-                    <tr key={r.id} className="transition hover:bg-slate-50">
-                      <td className="px-5 py-4">
-                        <div className="font-semibold text-slate-900">{r.customer?.name || 'Unknown'}</div>
-                      </td>
-                      <td className="px-5 py-4 text-sm text-slate-500">{r.customer?.phone || '-'}</td>
-                      <td className="px-5 py-4">
-                        <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold ring-1 ${RECIPIENT_STATUS_COLORS[r.status] || RECIPIENT_STATUS_COLORS.PENDING}`}>
-                          {r.status}
-                        </span>
-                      </td>
-                      <td className="px-5 py-4"><TimeValue value={r.sentAt} /></td>
-                      <td className="px-5 py-4"><TimeValue value={r.deliveredAt} /></td>
-                      <td className="px-5 py-4"><TimeValue value={r.readAt} /></td>
-                      <td className="px-5 py-4"><TimeValue value={r.repliedAt} /></td>
-                    </tr>
-                  ))}
+                  {campaign.recipients.map((r) => {
+                    const reportRecipient = reportRecipientsById.get(r.id) || r;
+                    return (
+                      <tr key={r.id} className="transition hover:bg-slate-50">
+                        <td className="px-5 py-4">
+                          <div className="font-semibold text-slate-900">{r.customer?.name || 'Unknown'}</div>
+                        </td>
+                        <td className="px-5 py-4 text-sm text-slate-500">{r.customer?.phone || '-'}</td>
+                        <td className="px-5 py-4">
+                          <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold ring-1 ${RECIPIENT_STATUS_COLORS[r.status] || RECIPIENT_STATUS_COLORS.PENDING}`}>
+                            {r.status}
+                          </span>
+                        </td>
+                        <td className="px-5 py-4">
+                          <div className="text-xs font-semibold text-slate-700">{formatAction(reportRecipient.clickedAction)}</div>
+                          <TimeValue value={reportRecipient.clickedAt} />
+                        </td>
+                        <td className="px-5 py-4">
+                          <div className="max-w-[180px] truncate text-xs font-semibold text-slate-700">
+                            {reportRecipient.selectedItemName || reportRecipient.selectedItemType || '-'}
+                          </div>
+                          {reportRecipient.leadId && <div className="mt-1 text-[11px] font-bold text-emerald-700">Lead created</div>}
+                        </td>
+                        <td className="px-5 py-4"><TimeValue value={r.sentAt} /></td>
+                        <td className="px-5 py-4"><TimeValue value={r.deliveredAt} /></td>
+                        <td className="px-5 py-4"><TimeValue value={r.readAt} /></td>
+                        <td className="px-5 py-4"><TimeValue value={r.repliedAt} /></td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

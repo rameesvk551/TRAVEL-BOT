@@ -2,7 +2,7 @@
 // DEPS: sequelize
 
 const { Op } = require('sequelize');
-const { Lead, Customer, Agent, Package, Message, Booking, FollowUp, LeadNote } = require('../models');
+const { Lead, Customer, Agent, Package, Property, Message, Booking, FollowUp, LeadNote } = require('../models');
 const { normalizePhone, isValidIndianPhone } = require('../utils/phoneUtils');
 const whatsappService = require('./whatsappService');
 
@@ -62,6 +62,7 @@ async function listLeads(agencyId, filters = {}, requester = null) {
       { model: Customer, as: 'customer', where: Object.keys(customerWhere).length ? customerWhere : undefined },
       { model: Agent, as: 'assignedAgent', attributes: ['id', 'name', 'email'] },
       { model: Package, as: 'package', attributes: ['id', 'name', 'basePrice'] },
+      { model: Property, as: 'property', attributes: ['id', 'name', 'propertyType', 'location', 'pricePerNight'] },
       { model: FollowUp, as: 'followUps', required: false, where: { status: 'Scheduled' } },
     ],
     order: [['createdAt', 'DESC']],
@@ -85,6 +86,7 @@ async function getLeadById(leadId, agencyId, requester = null) {
       { model: Customer, as: 'customer' },
       { model: Agent, as: 'assignedAgent', attributes: ['id', 'name', 'email', 'phone'] },
       { model: Package, as: 'package' },
+      { model: Property, as: 'property' },
       { model: Booking, as: 'booking' },
     ],
   });
@@ -172,6 +174,11 @@ async function createLead(data, agencyId) {
     notes,
     assignedAgentId,
     packageId,
+    propertyId,
+    itemType,
+    campaignId,
+    campaignName,
+    campaignAction,
     lostReason,
     travelStart,
     travelEnd,
@@ -194,6 +201,13 @@ async function createLead(data, agencyId) {
     }
   }
 
+  if (propertyId) {
+    const property = await Property.findOne({ where: { id: propertyId, agencyId } });
+    if (!property) {
+      throw Object.assign(new Error('Property not found'), { statusCode: 404, code: 'PROPERTY_NOT_FOUND' });
+    }
+  }
+
   const lead = await Lead.create({
     customerId: customer.id,
     agencyId,
@@ -204,11 +218,17 @@ async function createLead(data, agencyId) {
     budgetPerPerson,
     interest,
     packageId: packageId || null,
+    propertyId: propertyId || null,
+    itemType: itemType || (propertyId ? 'PROPERTY' : packageId ? 'PACKAGE' : null),
+    campaignId: campaignId || null,
+    campaignName: campaignName || null,
+    campaignAction: campaignAction || null,
     notes,
     lostReason,
     travelStart,
     travelEnd,
     status,
+    source: data.source || customer.source || 'whatsapp_organic',
   });
 
   const fullLead = await getLeadById(lead.id, agencyId);
@@ -248,7 +268,8 @@ async function updateLead(leadId, agencyId, updates, requester = null) {
 
   const allowedFields = [
     'status', 'assignedAgentId', 'destination', 'travelDates',
-    'travellers', 'budgetPerPerson', 'packageId', 'notes', 'lostReason',
+    'travellers', 'budgetPerPerson', 'packageId', 'propertyId', 'itemType',
+    'campaignId', 'campaignName', 'campaignAction', 'notes', 'lostReason',
     'travelStart', 'travelEnd', 'interest', 'source',
   ];
 
@@ -472,6 +493,55 @@ async function addNote(leadId, agencyId, agentId, content) {
   });
 }
 
+/**
+ * Bulk-assign multiple leads to a single agent.
+ * @param {string[]} leadIds - Array of lead IDs to assign
+ * @param {string} agentId - Agent ID to assign leads to (null to unassign)
+ * @param {string} agencyId - Agency ID for scoping
+ * @returns {Promise<object>} { updated: number }
+ */
+async function bulkAssignLeads(leadIds, agentId, agencyId) {
+  if (!Array.isArray(leadIds) || leadIds.length === 0) {
+    throw Object.assign(new Error('leadIds must be a non-empty array'), { statusCode: 400, code: 'INVALID_INPUT' });
+  }
+
+  if (leadIds.length > 100) {
+    throw Object.assign(new Error('Cannot bulk-assign more than 100 leads at once'), { statusCode: 400, code: 'TOO_MANY_LEADS' });
+  }
+
+  let agent = null;
+  if (agentId) {
+    agent = await Agent.findOne({ where: { id: agentId, agencyId } });
+    if (!agent) {
+      throw Object.assign(new Error('Agent not found'), { statusCode: 404, code: 'AGENT_NOT_FOUND' });
+    }
+  }
+
+  const [updated] = await Lead.update(
+    { assignedAgentId: agentId || null },
+    { where: { id: { [Op.in]: leadIds }, agencyId } }
+  );
+
+  // Send a single notification to the assigned agent
+  if (agent && agent.phone && updated > 0) {
+    const leads = await Lead.findAll({
+      where: { id: { [Op.in]: leadIds }, agencyId },
+      include: [{ model: Customer, as: 'customer', attributes: ['name', 'phone'] }],
+    });
+
+    const leadSummary = leads
+      .map((l, i) => `${i + 1}. ${l.customer?.name || 'Unknown'} — ${l.destination || 'No destination'}`)
+      .join('\n');
+
+    const msg = `*${updated} Leads Assigned To You*\n\n${leadSummary}\n\nPlease follow up at your earliest convenience.`;
+    whatsappService.sendSystemNotificationWhatsApp(agent.phone, msg, { agencyId }).catch(err => {
+      console.error('Failed to send bulk-assign notification', err);
+    });
+  }
+
+  return { updated };
+}
+
 module.exports = {
   listLeads,
   getLeadById,
@@ -479,6 +549,7 @@ module.exports = {
   updateLead,
   deleteLead,
   findLeastBusyAgent,
+  bulkAssignLeads,
   listFollowUps,
   addFollowUp,
   updateFollowUp,

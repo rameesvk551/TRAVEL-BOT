@@ -459,6 +459,11 @@ async function ensureLead(session, customer, agency, extra = {}) {
     lead = await leadService.createLead({
       customerId: customer.id,
       packageId: extra.packageId || pkg?.id || null,
+      propertyId: extra.propertyId || null,
+      itemType: extra.itemType || (extra.propertyId ? 'PROPERTY' : (extra.packageId || pkg?.id) ? 'PACKAGE' : null),
+      campaignId: extra.campaignId || profile.campaignId || null,
+      campaignName: extra.campaignName || null,
+      campaignAction: extra.campaignAction || null,
       destination: extra.destination || pkg?.destinations?.[0] || null,
       travelDates: extra.travelDates || null,
       travellers: extra.travellers || null,
@@ -474,6 +479,11 @@ async function ensureLead(session, customer, agency, extra = {}) {
 
     const updates = {
       packageId: extra.packageId || pkg?.id || lead.packageId || null,
+      propertyId: extra.propertyId || lead.propertyId || null,
+      itemType: extra.itemType || lead.itemType || (extra.propertyId ? 'PROPERTY' : null),
+      campaignId: extra.campaignId || profile.campaignId || lead.campaignId || null,
+      campaignName: extra.campaignName || lead.campaignName || null,
+      campaignAction: extra.campaignAction || lead.campaignAction || null,
       destination: extra.destination || lead.destination || pkg?.destinations?.[0] || null,
       travelDates: extra.travelDates || lead.travelDates || null,
       travellers: extra.travellers || lead.travellers || null,
@@ -1431,6 +1441,17 @@ async function handleTravelFlow(session, incoming, customer, agency) {
   if (actionId === 'pkg_pick:' || actionId.startsWith('pkg_pick:')) {
     const selectedPackageId = normalizeText(actionId.split(':')[1]);
     logFlowEvent('list_package_selected', customer, agency, {
+      step: session?.currentStep || null,
+      actionId,
+      selectedPackageId: selectedPackageId || null,
+    });
+    return showPackageDetail(session, customer, agency, selectedPackageId);
+  }
+
+  // Campaign broadcast package selection — reuse the same package detail view
+  if (actionId.startsWith('campaign_pkg_pick:')) {
+    const selectedPackageId = normalizeText(actionId.split(':')[1]);
+    logFlowEvent('campaign_package_selected', customer, agency, {
       step: session?.currentStep || null,
       actionId,
       selectedPackageId: selectedPackageId || null,

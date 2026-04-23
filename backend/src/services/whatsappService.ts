@@ -134,7 +134,18 @@ async function resolveAgencyChannel(context = {}) {
       provider: 'SELF_HOSTED',
       phoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID || null,
       marketingOsTenantId: null,
+      isInstagram: false,
     };
+  }
+
+  let isInstagram = false;
+  if (context.customerId) {
+    const customer = await Customer.findOne({
+      where: { id: context.customerId, agencyId: context.agencyId },
+      attributes: ['id', 'phone', 'source'],
+    });
+    isInstagram = String(customer?.phone || '').startsWith('ig_')
+      || String(customer?.source || '').toLowerCase() === 'instagram';
   }
 
   const agency = await Agency.findByPk(context.agencyId, {
@@ -145,6 +156,7 @@ async function resolveAgencyChannel(context = {}) {
     provider: agency?.whatsappProvider || 'SELF_HOSTED',
     phoneNumberId: agency?.whatsappPhoneNumberId || process.env.WHATSAPP_PHONE_NUMBER_ID || null,
     marketingOsTenantId: agency?.marketingOsTenantId || null,
+    isInstagram,
   };
 }
 
@@ -231,7 +243,7 @@ async function sendProcessingPlaceholder(phone, context = {}) {
 }
 
 function canUseMarketingOs(channel = {}) {
-  return channel?.provider === 'MARKETING_OS' && !!channel?.marketingOsTenantId;
+  return (channel?.provider === 'MARKETING_OS' || channel?.isInstagram) && !!channel?.marketingOsTenantId;
 }
 
 function ensureMarketingOsSuccess(data, scope) {
@@ -250,10 +262,32 @@ async function sendViaMarketingOs(phone, payload, tenantId) {
   const tenantToken = await marketingOsPartnerService.getTenantToken(tenantId);
   let data;
 
-  if (payload.type === 'template') {
+  const isInstagram = String(phone).startsWith('ig_');
+  const instagramAddress = isInstagram ? String(phone).substring(3) : '';
+  const separatorIndex = instagramAddress.indexOf(':');
+  const instagramAccountId = separatorIndex > -1 ? instagramAddress.slice(0, separatorIndex) : null;
+  const actualRecipient = isInstagram
+    ? (separatorIndex > -1 ? instagramAddress.slice(separatorIndex + 1) : instagramAddress)
+    : toMetaRecipient(phone);
+
+  if (isInstagram) {
+    // Currently, Instagram via Marketing OS only supports basic text/media proxying out-of-the-box
+    // For rich interactives, we send fallback text.
+    let textToSend = payload.text;
+    if (payload.type === 'interactive' || payload.type === 'template') {
+       textToSend = payload.content || payload.text || JSON.stringify(payload);
+    }
+    
+    data = await marketingOsPartnerService.sendTenantInstagramMessage(tenantToken, {
+      tenantId,
+      accountId: instagramAccountId || payload.accountId,
+      recipientId: actualRecipient,
+      text: textToSend,
+    });
+  } else if (payload.type === 'template') {
     data = await marketingOsPartnerService.sendTenantWhatsAppMessage(tenantToken, {
       tenantId,
-      to: toMetaRecipient(phone),
+      to: actualRecipient,
       templateName: payload.templateName,
       language: payload.languageCode || 'en',
       variables: payload.variables || {},
@@ -262,16 +296,16 @@ async function sendViaMarketingOs(phone, payload, tenantId) {
   } else if (payload.type === 'interactive') {
     data = await marketingOsPartnerService.sendTenantWhatsAppInteractive(tenantToken, {
       tenantId,
-      to: toMetaRecipient(phone),
-      recipientPhone: toMetaRecipient(phone),
+      to: actualRecipient,
+      recipientPhone: actualRecipient,
       interactiveContent: payload.interactiveContent,
       idempotencyKey,
     });
   } else if (payload.type === 'media') {
     data = await marketingOsPartnerService.sendTenantWhatsAppMedia(tenantToken, {
       tenantId,
-      to: toMetaRecipient(phone),
-      recipientPhone: toMetaRecipient(phone),
+      to: actualRecipient,
+      recipientPhone: actualRecipient,
       mediaUrl: payload.mediaUrl,
       caption: payload.caption,
       mediaType: payload.mediaType || 'image',
@@ -281,7 +315,7 @@ async function sendViaMarketingOs(phone, payload, tenantId) {
   } else {
     data = await marketingOsPartnerService.sendTenantWhatsAppMessage(tenantToken, {
       tenantId,
-      to: toMetaRecipient(phone),
+      to: actualRecipient,
       body: payload.text,
       idempotencyKey,
     });
@@ -1063,6 +1097,7 @@ function buildTemplateComponents(template) {
   const components = [];
   const headerType = String(template.headerType || 'NONE').toUpperCase();
   const variableSamples = Array.isArray(template.sampleVariables) ? template.sampleVariables : [];
+  const templateType = String(template.templateType || 'STANDARD').toUpperCase();
 
   if (headerType !== 'NONE') {
     const header = { type: 'HEADER', format: headerType };
@@ -1094,6 +1129,38 @@ function buildTemplateComponents(template) {
         text: button.text,
         url: button.url || undefined,
         phone_number: button.phoneNumber || undefined,
+      })),
+    });
+  }
+
+  if (templateType === 'CAROUSEL' && Array.isArray(template.carouselCards) && template.carouselCards.length > 0) {
+    components.push({
+      type: 'CAROUSEL',
+      cards: template.carouselCards.slice(0, 10).map((card, index) => ({
+        card_index: index,
+        components: [
+          {
+            type: 'HEADER',
+            format: String(card.mediaType || card.headerType || 'IMAGE').toUpperCase(),
+            example: card.mediaUrl ? { header_handle: [card.mediaUrl] } : undefined,
+          },
+          {
+            type: 'BODY',
+            text: String(card.body || card.title || 'Deal details').slice(0, 1024),
+          },
+          {
+            type: 'BUTTONS',
+            buttons: (Array.isArray(card.buttons) && card.buttons.length ? card.buttons : [
+              { type: 'QUICK_REPLY', text: 'Enquiry' },
+              { type: 'QUICK_REPLY', text: 'See Others' },
+            ]).slice(0, 2).map((button) => ({
+              type: String(button.type || 'QUICK_REPLY').toUpperCase(),
+              text: String(button.text || button.title || 'Select').slice(0, 25),
+              url: button.url || undefined,
+              phone_number: button.phoneNumber || button.phone_number || undefined,
+            })),
+          },
+        ],
       })),
     });
   }
@@ -1132,6 +1199,10 @@ async function upsertTemplateWithMeta(agencyId, template, { mode = 'upsert' } = 
       footerContent: template.footer || null,
       footer_content: template.footer || null,
       buttons: template.buttons || [],
+      templateType: template.templateType || 'STANDARD',
+      template_type: template.templateType || 'STANDARD',
+      carouselCards: template.carouselCards || [],
+      carousel_cards: template.carouselCards || [],
       components,
       variables: template.sampleVariables || [],
       triggerEvents: template.tags || [],

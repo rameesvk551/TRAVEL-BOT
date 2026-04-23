@@ -5,6 +5,7 @@ export const campaignsApi = {
   list: (params) => client.get('/campaigns', { params }).then(r => r.data),
   getById: (id) => client.get(`/campaigns/${id}`).then(r => r.data),
   getStats: (id) => client.get(`/campaigns/${id}/stats`).then(r => r.data),
+  getReport: (id) => client.get(`/campaigns/${id}/report`).then(r => r.data),
   create: (data) => client.post('/campaigns', data).then(r => r.data),
   update: (id, data) => client.patch(`/campaigns/${id}`, data).then(r => r.data),
   send: (id) => client.post(`/campaigns/${id}/send`).then(r => r.data),

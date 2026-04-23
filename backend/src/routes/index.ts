@@ -10,6 +10,8 @@ const messageRoutes = require('./messages');
 const analyticsRoutes = require('./analytics');
 const whatsappRoutes = require('./whatsapp');
 const adsRoutes = require('./ads');
+const propertyRoutes = require('./properties');
+const instagramRoutes = require('./instagram');
 
 // Marketing routes
 const templateRoutes = require('./templates');
@@ -32,6 +34,8 @@ function registerApiRoutes(app) {
   app.use('/api/analytics', analyticsRoutes);
   app.use('/api/whatsapp', whatsappRoutes);
   app.use('/api/ads', adsRoutes.default || adsRoutes);
+  app.use('/api/properties', propertyRoutes);
+  app.use('/api/instagram', instagramRoutes);
 
   // Marketing routes
   app.use('/api/templates', templateRoutes);

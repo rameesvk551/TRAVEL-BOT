@@ -1,7 +1,84 @@
 // FILE: /backend/src/services/campaignService.ts
 
 const { Op, fn, col, literal } = require('sequelize');
-const { Campaign, CampaignRecipient, Customer, Lead, Booking, MessageTemplate, Package } = require('../models');
+const { Campaign, CampaignRecipient, Customer, Lead, Booking, MessageTemplate, Package, Property } = require('../models');
+
+const CAMPAIGN_FORMATS = new Set(['STANDARD', 'SECTION_CTA', 'ITEM_CAROUSEL']);
+const ITEM_TYPES = new Set(['PACKAGE', 'PROPERTY', 'CUSTOM_TRIP']);
+
+function normalizeArray(value) {
+  return Array.isArray(value) ? value.filter(Boolean) : [];
+}
+
+function normalizeCampaignSections(data = {}) {
+  const explicitSections = normalizeArray(data.campaignSections);
+  if (explicitSections.length > 0) {
+    return explicitSections
+      .map((section, index) => ({
+        key: String(section.key || `section_${index + 1}`).trim(),
+        label: String(section.label || section.key || `Section ${index + 1}`).trim(),
+        itemType: ITEM_TYPES.has(String(section.itemType || '').toUpperCase())
+          ? String(section.itemType).toUpperCase()
+          : 'PACKAGE',
+        filter: section.filter && typeof section.filter === 'object' ? section.filter : {},
+        selectedItemIds: normalizeArray(section.selectedItemIds),
+        selectionMode: String(section.selectionMode || (normalizeArray(section.selectedItemIds).length ? 'MANUAL' : 'AUTO')).toUpperCase(),
+        enabled: section.enabled !== false,
+        sortOrder: Number.isFinite(Number(section.sortOrder)) ? Number(section.sortOrder) : index + 1,
+      }))
+      .filter((section) => section.key && section.enabled);
+  }
+
+  const linkedPackageIds = normalizeArray(data.linkedPackageIds);
+  if (linkedPackageIds.length > 0) {
+    return [{
+      key: 'packages',
+      label: 'View Packages',
+      itemType: 'PACKAGE',
+      filter: {},
+      selectedItemIds: linkedPackageIds,
+      selectionMode: 'MANUAL',
+      enabled: true,
+      sortOrder: 1,
+    }];
+  }
+
+  return [];
+}
+
+function normalizeCarouselConfig(data = {}) {
+  const config = data.carouselConfig && typeof data.carouselConfig === 'object' ? data.carouselConfig : {};
+  const rawItems = normalizeArray(config.items || data.carouselItems);
+  const cards = normalizeArray(config.cards || data.carouselCards);
+
+  return {
+    contentType: String(config.contentType || 'MIXED').toUpperCase(),
+    items: rawItems.map((item) => ({
+      itemType: ITEM_TYPES.has(String(item.itemType || '').toUpperCase()) ? String(item.itemType).toUpperCase() : 'PACKAGE',
+      itemId: item.itemId || item.id,
+    })).filter((item) => item.itemId && item.itemType !== 'CUSTOM_TRIP'),
+    cards,
+  };
+}
+
+function normalizeCampaignPayload(data = {}) {
+  const format = CAMPAIGN_FORMATS.has(String(data.format || '').toUpperCase())
+    ? String(data.format).toUpperCase()
+    : 'STANDARD';
+
+  return {
+    ...data,
+    format,
+    mediaType: ['IMAGE', 'VIDEO', 'NONE'].includes(String(data.mediaType || '').toUpperCase())
+      ? String(data.mediaType).toUpperCase()
+      : 'NONE',
+    mediaUrl: data.mediaUrl || null,
+    campaignSections: normalizeCampaignSections(data),
+    carouselConfig: normalizeCarouselConfig(data),
+    ctaConfig: data.ctaConfig && typeof data.ctaConfig === 'object' ? data.ctaConfig : {},
+    linkedPackageIds: normalizeArray(data.linkedPackageIds),
+  };
+}
 
 /**
  * Build audience from filter criteria.
@@ -231,7 +308,7 @@ async function importContacts(agencyId, contacts) {
  * Create campaign.
  */
 async function createCampaign(agencyId, data) {
-  const payload = { ...data };
+  const payload = normalizeCampaignPayload(data);
 
   if (payload.type === 'REVIEW_COLLECTION' && !payload.templateId && !payload.messageBody) {
     const reviewTemplate = await MessageTemplate.findOne({
@@ -265,7 +342,7 @@ async function updateCampaign(id, agencyId, data) {
   if (!['DRAFT', 'SCHEDULED'].includes(campaign.status)) {
     throw new Error('Can only edit draft or scheduled campaigns');
   }
-  return campaign.update(data);
+  return campaign.update(normalizeCampaignPayload(data));
 }
 
 /**
@@ -297,7 +374,10 @@ async function getCampaign(id, agencyId) {
       {
         model: CampaignRecipient,
         as: 'recipients',
-        include: [{ model: Customer, as: 'customer', attributes: ['name', 'phone'] }],
+        include: [
+          { model: Customer, as: 'customer', attributes: ['name', 'phone'] },
+          { model: Lead, as: 'lead', attributes: ['id', 'status', 'itemType', 'packageId', 'propertyId'] },
+        ],
         limit: 100,
         order: [['sentAt', 'DESC']],
       },
@@ -340,6 +420,19 @@ async function getCampaignStats(id, agencyId) {
   const stats = {};
   (statusCounts || []).forEach((s) => { stats[s.status] = parseInt(s.count, 10); });
 
+  const [clicked, leads, bookings, revenue] = await Promise.all([
+    CampaignRecipient.count({ where: { campaignId: id, clickedAt: { [Op.ne]: null } } }),
+    Lead.count({ where: { agencyId, campaignId: id } }),
+    Booking.count({
+      where: { agencyId, status: { [Op.in]: ['PENDING', 'CONFIRMED', 'COMPLETED'] } },
+      include: [{ model: Lead, as: 'lead', where: { campaignId: id }, required: true, attributes: [] }],
+    }),
+    Booking.sum('totalAmount', {
+      where: { agencyId, status: { [Op.in]: ['PENDING', 'CONFIRMED', 'COMPLETED'] } },
+      include: [{ model: Lead, as: 'lead', where: { campaignId: id }, required: true, attributes: [] }],
+    }),
+  ]);
+
   return {
     campaign,
     stats: {
@@ -350,6 +443,10 @@ async function getCampaignStats(id, agencyId) {
       read: stats.READ || 0,
       replied: stats.REPLIED || 0,
       failed: stats.FAILED || 0,
+      clicked,
+      leads,
+      bookings,
+      revenue: revenue || 0,
     },
     timeline: (timeline || []).map((t) => ({
       hour: t.hour,
@@ -447,6 +544,13 @@ async function duplicateCampaign(id, agencyId) {
     templateId: original.templateId,
     messageBody: original.messageBody,
     audienceFilter: original.audienceFilter,
+    linkedPackageIds: original.linkedPackageIds || [],
+    format: original.format || 'STANDARD',
+    mediaType: original.mediaType || 'NONE',
+    mediaUrl: original.mediaUrl || null,
+    campaignSections: original.campaignSections || [],
+    carouselConfig: original.carouselConfig || {},
+    ctaConfig: original.ctaConfig || {},
     status: 'DRAFT',
     totalRecipients: 0,
     sent: 0,
@@ -457,6 +561,119 @@ async function duplicateCampaign(id, agencyId) {
   });
 
   return clone;
+}
+
+async function getCampaignReport(id, agencyId) {
+  const campaign = await Campaign.findOne({ where: { id, agencyId } });
+  if (!campaign) throw new Error('Campaign not found');
+
+  const [recipients, leads, bookings] = await Promise.all([
+    CampaignRecipient.findAll({
+      where: { campaignId: id },
+      include: [{ model: Customer, as: 'customer', attributes: ['name', 'phone'] }],
+      order: [['updatedAt', 'DESC']],
+      limit: 500,
+    }),
+    Lead.findAll({ where: { agencyId, campaignId: id }, raw: true }),
+    Booking.findAll({
+      where: { agencyId, status: { [Op.in]: ['PENDING', 'CONFIRMED', 'COMPLETED'] } },
+      include: [{ model: Lead, as: 'lead', where: { campaignId: id }, required: true }],
+    }),
+  ]);
+
+  const itemIds = new Set();
+  recipients.forEach((recipient) => {
+    if (recipient.selectedItemId) itemIds.add(recipient.selectedItemId);
+  });
+  leads.forEach((lead) => {
+    if (lead.packageId) itemIds.add(lead.packageId);
+    if (lead.propertyId) itemIds.add(lead.propertyId);
+  });
+
+  const [packages, properties] = await Promise.all([
+    Package.findAll({ where: { agencyId, id: { [Op.in]: Array.from(itemIds) } }, attributes: ['id', 'name', 'category'], raw: true }),
+    Property.findAll({ where: { agencyId, id: { [Op.in]: Array.from(itemIds) } }, attributes: ['id', 'name', 'propertyType', 'location'], raw: true }),
+  ]);
+
+  const names = new Map();
+  packages.forEach((pkg) => names.set(`PACKAGE:${pkg.id}`, pkg.name));
+  properties.forEach((property) => names.set(`PROPERTY:${property.id}`, property.name));
+
+  const itemMap = new Map();
+  const ensureItem = (itemType, itemId) => {
+    if (!itemType || !itemId) return null;
+    const key = `${itemType}:${itemId}`;
+    if (!itemMap.has(key)) {
+      itemMap.set(key, {
+        itemType,
+        itemId,
+        name: names.get(key) || 'Unknown item',
+        clicks: 0,
+        leads: 0,
+        bookings: 0,
+        revenue: 0,
+      });
+    }
+    return itemMap.get(key);
+  };
+
+  recipients.forEach((recipient) => {
+    const item = ensureItem(recipient.selectedItemType, recipient.selectedItemId);
+    if (item && recipient.clickedAt) item.clicks += 1;
+  });
+
+  leads.forEach((lead) => {
+    const itemType = lead.itemType || (lead.propertyId ? 'PROPERTY' : lead.packageId ? 'PACKAGE' : 'CUSTOM_TRIP');
+    const itemId = lead.propertyId || lead.packageId || lead.id;
+    const item = ensureItem(itemType, itemId);
+    if (item) item.leads += 1;
+  });
+
+  bookings.forEach((booking) => {
+    const lead = booking.lead;
+    const itemType = lead?.itemType || (lead?.propertyId ? 'PROPERTY' : lead?.packageId ? 'PACKAGE' : 'CUSTOM_TRIP');
+    const itemId = lead?.propertyId || lead?.packageId || lead?.id;
+    const item = ensureItem(itemType, itemId);
+    if (item) {
+      item.bookings += 1;
+      item.revenue += booking.totalAmount || 0;
+    }
+  });
+
+  const clickedRecipients = recipients.filter((recipient) => !!recipient.clickedAt);
+  const actionCounts = clickedRecipients.reduce((acc, recipient) => {
+    const action = recipient.clickedAction || 'UNKNOWN';
+    acc[action] = (acc[action] || 0) + 1;
+    return acc;
+  }, {});
+
+  return {
+    campaign,
+    summary: {
+      recipients: recipients.length,
+      clicked: clickedRecipients.length,
+      leads: leads.length,
+      bookings: bookings.length,
+      revenue: bookings.reduce((sum, booking) => sum + (booking.totalAmount || 0), 0),
+    },
+    actionPerformance: Object.entries(actionCounts).map(([action, count]) => ({ action, count })),
+    itemPerformance: Array.from(itemMap.values()).sort((a, b) => b.leads - a.leads || b.clicks - a.clicks),
+    recipients: recipients.map((recipient) => ({
+      id: recipient.id,
+      customer: recipient.customer,
+      status: recipient.status,
+      sentAt: recipient.sentAt,
+      deliveredAt: recipient.deliveredAt,
+      readAt: recipient.readAt,
+      repliedAt: recipient.repliedAt,
+      clickedAt: recipient.clickedAt,
+      clickedAction: recipient.clickedAction,
+      selectedItemType: recipient.selectedItemType,
+      selectedItemId: recipient.selectedItemId,
+      selectedItemName: names.get(`${recipient.selectedItemType}:${recipient.selectedItemId}`) || null,
+      leadId: recipient.leadId,
+    })),
+  };
 }
 
 /**
@@ -564,5 +781,6 @@ module.exports = {
   cancelCampaign,
   deleteCampaign,
   duplicateCampaign,
+  getCampaignReport,
   getCampaignAnalytics,
 };

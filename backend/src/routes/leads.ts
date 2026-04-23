@@ -53,6 +53,15 @@ const updateLeadSchema = z.object({
 router.get('/', authenticate, requirePermission(PERMISSIONS.LEADS_VIEW), leadController.list);
 
 /**
+ * POST /api/leads/bulk-assign - Bulk assign leads to an agent
+ */
+const bulkAssignSchema = z.object({
+  leadIds: z.array(z.string().uuid()).min(1).max(100),
+  agentId: z.string().uuid().nullable().optional(),
+});
+router.post('/bulk-assign', authenticate, requirePermission(PERMISSIONS.LEADS_MANAGE), validateBody(bulkAssignSchema), leadController.bulkAssign);
+
+/**
  * GET /api/leads/followups - List follow-ups for the current user, or all for admins
  */
 router.get('/followups', authenticate, requirePermission(PERMISSIONS.LEADS_VIEW), leadController.listFollowUps);

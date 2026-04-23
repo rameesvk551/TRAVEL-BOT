@@ -2,6 +2,7 @@ const { shouldHandoff, handoffToAgent, forwardToAgent } = require('./handlers/ha
 const { handlePaymentMessage } = require('./handlers/paymentHandler');
 const { handleReview } = require('./handlers/reviewHandler');
 const { handleTravelFlow, createFreshGreetingLead } = require('./handlers/travelFlowHandler');
+const { isCampaignAction, handleCampaignAction } = require('./handlers/campaignActionHandler');
 const { updateSession } = require('./utils/sessionManager');
 
 const RESET_TO_MENU_KEYWORDS = new Set([
@@ -79,6 +80,12 @@ async function routeMessage(session, incoming, customer, agency) {
   // Interactive WhatsApp replies should reach the flow handler first so CTA clicks
   // like "Call Now" or Flow submissions are not mistaken for generic handoff keywords.
   if (actionId) {
+    // Campaign broadcast button clicks (View Packages, Call Us, etc.)
+    if (isCampaignAction(actionId)) {
+      await handleCampaignAction(session, actionId, customer, agency);
+      return;
+    }
+
     await handleTravelFlow(session, incoming, customer, agency, {
       handoffToAgent,
       forwardToAgent,

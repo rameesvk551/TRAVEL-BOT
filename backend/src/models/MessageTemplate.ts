@@ -36,6 +36,12 @@ module.exports = (sequelize) => {
       allowNull: false,
       defaultValue: 'MARKETING',
     },
+    templateType: {
+      type: DataTypes.ENUM('STANDARD', 'CAROUSEL'),
+      allowNull: false,
+      defaultValue: 'STANDARD',
+      comment: 'STANDARD template or Meta carousel template',
+    },
     language: {
       type: DataTypes.STRING(10),
       allowNull: false,
@@ -65,6 +71,11 @@ module.exports = (sequelize) => {
       type: DataTypes.JSONB,
       defaultValue: [],
       comment: 'Array of button objects: [{ type, text, url/phone }]',
+    },
+    carouselCards: {
+      type: DataTypes.JSONB,
+      defaultValue: [],
+      comment: 'Carousel cards: [{ itemType, itemId, mediaUrl, title, body, buttons }]',
     },
     variableCount: {
       type: DataTypes.INTEGER,

@@ -90,12 +90,23 @@ async function addNote(req, res, next) {
   }
 }
 
+async function bulkAssign(req, res, next) {
+  try {
+    const { leadIds, agentId } = req.body;
+    const result = await leadService.bulkAssignLeads(leadIds, agentId || null, req.agency.id);
+    res.json({ success: true, data: result, message: `${result.updated} leads assigned` });
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   list,
   getById,
   create,
   update,
   remove,
+  bulkAssign,
   listFollowUps,
   addFollowUp,
   updateFollowUp,

@@ -12,6 +12,7 @@ router.post('/import-contacts', authenticate, campaignController.importContacts)
 router.get('/analytics', authenticate, campaignController.analytics);
 router.get('/:id', authenticate, campaignController.getById);
 router.get('/:id/stats', authenticate, campaignController.getStats);
+router.get('/:id/report', authenticate, campaignController.getReport);
 router.patch('/:id', authenticate, campaignController.update);
 router.post('/:id/send', authenticate, campaignController.send);
 router.post('/:id/cancel', authenticate, campaignController.cancel);

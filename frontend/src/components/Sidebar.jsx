@@ -10,6 +10,7 @@ import {
   UsersIcon,
   UserGroupIcon,
   CubeIcon,
+  HomeModernIcon,
   DocumentDuplicateIcon,
   ChartBarIcon,
   Cog6ToothIcon,
@@ -35,6 +36,7 @@ const navItems = [
 ];
 
 const utilityItems = [
+  { to: '/properties', icon: HomeModernIcon, label: 'Properties' },
   { to: '/itineraries', icon: DocumentDuplicateIcon, label: 'Itineraries' },
   { to: '/packages', icon: CubeIcon, label: 'Packages' },
   { to: '/analytics', icon: ChartBarIcon, label: 'Reports' },
@@ -43,7 +45,8 @@ const utilityItems = [
 const marketingItems = [
   { to: '/templates', icon: QueueListIcon, label: 'Templates' },
   { to: '/campaigns', icon: MegaphoneIcon, label: 'Campaigns' },
-  { to: '/ads', icon: CubeIcon, label: 'Social Ads' },
+  { to: '/social', icon: CubeIcon, label: 'Social Media' },
+  { to: '/ads', icon: MegaphoneIcon, label: 'Social Ads' },
   { to: '/reviews', icon: StarIcon, label: 'Reviews' },
 ];
 

@@ -408,6 +408,8 @@ function normalizeProviderTemplate(mt) {
     rejectionReason: status === 'REJECTED' ? (mt.rejectionReason || mt.rejection_reason || mt.rejected_reason || null) : null,
     variableCount: mt.variableCount || mt.variable_count || countBodyVariables(body),
     sampleVariables: Array.isArray(mt.variables) ? mt.variables : [],
+    templateType: String(mt.templateType || mt.template_type || '').toUpperCase() === 'CAROUSEL' ? 'CAROUSEL' : 'STANDARD',
+    carouselCards: Array.isArray(mt.carouselCards || mt.carousel_cards) ? (mt.carouselCards || mt.carousel_cards) : [],
   };
 }
 
@@ -435,6 +437,12 @@ function buildTemplateData(data, existing = null) {
     body,
     footer: data.footer ?? existing?.footer ?? null,
     buttons: normalizeButtons(data.buttons ?? existing?.buttons),
+    templateType: String(data.templateType ?? data.template_type ?? existing?.templateType ?? 'STANDARD').toUpperCase() === 'CAROUSEL'
+      ? 'CAROUSEL'
+      : 'STANDARD',
+    carouselCards: Array.isArray(data.carouselCards)
+      ? data.carouselCards
+      : (existing?.carouselCards || []),
     variableCount,
     sampleVariables: Array.isArray(data.sampleVariables)
       ? data.sampleVariables

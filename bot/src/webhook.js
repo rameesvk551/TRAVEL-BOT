@@ -85,7 +85,26 @@ async function handleIncoming(req, res) {
       return;
     }
 
-    // Extract messages from webhook payload
+    const eventType = req.headers['x-marketing-os-event'];
+
+    // Handle Instagram Proxy Webhooks
+    if (eventType === 'instagram_message') {
+      const tenantId = req.headers['x-partner-tenant-id'];
+      await processInstagramMessage({ ...body, tenantId }).catch((err) => {
+        console.error('[Webhook] Error processing IG message:', err.message);
+      });
+      return;
+    }
+
+    if (eventType === 'instagram_comment') {
+      const tenantId = req.headers['x-partner-tenant-id'];
+      await processInstagramComment({ ...body, tenantId }).catch((err) => {
+        console.error('[Webhook] Error processing IG comment:', err.message);
+      });
+      return;
+    }
+
+    // Extract messages from webhook payload (WhatsApp structure)
     const entries = Array.isArray(body.entry) ? body.entry : [];
     if (!entries.length) {
       console.warn('[Webhook] No entry array found in incoming payload');
@@ -255,6 +274,106 @@ async function processMessage(msg, metadata) {
       console.error('[Webhook] Even fallback message failed:', fallbackErr.message);
     }
   }
+}
+
+async function processInstagramMessage(data) {
+  const { accountId, igAccountId, senderId, recipientId, messageId, text, attachments, timestamp, tenantId } = data;
+  
+  // Find agency by Instagram account ID or tenant ID
+  const agency = await Agency.findOne({
+    where: { marketingOsTenantId: tenantId || '' },
+  });
+
+  if (!agency) {
+    console.error(`[IG Webhook] No agency found for tenant ID: ${tenantId}`);
+    return;
+  }
+
+  // Use account + sender as the unique identifier so the same person can DM multiple managed pages.
+  const managedAccountId = igAccountId || accountId || recipientId || 'unknown';
+  const fromIdentifier = `ig_${managedAccountId}:${senderId}`;
+  
+  // Create an incoming format similar to WhatsApp
+  const incoming = {
+    text: text || '',
+    actionId: data.postbackPayload || data.actionId || '',
+    type: attachments && attachments.length > 0 ? 'MEDIA' : 'TEXT',
+    mediaId: attachments && attachments.length > 0 ? attachments[0].id : null,
+  };
+
+  // Load or create session + customer
+  const { session, customer } = await loadOrCreateSession(fromIdentifier, agency.id);
+
+  // We don't have the user's name immediately from Instagram message payload in Meta's basic webhook, 
+  // but if we do, we could update it. We leave it generic or update if Marketing OS sent a profile name.
+
+  await ensureLead(session, customer, agency, {
+    status: 'JUST_CONTACTED',
+    notes: 'First Instagram DM received',
+    preserveExistingStatus: true,
+  });
+
+  try {
+    await schedulerService.cancelChatFollowUps(customer.id, agency.id);
+  } catch (err) {
+    console.warn('[IG Webhook] Could not cancel pending follow-ups:', err.message);
+  }
+
+  // Save incoming message to DB
+  await Message.create({
+    customerId: customer.id,
+    agencyId: agency.id,
+    direction: 'IN',
+    content: incoming.text || (incoming.mediaId ? `[Media Received: ${incoming.mediaId}]` : ''),
+    type: incoming.type,
+    waMessageId: messageId, // Reusing waMessageId field for Instagram message ID
+    status: 'DELIVERED',
+    timestamp: timestamp ? new Date(parseInt(timestamp) * 1000) : new Date(),
+  });
+
+  // Process through bot with fallback protection
+  try {
+    // For Instagram, we can simulate typing indicator via Marketing OS proxy if it's supported.
+    // For now, directly route the message.
+    
+    // We add a flag to identify this as an Instagram channel to botRouter if it needs it.
+    customer.source = 'instagram'; 
+    await customer.save();
+
+    await routeMessage(session, incoming, customer, agency);
+  } catch (err) {
+    console.error('[IG Webhook] Bot processing error:', err.message);
+    
+    // FALLBACK
+    try {
+      // Send fallback using marketingOsPartnerService directly
+      const partnerService = require(path.resolve(__dirname, '../../backend/src/services/marketingOsPartnerService.ts'));
+      const tenantToken = await partnerService.getTenantToken(agency.marketingOsTenantId);
+      
+      await partnerService.sendTenantInstagramMessage(tenantToken, {
+        accountId: igAccountId,
+        recipientId: senderId,
+        text: `Sorry, we are currently experiencing issues. Please contact us via phone or email.`
+      });
+    } catch (fallbackErr) {
+      console.error('[IG Webhook] Even fallback message failed:', fallbackErr.message);
+    }
+  }
+}
+
+async function processInstagramComment(data) {
+  const { tenantId } = data;
+  const agency = await Agency.findOne({
+    where: { marketingOsTenantId: tenantId || '' },
+  });
+
+  if (!agency) {
+    console.error(`[IG Webhook] No agency found for comment tenant ID: ${tenantId}`);
+    return;
+  }
+
+  const instagramAutomationService = require(path.resolve(__dirname, '../../backend/src/services/instagramAutomationService.ts'));
+  await instagramAutomationService.processCommentEvent(agency.id, data);
 }
 
 function extractIncoming(msg) {

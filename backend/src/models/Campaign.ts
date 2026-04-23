@@ -27,6 +27,21 @@ module.exports = (sequelize) => {
       allowNull: false,
       defaultValue: 'BROADCAST',
     },
+    format: {
+      type: DataTypes.ENUM('STANDARD', 'SECTION_CTA', 'ITEM_CAROUSEL'),
+      allowNull: false,
+      defaultValue: 'STANDARD',
+      comment: 'Campaign experience: standard broadcast, section CTA, or item carousel',
+    },
+    mediaType: {
+      type: DataTypes.ENUM('NONE', 'IMAGE', 'VIDEO'),
+      allowNull: false,
+      defaultValue: 'NONE',
+    },
+    mediaUrl: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+    },
     templateId: {
       type: DataTypes.UUID,
       allowNull: true,
@@ -41,6 +56,26 @@ module.exports = (sequelize) => {
       type: DataTypes.JSONB,
       defaultValue: {},
       comment: 'Segment criteria: { statuses, destinations, budgetMin, budgetMax, lastActiveBefore, customerType }',
+    },
+    linkedPackageIds: {
+      type: DataTypes.JSONB,
+      defaultValue: [],
+      comment: 'Package IDs linked to this campaign for interactive discovery',
+    },
+    campaignSections: {
+      type: DataTypes.JSONB,
+      defaultValue: [],
+      comment: 'Dynamic sections: packages, properties, custom trip entry points',
+    },
+    carouselConfig: {
+      type: DataTypes.JSONB,
+      defaultValue: {},
+      comment: 'Carousel item/card config for package/property campaigns',
+    },
+    ctaConfig: {
+      type: DataTypes.JSONB,
+      defaultValue: {},
+      comment: 'CTA labels and routing metadata for section campaigns',
     },
     audienceCount: {
       type: DataTypes.INTEGER,

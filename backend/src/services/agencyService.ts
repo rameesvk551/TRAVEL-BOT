@@ -427,6 +427,49 @@ async function handleMarketingOsCallback(headers, payload, rawBody) {
   };
 }
 
+async function getInstagramConnection(agencyId) {
+  const agency = await agencyRepository.findById(agencyId);
+  if (!agency) {
+    throw Object.assign(new Error('Agency not found'), { statusCode: 404, code: 'NOT_FOUND' });
+  }
+
+  if (!agency.marketingOsTenantId) {
+    return { connected: false, accounts: [] };
+  }
+
+  const tenantToken = await marketingOsPartnerService.getTenantToken(agency.marketingOsTenantId);
+  const data = await marketingOsPartnerService.getTenantInstagramConnection(tenantToken);
+  return data?.data || { connected: false, accounts: [] };
+}
+
+async function connectInstagram(agencyId, payload) {
+  const agency = await agencyRepository.findById(agencyId);
+  if (!agency) {
+    throw Object.assign(new Error('Agency not found'), { statusCode: 404, code: 'NOT_FOUND' });
+  }
+
+  const tenantId = await resolveMarketingOsTenant(agency);
+  const tenantToken = await marketingOsPartnerService.getTenantToken(tenantId);
+  
+  const result = await marketingOsPartnerService.connectTenantInstagram(tenantToken, payload);
+  return result?.data || result;
+}
+
+async function disconnectInstagram(agencyId, accountId) {
+  const agency = await agencyRepository.findById(agencyId);
+  if (!agency) {
+    throw Object.assign(new Error('Agency not found'), { statusCode: 404, code: 'NOT_FOUND' });
+  }
+
+  if (!agency.marketingOsTenantId) {
+    throw Object.assign(new Error('No tenant found'), { statusCode: 404 });
+  }
+
+  const tenantToken = await marketingOsPartnerService.getTenantToken(agency.marketingOsTenantId);
+  const result = await marketingOsPartnerService.disconnectTenantInstagram(tenantToken, accountId);
+  return result;
+}
+
 module.exports = {
   getCurrentAgency,
   updateCurrentAgency,
@@ -434,4 +477,7 @@ module.exports = {
   createMarketingOsConnectSession,
   completeMarketingOsConnectSession,
   handleMarketingOsCallback,
+  getInstagramConnection,
+  connectInstagram,
+  disconnectInstagram,
 };

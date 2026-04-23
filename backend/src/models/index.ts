@@ -42,6 +42,9 @@ const ScheduledJob = require('./ScheduledJob')(sequelize);
 const Itinerary = require('./Itinerary')(sequelize);
 const FollowUp = require('./FollowUp')(sequelize);
 const LeadNote = require('./LeadNote')(sequelize);
+const Property = require('./Property')(sequelize);
+const InstagramAutomation = require('./InstagramAutomation')(sequelize);
+const InstagramAutomationLog = require('./InstagramAutomationLog')(sequelize);
 
 // Marketing models
 const MessageTemplate = require('./MessageTemplate')(sequelize);
@@ -71,6 +74,12 @@ Agency.hasMany(DripSequence, { foreignKey: 'agencyId', as: 'dripSequences' });
 Agency.hasMany(DripEnrollment, { foreignKey: 'agencyId', as: 'dripEnrollments' });
 Agency.hasMany(ReferralCode, { foreignKey: 'agencyId', as: 'referralCodes' });
 Agency.hasMany(Review, { foreignKey: 'agencyId', as: 'reviews' });
+Agency.hasMany(Property, { foreignKey: 'agencyId', as: 'properties' });
+Agency.hasMany(InstagramAutomation, { foreignKey: 'agencyId', as: 'instagramAutomations' });
+Agency.hasMany(InstagramAutomationLog, { foreignKey: 'agencyId', as: 'instagramAutomationLogs' });
+
+// Property belongs to Agency
+Property.belongsTo(Agency, { foreignKey: 'agencyId', as: 'agency' });
 
 // Agent belongs to Agency
 Agent.belongsTo(Agency, { foreignKey: 'agencyId', as: 'agency' });
@@ -99,6 +108,8 @@ Lead.belongsTo(Customer, { foreignKey: 'customerId', as: 'customer' });
 Lead.belongsTo(Agency, { foreignKey: 'agencyId', as: 'agency' });
 Lead.belongsTo(Agent, { foreignKey: 'assignedAgentId', as: 'assignedAgent' });
 Lead.belongsTo(Package, { foreignKey: 'packageId', as: 'package' });
+Lead.belongsTo(Property, { foreignKey: 'propertyId', as: 'property' });
+Lead.belongsTo(Campaign, { foreignKey: 'campaignId', as: 'campaign' });
 Lead.belongsTo(ReferralCode, { foreignKey: 'referralCodeId', as: 'referralCode' });
 Lead.hasOne(Booking, { foreignKey: 'leadId', as: 'booking' });
 Lead.hasMany(DripEnrollment, { foreignKey: 'leadId', as: 'dripEnrollments' });
@@ -109,6 +120,15 @@ Lead.hasMany(LeadNote, { foreignKey: 'leadId', as: 'notesList' });
 Package.belongsTo(Agency, { foreignKey: 'agencyId', as: 'agency' });
 Package.hasMany(Lead, { foreignKey: 'packageId', as: 'leads' });
 Package.hasMany(Booking, { foreignKey: 'packageId', as: 'bookings' });
+
+// Property inventory
+Property.hasMany(Lead, { foreignKey: 'propertyId', as: 'leads' });
+
+// Instagram automations
+InstagramAutomation.belongsTo(Agency, { foreignKey: 'agencyId', as: 'agency' });
+InstagramAutomation.hasMany(InstagramAutomationLog, { foreignKey: 'automationId', as: 'logs' });
+InstagramAutomationLog.belongsTo(Agency, { foreignKey: 'agencyId', as: 'agency' });
+InstagramAutomationLog.belongsTo(InstagramAutomation, { foreignKey: 'automationId', as: 'automation' });
 
 // Booking
 Booking.belongsTo(Lead, { foreignKey: 'leadId', as: 'lead' });
@@ -149,10 +169,12 @@ MessageTemplate.belongsTo(Agency, { foreignKey: 'agencyId', as: 'agency' });
 Campaign.belongsTo(Agency, { foreignKey: 'agencyId', as: 'agency' });
 Campaign.belongsTo(MessageTemplate, { foreignKey: 'templateId', as: 'template' });
 Campaign.hasMany(CampaignRecipient, { foreignKey: 'campaignId', as: 'recipients' });
+Campaign.hasMany(Lead, { foreignKey: 'campaignId', as: 'leads' });
 
 // CampaignRecipient
 CampaignRecipient.belongsTo(Campaign, { foreignKey: 'campaignId', as: 'campaign' });
 CampaignRecipient.belongsTo(Customer, { foreignKey: 'customerId', as: 'customer' });
+CampaignRecipient.belongsTo(Lead, { foreignKey: 'leadId', as: 'lead' });
 
 // DripSequence
 DripSequence.belongsTo(Agency, { foreignKey: 'agencyId', as: 'agency' });
@@ -213,4 +235,7 @@ module.exports = {
   Itinerary,
   FollowUp,
   LeadNote,
+  Property,
+  InstagramAutomation,
+  InstagramAutomationLog,
 };

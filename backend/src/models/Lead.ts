@@ -57,6 +57,30 @@ module.exports = (sequelize) => {
       type: DataTypes.UUID,
       allowNull: true,
     },
+    propertyId: {
+      type: DataTypes.UUID,
+      allowNull: true,
+      comment: 'FK to Property when lead originated from a property enquiry',
+    },
+    itemType: {
+      type: DataTypes.ENUM('PACKAGE', 'PROPERTY', 'CUSTOM_TRIP'),
+      allowNull: true,
+      comment: 'Campaign item type that generated this lead',
+    },
+    campaignId: {
+      type: DataTypes.UUID,
+      allowNull: true,
+      comment: 'Campaign that generated this lead',
+    },
+    campaignName: {
+      type: DataTypes.STRING(255),
+      allowNull: true,
+    },
+    campaignAction: {
+      type: DataTypes.STRING(100),
+      allowNull: true,
+      comment: 'CTA/action that generated or updated this lead',
+    },
     interest: {
       type: DataTypes.STRING(50),
       allowNull: true,
@@ -125,6 +149,8 @@ module.exports = (sequelize) => {
       { fields: ['agency_id', 'assigned_agent_id'] },
       { fields: ['customer_id'] },
       { fields: ['created_at'] },
+      { fields: ['campaign_id'] },
+      { fields: ['property_id'] },
     ],
   });
 

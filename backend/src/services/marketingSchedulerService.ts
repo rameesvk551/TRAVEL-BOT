@@ -3,7 +3,7 @@
 const { Queue, Worker } = require('bullmq');
 const IORedis = require('ioredis');
 const dripService = require('./dripService');
-const { Campaign, CampaignRecipient, Customer, MessageTemplate, BotSession } = require('../models');
+const { Campaign, CampaignRecipient, Customer, MessageTemplate, BotSession, Agency, Package, Property } = require('../models');
 const whatsappService = require('./whatsappService');
 const { Op } = require('sequelize');
 
@@ -70,6 +70,178 @@ async function sendReviewRatingPrompt(customer, agencyId) {
       footerText: 'You can also type a number from 1 to 5.',
     }
   );
+}
+
+/**
+ * Send interactive action buttons after a campaign broadcast message.
+ * Gives customers quick-tap access to view linked packages or call the agency.
+ */
+async function sendCampaignActionButtons(customer, campaign, agencyId) {
+  const context = { customerId: customer.id, agencyId };
+  const agency = await Agency.findByPk(agencyId, { attributes: ['id', 'name', 'phone', 'whatsappNumber'] });
+  const linkedCount = Array.isArray(campaign.linkedPackageIds) ? campaign.linkedPackageIds.length : 0;
+
+  const buttons = [
+    { id: `campaign_view_packages:${campaign.id}`, title: `🏖️ View Packages` },
+  ];
+
+  if (agency?.phone || agency?.whatsappNumber) {
+    buttons.push({ id: `campaign_call_now:${campaign.id}`, title: '📞 Call Us' });
+  }
+
+  return whatsappService.sendButtonsMessage(
+    customer.phone,
+    `Tap below to explore ${linkedCount} curated package${linkedCount > 1 ? 's' : ''} handpicked for you! 👇`,
+    buttons,
+    context,
+    { footerText: 'Reply Hi anytime to restart.' }
+  );
+}
+
+function getEnabledCampaignSections(campaign) {
+  const sections = Array.isArray(campaign.campaignSections) ? campaign.campaignSections : [];
+  if (sections.length) {
+    return sections
+      .filter((section) => section.enabled !== false)
+      .sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0));
+  }
+
+  const linkedPackageIds = Array.isArray(campaign.linkedPackageIds) ? campaign.linkedPackageIds : [];
+  if (linkedPackageIds.length) {
+    return [{
+      key: 'packages',
+      label: 'View Packages',
+      itemType: 'PACKAGE',
+      selectionMode: 'MANUAL',
+      selectedItemIds: linkedPackageIds,
+    }];
+  }
+
+  return [];
+}
+
+async function sendCampaignSectionEntry(customer, campaign, agencyId) {
+  const context = { customerId: customer.id, agencyId };
+  const sections = getEnabledCampaignSections(campaign);
+  if (sections.length === 0) return null;
+
+  if (sections.length <= 3) {
+    const buttons = sections.map((section) => ({
+      id: section.itemType === 'CUSTOM_TRIP'
+        ? `campaign_custom_trip:${campaign.id}`
+        : `campaign_section:${campaign.id}:${section.key}`,
+      title: String(section.label || section.key || 'View Deals').slice(0, 20),
+    }));
+
+    return whatsappService.sendButtonsMessage(
+      customer.phone,
+      'Choose what you want to explore from this campaign.',
+      buttons,
+      context,
+      { footerText: 'Reply Hi anytime to restart.' }
+    );
+  }
+
+  const rows = sections.map((section) => ({
+    id: section.itemType === 'CUSTOM_TRIP'
+      ? `campaign_custom_trip:${campaign.id}`
+      : `campaign_section:${campaign.id}:${section.key}`,
+    title: String(section.label || section.key || 'View Deals').slice(0, 24),
+    description: section.itemType === 'PROPERTY'
+      ? 'Browse stays and properties'
+      : section.itemType === 'CUSTOM_TRIP'
+        ? 'Share your trip preferences'
+        : 'Browse package deals',
+  }));
+
+  return whatsappService.sendListMessage(
+    customer.phone,
+    'Choose what you want to explore from this campaign.',
+    'Explore',
+    [{ title: 'Campaign Deals', rows }],
+    context,
+    { headerText: campaign.name, footerText: 'Tap one option to continue.' }
+  );
+}
+
+function moneyFromPaise(value) {
+  const amount = Math.round(Number(value || 0) / 100);
+  if (!amount) return null;
+  return `₹${amount.toLocaleString('en-IN')}`;
+}
+
+async function resolveCampaignCarouselItems(campaign, agencyId) {
+  const configItems = Array.isArray(campaign.carouselConfig?.items) ? campaign.carouselConfig.items : [];
+  if (!configItems.length) return [];
+
+  const packageIds = configItems
+    .filter((item) => item.itemType === 'PACKAGE' && item.itemId)
+    .map((item) => item.itemId);
+  const propertyIds = configItems
+    .filter((item) => item.itemType === 'PROPERTY' && item.itemId)
+    .map((item) => item.itemId);
+
+  const [packages, properties] = await Promise.all([
+    packageIds.length
+      ? Package.findAll({ where: { agencyId, id: { [Op.in]: packageIds }, isActive: { [Op.ne]: false } } })
+      : [],
+    propertyIds.length
+      ? Property.findAll({ where: { agencyId, id: { [Op.in]: propertyIds }, isActive: { [Op.ne]: false } } })
+      : [],
+  ]);
+
+  const packageMap = new Map(packages.map((pkg) => [pkg.id, pkg]));
+  const propertyMap = new Map(properties.map((property) => [property.id, property]));
+
+  return configItems.slice(0, 10).map((item) => {
+    const record = item.itemType === 'PROPERTY' ? propertyMap.get(item.itemId) : packageMap.get(item.itemId);
+    return record ? { itemType: item.itemType, record } : null;
+  }).filter(Boolean);
+}
+
+function buildCampaignCarouselCaption(itemType, record) {
+  if (itemType === 'PROPERTY') {
+    const price = moneyFromPaise(record.pricePerNight);
+    return [
+      `*${record.name}*`,
+      [record.propertyType, record.location].filter(Boolean).join(' | '),
+      record.description,
+      price ? `From ${price}/night` : null,
+    ].filter(Boolean).join('\n');
+  }
+
+  const price = moneyFromPaise(record.basePrice);
+  return [
+    `*${record.name}*`,
+    [record.category, record.duration].filter(Boolean).join(' | '),
+    Array.isArray(record.destinations) && record.destinations.length ? `Destinations: ${record.destinations.join(', ')}` : null,
+    record.summary,
+    price ? `From ${price}/person` : null,
+  ].filter(Boolean).join('\n');
+}
+
+async function sendCampaignCarouselEntry(customer, campaign, agencyId) {
+  const context = { customerId: customer.id, agencyId };
+  const items = await resolveCampaignCarouselItems(campaign, agencyId);
+  if (!items.length) return null;
+
+  for (const item of items) {
+    const buttons = [
+      { id: `campaign_carousel_enquire:${campaign.id}:${item.itemType}:${item.record.id}`, title: 'Enquiry' },
+      { id: `campaign_carousel_others:${campaign.id}`, title: 'See Others' },
+    ];
+
+    await whatsappService.sendMediaButtonsMessage(
+      customer.phone,
+      buildCampaignCarouselCaption(item.itemType, item.record),
+      item.record.imageUrl,
+      buttons,
+      context,
+      { footerText: campaign.name }
+    );
+  }
+
+  return items.length;
 }
 
 /**
@@ -146,6 +318,30 @@ async function sendToRecipient(recipient, campaign, template, agencyId) {
         await sendReviewRatingPrompt(customer, agencyId).catch((err) => {
           console.error(`[CampaignBroadcast] Failed to send review rating prompt to ${customer.phone}:`, err.message);
         });
+      }
+    }
+
+    // Send follow-up interactive entry points if the customer is in the 24h service window.
+    const linkedPkgIds = Array.isArray(campaign.linkedPackageIds) ? campaign.linkedPackageIds : [];
+    const hasDynamicSections = Array.isArray(campaign.campaignSections) && campaign.campaignSections.length > 0;
+    const format = String(campaign.format || 'STANDARD').toUpperCase();
+    const hasCarouselItems = Array.isArray(campaign.carouselConfig?.items) && campaign.carouselConfig.items.length > 0;
+    if ((linkedPkgIds.length > 0 || hasDynamicSections || hasCarouselItems) && campaign.type !== 'REVIEW_COLLECTION') {
+      const canSendInteractive = await whatsappService.isCustomerIn24hWindow(context);
+      if (canSendInteractive) {
+        if (format === 'ITEM_CAROUSEL') {
+          await sendCampaignCarouselEntry(customer, campaign, agencyId).catch((err) => {
+            console.error(`[CampaignBroadcast] Failed to send campaign carousel to ${customer.phone}:`, err.message);
+          });
+        } else if (format === 'SECTION_CTA' || hasDynamicSections) {
+          await sendCampaignSectionEntry(customer, campaign, agencyId).catch((err) => {
+            console.error(`[CampaignBroadcast] Failed to send campaign section entry to ${customer.phone}:`, err.message);
+          });
+        } else {
+          await sendCampaignActionButtons(customer, campaign, agencyId).catch((err) => {
+            console.error(`[CampaignBroadcast] Failed to send campaign action buttons to ${customer.phone}:`, err.message);
+          });
+        }
       }
     }
 

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   ArrowPathIcon,
@@ -7,6 +7,7 @@ import {
   CalendarDaysIcon,
   ChatBubbleLeftRightIcon,
   CheckCircleIcon,
+  CheckIcon,
   ClockIcon,
   ExclamationTriangleIcon,
   FunnelIcon,
@@ -24,6 +25,7 @@ import client from '../api/client';
 import {
   useAddFollowUp,
   useAddNote,
+  useBulkAssignLeads,
   useLead,
   useLeads,
   useUpdateFollowUp,
@@ -71,6 +73,7 @@ export default function Leads() {
   const [sortBy, setSortBy] = useState('overdue');
   const [dateRange, setDateRange] = useState('all');
   const [agentFilter, setAgentFilter] = useState('all');
+  const [selectedLeadIds, setSelectedLeadIds] = useState(new Set());
 
   const currentAgent = useAuthStore((state) => state.agent);
   const leadsQuery = useLeads({ pageSize: 200 });
@@ -82,6 +85,32 @@ export default function Leads() {
   });
   const agents = agentsResponse?.data || [];
   const updateLead = useUpdateLead();
+  const bulkAssign = useBulkAssignLeads();
+
+  const toggleSelectLead = useCallback((leadId) => {
+    setSelectedLeadIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(leadId)) next.delete(leadId);
+      else next.add(leadId);
+      return next;
+    });
+  }, []);
+
+  const toggleSelectAll = useCallback(() => {
+    setSelectedLeadIds((prev) => {
+      if (prev.size === filteredLeads.length && filteredLeads.length > 0) return new Set();
+      return new Set(filteredLeads.map((l) => l.id));
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filteredLeads]);
+
+  const handleBulkAssign = useCallback((agentId) => {
+    if (selectedLeadIds.size === 0) return;
+    bulkAssign.mutate(
+      { leadIds: [...selectedLeadIds], agentId: agentId || null },
+      { onSuccess: () => setSelectedLeadIds(new Set()) }
+    );
+  }, [selectedLeadIds, bulkAssign]);
 
   const tabCounts = useMemo(() => {
     const counts = {
@@ -315,8 +344,19 @@ export default function Leads() {
           onLeadClick={(lead) => setSelectedLeadId(lead.id)}
           onRetry={() => leadsQuery.refetch()}
           onUpdateLead={updateLeadField}
+          selectedLeadIds={selectedLeadIds}
+          onToggleSelect={toggleSelectLead}
+          onToggleSelectAll={toggleSelectAll}
         />
       )}
+
+      <BulkActionBar
+        agents={agents}
+        count={selectedLeadIds.size}
+        isPending={bulkAssign.isPending}
+        onAssign={handleBulkAssign}
+        onClear={() => setSelectedLeadIds(new Set())}
+      />
 
       <LeadDrawer
         agents={agents}
@@ -349,13 +389,32 @@ function MetricCard({ icon: Icon, tone, value, label }) {
   );
 }
 
-function LeadTable({ agents, clearFilters, isError, isLoading, leads, onLeadClick, onRetry, onUpdateLead }) {
+function LeadTable({ agents, clearFilters, isError, isLoading, leads, onLeadClick, onRetry, onUpdateLead, selectedLeadIds, onToggleSelect, onToggleSelectAll }) {
+  const allSelected = leads.length > 0 && selectedLeadIds.size === leads.length;
+  const someSelected = selectedLeadIds.size > 0 && selectedLeadIds.size < leads.length;
+  const colSpan = 10;
+
   return (
     <div className="data-table-wrapper">
       <div className="overflow-x-auto hide-scrollbar">
-        <table className="w-full min-w-[1120px] border-collapse text-left">
+        <table className="w-full min-w-[1180px] border-collapse text-left">
           <thead>
             <tr className="data-table-head">
+              <th className="data-table-th w-12" onClick={(e) => e.stopPropagation()}>
+                <button
+                  onClick={onToggleSelectAll}
+                  className={`flex h-5 w-5 items-center justify-center rounded border-2 transition-all ${
+                    allSelected
+                      ? 'border-neutral-900 bg-neutral-900 text-white'
+                      : someSelected
+                        ? 'border-neutral-900 bg-neutral-200'
+                        : 'border-neutral-300 hover:border-neutral-500'
+                  }`}
+                >
+                  {allSelected && <CheckIcon className="h-3.5 w-3.5" />}
+                  {someSelected && !allSelected && <span className="block h-0.5 w-2.5 rounded bg-neutral-900" />}
+                </button>
+              </th>
               <th className="data-table-th w-16">SL NO</th>
               <th className="data-table-th">Lead</th>
               <th className="data-table-th">Attention</th>
@@ -368,11 +427,11 @@ function LeadTable({ agents, clearFilters, isError, isLoading, leads, onLeadClic
             </tr>
           </thead>
           <tbody>
-            {isLoading && <LeadTableSkeleton />}
+            {isLoading && <LeadTableSkeleton colSpan={colSpan} />}
 
             {isError && !isLoading && (
               <tr>
-                <td colSpan="9" className="p-16 text-center">
+                <td colSpan={colSpan} className="p-16 text-center">
                   <div className="mx-auto flex max-w-sm flex-col items-center">
                     <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full border border-rose-100 bg-rose-50">
                       <XCircleIcon className="h-8 w-8 text-rose-500" />
@@ -390,7 +449,7 @@ function LeadTable({ agents, clearFilters, isError, isLoading, leads, onLeadClic
 
             {!isLoading && !isError && leads.length === 0 && (
               <tr>
-                <td colSpan="9" className="p-20 text-center">
+                <td colSpan={colSpan} className="p-20 text-center">
                   <div className="mx-auto flex max-w-sm flex-col items-center">
                     <div className="mb-4 flex h-20 w-20 items-center justify-center rounded-full border border-neutral-100 bg-neutral-50 shadow-inner">
                       <BriefcaseIcon className="h-10 w-10 text-neutral-300" />
@@ -416,9 +475,11 @@ function LeadTable({ agents, clearFilters, isError, isLoading, leads, onLeadClic
                 <LeadTableRow
                   agents={agents}
                   index={index}
+                  isSelected={selectedLeadIds.has(lead.id)}
                   key={lead.id}
                   lead={lead}
                   onLeadClick={onLeadClick}
+                  onToggleSelect={onToggleSelect}
                   onUpdateLead={onUpdateLead}
                 />
               ))}
@@ -429,22 +490,34 @@ function LeadTable({ agents, clearFilters, isError, isLoading, leads, onLeadClic
   );
 }
 
-function LeadTableSkeleton() {
+function LeadTableSkeleton({ colSpan = 10 }) {
   return Array.from({ length: 5 }).map((_, index) => (
     <tr key={index} className="border-b border-neutral-100">
-      <td colSpan="9" className="px-4 py-4">
+      <td colSpan={colSpan} className="px-4 py-4">
         <div className="h-12 animate-pulse rounded-[var(--radius-md)] bg-neutral-100" />
       </td>
     </tr>
   ));
 }
 
-function LeadTableRow({ agents, index, lead, onLeadClick, onUpdateLead }) {
+function LeadTableRow({ agents, index, isSelected, lead, onLeadClick, onToggleSelect, onUpdateLead }) {
   const attentionBadges = getAttentionBadges(lead);
   const nextFollowUp = getNextFollowUp(lead);
 
   return (
-    <tr className="data-table-row group" onClick={() => onLeadClick(lead)}>
+    <tr className={`data-table-row group ${isSelected ? 'bg-indigo-50/60' : ''}`} onClick={() => onLeadClick(lead)}>
+      <td className="data-table-td" onClick={(event) => event.stopPropagation()}>
+        <button
+          onClick={() => onToggleSelect(lead.id)}
+          className={`flex h-5 w-5 items-center justify-center rounded border-2 transition-all ${
+            isSelected
+              ? 'border-neutral-900 bg-neutral-900 text-white'
+              : 'border-neutral-300 hover:border-neutral-500'
+          }`}
+        >
+          {isSelected && <CheckIcon className="h-3.5 w-3.5" />}
+        </button>
+      </td>
       <td className="data-table-td font-medium text-neutral-400">#{index + 1}</td>
       <td className="data-table-td">
         <div className="flex items-center gap-3">
@@ -701,6 +774,7 @@ function LeadDrawer({ leadId, onClose, agents }) {
                   className="w-full rounded-md border-neutral-200 bg-neutral-50 px-2 py-1 text-sm focus:ring-0"
                 >
                   <option value="whatsapp_organic">WhatsApp Organic</option>
+                  <option value="instagram">Instagram DM</option>
                   <option value="facebook_ad">Facebook Ad</option>
                   <option value="instagram_ad">Instagram Ad</option>
                   <option value="google_ad">Google Ad</option>
@@ -1077,6 +1151,92 @@ function EmptyPanel({ text }) {
   return (
     <div className="mt-4 rounded-[var(--radius-md)] border border-neutral-200 bg-white py-10 text-center">
       <div className="text-sm text-neutral-400">{text}</div>
+    </div>
+  );
+}
+
+function BulkActionBar({ agents, count, isPending, onAssign, onClear }) {
+  const [bulkAgentId, setBulkAgentId] = useState('');
+
+  if (count === 0) return null;
+
+  return (
+    <div className="fixed inset-x-0 bottom-0 z-50 flex justify-center pb-6 pointer-events-none animate-fade-in">
+      <div className="pointer-events-auto flex items-center gap-4 rounded-2xl border border-neutral-200/80 bg-white/95 px-6 py-3.5 shadow-2xl backdrop-blur-xl ring-1 ring-black/5">
+        {/* Selection count badge */}
+        <div className="flex items-center gap-2.5">
+          <span className="flex h-8 w-8 items-center justify-center rounded-full bg-neutral-900 text-xs font-bold text-white shadow-sm">
+            {count}
+          </span>
+          <span className="text-sm font-semibold text-neutral-700">
+            {count === 1 ? 'lead' : 'leads'} selected
+          </span>
+        </div>
+
+        {/* Divider */}
+        <div className="h-8 w-px bg-neutral-200" />
+
+        {/* Agent picker */}
+        <div className="flex items-center gap-2.5">
+          <UserPlusIcon className="h-4.5 w-4.5 text-neutral-400" />
+          <select
+            value={bulkAgentId}
+            onChange={(e) => setBulkAgentId(e.target.value)}
+            className="h-9 w-48 cursor-pointer rounded-lg border border-neutral-200 bg-neutral-50 px-3 text-sm font-medium text-neutral-700 transition-colors hover:border-neutral-400 focus:border-neutral-500 focus:ring-0"
+          >
+            <option value="">Select Agent...</option>
+            {agents.map((agent) => (
+              <option key={agent.id} value={agent.id}>
+                {agent.name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Assign button */}
+        <button
+          onClick={() => {
+            if (!bulkAgentId) return;
+            onAssign(bulkAgentId);
+            setBulkAgentId('');
+          }}
+          disabled={!bulkAgentId || isPending}
+          className="flex h-9 items-center gap-2 rounded-lg bg-neutral-900 px-5 text-sm font-bold text-white shadow-sm transition-all hover:bg-black disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          {isPending ? (
+            <>
+              <ArrowPathIcon className="h-4 w-4 animate-spin" />
+              Assigning...
+            </>
+          ) : (
+            <>
+              <CheckCircleIcon className="h-4 w-4" />
+              Assign
+            </>
+          )}
+        </button>
+
+        {/* Unassign button */}
+        <button
+          onClick={() => {
+            onAssign(null);
+            setBulkAgentId('');
+          }}
+          disabled={isPending}
+          className="flex h-9 items-center gap-1.5 rounded-lg border border-neutral-200 bg-white px-4 text-sm font-semibold text-neutral-600 transition-all hover:bg-neutral-50 hover:border-neutral-300 disabled:opacity-40"
+        >
+          Unassign
+        </button>
+
+        {/* Clear selection */}
+        <button
+          onClick={onClear}
+          className="flex h-8 w-8 items-center justify-center rounded-full text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-600"
+          title="Clear selection"
+        >
+          <XMarkIcon className="h-4.5 w-4.5" />
+        </button>
+      </div>
     </div>
   );
 }

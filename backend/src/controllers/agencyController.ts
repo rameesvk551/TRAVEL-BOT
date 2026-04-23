@@ -58,6 +58,33 @@ async function handleMarketingOsCallback(req, res, next) {
   }
 }
 
+async function getInstagramConnection(req, res, next) {
+  try {
+    const data = await agencyService.getInstagramConnection(req.agency.id);
+    res.json({ success: true, data });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function connectInstagram(req, res, next) {
+  try {
+    const data = await agencyService.connectInstagram(req.agency.id, req.body);
+    res.json({ success: true, data, message: 'Instagram connected' });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function disconnectInstagram(req, res, next) {
+  try {
+    const data = await agencyService.disconnectInstagram(req.agency.id, req.params.accountId);
+    res.json({ success: true, data, message: 'Instagram disconnected' });
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   me,
   updateMe,
@@ -65,4 +92,7 @@ module.exports = {
   createWhatsAppConnectSession,
   completeWhatsAppConnectSession,
   handleMarketingOsCallback,
+  getInstagramConnection,
+  connectInstagram,
+  disconnectInstagram,
 };

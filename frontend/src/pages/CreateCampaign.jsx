@@ -8,11 +8,13 @@ import {
   Clock, Filter, Eye, AlertTriangle, Upload, UserPlus,
   Package, Globe, Plane, ShieldCheck, FileSpreadsheet,
   Inbox, UserCheck, Star, ArrowLeft, Zap, Target,
+  Home, Layers,
 } from 'lucide-react';
 import { useCreateCampaign, useUpdateCampaign, usePreviewAudience, useCampaign } from '../hooks/useCampaigns';
 import { useAgencyTemplates } from '../hooks/useTemplates';
 import { packagesApi } from '../api/packagesApi';
 import { campaignsApi } from '../api/campaignsApi';
+import { propertiesApi } from '../api/propertiesApi';
 
 const CAMPAIGN_TYPES = [
   { value: 'BROADCAST', label: 'Broadcast', icon: Megaphone, desc: 'General announcement to all or filtered audiences', gradient: 'from-blue-500 to-indigo-600' },
@@ -52,6 +54,19 @@ const STEPS = [
   { label: 'Review', icon: Eye, desc: 'Confirm & launch' },
 ];
 
+const CAMPAIGN_FORMATS = [
+  { value: 'STANDARD', label: 'Standard', desc: 'Send a normal template or text broadcast', icon: Megaphone },
+  { value: 'SECTION_CTA', label: 'Section CTA', desc: 'Let customers choose packages, properties, or custom trip', icon: Layers },
+  { value: 'ITEM_CAROUSEL', label: 'Carousel', desc: 'Send selected package/property cards with enquiry actions', icon: Package },
+];
+
+const DEFAULT_CAMPAIGN_SECTIONS = [
+  { key: 'international', label: 'International Deals', itemType: 'PACKAGE', filter: { category: 'INTERNATIONAL' }, selectionMode: 'AUTO', selectedItemIds: [], enabled: true, sortOrder: 1 },
+  { key: 'domestic', label: 'Domestic Deals', itemType: 'PACKAGE', filter: { category: 'DOMESTIC' }, selectionMode: 'AUTO', selectedItemIds: [], enabled: true, sortOrder: 2 },
+  { key: 'properties', label: 'Properties', itemType: 'PROPERTY', filter: { propertyType: 'ALL' }, selectionMode: 'AUTO', selectedItemIds: [], enabled: false, sortOrder: 3 },
+  { key: 'custom_trip', label: 'Custom Trip', itemType: 'CUSTOM_TRIP', filter: {}, selectionMode: 'AUTO', selectedItemIds: [], enabled: true, sortOrder: 4 },
+];
+
 export default function CreateCampaign() {
   const navigate = useNavigate();
   const { id: editId } = useParams();
@@ -70,6 +85,13 @@ export default function CreateCampaign() {
     audienceFilter: {},
     scheduledAt: null,
     scheduleMode: 'now',
+    linkedPackageIds: [],
+    format: 'SECTION_CTA',
+    mediaType: 'NONE',
+    mediaUrl: '',
+    campaignSections: DEFAULT_CAMPAIGN_SECTIONS,
+    carouselConfig: { contentType: 'MIXED', items: [] },
+    ctaConfig: {},
   });
   const [selectedTemplate, setSelectedTemplate] = useState(null);
   const [templateSearch, setTemplateSearch] = useState('');
@@ -79,6 +101,7 @@ export default function CreateCampaign() {
   // Audience mode state
   const [audienceMode, setAudienceMode] = useState('all');
   const [packages, setPackages] = useState([]);
+  const [properties, setProperties] = useState([]);
   const [selectedPackageId, setSelectedPackageId] = useState(null);
   const [selectedBookingStatus, setSelectedBookingStatus] = useState('CONFIRMED');
   const [selectedLeadStatuses, setSelectedLeadStatuses] = useState([]);
@@ -100,6 +123,13 @@ export default function CreateCampaign() {
         audienceFilter: editCampaign.audienceFilter || {},
         scheduledAt: editCampaign.scheduledAt || null,
         scheduleMode: editCampaign.scheduledAt ? 'scheduled' : 'now',
+        linkedPackageIds: editCampaign.linkedPackageIds || [],
+        format: editCampaign.format || 'STANDARD',
+        mediaType: editCampaign.mediaType || 'NONE',
+        mediaUrl: editCampaign.mediaUrl || '',
+        campaignSections: editCampaign.campaignSections?.length ? editCampaign.campaignSections : DEFAULT_CAMPAIGN_SECTIONS,
+        carouselConfig: editCampaign.carouselConfig || { contentType: 'MIXED', items: [] },
+        ctaConfig: editCampaign.ctaConfig || {},
       });
     }
   }, [editCampaign]);
@@ -136,6 +166,9 @@ export default function CreateCampaign() {
   useEffect(() => {
     packagesApi.list().then((res) => {
       setPackages(res?.data || []);
+    }).catch(() => {});
+    propertiesApi.list().then((res) => {
+      setProperties(res?.data || []);
     }).catch(() => {});
   }, []);
 
@@ -252,9 +285,60 @@ export default function CreateCampaign() {
     return null;
   }
 
+  const activeSections = (formData.campaignSections || []).filter((section) => section.enabled);
+  const carouselItems = formData.carouselConfig?.items || [];
+  const activePackages = packages.filter((pkg) => pkg.isActive !== false);
+  const activeProperties = properties.filter((property) => property.isActive !== false);
+
+  const updateSection = (key, updates) => {
+    setFormData((prev) => ({
+      ...prev,
+      campaignSections: (prev.campaignSections || DEFAULT_CAMPAIGN_SECTIONS).map((section) =>
+        section.key === key ? { ...section, ...updates } : section
+      ),
+    }));
+  };
+
+  const toggleCarouselItem = (itemType, itemId) => {
+    setFormData((prev) => {
+      const current = prev.carouselConfig?.items || [];
+      const exists = current.some((item) => item.itemType === itemType && item.itemId === itemId);
+      const nextItems = exists
+        ? current.filter((item) => !(item.itemType === itemType && item.itemId === itemId))
+        : [...current, { itemType, itemId }].slice(0, 10);
+
+      return {
+        ...prev,
+        carouselConfig: {
+          ...(prev.carouselConfig || {}),
+          contentType: nextItems.every((item) => item.itemType === 'PACKAGE') ? 'PACKAGES'
+            : nextItems.every((item) => item.itemType === 'PROPERTY') ? 'PROPERTIES'
+              : 'MIXED',
+          items: nextItems,
+        },
+      };
+    });
+  };
+
+  const selectedCarouselRecords = carouselItems.map((item) => {
+    const record = item.itemType === 'PROPERTY'
+      ? activeProperties.find((property) => property.id === item.itemId)
+      : activePackages.find((pkg) => pkg.id === item.itemId);
+    return record ? { ...record, itemType: item.itemType } : null;
+  }).filter(Boolean);
+
   const canProceed = () => {
     if (step === 0) return formData.name.trim().length > 0;
-    if (step === 1) return formData.templateId || formData.messageBody.trim().length > 0;
+    if (step === 1) {
+      if (!(formData.templateId || formData.messageBody.trim().length > 0)) return false;
+      if (formData.format === 'SECTION_CTA') return activeSections.length > 0;
+      if (formData.format === 'ITEM_CAROUSEL') {
+        return carouselItems.length >= 2
+          && carouselItems.length <= 10
+          && selectedCarouselRecords.every((item) => item.imageUrl || item.coverImageUrl);
+      }
+      return true;
+    }
     if (step === 2) {
       if (audienceMode === 'import') return importedIds.length > 0;
       if (['package_bookers', 'package_enquirers'].includes(audienceMode)) return !!selectedPackageId;
@@ -290,6 +374,15 @@ export default function CreateCampaign() {
         templateId: formData.templateId || null,
         messageBody: formData.messageBody || null,
         audienceFilter: finalFilter,
+        linkedPackageIds: formData.linkedPackageIds || [],
+        format: formData.format || 'STANDARD',
+        mediaType: formData.mediaType || 'NONE',
+        mediaUrl: formData.mediaUrl || null,
+        campaignSections: formData.format === 'SECTION_CTA'
+          ? (formData.campaignSections || []).filter((section) => section.enabled)
+          : [],
+        carouselConfig: formData.carouselConfig || { contentType: 'MIXED', items: [] },
+        ctaConfig: formData.ctaConfig || {},
         scheduledAt: formData.scheduleMode === 'scheduled' ? formData.scheduledAt : null,
         status: formData.scheduleMode === 'scheduled' ? 'SCHEDULED' : 'DRAFT',
       };
@@ -553,6 +646,271 @@ export default function CreateCampaign() {
                   Variables: {'{{name}}'} = customer name. Note: Custom messages require an approved template for WhatsApp delivery.
                 </p>
               </div>
+
+              <div className="border-t border-slate-100 pt-5 space-y-5">
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-3">Campaign Format</label>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                    {CAMPAIGN_FORMATS.map((format) => {
+                      const Icon = format.icon;
+                      const selected = formData.format === format.value;
+                      return (
+                        <button
+                          key={format.value}
+                          type="button"
+                          onClick={() => setFormData((prev) => ({ ...prev, format: format.value }))}
+                          className={`rounded-2xl border-2 p-4 text-left transition-all duration-300 ${
+                            selected
+                              ? 'border-[#2d2d2d] bg-slate-50 shadow-md'
+                              : 'border-slate-200/80 hover:border-slate-300 hover:bg-slate-50/60'
+                          }`}
+                        >
+                          <div className="mb-3 flex items-center justify-between">
+                            <Icon className="h-5 w-5 text-slate-700" />
+                            {selected && (
+                              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-slate-900 text-white">
+                                <Check className="h-3 w-3" strokeWidth={3} />
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-sm font-bold text-slate-900">{format.label}</p>
+                          <p className="mt-1 text-xs leading-relaxed text-slate-500">{format.desc}</p>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {formData.format === 'SECTION_CTA' && (
+                  <div className="rounded-2xl border border-slate-200/80 bg-slate-50/60 p-4">
+                    <div className="mb-4 flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-bold text-slate-900">Customer Choice Menu</p>
+                        <p className="mt-1 text-xs text-slate-500">
+                          Enable the choices customers should see after your campaign message.
+                        </p>
+                      </div>
+                      <span className="rounded-full bg-white px-3 py-1 text-xs font-bold text-slate-600 ring-1 ring-slate-200">
+                        {activeSections.length} active
+                      </span>
+                    </div>
+
+                    <div className="space-y-3">
+                      {(formData.campaignSections || DEFAULT_CAMPAIGN_SECTIONS).map((section) => {
+                        const Icon = section.itemType === 'PROPERTY' ? Home : section.itemType === 'CUSTOM_TRIP' ? UserPlus : Package;
+                        const availableCount = section.itemType === 'PROPERTY'
+                          ? activeProperties.length
+                          : section.itemType === 'PACKAGE'
+                            ? activePackages.filter((pkg) => {
+                              if (section.filter?.category === 'INTERNATIONAL') return pkg.category === 'INTERNATIONAL';
+                              if (section.filter?.category === 'DOMESTIC') return pkg.category === 'DOMESTIC';
+                              return true;
+                            }).length
+                            : null;
+
+                        return (
+                          <div key={section.key} className="rounded-xl border border-slate-200 bg-white p-3">
+                            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                              <button
+                                type="button"
+                                onClick={() => updateSection(section.key, { enabled: !section.enabled })}
+                                className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border-2 transition-all ${
+                                  section.enabled
+                                    ? 'border-slate-900 bg-slate-900 text-white'
+                                    : 'border-slate-200 bg-white text-slate-300 hover:text-slate-500'
+                                }`}
+                              >
+                                {section.enabled ? <Check className="h-4 w-4" strokeWidth={3} /> : <Icon className="h-4 w-4" />}
+                              </button>
+                              <div className="flex-1 min-w-0">
+                                <input
+                                  type="text"
+                                  value={section.label}
+                                  onChange={(e) => updateSection(section.key, { label: e.target.value })}
+                                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm font-bold text-slate-900 outline-none transition focus:border-slate-400"
+                                />
+                                <p className="mt-1 text-xs text-slate-500">
+                                  {section.itemType === 'CUSTOM_TRIP'
+                                    ? 'Starts a lead form for name, destination, travellers, budget, and dates.'
+                                    : `${section.itemType === 'PROPERTY' ? 'Property' : 'Package'} flow${availableCount !== null ? `, ${availableCount} available` : ''}.`}
+                                </p>
+                              </div>
+                              {section.itemType === 'PACKAGE' && (
+                                <select
+                                  value={section.filter?.category || 'ALL'}
+                                  onChange={(e) => updateSection(section.key, { filter: { ...(section.filter || {}), category: e.target.value } })}
+                                  className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold text-slate-600 outline-none focus:border-slate-400"
+                                >
+                                  <option value="ALL">All packages</option>
+                                  <option value="INTERNATIONAL">International</option>
+                                  <option value="DOMESTIC">Domestic</option>
+                                </select>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {formData.format === 'ITEM_CAROUSEL' && (
+                  <div className="rounded-2xl border border-slate-200/80 bg-slate-50/60 p-4">
+                    <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <p className="text-sm font-bold text-slate-900">Carousel Items</p>
+                        <p className="mt-1 text-xs text-slate-500">
+                          Select 2 to 10 packages or properties. Every selected item needs an image for WhatsApp carousel delivery.
+                        </p>
+                      </div>
+                      <span className={`rounded-full px-3 py-1 text-xs font-bold ring-1 ${
+                        carouselItems.length >= 2 && carouselItems.length <= 10
+                          ? 'bg-emerald-50 text-emerald-700 ring-emerald-100'
+                          : 'bg-amber-50 text-amber-700 ring-amber-100'
+                      }`}>
+                        {carouselItems.length}/10 selected
+                      </span>
+                    </div>
+
+                    <div className="space-y-4">
+                      {[
+                        { label: 'Packages', icon: Package, itemType: 'PACKAGE', items: activePackages },
+                        { label: 'Properties', icon: Home, itemType: 'PROPERTY', items: activeProperties },
+                      ].map((group) => {
+                        const GroupIcon = group.icon;
+                        return (
+                          <div key={group.itemType}>
+                            <div className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.15em] text-slate-500">
+                              <GroupIcon className="h-3.5 w-3.5" />
+                              {group.label}
+                            </div>
+                            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                              {group.items.map((item) => {
+                                const isSelected = carouselItems.some((selected) => selected.itemType === group.itemType && selected.itemId === item.id);
+                                const imageUrl = item.imageUrl || item.coverImageUrl;
+                                return (
+                                  <button
+                                    key={`${group.itemType}-${item.id}`}
+                                    type="button"
+                                    onClick={() => toggleCarouselItem(group.itemType, item.id)}
+                                    className={`flex items-center gap-3 rounded-xl border-2 p-3 text-left transition-all duration-300 ${
+                                      isSelected
+                                        ? 'border-slate-900 bg-white shadow-md'
+                                        : 'border-slate-200 bg-white/70 hover:border-slate-300'
+                                    }`}
+                                  >
+                                    {imageUrl ? (
+                                      <img src={imageUrl} alt="" className="h-12 w-12 shrink-0 rounded-lg object-cover" />
+                                    ) : (
+                                      <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-amber-50 text-amber-600">
+                                        <AlertTriangle className="h-5 w-5" />
+                                      </div>
+                                    )}
+                                    <div className="min-w-0 flex-1">
+                                      <p className="truncate text-sm font-bold text-slate-900">{item.name}</p>
+                                      <p className="truncate text-xs text-slate-500">
+                                        {group.itemType === 'PROPERTY'
+                                          ? [item.propertyType, item.location].filter(Boolean).join(' | ') || 'Property'
+                                          : [item.category, item.duration].filter(Boolean).join(' | ') || 'Package'}
+                                      </p>
+                                      {!imageUrl && <p className="mt-0.5 text-[11px] font-bold text-amber-600">Image required</p>}
+                                    </div>
+                                    {isSelected && (
+                                      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-900 text-white">
+                                        <Check className="h-3 w-3" strokeWidth={3} />
+                                      </span>
+                                    )}
+                                  </button>
+                                );
+                              })}
+                              {group.items.length === 0 && (
+                                <div className="rounded-xl border border-dashed border-slate-200 bg-white/70 px-4 py-5 text-center text-xs text-slate-500">
+                                  No active {group.label.toLowerCase()} found.
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {selectedCarouselRecords.some((item) => !(item.imageUrl || item.coverImageUrl)) && (
+                      <div className="mt-4 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs font-medium text-amber-800">
+                        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                        Add images to selected packages/properties before continuing.
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* ── Link Packages (for Seasonal / Promotional) ── */}
+              {['SEASONAL', 'PROMOTIONAL'].includes(formData.type) && packages.length > 0 && (
+                <div className="border-t border-slate-100 pt-5">
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <label className="block text-sm font-semibold text-slate-700 flex items-center gap-2">
+                        <Package className="w-4 h-4 text-violet-500" />
+                        Link Packages to Campaign
+                      </label>
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        Customers will see a "View Packages" button and can browse these packages directly.
+                      </p>
+                    </div>
+                    {formData.linkedPackageIds.length > 0 && (
+                      <span className="text-xs font-bold px-3 py-1 rounded-full bg-violet-50 text-violet-600 animate-scale-in">
+                        {formData.linkedPackageIds.length} linked
+                      </span>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[240px] overflow-y-auto pr-1 hide-scrollbar">
+                    {packages.filter((p) => p.isActive !== false).map((pkg) => {
+                      const isLinked = formData.linkedPackageIds.includes(pkg.id);
+                      return (
+                        <button
+                          key={pkg.id}
+                          onClick={() => {
+                            setFormData((prev) => ({
+                              ...prev,
+                              linkedPackageIds: isLinked
+                                ? prev.linkedPackageIds.filter((id) => id !== pkg.id)
+                                : [...prev.linkedPackageIds, pkg.id],
+                            }));
+                          }}
+                          className={`group relative flex items-center gap-3 rounded-xl border-2 p-3 text-left transition-all duration-300 ${
+                            isLinked
+                              ? 'border-violet-400 bg-violet-50/60 shadow-md shadow-violet-100/60'
+                              : 'border-slate-200/80 hover:border-slate-300 hover:bg-slate-50/50'
+                          }`}
+                        >
+                          {/* Checkbox indicator */}
+                          <div className={`flex h-6 w-6 items-center justify-center rounded-lg border-2 shrink-0 transition-all duration-300 ${
+                            isLinked
+                              ? 'border-violet-500 bg-violet-500 text-white'
+                              : 'border-slate-300 group-hover:border-slate-400'
+                          }`}>
+                            {isLinked && <Check className="w-3.5 h-3.5" strokeWidth={3} />}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold text-slate-900 truncate">{pkg.name}</p>
+                            <p className="text-[11px] text-slate-500 truncate">
+                              {pkg.duration || 'Custom'} • ₹{Math.round((pkg.basePrice || 0) / 100).toLocaleString('en-IN')}/person
+                            </p>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {formData.linkedPackageIds.length > 0 && (
+                    <div className="mt-3 flex items-start gap-2.5 rounded-xl bg-gradient-to-r from-violet-50 to-purple-50/50 border border-violet-200/60 p-3">
+                      <Sparkles className="w-4 h-4 text-violet-500 mt-0.5 shrink-0" />
+                      <p className="text-xs text-violet-700 leading-relaxed">
+                        <span className="font-bold">Interactive Broadcast:</span> After receiving your message, customers will see a <span className="font-bold">"🏖️ View Packages"</span> button. Tapping it shows these {formData.linkedPackageIds.length} package{formData.linkedPackageIds.length > 1 ? 's' : ''} with full details, images, and enquiry actions.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
@@ -1008,8 +1366,22 @@ export default function CreateCampaign() {
                   { label: 'Campaign Name', value: formData.name, icon: Megaphone },
                   { label: 'Type', value: CAMPAIGN_TYPES.find((t) => t.value === formData.type)?.label, icon: Target },
                   { label: 'Template', value: selectedTemplate?.displayName || formData.messageBody?.substring(0, 40) || 'Custom Message', icon: Send },
+                  { label: 'Format', value: CAMPAIGN_FORMATS.find((format) => format.value === formData.format)?.label || 'Standard', icon: Layers, highlight: formData.format !== 'STANDARD' },
+                  ...(formData.format === 'SECTION_CTA' ? [{
+                    label: 'Customer Choices',
+                    value: activeSections.map((section) => section.label).join(', ') || 'No sections enabled',
+                    icon: UserPlus,
+                    highlight: true,
+                  }] : []),
+                  ...(formData.format === 'ITEM_CAROUSEL' ? [{
+                    label: 'Carousel Items',
+                    value: `${selectedCarouselRecords.length} selected (${selectedCarouselRecords.filter((item) => item.itemType === 'PROPERTY').length} properties, ${selectedCarouselRecords.filter((item) => item.itemType === 'PACKAGE').length} packages)`,
+                    icon: Package,
+                    highlight: true,
+                  }] : []),
                   { label: 'Audience', value: getAudienceSummary(), icon: Users, highlight: true },
                   { label: 'Est. Recipients', value: audienceMode === 'import' ? importedIds.length : (audienceCount || 0).toLocaleString(), icon: UserCheck, highlight: true },
+                  ...(formData.linkedPackageIds.length > 0 ? [{ label: 'Linked Packages', value: `${formData.linkedPackageIds.length} package${formData.linkedPackageIds.length > 1 ? 's' : ''} — customers see "View Packages" button`, icon: Package, highlight: true }] : []),
                   { label: 'Delivery', value: formData.scheduleMode === 'scheduled' ? `Scheduled: ${new Date(formData.scheduledAt).toLocaleString()}` : 'Save as Draft', icon: Calendar },
                 ].map((item, idx) => {
                   const Icon = item.icon;
