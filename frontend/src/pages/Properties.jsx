@@ -24,6 +24,8 @@ import { propertiesApi } from '../api/propertiesApi';
 import { formatCurrency } from '../utils/formatters';
 import { useAuthStore } from '../store/authStore';
 import MobileRecordCard, { MobileField } from '../components/MobileRecordCard';
+import PropertyCard from '../components/PropertyCard';
+
 
 const PROPERTY_TYPE_ICONS = {
   Hotel: BuildingOffice2Icon,
@@ -288,110 +290,17 @@ export default function Properties() {
               </div>
             </div>
           ) : (
-            properties.map((property) => {
-              const TypeIcon = PROPERTY_TYPE_ICONS[property.propertyType] || HomeModernIcon;
-              const typeColor = PROPERTY_TYPE_COLORS[property.propertyType] || 'bg-neutral-100 text-neutral-600';
-              return (
-                <div
-                  key={property.id}
-                  className="group shell-panel overflow-hidden transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_8px_24px_-8px_rgba(0,0,0,0.1)] cursor-pointer"
-                  onClick={() => navigate(`/properties/${property.id}`)}
-                >
-                  {/* Image */}
-                  <div className="relative h-48 bg-neutral-100 overflow-hidden">
-                    {property.imageUrl ? (
-                      <img
-                        src={property.imageUrl}
-                        alt={property.name}
-                        className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
-                      />
-                    ) : (
-                      <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-neutral-50 to-neutral-100">
-                        <HomeModernIcon className="h-12 w-12 text-neutral-200" />
-                      </div>
-                    )}
+            properties.map((property) => (
+              <PropertyCard
+                key={property.id}
+                property={property}
+                canManage={canManage}
+                onEdit={() => navigate(`/properties/${property.id}/edit`)}
+                toggleActive={() => toggleActiveMutation.mutate(property)}
+                onClick={() => navigate(`/properties/${property.id}`)}
+              />
+            ))
 
-                    {/* Status badge overlay */}
-                    <div className="absolute top-3 left-3">
-                      <span className={`badge shadow-sm backdrop-blur-sm ${property.isActive ? 'bg-emerald-500/90 text-white' : 'bg-neutral-800/70 text-white'}`}>
-                        {property.isActive ? 'Active' : 'Inactive'}
-                      </span>
-                    </div>
-
-                    {/* Type badge overlay */}
-                    <div className="absolute top-3 right-3">
-                      <span className={`badge shadow-sm backdrop-blur-sm ${typeColor}`}>
-                        <TypeIcon className="h-3 w-3 mr-1" />
-                        {property.propertyType}
-                      </span>
-                    </div>
-
-                    {/* Hover action overlay */}
-                    {canManage && (
-                      <div className="absolute inset-0 flex items-center justify-center gap-2 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-                        <button
-                          type="button"
-                          onClick={(e) => { e.stopPropagation(); navigate(`/properties/${property.id}`); }}
-                          className="flex h-10 w-10 items-center justify-center rounded-full bg-white/20 text-white backdrop-blur-md transition hover:bg-white/40"
-                          title="View details"
-                        >
-                          <EyeIcon className="h-4 w-4" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={(e) => { e.stopPropagation(); navigate(`/properties/${property.id}/edit`); }}
-                          className="flex h-10 w-10 items-center justify-center rounded-full bg-white/20 text-white backdrop-blur-md transition hover:bg-white/40"
-                          title="Edit"
-                        >
-                          <PencilSquareIcon className="h-4 w-4" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={(e) => { e.stopPropagation(); toggleActiveMutation.mutate(property); }}
-                          className="flex h-10 w-10 items-center justify-center rounded-full bg-white/20 text-white backdrop-blur-md transition hover:bg-white/40"
-                          title={property.isActive ? 'Deactivate' : 'Activate'}
-                        >
-                          <TrashIcon className="h-4 w-4" />
-                        </button>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Content */}
-                  <div className="p-5">
-                    <h3 className="text-[15px] font-bold text-neutral-900 leading-tight truncate">{property.name}</h3>
-
-                    {property.location && (
-                      <div className="mt-2 flex items-center gap-1.5 text-neutral-500">
-                        <MapPinIcon className="h-3.5 w-3.5 flex-shrink-0" />
-                        <span className="text-xs font-medium truncate">{property.location}</span>
-                      </div>
-                    )}
-
-                    {property.description && (
-                      <p className="mt-2.5 text-xs text-neutral-400 line-clamp-2 leading-relaxed">{property.description}</p>
-                    )}
-
-                    <div className="mt-4 flex items-center justify-between border-t border-neutral-100 pt-4">
-                      <div>
-                        <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-neutral-400">Per Night</p>
-                        <p className="text-base font-bold text-neutral-900">
-                          {property.pricePerNight ? formatCurrency(property.pricePerNight) : <span className="text-neutral-300">—</span>}
-                        </p>
-                      </div>
-                      {property.amenities?.length > 0 && (
-                        <div className="flex items-center gap-1">
-                          <span className="badge bg-neutral-100 text-neutral-600">
-                            <StarIcon className="h-2.5 w-2.5 mr-0.5" />
-                            {property.amenities.length} amenities
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              );
-            })
           )}
         </div>
       )}

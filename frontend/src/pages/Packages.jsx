@@ -1,16 +1,20 @@
+import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { PlusIcon, MapPinIcon } from '@heroicons/react/24/outline';
+import { PlusIcon, MapPinIcon, Squares2X2Icon, ListBulletIcon } from '@heroicons/react/24/outline';
 import { packagesApi } from '../api/packagesApi';
 import { formatCurrency } from '../utils/formatters';
 import { useAuthStore } from '../store/authStore';
 import MobileRecordCard, { MobileField } from '../components/MobileRecordCard';
+import PackageCard from '../components/PackageCard';
 
 export default function Packages() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const agentRole = useAuthStore((state) => state.agent?.role);
   const canManagePackages = agentRole === 'ADMIN';
+  const [viewMode, setViewMode] = useState('grid'); // 'grid' | 'table'
+
   const { data, isLoading } = useQuery({
     queryKey: ['packages'],
     queryFn: () => packagesApi.list(),
@@ -24,38 +28,66 @@ export default function Packages() {
   const packages = data?.data || [];
 
   return (
-    <div className="w-full space-y-4">
-      <section className="flex flex-col gap-4 border-b border-slate-200 pb-4 sm:flex-row sm:items-end sm:justify-between">
+    <div className="w-full space-y-6">
+      <section className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-[28px] font-semibold tracking-tight text-slate-950">Packages</h1>
-          <p className="text-sm text-slate-500">Maintain the itinerary catalog used for quoting and chat flows.</p>
+          <div className="flex items-center gap-2 mb-1">
+            <p className="eyebrow">Workspace</p>
+            <span className="h-1 w-1 rounded-full bg-neutral-300" />
+            <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-600">Inventory</span>
+          </div>
+          <h1 className="text-[28px] font-semibold tracking-tight text-neutral-900">Packages</h1>
+          <p className="text-sm text-neutral-500 mt-1">Maintain the itinerary catalog used for quoting and chat flows.</p>
         </div>
-        {canManagePackages ? (
-          <button type="button" onClick={() => navigate('/packages/new')} className="shell-button-primary">
-            <PlusIcon className="h-4 w-4" />
-            New Package
-          </button>
-        ) : null}
+        <div className="flex items-center gap-3">
+          {/* View toggle */}
+          <div className="hidden md:flex items-center gap-1 rounded-xl border border-neutral-200 p-1 bg-white">
+            <button
+              type="button"
+              onClick={() => setViewMode('grid')}
+              className={`flex items-center justify-center rounded-lg px-3 py-1.5 transition ${viewMode === 'grid' ? 'bg-neutral-900 text-white shadow-sm' : 'text-neutral-400 hover:text-neutral-600'}`}
+            >
+              <Squares2X2Icon className="h-4 w-4 mr-1.5" />
+              <span className="text-xs font-bold">Grid</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('table')}
+              className={`flex items-center justify-center rounded-lg px-3 py-1.5 transition ${viewMode === 'table' ? 'bg-neutral-900 text-white shadow-sm' : 'text-neutral-400 hover:text-neutral-600'}`}
+            >
+              <ListBulletIcon className="h-4 w-4 mr-1.5" />
+              <span className="text-xs font-bold">Table</span>
+            </button>
+          </div>
+
+          {canManagePackages && (
+            <button type="button" onClick={() => navigate('/packages/new')} className="shell-button-primary">
+              <PlusIcon className="h-4 w-4" />
+              New Package
+            </button>
+          )}
+        </div>
       </section>
 
-      {!canManagePackages ? (
-        <div className="rounded-[12px] border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+      {!canManagePackages && (
+        <div className="rounded-[var(--radius-md)] border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
           Your account can view packages, but only ADMIN users can create, edit, or deactivate them.
         </div>
-      ) : null}
+      )}
 
+      {/* ── Mobile Cards ── */}
       <div className="mobile-card-list">
         {isLoading ? (
-          Array.from({ length: 6 }).map((_, index) => (
-            <div key={index} className="mobile-record-card">
-              <div className="h-5 w-2/3 animate-pulse rounded bg-slate-100" />
+          Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="mobile-record-card animate-pulse">
+              <div className="h-5 w-2/3 rounded bg-neutral-100" />
               <div className="mt-4 grid grid-cols-2 gap-3">
-                {Array.from({ length: 4 }).map((__, cell) => <div key={cell} className="h-10 animate-pulse rounded bg-slate-100" />)}
+                {Array.from({ length: 4 }).map((__, j) => <div key={j} className="h-10 rounded bg-neutral-100" />)}
               </div>
             </div>
           ))
         ) : packages.length === 0 ? (
-          <div className="mobile-record-card text-center text-sm text-slate-500">No packages created yet.</div>
+          <div className="mobile-record-card text-center text-sm text-neutral-500 py-12">No packages created yet.</div>
         ) : (
           packages.map((pkg) => (
             <MobileRecordCard
@@ -63,13 +95,13 @@ export default function Packages() {
               title={pkg.name}
               subtitle={pkg.summary || pkg.destinations?.join(', ') || 'Travel package'}
               avatar={pkg.imageUrl ? (
-                <img src={pkg.imageUrl} alt={pkg.name} className="h-12 w-12 rounded-lg border border-slate-200 object-cover" />
+                <img src={pkg.imageUrl} alt={pkg.name} className="h-12 w-12 rounded-xl border border-neutral-200 object-cover shadow-sm" />
               ) : (
-                <div className="flex h-12 w-12 items-center justify-center rounded-lg border border-slate-200 bg-slate-50">
-                  <MapPinIcon className="h-5 w-5 text-slate-300" />
+                <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-neutral-200 bg-neutral-50">
+                  <MapPinIcon className="h-5 w-5 text-neutral-300" />
                 </div>
               )}
-              badge={<span className={`badge ${pkg.isActive ? 'bg-[#ebebeb] text-[#2d2d2d]' : 'bg-slate-100 text-slate-600'}`}>{pkg.isActive ? 'Active' : 'Inactive'}</span>}
+              badge={<span className={`badge ${pkg.isActive ? 'bg-emerald-50 text-emerald-700' : 'bg-neutral-100 text-neutral-500'}`}>{pkg.isActive ? 'Active' : 'Inactive'}</span>}
               actions={canManagePackages ? (
                 <>
                   <button type="button" onClick={() => navigate(`/packages/${pkg.id}/edit`)} className="shell-button-secondary flex-1 py-2 text-xs">Edit</button>
@@ -86,116 +118,145 @@ export default function Packages() {
         )}
       </div>
 
-      <div className="hidden rounded-[12px] border border-slate-200 bg-white md:block">
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-left">
-            <thead className="bg-slate-50">
-              <tr>
-                {['Package', 'Category', 'Destinations', 'Duration', 'Price', 'Status', 'Catalog Status', 'Actions'].map((heading) => (
-                  <th key={heading} className="px-4 py-3 text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">
-                    {heading}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {isLoading ? (
-                Array.from({ length: 6 }).map((_, index) => (
-                  <tr key={index}>
-                    {Array.from({ length: 8 }).map((_, cell) => (
-                      <td key={cell} className="px-4 py-4">
-                        <div className="h-4 animate-pulse rounded bg-slate-100" />
-                      </td>
-                    ))}
-                  </tr>
-                ))
-              ) : packages.length === 0 ? (
-                <tr>
-                  <td colSpan={8} className="px-4 py-8 text-sm text-slate-500 text-center">No packages created yet.</td>
-                </tr>
-              ) : (
-                packages.map((pkg) => (
-                  <tr key={pkg.id}>
-                    <td className="px-4 py-4">
-                      <div className="flex items-center gap-3">
-                        {pkg.imageUrl ? (
-                          <img
-                            src={pkg.imageUrl}
-                            alt={pkg.name}
-                            className="h-12 w-12 flex-shrink-0 rounded-lg object-cover border border-slate-200 shadow-sm"
-                          />
-                        ) : (
-                          <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-slate-50">
-                            <MapPinIcon className="h-5 w-5 text-slate-300" />
-                          </div>
-                        )}
-                        <div className="min-w-0">
-                          <p className="text-sm font-medium text-slate-900">{pkg.name}</p>
-                          {pkg.summary ? <p className="mt-0.5 text-xs text-slate-500 line-clamp-2">{pkg.summary}</p> : null}
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-4 py-4 text-sm text-slate-600">{pkg.category || '—'}</td>
-                    <td className="px-4 py-4 text-sm text-slate-600">{pkg.destinations?.join(', ') || '—'}</td>
-                    <td className="px-4 py-4 text-sm text-slate-600">{pkg.duration || '—'}</td>
-                    <td className="px-4 py-4 text-sm font-medium text-slate-900">{formatCurrency(pkg.basePrice)}</td>
-                    <td className="px-4 py-4">
-                      <span className={`badge ${pkg.isActive ? 'bg-[#ebebeb] text-[#2d2d2d]' : 'bg-slate-100 text-slate-600'}`}>
-                        {pkg.isActive ? 'Active' : 'Inactive'}
-                      </span>
-                    </td>
-                    <td className="px-4 py-4">
-                      {pkg.catalogSyncStatus === 'synced' ? (
-                        <div className="flex flex-col">
-                          <span className="text-xs font-medium text-emerald-600 flex items-center gap-1">
-                            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-                            Synced
-                          </span>
-                          {pkg.lastCatalogSync && <span className="text-[10px] text-slate-400 mt-0.5">{new Date(pkg.lastCatalogSync).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>}
-                        </div>
-                      ) : pkg.catalogSyncStatus === 'syncing' ? (
-                        <span className="text-xs font-medium text-blue-600 flex items-center gap-1">
-                          <svg className="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" className="opacity-25"></circle><path fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" className="opacity-75"></path></svg>
-                          Syncing...
-                        </span>
-                      ) : pkg.catalogSyncStatus === 'failed' ? (
-                        <div className="flex flex-col">
-                          <span className="text-xs font-medium text-rose-600 flex items-center gap-1">
-                            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                            Failed
-                          </span>
-                          <button type="button" className="text-[10px] text-indigo-600 hover:text-indigo-800 hover:underline mt-0.5 text-left font-medium">Retry Sync</button>
-                        </div>
-                      ) : (
-                        <span className="text-xs font-medium text-slate-400 flex items-center gap-1">
-                          <span className="h-1.5 w-1.5 rounded-full bg-slate-300"></span>
-                          Not Synced
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-4 py-4 text-right">
-                      {canManagePackages ? (
-                        <div className="flex justify-end gap-2">
-                          <button type="button" onClick={() => navigate(`/packages/${pkg.id}/edit`)} className="shell-button-secondary py-1.5 px-3 text-xs">Edit</button>
-                          <button
-                            type="button"
-                            onClick={() => deleteMutation.mutate(pkg.id)}
-                            className="rounded-[10px] bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-slate-200"
-                          >
-                            {pkg.isActive ? 'Deactivate' : 'Activate'}
-                          </button>
-                        </div>
-                      ) : (
-                        <span className="text-xs font-medium text-slate-400">View only</span>
-                      )}
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+      {/* ── Desktop Grid View ── */}
+      {viewMode === 'grid' && (
+        <div className="hidden md:grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {isLoading ? (
+            Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="bg-white rounded-[32px] p-4 border border-neutral-100 animate-pulse">
+                <div className="aspect-[4/3] rounded-[24px] bg-neutral-50" />
+                <div className="mt-5 space-y-3 px-1">
+                  <div className="h-6 w-3/4 rounded bg-neutral-50" />
+                  <div className="h-4 w-1/2 rounded bg-neutral-50" />
+                  <div className="pt-4 border-t border-neutral-50 flex justify-between">
+                    <div className="h-8 w-24 rounded bg-neutral-50" />
+                    <div className="h-8 w-16 rounded bg-neutral-50" />
+                  </div>
+                </div>
+              </div>
+            ))
+          ) : packages.length === 0 ? (
+            <div className="col-span-full py-20 text-center bg-white rounded-[32px] border border-dashed border-neutral-200">
+              <MapPinIcon className="h-12 w-12 text-neutral-200 mx-auto mb-4" />
+              <p className="text-neutral-500 font-medium">No packages found.</p>
+              <button onClick={() => navigate('/packages/new')} className="mt-4 text-indigo-600 font-bold text-sm hover:underline">Create your first package</button>
+            </div>
+          ) : (
+            packages.map((pkg) => (
+              <PackageCard
+                key={pkg.id}
+                pkg={pkg}
+                canManage={canManagePackages}
+                onEdit={() => navigate(`/packages/${pkg.id}/edit`)}
+                onDelete={(id) => deleteMutation.mutate(id)}
+                onClick={() => navigate(`/packages/${pkg.id}/edit`)}
+              />
+            ))
+          )}
         </div>
-      </div>
+      )}
+
+      {/* ── Desktop Table View ── */}
+      {viewMode === 'table' && (
+        <div className="data-table-wrapper hidden md:block">
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-left">
+              <thead className="data-table-head">
+                <tr>
+                  {['Package', 'Category', 'Destinations', 'Duration', 'Price', 'Status', 'Catalog Status', 'Actions'].map((heading) => (
+                    <th key={heading} className="data-table-th">
+                      {heading}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-neutral-100">
+                {isLoading ? (
+                  Array.from({ length: 6 }).map((_, i) => (
+                    <tr key={i}>
+                      {Array.from({ length: 8 }).map((_, j) => (
+                        <td key={j} className="data-table-td"><div className="h-4 animate-pulse rounded bg-neutral-50" /></td>
+                      ))}
+                    </tr>
+                  ))
+                ) : packages.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="px-4 py-16 text-center text-neutral-400 text-sm">No packages created yet.</td>
+                  </tr>
+                ) : (
+                  packages.map((pkg) => (
+                    <tr key={pkg.id} className="data-table-row" onClick={() => navigate(`/packages/${pkg.id}/edit`)}>
+                      <td className="data-table-td">
+                        <div className="flex items-center gap-3">
+                          {pkg.imageUrl ? (
+                            <img
+                              src={pkg.imageUrl}
+                              alt={pkg.name}
+                              className="h-12 w-12 flex-shrink-0 rounded-xl object-cover border border-neutral-200 shadow-sm"
+                            />
+                          ) : (
+                            <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl border border-neutral-200 bg-neutral-50 text-neutral-300">
+                              <MapPinIcon className="h-5 w-5" />
+                            </div>
+                          )}
+                          <div className="min-w-0">
+                            <p className="text-sm font-bold text-neutral-900 truncate">{pkg.name}</p>
+                            {pkg.summary && <p className="mt-0.5 text-xs text-neutral-400 line-clamp-1">{pkg.summary}</p>}
+                          </div>
+                        </div>
+                      </td>
+                      <td className="data-table-td">
+                        <span className="badge bg-neutral-50 text-neutral-600">{pkg.category || '—'}</span>
+                      </td>
+                      <td className="data-table-td text-neutral-600 text-xs font-medium">
+                        {pkg.destinations?.join(', ') || '—'}
+                      </td>
+                      <td className="data-table-td text-neutral-600 text-xs font-medium">
+                        {pkg.duration || '—'}
+                      </td>
+                      <td className="data-table-td font-bold text-neutral-900">
+                        {formatCurrency(pkg.basePrice)}
+                      </td>
+                      <td className="data-table-td">
+                        <span className={`badge ${pkg.isActive ? 'bg-emerald-50 text-emerald-700' : 'bg-neutral-100 text-neutral-500'}`}>
+                          {pkg.isActive ? 'Active' : 'Inactive'}
+                        </span>
+                      </td>
+                      <td className="data-table-td">
+                        {pkg.catalogSyncStatus === 'synced' ? (
+                          <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider flex items-center gap-1">
+                            <div className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Synced
+                          </span>
+                        ) : (
+                          <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider flex items-center gap-1">
+                            <div className="h-1.5 w-1.5 rounded-full bg-neutral-300" /> Not Synced
+                          </span>
+                        )}
+                      </td>
+                      <td className="data-table-td text-right">
+                        {canManagePackages ? (
+                          <div className="flex justify-end gap-2" onClick={(e) => e.stopPropagation()}>
+                            <button type="button" onClick={() => navigate(`/packages/${pkg.id}/edit`)} className="shell-button-ghost p-2">Edit</button>
+                            <button
+                              type="button"
+                              onClick={() => deleteMutation.mutate(pkg.id)}
+                              className="shell-button-ghost p-2 text-neutral-400 hover:text-rose-600"
+                            >
+                              {pkg.isActive ? 'Hide' : 'Show'}
+                            </button>
+                          </div>
+                        ) : (
+                          <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest">View only</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,8 +1,8 @@
 import { formatCurrency } from '../utils/formatters';
-import { MapPinIcon, ArrowUpRightIcon, ClockIcon } from '@heroicons/react/24/outline';
+import { MapPinIcon, ArrowUpRightIcon } from '@heroicons/react/24/outline';
 
-export default function PackageCard({ pkg, onEdit, onDelete, canManage, onClick }) {
-  const isActive = pkg.isActive;
+export default function PropertyCard({ property, onEdit, toggleActive, canManage, onClick }) {
+  const isActive = property.isActive;
 
   return (
     <div 
@@ -11,10 +11,10 @@ export default function PackageCard({ pkg, onEdit, onDelete, canManage, onClick 
     >
       {/* Image Container */}
       <div className="relative aspect-[4/3] overflow-hidden rounded-[24px] bg-neutral-100">
-        {pkg.imageUrl ? (
+        {property.imageUrl ? (
           <img 
-            src={pkg.imageUrl} 
-            alt={pkg.name} 
+            src={property.imageUrl} 
+            alt={property.name} 
             className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110" 
           />
         ) : (
@@ -25,8 +25,8 @@ export default function PackageCard({ pkg, onEdit, onDelete, canManage, onClick 
         
         {/* Top Badges */}
         <div className="absolute top-3 left-3 flex gap-2">
-          <span className={`bg-white/90 backdrop-blur-md ${isActive ? 'text-emerald-600' : 'text-rose-500'} text-[10px] font-bold px-3 py-1.5 rounded-full shadow-sm`}>
-            {isActive ? 'Available' : 'Inactive'}
+          <span className="bg-white/90 backdrop-blur-md text-neutral-800 text-[10px] font-bold px-3 py-1.5 rounded-full shadow-sm">
+            {isActive ? 'For Sale' : 'Inactive'}
           </span>
         </div>
 
@@ -42,31 +42,25 @@ export default function PackageCard({ pkg, onEdit, onDelete, canManage, onClick 
       <div className="mt-5 px-1">
         <div className="flex justify-between items-start">
           <h3 className="text-[17px] font-bold text-neutral-900 leading-snug line-clamp-1">
-            {pkg.name}
+            {property.name}
           </h3>
         </div>
 
         <div className="mt-2 flex items-center gap-1.5 text-neutral-500">
           <MapPinIcon className="h-3.5 w-3.5 text-neutral-400" />
-          <span className="text-xs font-medium truncate">{pkg.destinations?.join(', ') || 'Various Locations'}</span>
+          <span className="text-xs font-medium truncate">{property.location || 'Unknown Location'}</span>
         </div>
 
         {/* Feature Tags */}
         <div className="mt-4 flex flex-wrap gap-2">
-          {pkg.duration && (
-            <div className="flex items-center gap-1 bg-neutral-50 text-neutral-500 text-[10px] font-bold px-3 py-1.5 rounded-lg border border-neutral-100">
-              <ClockIcon className="h-3 w-3" />
-              {pkg.duration}
-            </div>
-          )}
-          {pkg.category && (
+          {property.propertyType && (
             <span className="bg-neutral-50 text-neutral-500 text-[10px] font-bold px-3 py-1.5 rounded-lg border border-neutral-100">
-              {pkg.category}
+              {property.propertyType}
             </span>
           )}
-          {pkg.inclusions?.slice(0, 1).map((inc, idx) => (
+          {property.amenities?.slice(0, 2).map((amenity, idx) => (
             <span key={idx} className="bg-neutral-50 text-neutral-500 text-[10px] font-bold px-3 py-1.5 rounded-lg border border-neutral-100">
-              {inc}
+              {amenity}
             </span>
           ))}
         </div>
@@ -75,13 +69,13 @@ export default function PackageCard({ pkg, onEdit, onDelete, canManage, onClick 
         <div className="mt-5 flex items-center justify-between border-t border-neutral-50 pt-4">
           <div className="flex flex-col">
             <span className="text-2xl font-black text-neutral-900">
-              {formatCurrency(pkg.basePrice)}
+              {property.pricePerNight ? formatCurrency(property.pricePerNight) : '—'}
             </span>
           </div>
           
           <div className="flex items-center gap-2">
-            <span className="bg-indigo-50 text-indigo-600 text-[9px] font-black uppercase tracking-widest px-2.5 py-1.5 rounded-md border border-indigo-100">
-              PACKAGE
+            <span className="bg-neutral-50 text-neutral-400 text-[9px] font-black uppercase tracking-widest px-2.5 py-1.5 rounded-md border border-neutral-100">
+              {property.propertyType === 'Hotel' ? 'COMMERCIAL' : 'RESIDENTIAL'}
             </span>
           </div>
         </div>
@@ -90,13 +84,13 @@ export default function PackageCard({ pkg, onEdit, onDelete, canManage, onClick 
         {canManage && (
           <div className="mt-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
             <button 
-              onClick={(e) => { e.stopPropagation(); onEdit(pkg); }}
+              onClick={(e) => { e.stopPropagation(); onEdit(); }}
               className="flex-1 text-[11px] font-bold py-2 bg-neutral-900 text-white rounded-xl hover:bg-neutral-800 transition"
             >
               Edit
             </button>
             <button 
-              onClick={(e) => { e.stopPropagation(); onDelete(pkg.id); }}
+              onClick={(e) => { e.stopPropagation(); toggleActive(); }}
               className="flex-1 text-[11px] font-bold py-2 bg-neutral-100 text-neutral-600 rounded-xl hover:bg-neutral-200 transition"
             >
               {isActive ? 'Hide' : 'Show'}
