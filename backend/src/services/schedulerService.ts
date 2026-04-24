@@ -5,18 +5,40 @@ const { Booking, Customer, Agency, ScheduledJob, BotSession, Package, Agent, Fol
 const whatsappService = require('./whatsappService');
 const { setISTTime, addDays, delayUntil, formatDateShort } = require('../utils/dateUtils');
 
-const connection = new IORedis(process.env.REDIS_URL || 'redis://localhost:6379', {
-  maxRetriesPerRequest: null,
-});
+const redisUrl = process.env.REDIS_URL || (process.env.NODE_ENV === 'production' ? null : 'redis://localhost:6379');
+const redisEnabled = Boolean(redisUrl);
+let redisWarningShown = false;
 
-const reminderQueue = new Queue('reminders', { connection });
-const chatFollowUpQueue = new Queue('chat_followups', { connection });
+function logRedisDisabled(reason) {
+  if (redisWarningShown) return;
+  redisWarningShown = true;
+  console.warn(`[Scheduler] Redis unavailable, queue-backed scheduling is disabled${reason ? `: ${reason}` : ''}`);
+}
+
+let connection = null;
+let reminderQueue = null;
+let chatFollowUpQueue = null;
+
+if (redisEnabled) {
+  connection = new IORedis(redisUrl, {
+    maxRetriesPerRequest: null,
+  });
+  connection.on('error', (err) => {
+    logRedisDisabled(err.message);
+  });
+
+  reminderQueue = new Queue('reminders', { connection });
+  chatFollowUpQueue = new Queue('chat_followups', { connection });
+} else {
+  logRedisDisabled('REDIS_URL is not configured');
+}
 
 function getFollowUpJobId(customerId, agencyId, slot) {
   return `chat-followup:${agencyId}:${customerId}:${slot}`;
 }
 
 async function scheduleBookingReminders(booking) {
+  if (!reminderQueue) return [];
   const jobs = [
     {
       jobType: 'REMINDER_3DAY',
@@ -71,6 +93,7 @@ async function scheduleBookingReminders(booking) {
 }
 
 async function cancelBookingReminders(bookingId) {
+  if (!reminderQueue) return;
   const jobs = await ScheduledJob.findAll({
     where: { bookingId, status: 'PENDING' },
   });
@@ -89,6 +112,7 @@ async function cancelBookingReminders(bookingId) {
 }
 
 async function cancelChatFollowUps(customerId, agencyId) {
+  if (!chatFollowUpQueue) return;
   const jobIds = [
     getFollowUpJobId(customerId, agencyId, '10m'),
     getFollowUpJobId(customerId, agencyId, '24h'),
@@ -105,6 +129,7 @@ async function cancelChatFollowUps(customerId, agencyId) {
 async function scheduleChatFollowUps(payload) {
   const { customerId, agencyId } = payload;
   if (!customerId || !agencyId) return;
+  if (!chatFollowUpQueue) return;
 
   await cancelChatFollowUps(customerId, agencyId);
 
@@ -143,6 +168,7 @@ function composeReviewRequestText(customerName, tripName) {
 }
 
 async function startReminderWorker() {
+  if (!connection) return null;
   const worker = new Worker(
     'reminders',
     async (job) => {
@@ -229,6 +255,7 @@ async function startReminderWorker() {
 }
 
 async function startChatFollowUpWorker() {
+  if (!connection) return null;
   const worker = new Worker(
     'chat_followups',
     async (job) => {
@@ -278,6 +305,10 @@ async function startChatFollowUpWorker() {
 }
 
 function startWorker() {
+  if (!connection || !reminderQueue || !chatFollowUpQueue) {
+    logRedisDisabled(redisEnabled ? 'connection could not be established' : 'REDIS_URL is not configured');
+    return { reminderWorker: null, chatFollowUpWorker: null, agentPoller: startAgentFollowUpReminderPoller() };
+  }
   const reminderWorker = startReminderWorker();
   const chatFollowUpWorker = startChatFollowUpWorker();
   const agentPoller = startAgentFollowUpReminderPoller();

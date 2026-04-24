@@ -157,6 +157,133 @@ async function ensureCustomersSchema() {
   });
 }
 
+async function ensurePropertiesSchema() {
+  const queryInterface = sequelize.getQueryInterface();
+
+  if (!(await tableExists('properties'))) {
+    await queryInterface.createTable('properties', {
+      id: {
+        type: Sequelize.UUID,
+        defaultValue: Sequelize.UUIDV4,
+        primaryKey: true,
+        allowNull: false,
+      },
+      agency_id: {
+        type: Sequelize.UUID,
+        allowNull: false,
+      },
+      name: {
+        type: Sequelize.STRING(255),
+        allowNull: false,
+      },
+      property_type: {
+        type: Sequelize.STRING(50),
+        allowNull: false,
+        defaultValue: 'Hotel',
+      },
+      location: {
+        type: Sequelize.STRING(255),
+        allowNull: true,
+      },
+      address: {
+        type: Sequelize.TEXT,
+        allowNull: true,
+      },
+      amenities: {
+        type: Sequelize.JSONB,
+        allowNull: false,
+        defaultValue: [],
+      },
+      description: {
+        type: Sequelize.TEXT,
+        allowNull: true,
+      },
+      price_per_night: {
+        type: Sequelize.INTEGER,
+        allowNull: true,
+      },
+      image_url: {
+        type: Sequelize.STRING(1000),
+        allowNull: true,
+      },
+      images: {
+        type: Sequelize.JSONB,
+        allowNull: false,
+        defaultValue: [],
+      },
+      is_active: {
+        type: Sequelize.BOOLEAN,
+        allowNull: false,
+        defaultValue: true,
+      },
+      created_at: {
+        type: Sequelize.DATE,
+        allowNull: false,
+        defaultValue: Sequelize.literal('CURRENT_TIMESTAMP'),
+      },
+      updated_at: {
+        type: Sequelize.DATE,
+        allowNull: false,
+        defaultValue: Sequelize.literal('CURRENT_TIMESTAMP'),
+      },
+    });
+
+    await queryInterface.addIndex('properties', ['agency_id']);
+    await queryInterface.addIndex('properties', ['agency_id', 'is_active']);
+    console.log('[SchemaBootstrap] Created properties table');
+    return;
+  }
+
+  await ensureColumn('properties', 'agency_id', {
+    type: Sequelize.UUID,
+    allowNull: false,
+  });
+  await ensureColumn('properties', 'name', {
+    type: Sequelize.STRING(255),
+    allowNull: false,
+  });
+  await ensureColumn('properties', 'property_type', {
+    type: Sequelize.STRING(50),
+    allowNull: false,
+    defaultValue: 'Hotel',
+  });
+  await ensureColumn('properties', 'location', {
+    type: Sequelize.STRING(255),
+    allowNull: true,
+  });
+  await ensureColumn('properties', 'address', {
+    type: Sequelize.TEXT,
+    allowNull: true,
+  });
+  await ensureColumn('properties', 'amenities', {
+    type: Sequelize.JSONB,
+    allowNull: false,
+    defaultValue: [],
+  });
+  await ensureColumn('properties', 'description', {
+    type: Sequelize.TEXT,
+    allowNull: true,
+  });
+  await ensureColumn('properties', 'price_per_night', {
+    type: Sequelize.INTEGER,
+    allowNull: true,
+  });
+  await ensureColumn('properties', 'image_url', {
+    type: Sequelize.STRING(1000),
+    allowNull: true,
+  });
+  await ensureColumn('properties', 'images', {
+    type: Sequelize.JSONB,
+    allowNull: false,
+    defaultValue: [],
+  });
+  await ensureColumn('properties', 'is_active', {
+    type: Sequelize.BOOLEAN,
+    allowNull: false,
+    defaultValue: true,
+  });
+}
+
 async function ensureBookingsSchema() {
   await ensureColumn('bookings', 'itinerary_id', {
     type: Sequelize.UUID,
@@ -579,6 +706,7 @@ async function ensureProductionSchema() {
   await ensureLeadsSchema();
   await ensureAgenciesSchema();
   await ensureCustomersSchema();
+  await ensurePropertiesSchema();
   await ensureBookingsSchema();
   await ensureItinerariesSchema();
   await ensureCampaignsSchema();

@@ -529,6 +529,9 @@ async function sendCampaign(id, agencyId) {
   // Queue the broadcast job
   try {
     const { campaignQueue } = require('./marketingSchedulerService');
+    if (!campaignQueue) {
+      throw new Error('Marketing campaign queue is unavailable because Redis is not configured');
+    }
     await campaignQueue.add('broadcast', { campaignId: id, agencyId }, { attempts: 3 });
   } catch (err) {
     console.error('[CampaignService] Failed to queue broadcast job:', err.message);

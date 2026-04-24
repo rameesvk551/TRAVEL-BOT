@@ -7,12 +7,35 @@ const { Campaign, CampaignRecipient, Customer, MessageTemplate, BotSession, Agen
 const whatsappService = require('./whatsappService');
 const { Op } = require('sequelize');
 
-const connection = new IORedis(process.env.REDIS_URL || 'redis://localhost:6379', {
-  maxRetriesPerRequest: null,
-});
+const redisUrl = process.env.REDIS_URL || (process.env.NODE_ENV === 'production' ? null : 'redis://localhost:6379');
+const redisEnabled = Boolean(redisUrl);
+let redisWarningShown = false;
 
-const campaignQueue = new Queue('campaign_broadcast', { connection });
-const dripQueue = new Queue('drip_processor', { connection });
+function logRedisDisabled(reason) {
+  if (redisWarningShown) return;
+  redisWarningShown = true;
+  console.warn(`[MarketingScheduler] Redis unavailable, marketing queues are disabled${reason ? `: ${reason}` : ''}`);
+}
+
+let connection = null;
+let campaignQueue = null;
+let dripQueue = null;
+let scheduledCampaignQueue = null;
+
+if (redisEnabled) {
+  connection = new IORedis(redisUrl, {
+    maxRetriesPerRequest: null,
+  });
+  connection.on('error', (err) => {
+    logRedisDisabled(err.message);
+  });
+
+  campaignQueue = new Queue('campaign_broadcast', { connection });
+  dripQueue = new Queue('drip_processor', { connection });
+  scheduledCampaignQueue = new Queue('scheduled_campaign_checker', { connection });
+} else {
+  logRedisDisabled('REDIS_URL is not configured');
+}
 
 // Rate limit: max messages per second (WhatsApp Business API limits ~80/sec)
 const BATCH_SIZE = 20;
@@ -489,6 +512,7 @@ async function sendToRecipient(recipient, campaign, template, agencyId) {
  * Campaign broadcast worker — processes campaigns in batches.
  */
 async function startCampaignWorker() {
+  if (!connection) return null;
   const worker = new Worker(
     'campaign_broadcast',
     async (job) => {
@@ -586,6 +610,7 @@ async function startCampaignWorker() {
 }
 
 async function startDripWorker() {
+  if (!connection) return null;
   const worker = new Worker(
     'drip_processor',
     async (job) => {
@@ -615,6 +640,7 @@ async function startDripWorker() {
  * Scheduled campaign checker — auto-sends campaigns whose scheduledAt has passed.
  */
 async function startScheduledCampaignChecker() {
+  if (!connection) return null;
   const worker = new Worker(
     'scheduled_campaign_checker',
     async () => {
@@ -653,6 +679,7 @@ async function startScheduledCampaignChecker() {
 
 // Add a repeating job to check drips every minute
 async function scheduleDripChecker() {
+  if (!dripQueue) return;
   await dripQueue.add('check-drips', {}, {
     repeat: {
       pattern: '* * * * *', // every minute
@@ -660,10 +687,8 @@ async function scheduleDripChecker() {
   });
 }
 
-// Add a repeating job to check scheduled campaigns every minute
-const scheduledCampaignQueue = new Queue('scheduled_campaign_checker', { connection });
-
 async function scheduleScheduledCampaignChecker() {
+  if (!scheduledCampaignQueue) return;
   await scheduledCampaignQueue.add('check-scheduled', {}, {
     repeat: {
       pattern: '* * * * *', // every minute
@@ -672,6 +697,10 @@ async function scheduleScheduledCampaignChecker() {
 }
 
 function startMarketingWorkers() {
+  if (!connection || !campaignQueue || !dripQueue || !scheduledCampaignQueue) {
+    logRedisDisabled(redisEnabled ? 'connection could not be established' : 'REDIS_URL is not configured');
+    return { campaignWorker: null, dripWorker: null, scheduledChecker: null };
+  }
   const campaignWorker = startCampaignWorker();
   const dripWorker = startDripWorker();
   const scheduledChecker = startScheduledCampaignChecker();

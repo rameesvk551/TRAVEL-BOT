@@ -35,6 +35,8 @@ function getProcessingPlaceholderText() {
   return String(process.env.WHATSAPP_PROCESSING_PLACEHOLDER_TEXT || 'Checking packages for you, one moment...').trim();
 }
 
+let marketingOsTypingUnavailable = false;
+
 function getMetaClient(phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID) {
   if (!canUseCloudApi(phoneNumberId)) return null;
 
@@ -175,6 +177,7 @@ async function sendViaMeta(phone, payload, phoneNumberId) {
 
 async function sendTypingIndicator(phone, incomingWaMessageId, context = {}) {
   if (!isTypingIndicatorEnabled()) return null;
+  if (marketingOsTypingUnavailable) return null;
 
   const messageId = String(incomingWaMessageId || '').trim();
   if (!messageId) return null;
@@ -201,6 +204,14 @@ async function sendTypingIndicator(phone, incomingWaMessageId, context = {}) {
       },
     }, channel.phoneNumberId);
   } catch (err) {
+    if (
+      err?.response?.data?.code === 'NOT_FOUND'
+      || /route not found/i.test(String(err?.response?.data?.message || err?.message || ''))
+    ) {
+      marketingOsTypingUnavailable = true;
+      console.warn('[WhatsAppService] Typing indicator route unavailable, disabling typing indicator sends');
+      return null;
+    }
     console.warn('[WhatsAppService] sendTypingIndicator error:', err.response?.data || err.message);
     return null;
   }
