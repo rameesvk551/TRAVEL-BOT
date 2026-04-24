@@ -8,7 +8,17 @@ const whatsappService = require('./whatsappService');
 const { Op } = require('sequelize');
 
 const redisUrl = process.env.REDIS_URL || (process.env.NODE_ENV === 'production' ? null : 'redis://localhost:6379');
-const redisEnabled = Boolean(redisUrl);
+
+function isRedisUsable(url) {
+  if (!url) return false;
+  if (process.env.NODE_ENV !== 'production') return true;
+  if (String(process.env.REDIS_ALLOW_LOCALHOST || 'false').toLowerCase() === 'true') return true;
+
+  const normalized = String(url).toLowerCase();
+  return !normalized.includes('localhost') && !normalized.includes('127.0.0.1');
+}
+
+const redisEnabled = isRedisUsable(redisUrl);
 let redisWarningShown = false;
 
 function logRedisDisabled(reason) {
@@ -34,7 +44,7 @@ if (redisEnabled) {
   dripQueue = new Queue('drip_processor', { connection });
   scheduledCampaignQueue = new Queue('scheduled_campaign_checker', { connection });
 } else {
-  logRedisDisabled('REDIS_URL is not configured');
+  logRedisDisabled(redisUrl ? 'REDIS_URL points to localhost in production' : 'REDIS_URL is not configured');
 }
 
 // Rate limit: max messages per second (WhatsApp Business API limits ~80/sec)
