@@ -518,6 +518,90 @@ async function sendToRecipient(recipient, campaign, template, agencyId) {
   }
 }
 
+async function processCampaignBroadcast(campaignId, agencyId, options = {}) {
+  const progressCallback = typeof options.onProgress === 'function' ? options.onProgress : null;
+  const campaign = await Campaign.findOne({ where: { id: campaignId, agencyId } });
+  if (!campaign || campaign.status === 'CANCELLED') {
+    console.log(`[MarketingScheduler] Campaign ${campaignId} not found or cancelled, skipping.`);
+    return;
+  }
+
+  let template = null;
+  if (campaign.templateId) {
+    template = await MessageTemplate.findByPk(campaign.templateId);
+  }
+
+  let processedCount = 0;
+  let sentCount = 0;
+  let failedCount = 0;
+
+  try {
+    while (true) {
+      const freshCampaign = await Campaign.findByPk(campaignId);
+      if (!freshCampaign || freshCampaign.status === 'CANCELLED') {
+        console.log(`[MarketingScheduler] Campaign ${campaignId} was cancelled during send.`);
+        break;
+      }
+
+      const batch = await CampaignRecipient.findAll({
+        where: { campaignId, status: 'PENDING' },
+        limit: BATCH_SIZE,
+        order: [['createdAt', 'ASC']],
+      });
+
+      if (batch.length === 0) break;
+
+      for (const recipient of batch) {
+        const result = await sendToRecipient(recipient, campaign, template, agencyId);
+        processedCount++;
+        if (result === 'SENT') sentCount++;
+        else failedCount++;
+      }
+
+      await campaign.update({
+        sent: campaign.sent + sentCount,
+        failed: campaign.failed + failedCount,
+      });
+
+      sentCount = 0;
+      failedCount = 0;
+
+      if (processedCount < campaign.totalRecipients) {
+        await sleep(BATCH_DELAY_MS);
+      }
+
+      if (progressCallback) {
+        await progressCallback(Math.round((processedCount / Math.max(campaign.totalRecipients || 1, 1)) * 100));
+      }
+    }
+
+    const finalSent = await CampaignRecipient.count({ where: { campaignId, status: 'SENT' } });
+    const finalDelivered = await CampaignRecipient.count({ where: { campaignId, status: 'DELIVERED' } });
+    const finalRead = await CampaignRecipient.count({ where: { campaignId, status: 'READ' } });
+    const finalReplied = await CampaignRecipient.count({ where: { campaignId, status: 'REPLIED' } });
+    const finalFailed = await CampaignRecipient.count({ where: { campaignId, status: 'FAILED' } });
+
+    await campaign.update({
+      status: finalFailed > 0 && finalSent === 0 ? 'FAILED' : 'SENT',
+      completedAt: new Date(),
+      sent: finalSent,
+      delivered: finalDelivered,
+      read: finalRead,
+      replied: finalReplied,
+      failed: finalFailed,
+    });
+
+    console.log(`[MarketingScheduler] Campaign ${campaignId} completed: ${finalSent} sent, ${finalFailed} failed.`);
+  } catch (err) {
+    console.error(`[MarketingScheduler] Campaign ${campaignId} processing failed:`, err.message);
+    await campaign.update({
+      status: 'FAILED',
+      completedAt: new Date(),
+    });
+    throw err;
+  }
+}
+
 /**
  * Campaign broadcast worker — processes campaigns in batches.
  */
@@ -528,82 +612,9 @@ async function startCampaignWorker() {
     async (job) => {
       const { campaignId, agencyId } = job.data;
       console.log(`[MarketingScheduler] Processing campaign broadcast: ${campaignId}`);
-
-      const campaign = await Campaign.findOne({ where: { id: campaignId, agencyId } });
-      if (!campaign || campaign.status === 'CANCELLED') {
-        console.log(`[MarketingScheduler] Campaign ${campaignId} not found or cancelled, skipping.`);
-        return;
-      }
-
-      // Load template if set
-      let template = null;
-      if (campaign.templateId) {
-        template = await MessageTemplate.findByPk(campaign.templateId);
-      }
-
-      // Process in batches
-      let processedCount = 0;
-      let sentCount = 0;
-      let failedCount = 0;
-
-      while (true) {
-        // Check if campaign was cancelled mid-send
-        const freshCampaign = await Campaign.findByPk(campaignId);
-        if (freshCampaign.status === 'CANCELLED') {
-          console.log(`[MarketingScheduler] Campaign ${campaignId} was cancelled during send.`);
-          break;
-        }
-
-        const batch = await CampaignRecipient.findAll({
-          where: { campaignId, status: 'PENDING' },
-          limit: BATCH_SIZE,
-          order: [['createdAt', 'ASC']],
-        });
-
-        if (batch.length === 0) break;
-
-        for (const recipient of batch) {
-          const result = await sendToRecipient(recipient, campaign, template, agencyId);
-          processedCount++;
-          if (result === 'SENT') sentCount++;
-          else failedCount++;
-        }
-
-        // Update campaign aggregate counts
-        await campaign.update({
-          sent: campaign.sent + sentCount,
-          failed: campaign.failed + failedCount,
-        });
-
-        // Reset batch counters
-        sentCount = 0;
-        failedCount = 0;
-
-        // Rate limit delay between batches
-        await sleep(BATCH_DELAY_MS);
-
-        // Report progress
-        await job.updateProgress(Math.round((processedCount / campaign.totalRecipients) * 100));
-      }
-
-      // Finalize campaign
-      const finalSent = await CampaignRecipient.count({ where: { campaignId, status: 'SENT' } });
-      const finalDelivered = await CampaignRecipient.count({ where: { campaignId, status: 'DELIVERED' } });
-      const finalRead = await CampaignRecipient.count({ where: { campaignId, status: 'READ' } });
-      const finalReplied = await CampaignRecipient.count({ where: { campaignId, status: 'REPLIED' } });
-      const finalFailed = await CampaignRecipient.count({ where: { campaignId, status: 'FAILED' } });
-
-      await campaign.update({
-        status: 'SENT',
-        completedAt: new Date(),
-        sent: finalSent,
-        delivered: finalDelivered,
-        read: finalRead,
-        replied: finalReplied,
-        failed: finalFailed,
+      await processCampaignBroadcast(campaignId, agencyId, {
+        onProgress: (progress) => job.updateProgress(progress),
       });
-
-      console.log(`[MarketingScheduler] Campaign ${campaignId} completed: ${finalSent} sent, ${finalFailed} failed.`);
     },
     { connection, concurrency: 1 }
   );
@@ -725,4 +736,5 @@ module.exports = {
   startMarketingWorkers,
   campaignQueue,
   dripQueue,
+  processCampaignBroadcast,
 };

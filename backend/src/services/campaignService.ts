@@ -528,9 +528,15 @@ async function sendCampaign(id, agencyId) {
 
   // Queue the broadcast job
   try {
-    const { campaignQueue } = require('./marketingSchedulerService');
+    const { campaignQueue, processCampaignBroadcast } = require('./marketingSchedulerService');
     if (!campaignQueue) {
-      throw new Error('Marketing campaign queue is unavailable because Redis is not configured');
+      console.warn('[CampaignService] Campaign queue unavailable, starting inline fallback broadcast');
+      setImmediate(() => {
+        processCampaignBroadcast(id, agencyId).catch((err) => {
+          console.error('[CampaignService] Inline fallback broadcast failed:', err.message);
+        });
+      });
+      return campaign;
     }
     await campaignQueue.add('broadcast', { campaignId: id, agencyId }, { attempts: 3 });
   } catch (err) {
