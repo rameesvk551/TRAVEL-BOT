@@ -137,6 +137,12 @@ async function sendTenantWhatsAppReadTyping(tenantToken, payload) {
   return response.data;
 }
 
+async function sendTenantWhatsAppTemplate(tenantToken, payload) {
+  const client = getTenantClient(tenantToken);
+  const response = await client.post('/whatsapp/messages/template', payload);
+  return response.data;
+}
+
 async function getTenantWhatsAppTemplates(tenantToken) {
   const client = getTenantClient(tenantToken);
   const response = await client.get('/whatsapp/templates');
@@ -237,6 +243,7 @@ module.exports = {
   sendTenantWhatsAppMessage,
   sendTenantWhatsAppInteractive,
   sendTenantWhatsAppMedia,
+  sendTenantWhatsAppTemplate,
   sendTenantInstagramMessage,
   sendTenantInstagramPrivateReply,
   sendTenantWhatsAppReadTyping,
@@ -256,3 +263,4 @@ module.exports = {
   connectTenantInstagram,
   disconnectTenantInstagram,
 };
+

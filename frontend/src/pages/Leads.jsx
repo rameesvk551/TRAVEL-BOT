@@ -96,14 +96,6 @@ export default function Leads() {
     });
   }, []);
 
-  const toggleSelectAll = useCallback(() => {
-    setSelectedLeadIds((prev) => {
-      if (prev.size === filteredLeads.length && filteredLeads.length > 0) return new Set();
-      return new Set(filteredLeads.map((l) => l.id));
-    });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filteredLeads]);
-
   const handleBulkAssign = useCallback((agentId) => {
     if (selectedLeadIds.size === 0) return;
     bulkAssign.mutate(
@@ -174,6 +166,13 @@ export default function Leads() {
       pipelineValue,
     };
   }, [leads]);
+
+  const toggleSelectAll = useCallback(() => {
+    setSelectedLeadIds((prev) => {
+      if (prev.size === filteredLeads.length && filteredLeads.length > 0) return new Set();
+      return new Set(filteredLeads.map((lead) => lead.id));
+    });
+  }, [filteredLeads]);
 
   function clearFilters() {
     setSearch('');

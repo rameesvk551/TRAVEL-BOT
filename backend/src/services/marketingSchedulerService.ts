@@ -45,6 +45,10 @@ function buildTemplateVariables(template, customer) {
   return variables;
 }
 
+function hasInteractiveTemplateButtons(template) {
+  return Array.isArray(template?.buttons) && template.buttons.length > 0;
+}
+
 async function sendReviewRatingPrompt(customer, agencyId) {
   const context = { customerId: customer.id, agencyId };
 
@@ -268,14 +272,13 @@ async function sendToRecipient(recipient, campaign, template, agencyId) {
       const variables = buildTemplateVariables(template, customer);
       const renderedBody = resolveTemplateBody(template.body, variables);
 
-      result = await whatsappService.sendTemplateOrTextIn24hWindow(
+      // Campaigns should send the actual approved template so Meta renders
+      // carousel cards / media headers instead of falling back to plain text.
+      result = await whatsappService.sendTemplateMessage(
         customer.phone,
-        {
-          templateName: template.name,
-          variables,
-          text: renderedBody,
-          context,
-        }
+        template.name,
+        variables,
+        context
       );
     } else if (campaign.messageBody) {
       // Send text message (non-template)
@@ -296,8 +299,23 @@ async function sendToRecipient(recipient, campaign, template, agencyId) {
       return 'FAILED';
     }
 
+    const messageStatus = String(
+      result?.status
+      || result?.dataValues?.status
+      || result?.get?.('status')
+      || ''
+    ).toUpperCase();
+
+    if (messageStatus === 'FAILED') {
+      await recipient.update({
+        status: 'FAILED',
+        errorMessage: 'WhatsApp provider rejected the outbound message',
+      });
+      return 'FAILED';
+    }
+
     // Update recipient with success status
-    const waMessageId = result?.waMessageId || result?.get?.('waMessageId') || null;
+    const waMessageId = result?.waMessageId || result?.dataValues?.waMessageId || result?.get?.('waMessageId') || null;
     await recipient.update({
       status: 'SENT',
       waMessageId,
@@ -326,14 +344,23 @@ async function sendToRecipient(recipient, campaign, template, agencyId) {
     const hasDynamicSections = Array.isArray(campaign.campaignSections) && campaign.campaignSections.length > 0;
     const format = String(campaign.format || 'STANDARD').toUpperCase();
     const hasCarouselItems = Array.isArray(campaign.carouselConfig?.items) && campaign.carouselConfig.items.length > 0;
+    const isApprovedCarouselTemplate = String(template?.templateType || '').toUpperCase() === 'CAROUSEL';
+    const isApprovedCtaTemplate = String(template?.templateType || 'STANDARD').toUpperCase() !== 'CAROUSEL'
+      && hasInteractiveTemplateButtons(template);
     if ((linkedPkgIds.length > 0 || hasDynamicSections || hasCarouselItems) && campaign.type !== 'REVIEW_COLLECTION') {
       const canSendInteractive = await whatsappService.isCustomerIn24hWindow(context);
       if (canSendInteractive) {
         if (format === 'ITEM_CAROUSEL') {
+          if (isApprovedCarouselTemplate) {
+            return 'SENT';
+          }
           await sendCampaignCarouselEntry(customer, campaign, agencyId).catch((err) => {
             console.error(`[CampaignBroadcast] Failed to send campaign carousel to ${customer.phone}:`, err.message);
           });
         } else if (format === 'SECTION_CTA' || hasDynamicSections) {
+          if (isApprovedCtaTemplate) {
+            return 'SENT';
+          }
           await sendCampaignSectionEntry(customer, campaign, agencyId).catch((err) => {
             console.error(`[CampaignBroadcast] Failed to send campaign section entry to ${customer.phone}:`, err.message);
           });

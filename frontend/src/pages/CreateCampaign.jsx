@@ -276,6 +276,39 @@ const PREBUILT_META_MESSAGE_TEMPLATES = [
   },
 ];
 
+const normalizeTemplateType = (template) => String(template?.templateType || '').toUpperCase();
+const normalizeHeaderType = (template) => String(template?.headerType || '').toUpperCase();
+
+const getTemplateMediaMode = (template) => {
+  if (!template) return 'IMAGE';
+
+  if (normalizeTemplateType(template) === 'CAROUSEL') {
+    const firstCard = Array.isArray(template.carouselCards) ? template.carouselCards[0] : null;
+    return String(firstCard?.mediaType || 'IMAGE').toUpperCase() === 'VIDEO' ? 'VIDEO' : 'IMAGE';
+  }
+
+  return normalizeHeaderType(template) === 'VIDEO' ? 'VIDEO' : 'IMAGE';
+};
+
+const isApprovedTemplateCompatible = (template, builderMode) => {
+  if (!template || template.status !== 'APPROVED') return false;
+
+  const templateType = normalizeTemplateType(template);
+  const buttons = Array.isArray(template.buttons) ? template.buttons : [];
+
+  if (builderMode === 'carousel') {
+    return templateType === 'CAROUSEL' && Array.isArray(template.carouselCards) && template.carouselCards.length >= 2;
+  }
+
+  return templateType !== 'CAROUSEL' && buttons.length > 0;
+};
+
+const isTemplateMediaCompatible = (template, builderMode, mediaType) => {
+  if (!isApprovedTemplateCompatible(template, builderMode)) return false;
+  if (!mediaType) return true;
+  return getTemplateMediaMode(template) === String(mediaType).toUpperCase();
+};
+
 export default function CreateCampaign() {
   const navigate = useNavigate();
   const { id: editId } = useParams();
@@ -591,6 +624,78 @@ export default function CreateCampaign() {
   const customTripSection = getSectionByKey('custom_trip');
   const selectedPackageRecords = selectedPackagesForSection(packageSection);
   const selectedPropertyRecords = selectedPropertiesForSection(propertySection);
+  const compatibleApprovedTemplates = approvedTemplates.filter((template) =>
+    isTemplateMediaCompatible(template, builderMode, formData.mediaType)
+  );
+  const filteredCompatibleTemplates = compatibleApprovedTemplates.filter((template) =>
+    (template.displayName || template.name || '').toLowerCase().includes(templateSearch.toLowerCase())
+  );
+
+  const applyApprovedTemplateSelection = useCallback((template) => {
+    if (!template) {
+      setSelectedTemplate(null);
+      setFormData((prev) => ({
+        ...prev,
+        templateId: null,
+      }));
+      return;
+    }
+
+    const mediaMode = getTemplateMediaMode(template);
+
+    setSelectedTemplate(template);
+    setFormData((prev) => ({
+      ...prev,
+      templateId: template.id,
+      messageBody: template.body || '',
+      mediaType: mediaMode,
+      format: normalizeTemplateType(template) === 'CAROUSEL' ? 'ITEM_CAROUSEL' : 'SECTION_CTA',
+      carouselConfig: {
+        ...(prev.carouselConfig || {}),
+        mediaMode,
+      },
+    }));
+  }, []);
+
+  useEffect(() => {
+    if (!formData.templateId) {
+      setSelectedTemplate(null);
+      return;
+    }
+
+    const match = approvedTemplates.find((template) => template.id === formData.templateId) || null;
+    setSelectedTemplate(match);
+  }, [formData.templateId, approvedTemplates]);
+
+  useEffect(() => {
+    if (formData.type === 'REVIEW_COLLECTION') return;
+    if (!approvedTemplates.length) return;
+
+    const currentTemplate = approvedTemplates.find((template) => template.id === formData.templateId);
+    if (currentTemplate && isTemplateMediaCompatible(currentTemplate, builderMode, formData.mediaType)) {
+      return;
+    }
+
+    const fallbackTemplate = approvedTemplates.find((template) =>
+      isTemplateMediaCompatible(template, builderMode, formData.mediaType)
+    );
+    if (fallbackTemplate) {
+      applyApprovedTemplateSelection(fallbackTemplate);
+      return;
+    }
+
+    if (formData.templateId) {
+      setSelectedTemplate(null);
+      setFormData((prev) => ({ ...prev, templateId: null }));
+    }
+  }, [builderMode, approvedTemplates, formData.templateId, formData.type, formData.mediaType, applyApprovedTemplateSelection]);
+
+  const previewCarouselCards = selectedTemplate && normalizeTemplateType(selectedTemplate) === 'CAROUSEL'
+    ? (selectedTemplate.carouselCards || []).slice(0, 4)
+    : [];
+  const previewButtons = selectedTemplate && normalizeTemplateType(selectedTemplate) !== 'CAROUSEL'
+    ? (selectedTemplate.buttons || [])
+    : [];
 
   const canProceed = () => {
     if (step === 0) return formData.name.trim().length > 0;
@@ -837,58 +942,37 @@ export default function CreateCampaign() {
           {/* ───── Step 2: Template ───── */}
           {step === 1 && (
             <div className="w-full space-y-6 animate-fade-in">
-              <div className="wizard-section-header max-w-3xl">
-                <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-[#404040] mb-2">
-                  <Send className="w-3.5 h-3.5" />
-                  Message Content
-                </div>
-                <h2 className="text-lg font-bold text-slate-900">What do you want to send?</h2>
-                <p className="text-sm text-slate-500 mt-0.5">Choose a carousel to send swipeable cards, or a message with image/video and action buttons.</p>
-              </div>
+
+
+
+
+
+
+
+
 
               {/* ── Open Templates Banner ── */}
-              <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <p className="text-sm font-bold text-slate-900">Publish templates in Template Messages</p>
-                  <p className="mt-1 text-xs text-slate-500">
-                    Open Templates, preview or edit the template, submit it to Meta, wait for Approved, then return here and select it.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => navigate('/templates')}
-                  className="shell-button-secondary min-h-10"
-                >
-                  <ArrowLeft className="h-4 w-4 rotate-180" />
-                  Open Templates
-                </button>
-              </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
               <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
                 <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_390px]">
                   <div className="space-y-4">
-                    <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-5">
-                      <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                        <div>
-                          <p className="text-sm font-bold text-slate-900">Campaign content workspace</p>
-                          <p className="mt-1 text-xs text-slate-500">Write the message and manually choose exactly what customers can view next.</p>
-                        </div>
-                        <div className="rounded-full bg-white px-3 py-1 text-xs font-bold text-slate-600 ring-1 ring-slate-200">
-                          {builderMode === 'cta' ? 'CTA flow' : 'Manual carousel'}
-                        </div>
-                      </div>
 
-                      <label className="mb-2 block text-xs font-bold uppercase tracking-[0.15em] text-slate-500">Campaign message</label>
-                      <textarea
-                        rows={6}
-                        value={formData.messageBody}
-                        onChange={(e) => setFormData((prev) => ({ ...prev, messageBody: e.target.value }))}
-                        placeholder={builderMode === 'cta'
-                          ? 'Write the message customers will see before choosing View Packages, View Properties, or Custom Trip.'
-                          : 'Write the intro message customers will see above your selected carousel cards.'}
-                        className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-slate-400"
-                      />
-                    </div>
 
                     {builderMode === 'cta' && (
                       <div className="space-y-4">
@@ -1185,6 +1269,76 @@ export default function CreateCampaign() {
                       )}
                     </div>
 
+                  <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                    <div className="mb-4 flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-bold text-slate-900">
+                          {builderMode === 'carousel' ? 'Approved Meta carousel templates' : 'Approved Meta CTA templates'}
+                        </p>
+                        <p className="mt-1 text-xs text-slate-500">
+                          {builderMode === 'carousel'
+                            ? 'Select an approved carousel template to drive the message and preview.'
+                            : 'Select an approved CTA template to drive the message and preview.'}
+                        </p>
+                      </div>
+                      <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-600">
+                        {filteredCompatibleTemplates.length} available
+                      </span>
+                    </div>
+
+                    <div className="mb-3">
+                      <input
+                        type="text"
+                        value={templateSearch}
+                        onChange={(e) => setTemplateSearch(e.target.value)}
+                        placeholder={`Search ${builderMode === 'carousel' ? 'carousel' : 'CTA'} templates...`}
+                        className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-slate-400"
+                      />
+                    </div>
+
+                    <div className="space-y-3">
+                      {filteredCompatibleTemplates.length > 0 ? filteredCompatibleTemplates.map((template) => {
+                        const isActive = formData.templateId === template.id;
+                        const templateMediaMode = getTemplateMediaMode(template);
+                        return (
+                          <button
+                            key={template.id}
+                            type="button"
+                            onClick={() => applyApprovedTemplateSelection(template)}
+                            className={`w-full rounded-2xl border p-4 text-left transition ${
+                              isActive ? 'border-slate-900 bg-slate-900 text-white shadow-md shadow-slate-900/10' : 'border-slate-200 bg-white hover:border-slate-300'
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0 flex-1">
+                                <p className={`truncate text-sm font-bold ${isActive ? 'text-white' : 'text-slate-900'}`}>
+                                  {template.displayName || template.name}
+                                </p>
+                                <p className={`mt-1 text-xs ${isActive ? 'text-slate-200' : 'text-slate-500'}`}>
+                                  {normalizeTemplateType(template) === 'CAROUSEL'
+                                    ? `${(template.carouselCards || []).length} cards • ${templateMediaMode}`
+                                    : `${Array.isArray(template.buttons) ? template.buttons.length : 0} buttons • ${templateMediaMode}`}
+                                </p>
+                                <p className={`mt-2 line-clamp-2 text-xs ${isActive ? 'text-slate-100' : 'text-slate-600'}`}>
+                                  {String(template.body || '').replace(/{{\d+}}/g, '{{name}}')}
+                                </p>
+                              </div>
+                              {isActive && (
+                                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-white text-slate-900">
+                                  <Check className="h-3.5 w-3.5" strokeWidth={3} />
+                                </span>
+                              )}
+                            </div>
+                          </button>
+                        );
+                      }) : (
+                        <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-5 text-center text-sm text-slate-500">
+                          No approved {builderMode === 'carousel' ? 'carousel' : 'CTA'} templates found. Open Template Messages and approve one first.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
                   <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                     <div className="mb-3 flex items-center justify-between gap-3">
                       <div>
@@ -1203,27 +1357,42 @@ export default function CreateCampaign() {
 
                         {builderMode === 'cta' && (
                           <div className="mt-3 space-y-1.5 border-t border-black/10 pt-2">
-                            {activeSections.length > 0 ? activeSections.map((section) => (
-                              <div key={section.key} className="rounded-md bg-white px-3 py-2 text-center text-[11px] font-bold text-sky-700">
-                                {section.label}
-                              </div>
-                            )) : (
+                            {selectedTemplate && normalizeTemplateType(selectedTemplate) !== 'CAROUSEL'
+                              ? previewButtons.length > 0 ? previewButtons.map((button, index) => (
+                                <div key={`${button.type || 'button'}-${index}`} className="rounded-md bg-white px-3 py-2 text-center text-[11px] font-bold text-sky-700">
+                                  {button.text || `Button ${index + 1}`}
+                                </div>
+                              )) : (
+                                <div className="rounded-md bg-white px-3 py-2 text-center text-[11px] font-bold text-slate-400">
+                                  Selected template has no previewable buttons
+                                </div>
+                              )
+                              : activeSections.length > 0 ? activeSections.map((section) => (
+                                <div key={section.key} className="rounded-md bg-white px-3 py-2 text-center text-[11px] font-bold text-sky-700">
+                                  {section.label}
+                                </div>
+                              )) : (
                               <div className="rounded-md bg-white px-3 py-2 text-center text-[11px] font-bold text-slate-400">
                                 Enable at least one CTA action
                               </div>
-                            )}
+                              )}
                           </div>
                         )}
 
                         {builderMode === 'carousel' && (
-                          <div className="mt-3 space-y-2 border-t border-black/10 pt-2">
-                            {selectedCarouselRecords.length > 0 ? selectedCarouselRecords.slice(0, 4).map((card, index) => {
-                              const mediaType = String(formData.mediaType || 'IMAGE').toUpperCase();
+                          <div className="mt-3 border-t border-black/10 pt-2">
+                            {(previewCarouselCards.length > 0 ? previewCarouselCards : selectedCarouselRecords.slice(0, 4)).length > 0 ? (
+                              <div className="overflow-x-auto pb-2">
+                                <div className="flex gap-2 min-w-max">
+                                  {(previewCarouselCards.length > 0 ? previewCarouselCards : selectedCarouselRecords.slice(0, 4)).map((card, index) => {
+                              const mediaType = previewCarouselCards.length > 0
+                                ? String(card.mediaType || formData.mediaType || 'IMAGE').toUpperCase()
+                                : String(formData.mediaType || 'IMAGE').toUpperCase();
                               return (
-                                <div key={`${card.itemType}-${card.id}`} className="overflow-hidden rounded-lg border border-black/10 bg-white">
+                                <div key={`${card.itemType || 'TEMPLATE'}-${card.id || index}`} className="w-40 flex-shrink-0 overflow-hidden rounded-lg border border-black/10 bg-white">
                                   <div className="flex aspect-[4/3] items-center justify-center bg-slate-100 text-slate-500">
-                                    {(card.imageUrl || card.coverImageUrl) ? (
-                                      <img src={card.imageUrl || card.coverImageUrl} alt="" className="h-full w-full object-cover" />
+                                    {(card.imageUrl || card.coverImageUrl || card.mediaUrl) ? (
+                                      <img src={card.imageUrl || card.coverImageUrl || card.mediaUrl} alt="" className="h-full w-full object-cover" />
                                     ) : mediaType === 'VIDEO' ? (
                                       <Video className="h-7 w-7" />
                                     ) : (
@@ -1231,17 +1400,26 @@ export default function CreateCampaign() {
                                     )}
                                   </div>
                                   <div className="p-2">
-                                    <p className="truncate text-[11px] font-bold text-slate-900">{card.name || `Card ${index + 1}`}</p>
+                                    <p className="truncate text-[11px] font-bold text-slate-900">{card.title || card.name || `Card ${index + 1}`}</p>
                                     <p className="mt-1 line-clamp-2 text-[10px] text-slate-500">
-                                      {card.itemType === 'PACKAGE'
-                                        ? (card.destinations || []).join(', ') || card.category || 'Package'
-                                        : card.location || card.propertyType || 'Property'}
+                                      {previewCarouselCards.length > 0
+                                        ? card.body || 'Template card preview'
+                                        : card.itemType === 'PACKAGE'
+                                          ? (card.destinations || []).join(', ') || card.category || 'Package'
+                                          : card.location || card.propertyType || 'Property'}
                                     </p>
-                                    <div className="mt-2 rounded border border-sky-100 px-2 py-1 text-center text-[9px] font-bold text-sky-700">Enquiry</div>
+                                    <div className="mt-2 rounded border border-sky-100 px-2 py-1 text-center text-[9px] font-bold text-sky-700">
+                                      {previewCarouselCards.length > 0
+                                        ? card.buttons?.[0]?.text || 'Enquiry'
+                                        : 'Enquiry'}
+                                    </div>
                                   </div>
                                 </div>
                               );
-                            }) : (
+                                  })}
+                                </div>
+                              </div>
+                            ) : (
                               <div className="rounded-md bg-white px-3 py-3 text-center text-[11px] font-bold text-slate-400">
                                 Select 2 to 10 items to preview the carousel
                               </div>

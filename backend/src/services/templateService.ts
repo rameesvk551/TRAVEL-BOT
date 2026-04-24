@@ -379,13 +379,50 @@ function normalizeButtons(buttons) {
     .filter((button) => button.text);
 }
 
+function extractHeaderFromComponents(components = []) {
+  if (!Array.isArray(components)) return null;
+  return components.find((component) => String(component.type || '').toUpperCase() === 'HEADER') || null;
+}
+
 function extractBodyFromComponents(components = []) {
   if (!Array.isArray(components)) return '';
   return components.find((component) => String(component.type || '').toUpperCase() === 'BODY')?.text || '';
 }
 
+function extractFooterFromComponents(components = []) {
+  if (!Array.isArray(components)) return null;
+  return components.find((component) => String(component.type || '').toUpperCase() === 'FOOTER')?.text || null;
+}
+
+function extractButtonsFromComponents(components = []) {
+  if (!Array.isArray(components)) return [];
+  const buttonComponent = components.find((component) => String(component.type || '').toUpperCase() === 'BUTTONS');
+  return normalizeButtons(buttonComponent?.buttons);
+}
+
+function extractCarouselCardsFromComponents(components = []) {
+  if (!Array.isArray(components)) return [];
+  const carouselComponent = components.find((component) => String(component.type || '').toUpperCase() === 'CAROUSEL');
+  if (!carouselComponent || !Array.isArray(carouselComponent.cards)) return [];
+
+  return carouselComponent.cards.map((card, index) => {
+    const cardComponents = Array.isArray(card.components) ? card.components : [];
+    const cardHeader = extractHeaderFromComponents(cardComponents);
+    return {
+      id: card.id || `card_${index + 1}`,
+      mediaType: String(cardHeader?.format || 'IMAGE').toUpperCase(),
+      mediaUrl: cardHeader?.example?.header_handle?.[0] || null,
+      title: '',
+      body: extractBodyFromComponents(cardComponents) || '',
+      buttons: extractButtonsFromComponents(cardComponents),
+    };
+  }).filter((card) => card.body || card.mediaUrl || (card.buttons && card.buttons.length > 0));
+}
+
 function normalizeProviderTemplate(mt) {
   const name = mt.name || mt.templateName || mt.template_name;
+  const header = extractHeaderFromComponents(mt.components);
+  const carouselCardsFromComponents = extractCarouselCardsFromComponents(mt.components);
   const body = mt.body
     || mt.bodyContent
     || mt.body_content
@@ -399,17 +436,23 @@ function normalizeProviderTemplate(mt) {
     displayName: mt.displayName || mt.display_name || String(name || '').replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase()),
     category: normalizeCategory(mt.category),
     language: mt.language || mt.languageCode || mt.language_code || 'en',
-    headerType: normalizeHeaderType(mt.headerType || mt.header_type),
-    headerContent: mt.headerContent || mt.header_content || null,
+    headerType: normalizeHeaderType(mt.headerType || mt.header_type || header?.format),
+    headerContent: mt.headerContent || mt.header_content || header?.text || null,
     body,
-    footer: mt.footer || mt.footerContent || mt.footer_content || null,
-    buttons: normalizeButtons(mt.buttons),
+    footer: mt.footer || mt.footerContent || mt.footer_content || extractFooterFromComponents(mt.components),
+    buttons: normalizeButtons(mt.buttons).length ? normalizeButtons(mt.buttons) : extractButtonsFromComponents(mt.components),
     status,
     rejectionReason: status === 'REJECTED' ? (mt.rejectionReason || mt.rejection_reason || mt.rejected_reason || null) : null,
     variableCount: mt.variableCount || mt.variable_count || countBodyVariables(body),
     sampleVariables: Array.isArray(mt.variables) ? mt.variables : [],
-    templateType: String(mt.templateType || mt.template_type || '').toUpperCase() === 'CAROUSEL' ? 'CAROUSEL' : 'STANDARD',
-    carouselCards: Array.isArray(mt.carouselCards || mt.carousel_cards) ? (mt.carouselCards || mt.carousel_cards) : [],
+    templateType: (
+      String(mt.templateType || mt.template_type || '').toUpperCase() === 'CAROUSEL'
+      || carouselCardsFromComponents.length > 0
+      || (Array.isArray(mt.carouselCards || mt.carousel_cards) && (mt.carouselCards || mt.carousel_cards).length > 0)
+    ) ? 'CAROUSEL' : 'STANDARD',
+    carouselCards: Array.isArray(mt.carouselCards || mt.carousel_cards) && (mt.carouselCards || mt.carousel_cards).length > 0
+      ? (mt.carouselCards || mt.carousel_cards)
+      : carouselCardsFromComponents,
   };
 }
 

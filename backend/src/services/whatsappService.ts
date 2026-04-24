@@ -285,12 +285,12 @@ async function sendViaMarketingOs(phone, payload, tenantId) {
       text: textToSend,
     });
   } else if (payload.type === 'template') {
-    data = await marketingOsPartnerService.sendTenantWhatsAppMessage(tenantToken, {
+    data = await marketingOsPartnerService.sendTenantWhatsAppTemplate(tenantToken, {
       tenantId,
       to: actualRecipient,
       templateName: payload.templateName,
       language: payload.languageCode || 'en',
-      variables: payload.variables || {},
+      components: payload.variables || {}, // Marketing OS expects 'components' which map to template variables
       idempotencyKey,
     });
   } else if (payload.type === 'interactive') {

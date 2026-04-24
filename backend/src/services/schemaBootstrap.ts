@@ -216,6 +216,12 @@ async function ensureCampaignsSchema() {
     allowNull: true,
   });
 
+  await ensureColumn('campaigns', 'linked_package_ids', {
+    type: Sequelize.JSONB,
+    allowNull: false,
+    defaultValue: [],
+  });
+
   await ensureColumn('campaigns', 'campaign_sections', {
     type: Sequelize.JSONB,
     allowNull: false,
