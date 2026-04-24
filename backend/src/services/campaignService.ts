@@ -50,15 +50,49 @@ function normalizeCarouselConfig(data = {}) {
   const config = data.carouselConfig && typeof data.carouselConfig === 'object' ? data.carouselConfig : {};
   const rawItems = normalizeArray(config.items || data.carouselItems);
   const cards = normalizeArray(config.cards || data.carouselCards);
+  const mediaMode = ['IMAGE', 'VIDEO', 'MIXED'].includes(String(config.mediaMode || data.mediaType || 'IMAGE').toUpperCase())
+    ? String(config.mediaMode || data.mediaType || 'IMAGE').toUpperCase()
+    : 'IMAGE';
 
   return {
     contentType: String(config.contentType || 'MIXED').toUpperCase(),
+    mediaMode,
     items: rawItems.map((item) => ({
       itemType: ITEM_TYPES.has(String(item.itemType || '').toUpperCase()) ? String(item.itemType).toUpperCase() : 'PACKAGE',
       itemId: item.itemId || item.id,
     })).filter((item) => item.itemId && item.itemType !== 'CUSTOM_TRIP'),
     cards,
   };
+}
+
+function validateCampaignPayload(payload = {}) {
+  const format = String(payload.format || 'STANDARD').toUpperCase();
+
+  if (format === 'SECTION_CTA') {
+    const sections = normalizeArray(payload.campaignSections).filter((section) => section.enabled !== false);
+    if (sections.length === 0) {
+      throw new Error('CTA campaigns need at least one enabled action');
+    }
+
+    const catalogSections = sections.filter((section) => ['PACKAGE', 'PROPERTY'].includes(String(section.itemType || '').toUpperCase()));
+    if (catalogSections.length === 0) {
+      throw new Error('CTA campaigns must include at least one selected package or property');
+    }
+
+    const missingSelection = catalogSections.find((section) => normalizeArray(section.selectedItemIds).length === 0);
+    if (missingSelection) {
+      throw new Error(`${missingSelection.label || 'CTA action'} needs at least one selected item`);
+    }
+  }
+
+  if (format === 'ITEM_CAROUSEL') {
+    const items = normalizeArray(payload.carouselConfig?.items);
+    if (items.length < 2 || items.length > 10) {
+      throw new Error('Carousel campaigns must select between 2 and 10 packages or properties');
+    }
+  }
+
+  return payload;
 }
 
 function normalizeCampaignPayload(data = {}) {
@@ -308,7 +342,7 @@ async function importContacts(agencyId, contacts) {
  * Create campaign.
  */
 async function createCampaign(agencyId, data) {
-  const payload = normalizeCampaignPayload(data);
+  const payload = validateCampaignPayload(normalizeCampaignPayload(data));
 
   if (payload.type === 'REVIEW_COLLECTION' && !payload.templateId && !payload.messageBody) {
     const reviewTemplate = await MessageTemplate.findOne({
@@ -342,7 +376,7 @@ async function updateCampaign(id, agencyId, data) {
   if (!['DRAFT', 'SCHEDULED'].includes(campaign.status)) {
     throw new Error('Can only edit draft or scheduled campaigns');
   }
-  return campaign.update(normalizeCampaignPayload(data));
+  return campaign.update(validateCampaignPayload(normalizeCampaignPayload(data)));
 }
 
 /**
@@ -466,6 +500,12 @@ async function sendCampaign(id, agencyId) {
   if (!['DRAFT', 'SCHEDULED'].includes(campaign.status)) {
     throw new Error('Campaign already sent or cancelled');
   }
+
+  validateCampaignPayload({
+    format: campaign.format,
+    campaignSections: campaign.campaignSections,
+    carouselConfig: campaign.carouselConfig,
+  });
 
   const audience = await buildAudience(agencyId, campaign.audienceFilter);
   if (audience.length === 0) throw new Error('No recipients match the audience filter');

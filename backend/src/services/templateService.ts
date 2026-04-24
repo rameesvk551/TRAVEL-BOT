@@ -379,6 +379,62 @@ function normalizeButtons(buttons) {
     .filter((button) => button.text);
 }
 
+function isValidHttpUrl(value) {
+  const trimmed = String(value || '').trim();
+  if (!trimmed) return false;
+
+  try {
+    const parsed = new URL(trimmed);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch (_err) {
+    return false;
+  }
+}
+
+function normalizeCarouselCards(cards) {
+  if (!Array.isArray(cards)) return [];
+
+  return cards
+    .slice(0, 10)
+    .map((card, index) => ({
+      id: card?.id || `card_${index + 1}`,
+      mediaType: ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(String(card?.mediaType || card?.headerType || 'IMAGE').toUpperCase())
+        ? String(card?.mediaType || card?.headerType || 'IMAGE').toUpperCase()
+        : 'IMAGE',
+      mediaUrl: String(card?.mediaUrl || '').trim(),
+      title: String(card?.title || '').trim(),
+      body: String(card?.body || '').trim(),
+      buttons: normalizeButtons(
+        Array.isArray(card?.buttons) && card.buttons.length
+          ? card.buttons
+          : [
+              { type: 'QUICK_REPLY', text: 'Enquiry' },
+              { type: 'QUICK_REPLY', text: 'See Others' },
+            ]
+      ).slice(0, 2),
+    }))
+    .filter((card) => card.mediaUrl || card.body || card.title);
+}
+
+function validateTemplatePayload(payload) {
+  if (!payload.displayName) throw new Error('Template display name is required');
+  if (!payload.body) throw new Error('Template body is required');
+  if (payload.templateType !== 'CAROUSEL') return;
+
+  if (!Array.isArray(payload.carouselCards) || payload.carouselCards.length < 2 || payload.carouselCards.length > 10) {
+    throw new Error('Carousel templates need 2 to 10 cards');
+  }
+
+  payload.carouselCards.forEach((card, index) => {
+    if (!card.body) {
+      throw new Error(`Carousel card ${index + 1} is missing body text`);
+    }
+    if (!isValidHttpUrl(card.mediaUrl)) {
+      throw new Error(`Carousel card ${index + 1} needs a valid public media URL`);
+    }
+  });
+}
+
 function extractHeaderFromComponents(components = []) {
   if (!Array.isArray(components)) return null;
   return components.find((component) => String(component.type || '').toUpperCase() === 'HEADER') || null;
@@ -451,8 +507,8 @@ function normalizeProviderTemplate(mt) {
       || (Array.isArray(mt.carouselCards || mt.carousel_cards) && (mt.carouselCards || mt.carousel_cards).length > 0)
     ) ? 'CAROUSEL' : 'STANDARD',
     carouselCards: Array.isArray(mt.carouselCards || mt.carousel_cards) && (mt.carouselCards || mt.carousel_cards).length > 0
-      ? (mt.carouselCards || mt.carousel_cards)
-      : carouselCardsFromComponents,
+      ? normalizeCarouselCards(mt.carouselCards || mt.carousel_cards)
+      : normalizeCarouselCards(carouselCardsFromComponents),
   };
 }
 
@@ -469,8 +525,10 @@ function extractProviderTemplates(result) {
 function buildTemplateData(data, existing = null) {
   const body = data.body ?? existing?.body ?? '';
   const variableCount = countBodyVariables(body);
-
-  return {
+  const templateType = String(data.templateType ?? data.template_type ?? existing?.templateType ?? 'STANDARD').toUpperCase() === 'CAROUSEL'
+    ? 'CAROUSEL'
+    : 'STANDARD';
+  const normalized = {
     displayName: String(data.displayName ?? existing?.displayName ?? '').trim(),
     name: data.name || existing?.name,
     category: normalizeCategory(data.category ?? existing?.category),
@@ -480,12 +538,10 @@ function buildTemplateData(data, existing = null) {
     body,
     footer: data.footer ?? existing?.footer ?? null,
     buttons: normalizeButtons(data.buttons ?? existing?.buttons),
-    templateType: String(data.templateType ?? data.template_type ?? existing?.templateType ?? 'STANDARD').toUpperCase() === 'CAROUSEL'
-      ? 'CAROUSEL'
-      : 'STANDARD',
+    templateType,
     carouselCards: Array.isArray(data.carouselCards)
-      ? data.carouselCards
-      : (existing?.carouselCards || []),
+      ? normalizeCarouselCards(data.carouselCards)
+      : normalizeCarouselCards(existing?.carouselCards || []),
     variableCount,
     sampleVariables: Array.isArray(data.sampleVariables)
       ? data.sampleVariables
@@ -493,6 +549,16 @@ function buildTemplateData(data, existing = null) {
     tags: Array.isArray(data.tags) ? data.tags : (existing?.tags || []),
     icon: data.icon ?? existing?.icon ?? '💬',
   };
+
+  if (templateType === 'CAROUSEL') {
+    normalized.headerType = 'NONE';
+    normalized.headerContent = null;
+    normalized.footer = null;
+    normalized.buttons = [];
+  }
+
+  validateTemplatePayload(normalized);
+  return normalized;
 }
 
 async function syncTemplateToMarketingOs(agencyId, template, options = {}) {
@@ -731,6 +797,8 @@ async function syncTemplates(agencyId) {
         language: mt.language,
         headerType: mt.headerType,
         headerContent: mt.headerContent,
+        templateType: mt.templateType,
+        carouselCards: mt.carouselCards,
         body: mt.body,
         footer: mt.footer,
         buttons: mt.buttons,
@@ -750,6 +818,8 @@ async function syncTemplates(agencyId) {
         language: mt.language,
         headerType: mt.headerType,
         headerContent: mt.headerContent,
+        templateType: mt.templateType,
+        carouselCards: mt.carouselCards,
         status: mt.status,
         metaTemplateId: mt.id,
         rejectionReason: mt.rejectionReason,
@@ -774,11 +844,15 @@ async function submitForApproval(id, agencyId) {
   if (!template) throw new Error('Template not found');
   if (template.status === 'PENDING') return template;
   if (!template.body || !template.name) throw new Error('Template is incomplete');
+  const normalizedTemplate = {
+    ...template.toJSON(),
+    ...buildTemplateData(template.toJSON(), template),
+  };
   
   const whatsappService = require('./whatsappService');
   
   try {
-    const result = await syncTemplateToMarketingOs(agencyId, template);
+    const result = await syncTemplateToMarketingOs(agencyId, normalizedTemplate);
     const providerTemplateId = extractProviderTemplateId(result);
     if (providerTemplateId) {
       template.metaTemplateId = providerTemplateId;

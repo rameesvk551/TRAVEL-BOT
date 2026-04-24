@@ -290,6 +290,41 @@ const getTemplateMediaMode = (template) => {
   return normalizeHeaderType(template) === 'VIDEO' ? 'VIDEO' : 'IMAGE';
 };
 
+const getCatalogItemMediaUrl = (item) => String(item?.imageUrl || item?.coverImageUrl || item?.mediaUrl || '').trim();
+
+const getCatalogItemSubtitle = (item) => (
+  item?.itemType === 'PACKAGE'
+    ? (item?.destinations || []).join(', ') || item?.category || 'Package'
+    : item?.location || item?.propertyType || 'Property'
+);
+
+const buildCarouselPreviewCards = (selectedItems = [], templateCards = [], mediaType = 'IMAGE') => {
+  if (!selectedItems.length) {
+    return (templateCards || []).slice(0, 4);
+  }
+
+  const fallbackTemplateCard = Array.isArray(templateCards) && templateCards.length > 0
+    ? templateCards[templateCards.length - 1]
+    : null;
+
+  return selectedItems.slice(0, 10).map((item, index) => {
+    const templateCard = templateCards[index] || fallbackTemplateCard || {};
+    const imageUrl = getCatalogItemMediaUrl(item);
+
+    return {
+      ...templateCard,
+      id: item.id || `${item.itemType}-${index + 1}`,
+      itemType: item.itemType,
+      title: item.name || templateCard.title || `Card ${index + 1}`,
+      body: templateCard.body || getCatalogItemSubtitle(item),
+      mediaType: String(templateCard.mediaType || mediaType || 'IMAGE').toUpperCase(),
+      mediaUrl: imageUrl,
+      imageUrl,
+      buttons: Array.isArray(templateCard.buttons) && templateCard.buttons.length > 0 ? templateCard.buttons : [{ text: 'Enquiry' }],
+    };
+  });
+};
+
 const isApprovedTemplateCompatible = (template, builderMode) => {
   if (!template || template.status !== 'APPROVED') return false;
 
@@ -374,6 +409,7 @@ export default function CreateCampaign() {
         campaignSections: normalizeCampaignSections(editCampaign.campaignSections),
         carouselConfig: {
           contentType: editCampaign.carouselConfig?.contentType || 'MIXED',
+          mediaMode: editCampaign.carouselConfig?.mediaMode || (editCampaign.mediaType === 'VIDEO' ? 'VIDEO' : 'IMAGE'),
           items: editCampaign.carouselConfig?.items || [],
         },
         ctaConfig: editCampaign.ctaConfig || {},
@@ -624,6 +660,17 @@ export default function CreateCampaign() {
   const customTripSection = getSectionByKey('custom_trip');
   const selectedPackageRecords = selectedPackagesForSection(packageSection);
   const selectedPropertyRecords = selectedPropertiesForSection(propertySection);
+  const selectedCtaCatalogRecords = activeSections.flatMap((section) => {
+    if (section.itemType === 'PACKAGE') {
+      return selectedPackagesForSection(section).map((pkg) => ({ ...pkg, itemType: 'PACKAGE' }));
+    }
+    if (section.itemType === 'PROPERTY') {
+      return selectedPropertiesForSection(section).map((property) => ({ ...property, itemType: 'PROPERTY' }));
+    }
+    return [];
+  });
+  const featuredCtaRecord = selectedCtaCatalogRecords.find((item) => getCatalogItemMediaUrl(item)) || null;
+  const ctaNeedsFeaturedMedia = builderMode === 'cta' && formData.mediaType === 'IMAGE';
   const compatibleApprovedTemplates = approvedTemplates.filter((template) =>
     isTemplateMediaCompatible(template, builderMode, formData.mediaType)
   );
@@ -690,8 +737,12 @@ export default function CreateCampaign() {
     }
   }, [builderMode, approvedTemplates, formData.templateId, formData.type, formData.mediaType, applyApprovedTemplateSelection]);
 
-  const previewCarouselCards = selectedTemplate && normalizeTemplateType(selectedTemplate) === 'CAROUSEL'
-    ? (selectedTemplate.carouselCards || []).slice(0, 4)
+  const previewCarouselCards = builderMode === 'carousel'
+    ? buildCarouselPreviewCards(
+        selectedCarouselRecords,
+        selectedTemplate && normalizeTemplateType(selectedTemplate) === 'CAROUSEL' ? (selectedTemplate.carouselCards || []) : [],
+        formData.mediaType
+      )
     : [];
   const previewButtons = selectedTemplate && normalizeTemplateType(selectedTemplate) !== 'CAROUSEL'
     ? (selectedTemplate.buttons || [])
@@ -703,16 +754,21 @@ export default function CreateCampaign() {
       if (!(formData.templateId || formData.messageBody.trim().length > 0)) return false;
       if (formData.format === 'SECTION_CTA') {
         if (activeSections.length === 0) return false;
+        const catalogSections = activeSections.filter((section) => section.itemType === 'PACKAGE' || section.itemType === 'PROPERTY');
+        if (catalogSections.length === 0) return false;
 
-        return activeSections.every((section) => {
+        const hasSelectionsForEnabledSections = catalogSections.every((section) => {
           if (section.itemType === 'CUSTOM_TRIP') return true;
           return (section.selectedItemIds || []).length > 0;
         });
+        if (!hasSelectionsForEnabledSections) return false;
+        if (ctaNeedsFeaturedMedia) return !!featuredCtaRecord;
+        return true;
       }
       if (formData.format === 'ITEM_CAROUSEL') {
         return carouselItems.length >= 2
           && carouselItems.length <= 10
-          && selectedCarouselRecords.every((item) => item.imageUrl || item.coverImageUrl);
+          && selectedCarouselRecords.every((item) => getCatalogItemMediaUrl(item));
       }
       return true;
     }
@@ -1023,6 +1079,19 @@ export default function CreateCampaign() {
                             })}
                           </div>
                         </div>
+
+                        {ctaNeedsFeaturedMedia && (
+                          <div className={`rounded-2xl border p-4 ${featuredCtaRecord ? 'border-emerald-200 bg-emerald-50/70' : 'border-amber-200 bg-amber-50/70'}`}>
+                            <p className={`text-sm font-bold ${featuredCtaRecord ? 'text-emerald-900' : 'text-amber-900'}`}>
+                              CTA header media
+                            </p>
+                            <p className={`mt-1 text-xs ${featuredCtaRecord ? 'text-emerald-700' : 'text-amber-700'}`}>
+                              {featuredCtaRecord
+                                ? `Meta will use the image from ${featuredCtaRecord.name} as the CTA header media.`
+                                : 'Select at least one package or property with an image so the CTA template can send valid media.'}
+                            </p>
+                          </div>
+                        )}
 
                         {packageSection.enabled && (
                           <div className="rounded-2xl border border-slate-200 bg-white p-5">
@@ -1351,6 +1420,25 @@ export default function CreateCampaign() {
                     </div>
                     <div className="rounded-xl bg-[#efeae2] p-3 shadow-sm ring-1 ring-slate-200">
                       <div className="ml-auto max-w-[92%] rounded-[12px] rounded-tr-sm bg-[#dcf8c6] p-3 text-xs text-slate-800 shadow-sm">
+                        {builderMode === 'cta' && ctaNeedsFeaturedMedia && (
+                          <div className="mb-3 overflow-hidden rounded-lg border border-black/10 bg-white">
+                            {featuredCtaRecord ? (
+                              <>
+                                <div className="aspect-[4/3] bg-slate-100">
+                                  <img src={getCatalogItemMediaUrl(featuredCtaRecord)} alt="" className="h-full w-full object-cover" />
+                                </div>
+                                <div className="border-t border-black/10 px-2 py-1 text-[10px] font-bold text-slate-600">
+                                  {featuredCtaRecord.name}
+                                </div>
+                              </>
+                            ) : (
+                              <div className="flex aspect-[4/3] items-center justify-center bg-slate-100 text-slate-400">
+                                <Image className="h-7 w-7" />
+                              </div>
+                            )}
+                          </div>
+                        )}
+
                         <p className="whitespace-pre-line leading-relaxed">
                           {(formData.messageBody || 'Your campaign message will appear here.').replace('{{name}}', 'Rahul')}
                         </p>
@@ -1381,18 +1469,16 @@ export default function CreateCampaign() {
 
                         {builderMode === 'carousel' && (
                           <div className="mt-3 border-t border-black/10 pt-2">
-                            {(previewCarouselCards.length > 0 ? previewCarouselCards : selectedCarouselRecords.slice(0, 4)).length > 0 ? (
+                            {previewCarouselCards.length > 0 ? (
                               <div className="overflow-x-auto pb-2">
                                 <div className="flex gap-2 min-w-max">
-                                  {(previewCarouselCards.length > 0 ? previewCarouselCards : selectedCarouselRecords.slice(0, 4)).map((card, index) => {
-                              const mediaType = previewCarouselCards.length > 0
-                                ? String(card.mediaType || formData.mediaType || 'IMAGE').toUpperCase()
-                                : String(formData.mediaType || 'IMAGE').toUpperCase();
+                                  {previewCarouselCards.map((card, index) => {
+                              const mediaType = String(card.mediaType || formData.mediaType || 'IMAGE').toUpperCase();
                               return (
                                 <div key={`${card.itemType || 'TEMPLATE'}-${card.id || index}`} className="w-40 flex-shrink-0 overflow-hidden rounded-lg border border-black/10 bg-white">
                                   <div className="flex aspect-[4/3] items-center justify-center bg-slate-100 text-slate-500">
-                                    {(card.imageUrl || card.coverImageUrl || card.mediaUrl) ? (
-                                      <img src={card.imageUrl || card.coverImageUrl || card.mediaUrl} alt="" className="h-full w-full object-cover" />
+                                    {getCatalogItemMediaUrl(card) ? (
+                                      <img src={getCatalogItemMediaUrl(card)} alt="" className="h-full w-full object-cover" />
                                     ) : mediaType === 'VIDEO' ? (
                                       <Video className="h-7 w-7" />
                                     ) : (
@@ -1402,16 +1488,10 @@ export default function CreateCampaign() {
                                   <div className="p-2">
                                     <p className="truncate text-[11px] font-bold text-slate-900">{card.title || card.name || `Card ${index + 1}`}</p>
                                     <p className="mt-1 line-clamp-2 text-[10px] text-slate-500">
-                                      {previewCarouselCards.length > 0
-                                        ? card.body || 'Template card preview'
-                                        : card.itemType === 'PACKAGE'
-                                          ? (card.destinations || []).join(', ') || card.category || 'Package'
-                                          : card.location || card.propertyType || 'Property'}
+                                      {card.body || getCatalogItemSubtitle(card)}
                                     </p>
                                     <div className="mt-2 rounded border border-sky-100 px-2 py-1 text-center text-[9px] font-bold text-sky-700">
-                                      {previewCarouselCards.length > 0
-                                        ? card.buttons?.[0]?.text || 'Enquiry'
-                                        : 'Enquiry'}
+                                      {card.buttons?.[0]?.text || 'Enquiry'}
                                     </div>
                                   </div>
                                 </div>

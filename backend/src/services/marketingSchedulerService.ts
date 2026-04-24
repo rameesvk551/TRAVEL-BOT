@@ -203,6 +203,52 @@ async function resolveCampaignCarouselItems(campaign, agencyId) {
   }).filter(Boolean);
 }
 
+function getCatalogRecordMediaUrl(record) {
+  const link = String(record?.imageUrl || record?.coverImageUrl || '').trim();
+  return link || null;
+}
+
+async function resolveCampaignFeaturedCatalogItem(campaign, agencyId) {
+  const sections = getEnabledCampaignSections(campaign)
+    .filter((section) => ['PACKAGE', 'PROPERTY'].includes(String(section.itemType || '').toUpperCase()));
+  if (!sections.length) return null;
+
+  const packageIds = [];
+  const propertyIds = [];
+  sections.forEach((section) => {
+    const selectedIds = Array.isArray(section.selectedItemIds) ? section.selectedItemIds : [];
+    if (section.itemType === 'PROPERTY') {
+      propertyIds.push(...selectedIds);
+      return;
+    }
+    packageIds.push(...selectedIds);
+  });
+
+  const [packages, properties] = await Promise.all([
+    packageIds.length
+      ? Package.findAll({ where: { agencyId, id: { [Op.in]: packageIds }, isActive: { [Op.ne]: false } } })
+      : [],
+    propertyIds.length
+      ? Property.findAll({ where: { agencyId, id: { [Op.in]: propertyIds }, isActive: { [Op.ne]: false } } })
+      : [],
+  ]);
+
+  const packageMap = new Map(packages.map((pkg) => [pkg.id, pkg]));
+  const propertyMap = new Map(properties.map((property) => [property.id, property]));
+
+  for (const section of sections) {
+    const selectedIds = Array.isArray(section.selectedItemIds) ? section.selectedItemIds : [];
+    for (const itemId of selectedIds) {
+      const record = section.itemType === 'PROPERTY' ? propertyMap.get(itemId) : packageMap.get(itemId);
+      if (record) {
+        return { itemType: section.itemType, record };
+      }
+    }
+  }
+
+  return null;
+}
+
 function buildCampaignCarouselCaption(itemType, record) {
   if (itemType === 'PROPERTY') {
     const price = moneyFromPaise(record.pricePerNight);
@@ -222,6 +268,61 @@ function buildCampaignCarouselCaption(itemType, record) {
     record.summary,
     price ? `From ${price}/person` : null,
   ].filter(Boolean).join('\n');
+}
+
+async function buildRuntimeCampaignTemplate(campaign, template, agencyId) {
+  if (!template) return null;
+
+  const runtimeTemplate = template.toJSON ? template.toJSON() : { ...template };
+  const templateType = String(runtimeTemplate.templateType || 'STANDARD').toUpperCase();
+  const format = String(campaign.format || 'STANDARD').toUpperCase();
+
+  if (format === 'ITEM_CAROUSEL' || templateType === 'CAROUSEL') {
+    const items = await resolveCampaignCarouselItems(campaign, agencyId);
+    if (items.length < 2) {
+      throw new Error('Carousel campaigns require 2 to 10 selected packages or properties');
+    }
+
+    const missingMediaItem = items.find((item) => !getCatalogRecordMediaUrl(item.record));
+    if (missingMediaItem) {
+      throw new Error(`Selected ${missingMediaItem.itemType.toLowerCase()} "${missingMediaItem.record.name}" is missing an image`);
+    }
+
+    const baseCards = Array.isArray(runtimeTemplate.carouselCards) && runtimeTemplate.carouselCards.length > 0
+      ? runtimeTemplate.carouselCards
+      : [{}];
+
+    runtimeTemplate.carouselCards = items.map((item, index) => {
+      const baseCard = baseCards[index] || baseCards[baseCards.length - 1] || {};
+      const mediaUrl = getCatalogRecordMediaUrl(item.record);
+
+      return {
+        ...baseCard,
+        itemType: item.itemType,
+        itemId: item.record.id,
+        title: item.record.name || baseCard.title || `Card ${index + 1}`,
+        body: String(baseCard.body || buildCampaignCarouselCaption(item.itemType, item.record)).slice(0, 1024),
+        mediaType: String(baseCard.mediaType || runtimeTemplate.mediaType || campaign.mediaType || 'IMAGE').toUpperCase() === 'VIDEO'
+          ? 'VIDEO'
+          : 'IMAGE',
+        mediaUrl,
+        imageUrl: mediaUrl,
+      };
+    });
+
+    return runtimeTemplate;
+  }
+
+  if (format === 'SECTION_CTA' && String(runtimeTemplate.headerType || '').toUpperCase() === 'IMAGE') {
+    const featuredItem = await resolveCampaignFeaturedCatalogItem(campaign, agencyId);
+    const mediaUrl = getCatalogRecordMediaUrl(featuredItem?.record);
+    if (!mediaUrl) {
+      throw new Error('CTA campaigns require at least one selected package or property with an image');
+    }
+    runtimeTemplate.headerContent = mediaUrl;
+  }
+
+  return runtimeTemplate;
 }
 
 async function sendCampaignCarouselEntry(customer, campaign, agencyId) {
@@ -269,16 +370,17 @@ async function sendToRecipient(recipient, campaign, template, agencyId) {
     const context = { customerId: customer.id, agencyId };
 
     if (template) {
-      const variables = buildTemplateVariables(template, customer);
-      const renderedBody = resolveTemplateBody(template.body, variables);
+      const runtimeTemplate = await buildRuntimeCampaignTemplate(campaign, template, agencyId);
+      const variables = buildTemplateVariables(runtimeTemplate, customer);
 
       // Campaigns should send the actual approved template so Meta renders
       // carousel cards / media headers instead of falling back to plain text.
       result = await whatsappService.sendTemplateMessage(
         customer.phone,
-        template.name,
+        runtimeTemplate.name,
         variables,
-        context
+        context,
+        { template: runtimeTemplate }
       );
     } else if (campaign.messageBody) {
       // Send text message (non-template)

@@ -125,6 +125,10 @@ export default function TemplateDetailDrawer({
          toast.error('URL buttons need a URL and phone buttons need a phone number.');
          return;
       }
+      if (!hasValidCarouselCards) {
+         toast.error('Carousel templates need 2 to 10 cards, and each card needs body text plus a valid public media URL.');
+         return;
+      }
 
       try {
          await submitMutation.mutateAsync(initialTemplate.id);
@@ -138,6 +142,14 @@ export default function TemplateDetailDrawer({
 
    const isPending = createMutation.isPending || updateMutation.isPending || usePrebuiltMutation.isPending || submitMutation.isPending;
    const isCarousel = String(formData.templateType || '').toUpperCase() === 'CAROUSEL';
+   const isValidHttpUrl = (value) => {
+      try {
+         const parsed = new URL(String(value || '').trim());
+         return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+      } catch (_err) {
+         return false;
+      }
+   };
    const hasValidHeader = formData.headerType === 'NONE'
       || (formData.headerType === 'TEXT' && !!String(formData.headerContent || '').trim())
       || (['IMAGE', 'VIDEO', 'DOCUMENT'].includes(String(formData.headerType || '').toUpperCase()) && !!String(formData.headerContent || '').trim());
@@ -148,15 +160,16 @@ export default function TemplateDetailDrawer({
       if (type === 'PHONE_NUMBER') return !!String(button.phoneNumber || '').trim();
       return true;
    });
+   const hasValidCarouselCards = !isCarousel || (
+      formData.carouselCards.length >= 2
+      && formData.carouselCards.length <= 10
+      && formData.carouselCards.every((card) => String(card.body || '').trim() && isValidHttpUrl(card.mediaUrl))
+   );
    const canSave = !!formData.displayName
       && !!formData.body
       && hasValidHeader
       && hasValidButtons
-      && (!isCarousel || (
-         formData.carouselCards.length >= 2
-         && formData.carouselCards.length <= 10
-         && formData.carouselCards.every((card) => card.mediaUrl && card.body)
-      ));
+      && hasValidCarouselCards;
    const canSubmit = !initialIsPrebuilt
       && initialTemplate?.id
       && ['DRAFT', 'REJECTED', 'PAUSED'].includes(initialTemplate.status)
@@ -337,7 +350,10 @@ export default function TemplateDetailDrawer({
                                  setFormData({
                                     ...formData,
                                     templateType: nextType,
-                                    headerType: nextType === 'CAROUSEL' ? 'IMAGE' : formData.headerType,
+                                    headerType: nextType === 'CAROUSEL' ? 'NONE' : formData.headerType,
+                                    headerContent: nextType === 'CAROUSEL' ? '' : formData.headerContent,
+                                    footer: nextType === 'CAROUSEL' ? '' : formData.footer,
+                                    buttons: nextType === 'CAROUSEL' ? [] : formData.buttons,
                                     carouselCards: nextType === 'CAROUSEL' && formData.carouselCards.length === 0
                                        ? [newCarouselCard(), newCarouselCard()]
                                        : formData.carouselCards,
@@ -595,7 +611,7 @@ export default function TemplateDetailDrawer({
 
                                  <div className="bg-[#dcf8c6] rounded-[10px] rounded-tr-none shadow-sm relative z-10 overflow-hidden flex flex-col">
                                     {/* Header Media */}
-                                    {formData.headerType !== 'NONE' && (
+                                    {!isCarousel && formData.headerType !== 'NONE' && (
                                        <div className="p-1 pb-0">
                                           <div className="bg-black/5 rounded-[8px] aspect-[16/9] flex items-center justify-center overflow-hidden border border-black/5">
                                              {formData.headerType === 'IMAGE' ? (

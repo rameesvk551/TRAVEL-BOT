@@ -290,7 +290,7 @@ async function sendViaMarketingOs(phone, payload, tenantId) {
       to: actualRecipient,
       templateName: payload.templateName,
       language: payload.languageCode || 'en',
-      components: payload.variables || {}, // Marketing OS expects 'components' which map to template variables
+      components: payload.components || payload.variables || {},
       idempotencyKey,
     });
   } else if (payload.type === 'interactive') {
@@ -812,7 +812,7 @@ async function sendFlowMessage(phone, body, flowConfig, context, options = {}) {
   }
 }
 
-async function sendTemplateMessage(phone, templateName, variables, context) {
+async function sendTemplateMessage(phone, templateName, variables, context, options = {}) {
   const content = `[Template: ${templateName}] ${variables.join(', ')}`;
   const channel = await resolveAgencyChannel(context);
 
@@ -824,6 +824,7 @@ async function sendTemplateMessage(phone, templateName, variables, context) {
     });
 
     try {
+      const componentPayload = buildTemplateSendComponents(options.template, variables);
       const response = await sendViaMarketingOs(phone, {
         type: 'template',
         templateName,
@@ -832,6 +833,7 @@ async function sendTemplateMessage(phone, templateName, variables, context) {
           acc[String(index + 1)] = value;
           return acc;
         }, {}),
+        components: componentPayload,
       }, channel.marketingOsTenantId);
 
       return markMessageSent(message, response);
@@ -1103,7 +1105,7 @@ function buildTemplateComponents(template) {
     return trimmed ? { header_handle: [trimmed] } : undefined;
   };
 
-  if (headerType !== 'NONE') {
+  if (templateType !== 'CAROUSEL' && headerType !== 'NONE') {
     const header = { type: 'HEADER', format: headerType };
     if (headerType === 'TEXT') {
       header.text = template.headerContent || '';
@@ -1126,11 +1128,11 @@ function buildTemplateComponents(template) {
   }
   components.push(body);
 
-  if (template.footer) {
+  if (templateType !== 'CAROUSEL' && template.footer) {
     components.push({ type: 'FOOTER', text: template.footer });
   }
 
-  if (Array.isArray(template.buttons) && template.buttons.length > 0) {
+  if (templateType !== 'CAROUSEL' && Array.isArray(template.buttons) && template.buttons.length > 0) {
     components.push({
       type: 'BUTTONS',
       buttons: template.buttons.map((button) => ({
@@ -1155,6 +1157,14 @@ function buildTemplateComponents(template) {
           {
             type: 'BODY',
             text: String(card.body || card.title || 'Deal details').slice(0, 1024),
+            ...(countTemplateVariables(String(card.body || card.title || 'Deal details').slice(0, 1024)) > 0
+              && variableSamples.length >= countTemplateVariables(String(card.body || card.title || 'Deal details').slice(0, 1024))
+              ? {
+                  example: {
+                    body_text: [variableSamples.slice(0, countTemplateVariables(String(card.body || card.title || 'Deal details').slice(0, 1024)))],
+                  },
+                }
+              : {}),
           },
           {
             type: 'BUTTONS',
@@ -1178,6 +1188,140 @@ function buildTemplateComponents(template) {
 
 function countTemplateVariables(text = '') {
   return new Set(String(text).match(/{{\s*\d+\s*}}/g) || []).size;
+}
+
+function getVariableMap(variables = []) {
+  return variables.reduce((acc, value, index) => {
+    acc[String(index + 1)] = value;
+    return acc;
+  }, {});
+}
+
+function extractPlaceholderIndexes(text = '') {
+  const matches = String(text).match(/\{\{\s*\d+\s*\}\}/g) || [];
+  return [...new Set(matches
+    .map((token) => parseInt(token.replace(/[^\d]/g, ''), 10))
+    .filter((value) => Number.isFinite(value))
+    .sort((a, b) => a - b))];
+}
+
+function buildTextParameters(text, variableMap) {
+  return extractPlaceholderIndexes(text)
+    .map((index) => variableMap[String(index)])
+    .filter((value) => value !== undefined && value !== null && String(value).trim() !== '')
+    .map((value) => ({
+      type: 'text',
+      value: String(value),
+      text: String(value),
+    }));
+}
+
+function buildMediaParameter(mediaType, mediaUrl) {
+  const type = String(mediaType || 'IMAGE').toLowerCase();
+  const link = String(mediaUrl || '').trim();
+  if (!link || !['image', 'video', 'document'].includes(type)) return null;
+
+  return {
+    type,
+    [type]: { link },
+  };
+}
+
+function buildStandardTemplateSendComponents(template, variableMap) {
+  const components = [];
+  const headerType = String(template.headerType || 'NONE').toUpperCase();
+
+  if (headerType === 'TEXT') {
+    const headerParameters = buildTextParameters(template.headerContent, variableMap);
+    if (headerParameters.length > 0) {
+      components.push({
+        type: 'header',
+        parameters: headerParameters,
+      });
+    }
+  } else if (headerType !== 'NONE') {
+    const mediaParameter = buildMediaParameter(headerType, template.headerContent);
+    if (mediaParameter) {
+      components.push({
+        type: 'header',
+        parameters: [mediaParameter],
+      });
+    }
+  }
+
+  const bodyParameters = buildTextParameters(template.body, variableMap);
+  if (bodyParameters.length > 0) {
+    components.push({
+      type: 'body',
+      parameters: bodyParameters,
+    });
+  }
+
+  return components;
+}
+
+function buildTemplateSendComponents(template, variables = []) {
+  if (!template) {
+    return null;
+  }
+
+  const variableMap = getVariableMap(variables);
+  const templateType = String(template.templateType || 'STANDARD').toUpperCase();
+
+  if (templateType !== 'CAROUSEL') {
+    const standardComponents = buildStandardTemplateSendComponents(template, variableMap);
+    return standardComponents.length > 0 ? standardComponents : null;
+  }
+
+  const components = [];
+  const bodyParameters = buildTextParameters(template.body, variableMap);
+
+  if (bodyParameters.length > 0) {
+    components.push({
+      type: 'body',
+      parameters: bodyParameters,
+    });
+  }
+
+  const cards = Array.isArray(template.carouselCards)
+    ? template.carouselCards.slice(0, 10).map((card, index) => {
+        const cardComponents = [];
+        const mediaParameter = buildMediaParameter(
+          card.mediaType || card.headerType || 'IMAGE',
+          card.mediaUrl || card.imageUrl || card.coverImageUrl
+        );
+        const cardBodyParameters = buildTextParameters(card.body, variableMap);
+
+        if (mediaParameter) {
+          cardComponents.push({
+            type: 'header',
+            parameters: [mediaParameter],
+          });
+        }
+
+        if (cardBodyParameters.length > 0) {
+          cardComponents.push({
+            type: 'body',
+            parameters: cardBodyParameters,
+          });
+        }
+
+        return {
+          cardIndex: index,
+          components: cardComponents,
+        };
+      })
+      .filter((card) => card.components.length > 0)
+    : [];
+
+  if (cards.length > 0) {
+    components.push({
+      type: 'carousel',
+      cards,
+    });
+  }
+
+  return components.length > 0 ? components : null;
 }
 
 async function upsertTemplateWithMeta(agencyId, template, { mode = 'upsert' } = {}) {
