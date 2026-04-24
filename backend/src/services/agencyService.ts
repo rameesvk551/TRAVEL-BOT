@@ -437,9 +437,17 @@ async function getInstagramConnection(agencyId) {
     return { connected: false, accounts: [] };
   }
 
-  const tenantToken = await marketingOsPartnerService.getTenantToken(agency.marketingOsTenantId);
-  const data = await marketingOsPartnerService.getTenantInstagramConnection(tenantToken);
-  return data?.data || { connected: false, accounts: [] };
+  try {
+    const tenantToken = await marketingOsPartnerService.getTenantToken(agency.marketingOsTenantId);
+    const data = await marketingOsPartnerService.getTenantInstagramConnection(tenantToken);
+    return data?.data || { connected: false, accounts: [] };
+  } catch (err) {
+    return {
+      connected: false,
+      accounts: [],
+      errorMessage: err.response?.data?.error || err.response?.data?.message || err.message || 'Instagram connection unavailable',
+    };
+  }
 }
 
 async function connectInstagram(agencyId, payload) {
