@@ -1,0 +1,187 @@
+{
+  "version": "7.2",
+  "data_api_version": "3.0",
+  "routing_model": {
+    "PROPERTY_SELECTOR": [
+      "PROPERTY_ENQUIRY_FORM"
+    ],
+    "PROPERTY_ENQUIRY_FORM": []
+  },
+  "screens": [
+    {
+      "id": "PROPERTY_SELECTOR",
+      "title": "Choose Property",
+      "terminal": true,
+      "data": {
+        "property_category_label": {
+          "type": "string",
+          "__example__": "Featured"
+        },
+        "property_options": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "title": { "type": "string" },
+              "description": { "type": "string" },
+              "metadata": { "type": "string" },
+              "image": { "type": "string" }
+            }
+          },
+          "__example__": [
+            {
+              "id": "prop_goa_villa_01",
+              "title": "Goa Beach Villa",
+              "description": "INR 18,999/night - 3BR private stay with pool, breakfast, and beach access.",
+              "metadata": "Villa - Goa",
+              "image": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+yh8cAAAAASUVORK5CYII="
+            },
+            {
+              "id": "prop_dubai_suite_01",
+              "title": "Dubai Marina Suite",
+              "description": "INR 24,500/night - City-view suite with breakfast and airport transfers.",
+              "metadata": "Hotel - Dubai",
+              "image": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+yh8cAAAAASUVORK5CYII="
+            }
+          ]
+        }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "Form",
+            "name": "property_selector_form",
+            "children": [
+              {
+                "type": "TextHeading",
+                "text": "${data.property_category_label} Properties"
+              },
+              {
+                "type": "TextBody",
+                "text": "Choose one property to view details or start enquiry."
+              },
+              {
+                "type": "RadioButtonsGroup",
+                "label": "Available Properties",
+                "name": "propertyId",
+                "description": "Each card shows image, price, location, and a short summary.",
+                "data-source": "${data.property_options}",
+                "media-size": "large",
+                "required": true
+              },
+              {
+                "type": "Footer",
+                "label": "View Property",
+                "on-click-action": {
+                  "name": "complete",
+                  "payload": {
+                    "propertyId": "${form.propertyId}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "PROPERTY_ENQUIRY_FORM",
+      "title": "Property Enquiry",
+      "terminal": true,
+      "data": {
+        "property_id": {
+          "type": "string",
+          "__example__": "prop_goa_villa_01"
+        },
+        "property_name": {
+          "type": "string",
+          "__example__": "Goa Beach Villa"
+        },
+        "property_summary": {
+          "type": "string",
+          "__example__": "INR 18,999/night - Villa in Goa"
+        },
+        "customer_name": {
+          "type": "string",
+          "__example__": "Rahul Sharma"
+        }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "Form",
+            "name": "property_enquiry_form",
+            "children": [
+              {
+                "type": "TextHeading",
+                "text": "${data.property_name}"
+              },
+              {
+                "type": "TextBody",
+                "text": "${data.property_summary}"
+              },
+              {
+                "type": "TextInput",
+                "label": "Full Name",
+                "name": "name",
+                "required": true,
+                "input-type": "text",
+                "helper-text": "Enter your full name"
+              },
+              {
+                "type": "TextInput",
+                "label": "Check-in Date or Month",
+                "name": "travelDate",
+                "required": true,
+                "input-type": "text",
+                "helper-text": "Example: 20 May 2026 or June 2026"
+              },
+              {
+                "type": "TextInput",
+                "label": "Guests",
+                "name": "travellers",
+                "required": true,
+                "input-type": "number",
+                "helper-text": "Total guests (1 to 50)"
+              },
+              {
+                "type": "TextInput",
+                "label": "Budget",
+                "name": "budget",
+                "required": true,
+                "input-type": "number",
+                "helper-text": "Approximate budget in rupees"
+              },
+              {
+                "type": "TextInput",
+                "label": "Other Details (Optional)",
+                "name": "notes",
+                "required": false,
+                "input-type": "text",
+                "helper-text": "Rooms, family setup, honeymoon, food preference, etc."
+              },
+              {
+                "type": "Footer",
+                "label": "Submit Enquiry",
+                "on-click-action": {
+                  "name": "complete",
+                  "payload": {
+                    "propertyId": "${data.property_id}",
+                    "name": "${form.name}",
+                    "travelDate": "${form.travelDate}",
+                    "travellers": "${form.travellers}",
+                    "budget": "${form.budget}",
+                    "notes": "${form.notes}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

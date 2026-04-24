@@ -1098,6 +1098,10 @@ function buildTemplateComponents(template) {
   const headerType = String(template.headerType || 'NONE').toUpperCase();
   const variableSamples = Array.isArray(template.sampleVariables) ? template.sampleVariables : [];
   const templateType = String(template.templateType || 'STANDARD').toUpperCase();
+  const buildMediaExample = (mediaUrl) => {
+    const trimmed = String(mediaUrl || '').trim();
+    return trimmed ? { header_handle: [trimmed] } : undefined;
+  };
 
   if (headerType !== 'NONE') {
     const header = { type: 'HEADER', format: headerType };
@@ -1105,6 +1109,11 @@ function buildTemplateComponents(template) {
       header.text = template.headerContent || '';
       if (countTemplateVariables(header.text) > 0 && variableSamples.length > 0) {
         header.example = { header_text: [variableSamples[0]] };
+      }
+    } else {
+      const mediaExample = buildMediaExample(template.headerContent);
+      if (mediaExample) {
+        header.example = mediaExample;
       }
     }
     components.push(header);
@@ -1136,13 +1145,12 @@ function buildTemplateComponents(template) {
   if (templateType === 'CAROUSEL' && Array.isArray(template.carouselCards) && template.carouselCards.length > 0) {
     components.push({
       type: 'CAROUSEL',
-      cards: template.carouselCards.slice(0, 10).map((card, index) => ({
-        card_index: index,
+      cards: template.carouselCards.slice(0, 10).map((card) => ({
         components: [
           {
             type: 'HEADER',
             format: String(card.mediaType || card.headerType || 'IMAGE').toUpperCase(),
-            example: card.mediaUrl ? { header_handle: [card.mediaUrl] } : undefined,
+            example: buildMediaExample(card.mediaUrl),
           },
           {
             type: 'BODY',

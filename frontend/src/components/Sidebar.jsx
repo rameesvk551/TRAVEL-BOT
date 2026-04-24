@@ -44,6 +44,7 @@ const utilityItems = [
 
 const marketingItems = [
   { to: '/templates', icon: QueueListIcon, label: 'Templates' },
+  { to: '/flows', icon: DocumentDuplicateIcon, label: 'Flows' },
   { to: '/campaigns', icon: MegaphoneIcon, label: 'Campaigns' },
   { to: '/social', icon: CubeIcon, label: 'Social Media' },
   { to: '/ads', icon: MegaphoneIcon, label: 'Social Ads' },

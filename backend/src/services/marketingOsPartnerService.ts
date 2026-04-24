@@ -173,6 +173,42 @@ async function syncTenantWhatsAppTemplates(tenantToken) {
   return response.data;
 }
 
+async function getTenantWhatsAppFlows(tenantToken) {
+  const client = getTenantClient(tenantToken);
+  const response = await client.get('/whatsapp/flows');
+  return response.data;
+}
+
+async function createTenantWhatsAppFlow(tenantToken, payload) {
+  const client = getTenantClient(tenantToken);
+  const response = await client.post('/whatsapp/flows', payload);
+  return response.data;
+}
+
+async function updateTenantWhatsAppFlow(tenantToken, flowId, payload) {
+  const client = getTenantClient(tenantToken);
+  const response = await client.put(`/whatsapp/flows/${encodeURIComponent(flowId)}`, payload);
+  return response.data;
+}
+
+async function publishTenantWhatsAppFlow(tenantToken, flowId) {
+  const client = getTenantClient(tenantToken);
+  const response = await client.post(`/whatsapp/flows/${encodeURIComponent(flowId)}/publish`);
+  return response.data;
+}
+
+async function deleteTenantWhatsAppFlow(tenantToken, flowId) {
+  const client = getTenantClient(tenantToken);
+  const response = await client.delete(`/whatsapp/flows/${encodeURIComponent(flowId)}`);
+  return response.data;
+}
+
+async function syncTenantWhatsAppFlows(tenantToken) {
+  const client = getTenantClient(tenantToken);
+  const response = await client.post('/whatsapp/flows/sync');
+  return response.data;
+}
+
 async function getTenantInstagramConnection(tenantToken) {
   const client = getTenantClient(tenantToken);
   const response = await client.get('/instagram/connection');
@@ -210,6 +246,12 @@ module.exports = {
   submitTenantWhatsAppTemplate,
   deleteTenantWhatsAppTemplate,
   syncTenantWhatsAppTemplates,
+  getTenantWhatsAppFlows,
+  createTenantWhatsAppFlow,
+  updateTenantWhatsAppFlow,
+  publishTenantWhatsAppFlow,
+  deleteTenantWhatsAppFlow,
+  syncTenantWhatsAppFlows,
   getTenantInstagramConnection,
   connectTenantInstagram,
   disconnectTenantInstagram,

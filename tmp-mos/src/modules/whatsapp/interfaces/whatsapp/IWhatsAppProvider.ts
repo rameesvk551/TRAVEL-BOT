@@ -105,13 +105,32 @@ export interface TemplateSubmission {
   language: string;
   category: 'UTILITY' | 'AUTHENTICATION' | 'MARKETING';
   components: Array<{
-    type: 'HEADER' | 'BODY' | 'FOOTER' | 'BUTTONS';
+    type: 'HEADER' | 'BODY' | 'FOOTER' | 'BUTTONS' | 'CAROUSEL';
     format?: 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT';
     text?: string;
     example?: {
       header_text?: string[];
       body_text?: string[][];
+      header_handle?: string[];
     };
+    cards?: Array<{
+      components: Array<{
+        type: 'HEADER' | 'BODY' | 'BUTTONS';
+        format?: 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT';
+        text?: string;
+        example?: {
+          header_text?: string[];
+          body_text?: string[][];
+          header_handle?: string[];
+        };
+        buttons?: Array<{
+          type: 'QUICK_REPLY' | 'URL' | 'PHONE_NUMBER';
+          text: string;
+          url?: string;
+          phone_number?: string;
+        }>;
+      }>;
+    }>;
     buttons?: Array<{
       type: 'QUICK_REPLY' | 'URL' | 'PHONE_NUMBER';
       text: string;
@@ -138,6 +157,29 @@ export interface MediaUploadResult {
   mediaId: string;
   url?: string;
   expiresAt?: Date;
+}
+
+export interface WhatsAppFlowSummary {
+  id: string;
+  name: string;
+  status?: string;
+  categories?: string[];
+  endpointUri?: string;
+  validationErrors?: unknown[];
+  healthStatus?: Record<string, unknown> | null;
+  jsonVersion?: string;
+  dataApiVersion?: string;
+}
+
+export interface WhatsAppFlowDefinition extends WhatsAppFlowSummary {
+  jsonDefinition?: Record<string, unknown> | null;
+}
+
+export interface WhatsAppFlowUpsertInput {
+  name: string;
+  categories?: string[];
+  endpointUri?: string;
+  jsonDefinition?: Record<string, unknown>;
 }
 
 /**
@@ -210,6 +252,36 @@ export interface IWhatsAppProvider {
    * Check template approval status
    */
   getTemplateStatus(templateId: string): Promise<TemplateApprovalStatus>;
+
+  /**
+   * List WhatsApp flows for the business account
+   */
+  listFlows(): Promise<WhatsAppFlowSummary[]>;
+
+  /**
+   * Get a single WhatsApp flow
+   */
+  getFlow(flowId: string): Promise<WhatsAppFlowDefinition>;
+
+  /**
+   * Create a new WhatsApp flow draft
+   */
+  createFlow(input: WhatsAppFlowUpsertInput): Promise<WhatsAppFlowDefinition>;
+
+  /**
+   * Update an existing WhatsApp flow draft
+   */
+  updateFlow(flowId: string, input: Partial<WhatsAppFlowUpsertInput>): Promise<WhatsAppFlowDefinition>;
+
+  /**
+   * Publish an existing WhatsApp flow draft
+   */
+  publishFlow(flowId: string): Promise<WhatsAppFlowDefinition>;
+
+  /**
+   * Delete an existing WhatsApp flow
+   */
+  deleteFlow(flowId: string): Promise<void>;
 
   /**
    * Mark message as read

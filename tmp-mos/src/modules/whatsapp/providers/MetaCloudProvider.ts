@@ -12,6 +12,9 @@ import {
   TemplateSubmission,
   TemplateApprovalStatus,
   MediaUploadResult,
+  WhatsAppFlowDefinition,
+  WhatsAppFlowSummary,
+  WhatsAppFlowUpsertInput,
 } from '../interfaces/whatsapp/index.js';
 import { TemplateContent } from '../models/whatsapp/index.js';
 
@@ -21,6 +24,106 @@ interface MetaConfig {
   businessAccountId: string;
   webhookVerifyToken: string;
   apiVersion: string;
+}
+
+interface MetaGraphResponse<T> {
+  ok: boolean;
+  status: number;
+  data: T;
+}
+
+function buildGraphUrl(apiVersion: string, idOrPath: string): string {
+  return `https://graph.facebook.com/${apiVersion}/${idOrPath.replace(/^\/+/, '')}`;
+}
+
+async function parseGraphResponse<T>(response: Response): Promise<MetaGraphResponse<T>> {
+  const data = await response.json().catch(async () => ({
+    message: await response.text(),
+  })) as T;
+
+  return {
+    ok: response.ok,
+    status: response.status,
+    data,
+  };
+}
+
+async function graphJsonRequest<T>(
+  apiVersion: string,
+  accessToken: string,
+  idOrPath: string,
+  options: {
+    method?: 'GET' | 'POST' | 'DELETE';
+    body?: Record<string, unknown>;
+  } = {}
+): Promise<MetaGraphResponse<T>> {
+  const response = await fetch(buildGraphUrl(apiVersion, idOrPath), {
+    method: options.method || 'GET',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: options.body ? JSON.stringify(options.body) : undefined,
+  });
+
+  return parseGraphResponse<T>(response);
+}
+
+async function graphFormRequest<T>(
+  apiVersion: string,
+  accessToken: string,
+  idOrPath: string,
+  formData: FormData
+): Promise<MetaGraphResponse<T>> {
+  const response = await fetch(buildGraphUrl(apiVersion, idOrPath), {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: formData,
+  });
+
+  return parseGraphResponse<T>(response);
+}
+
+function toFlowSummary(flow: any): WhatsAppFlowSummary {
+  return {
+    id: flow?.id,
+    name: flow?.name,
+    status: flow?.status,
+    categories: Array.isArray(flow?.categories) ? flow.categories : [],
+    endpointUri: flow?.endpoint_uri,
+    validationErrors: Array.isArray(flow?.validation_errors) ? flow.validation_errors : [],
+    healthStatus: flow?.health_status || null,
+    jsonVersion: flow?.json_version,
+    dataApiVersion: flow?.data_api_version,
+  };
+}
+
+function ensureGraphOk<T>(result: MetaGraphResponse<T>, action: string): T {
+  if (!result.ok) {
+    const message = (result.data as any)?.error?.message
+      || (result.data as any)?.message
+      || `Meta Graph request failed during ${action}`;
+    throw new Error(message);
+  }
+  return result.data;
+}
+
+async function uploadFlowJsonAsset(
+  flowId: string,
+  jsonDefinition: Record<string, unknown>,
+  accessToken: string,
+  apiVersion: string
+): Promise<void> {
+  const formData = new FormData();
+  const payload = JSON.stringify(jsonDefinition, null, 2);
+  formData.append('file', new Blob([payload], { type: 'application/json' }), 'flow.json');
+  formData.append('name', 'flow.json');
+  formData.append('asset_type', 'FLOW_JSON');
+
+  const result = await graphFormRequest<any>(apiVersion, accessToken, `${flowId}/assets`, formData);
+  ensureGraphOk(result, 'flow asset upload');
 }
 
 function readHeaderText(header: any): string | undefined {
@@ -570,10 +673,26 @@ export function createMetaCloudProvider(config: MetaConfig): IWhatsAppProvider {
     return data.url;
   }
 
+  function sanitizeTemplateComponents(components: TemplateSubmission['components']) {
+    return (components || []).map((component: any) => {
+      if (component?.type !== 'CAROUSEL' || !Array.isArray(component.cards)) {
+        return component;
+      }
+
+      return {
+        ...component,
+        cards: component.cards.map((card: any) => ({
+          components: Array.isArray(card?.components) ? card.components : [],
+        })),
+      };
+    });
+  }
+
   /**
    * Submit template for approval
    */
   async function submitTemplate(template: TemplateSubmission): Promise<string> {
+    const components = sanitizeTemplateComponents(template.components);
     const response = await fetch(
       `https://graph.facebook.com/${config.apiVersion}/${config.businessAccountId}/message_templates`,
       {
@@ -586,7 +705,7 @@ export function createMetaCloudProvider(config: MetaConfig): IWhatsAppProvider {
           name: template.name,
           language: template.language,
           category: template.category,
-          components: template.components,
+          components,
         }),
       }
     );
@@ -616,6 +735,102 @@ export function createMetaCloudProvider(config: MetaConfig): IWhatsAppProvider {
       status: data.status,
       rejectedReason: data.rejected_reason,
     };
+  }
+
+  async function listFlows(): Promise<WhatsAppFlowSummary[]> {
+    const result = await graphJsonRequest<any>(
+      config.apiVersion,
+      config.accessToken,
+      `${config.businessAccountId}/flows?fields=id,name,status,categories,validation_errors,health_status,json_version,data_api_version,endpoint_uri`
+    );
+    const data = ensureGraphOk(result, 'list flows');
+    return Array.isArray(data?.data) ? data.data.map(toFlowSummary) : [];
+  }
+
+  async function getFlow(flowId: string): Promise<WhatsAppFlowDefinition> {
+    const result = await graphJsonRequest<any>(
+      config.apiVersion,
+      config.accessToken,
+      `${flowId}?fields=id,name,status,categories,validation_errors,health_status,json_version,data_api_version,endpoint_uri`
+    );
+    const data = ensureGraphOk(result, 'get flow');
+    return {
+      ...toFlowSummary(data),
+      jsonDefinition: null,
+    };
+  }
+
+  async function createFlow(input: WhatsAppFlowUpsertInput): Promise<WhatsAppFlowDefinition> {
+    const created = ensureGraphOk(
+      await graphJsonRequest<any>(config.apiVersion, config.accessToken, `${config.businessAccountId}/flows`, {
+        method: 'POST',
+        body: {
+          name: input.name,
+          categories: input.categories?.length ? input.categories : ['OTHER'],
+        },
+      }),
+      'create flow'
+    );
+
+    const flowId = created?.id;
+    if (!flowId) {
+      throw new Error('Meta did not return a flow ID after creation');
+    }
+
+    if (input.jsonDefinition && Object.keys(input.jsonDefinition).length) {
+      await uploadFlowJsonAsset(flowId, input.jsonDefinition, config.accessToken, config.apiVersion);
+    }
+
+    if (input.endpointUri) {
+      ensureGraphOk(
+        await graphJsonRequest<any>(config.apiVersion, config.accessToken, flowId, {
+          method: 'POST',
+          body: { endpoint_uri: input.endpointUri },
+        }),
+        'update flow metadata'
+      );
+    }
+
+    return getFlow(flowId);
+  }
+
+  async function updateFlow(flowId: string, input: Partial<WhatsAppFlowUpsertInput>): Promise<WhatsAppFlowDefinition> {
+    if (input.jsonDefinition && Object.keys(input.jsonDefinition).length) {
+      await uploadFlowJsonAsset(flowId, input.jsonDefinition, config.accessToken, config.apiVersion);
+    }
+
+    if (input.endpointUri) {
+      ensureGraphOk(
+        await graphJsonRequest<any>(config.apiVersion, config.accessToken, flowId, {
+          method: 'POST',
+          body: { endpoint_uri: input.endpointUri },
+        }),
+        'update flow metadata'
+      );
+    }
+
+    return getFlow(flowId);
+  }
+
+  async function publishFlow(flowId: string): Promise<WhatsAppFlowDefinition> {
+    ensureGraphOk(
+      await graphJsonRequest<any>(config.apiVersion, config.accessToken, `${flowId}/publish`, {
+        method: 'POST',
+        body: {},
+      }),
+      'publish flow'
+    );
+
+    return getFlow(flowId);
+  }
+
+  async function deleteFlow(flowId: string): Promise<void> {
+    ensureGraphOk(
+      await graphJsonRequest<any>(config.apiVersion, config.accessToken, flowId, {
+        method: 'DELETE',
+      }),
+      'delete flow'
+    );
   }
 
   /**
@@ -686,6 +901,12 @@ export function createMetaCloudProvider(config: MetaConfig): IWhatsAppProvider {
     getMediaUrl,
     submitTemplate,
     getTemplateStatus,
+    listFlows,
+    getFlow,
+    createFlow,
+    updateFlow,
+    publishFlow,
+    deleteFlow,
     markAsRead,
     sendTypingIndicator,
     healthCheck,

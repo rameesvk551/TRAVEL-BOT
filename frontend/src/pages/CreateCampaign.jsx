@@ -8,10 +8,10 @@ import {
   Clock, Filter, Eye, AlertTriangle, Upload, UserPlus,
   Package, Globe, Plane, ShieldCheck, FileSpreadsheet,
   Inbox, UserCheck, Star, ArrowLeft, Zap, Target,
-  Home, Layers,
+  Home, Layers, Image, Video,
 } from 'lucide-react';
 import { useCreateCampaign, useUpdateCampaign, usePreviewAudience, useCampaign } from '../hooks/useCampaigns';
-import { useAgencyTemplates } from '../hooks/useTemplates';
+import { useAgencyTemplates, useCreateTemplate, useSubmitTemplate } from '../hooks/useTemplates';
 import { packagesApi } from '../api/packagesApi';
 import { campaignsApi } from '../api/campaignsApi';
 import { propertiesApi } from '../api/propertiesApi';
@@ -60,11 +60,220 @@ const CAMPAIGN_FORMATS = [
   { value: 'ITEM_CAROUSEL', label: 'Carousel', desc: 'Send selected package/property cards with enquiry actions', icon: Package },
 ];
 
-const DEFAULT_CAMPAIGN_SECTIONS = [
-  { key: 'international', label: 'International Deals', itemType: 'PACKAGE', filter: { category: 'INTERNATIONAL' }, selectionMode: 'AUTO', selectedItemIds: [], enabled: true, sortOrder: 1 },
-  { key: 'domestic', label: 'Domestic Deals', itemType: 'PACKAGE', filter: { category: 'DOMESTIC' }, selectionMode: 'AUTO', selectedItemIds: [], enabled: true, sortOrder: 2 },
-  { key: 'properties', label: 'Properties', itemType: 'PROPERTY', filter: { propertyType: 'ALL' }, selectionMode: 'AUTO', selectedItemIds: [], enabled: false, sortOrder: 3 },
-  { key: 'custom_trip', label: 'Custom Trip', itemType: 'CUSTOM_TRIP', filter: {}, selectionMode: 'AUTO', selectedItemIds: [], enabled: true, sortOrder: 4 },
+const MESSAGE_EXPERIENCES = [
+  {
+    id: 'CTA_MENU',
+    label: 'CTA Menu',
+    description: 'Show buttons for properties, packages, or custom trip.',
+    format: 'SECTION_CTA',
+    mediaMode: 'NONE',
+    icon: Layers,
+    group: 'message',
+  },
+  {
+    id: 'IMAGE_CAROUSEL',
+    label: 'Image Carousel',
+    description: 'Show swipeable cards with image, description, and CTA.',
+    format: 'ITEM_CAROUSEL',
+    mediaMode: 'IMAGE',
+    icon: Image,
+    group: 'carousel',
+  },
+  {
+    id: 'VIDEO_CAROUSEL',
+    label: 'Video Carousel',
+    description: 'Show swipeable cards with video, description, and CTA.',
+    format: 'ITEM_CAROUSEL',
+    mediaMode: 'VIDEO',
+    icon: Video,
+    group: 'carousel',
+  },
+];
+
+const TOP_LEVEL_MODES = [
+  {
+    id: 'carousel',
+    label: 'Carousel',
+    description: 'Send swipeable property/package cards with See More & Enquiry buttons.',
+    icon: Package,
+    gradient: 'from-violet-500 to-indigo-600',
+  },
+  {
+    id: 'cta',
+    label: 'CTA message',
+    description: 'Send image or video message with description and action buttons.',
+    icon: Send,
+    gradient: 'from-teal-500 to-cyan-600',
+  },
+];
+
+const CTA_SECTION_TEMPLATES = [
+  { key: 'packages', label: 'View Packages', itemType: 'PACKAGE', sortOrder: 1 },
+  { key: 'properties', label: 'View Properties', itemType: 'PROPERTY', sortOrder: 2 },
+  { key: 'custom_trip', label: 'Custom Trip', itemType: 'CUSTOM_TRIP', sortOrder: 3 },
+];
+
+const DEFAULT_CAMPAIGN_SECTIONS = CTA_SECTION_TEMPLATES.map((section) => ({
+  ...section,
+  filter: {},
+  selectionMode: 'MANUAL',
+  selectedItemIds: [],
+  enabled: false,
+}));
+
+const createDefaultCampaignSections = () => DEFAULT_CAMPAIGN_SECTIONS.map((section) => ({
+  ...section,
+  filter: { ...(section.filter || {}) },
+  selectedItemIds: [...(section.selectedItemIds || [])],
+}));
+
+const normalizeCampaignSections = (sections = []) => {
+  const nextSections = createDefaultCampaignSections();
+  const packageIds = new Set();
+  let packageEnabled = false;
+  let propertyEnabled = false;
+  let customTripEnabled = false;
+  let propertyIds = [];
+
+  sections.forEach((section) => {
+    if (section.itemType === 'PACKAGE' || section.key === 'international' || section.key === 'domestic' || section.key === 'packages') {
+      packageEnabled = packageEnabled || !!section.enabled;
+      (section.selectedItemIds || []).forEach((id) => packageIds.add(id));
+    }
+    if (section.itemType === 'PROPERTY' || section.key === 'properties') {
+      propertyEnabled = propertyEnabled || !!section.enabled;
+      propertyIds = [...new Set([...(propertyIds || []), ...((section.selectedItemIds || []))])];
+    }
+    if (section.itemType === 'CUSTOM_TRIP' || section.key === 'custom_trip') {
+      customTripEnabled = customTripEnabled || !!section.enabled;
+    }
+  });
+
+  return nextSections.map((section) => {
+    if (section.key === 'packages') {
+      return {
+        ...section,
+        enabled: packageEnabled,
+        selectionMode: 'MANUAL',
+        selectedItemIds: Array.from(packageIds),
+      };
+    }
+    if (section.key === 'properties') {
+      return {
+        ...section,
+        enabled: propertyEnabled,
+        selectionMode: 'MANUAL',
+        selectedItemIds: propertyIds,
+      };
+    }
+    if (section.key === 'custom_trip') {
+      return {
+        ...section,
+        enabled: customTripEnabled,
+        selectionMode: 'MANUAL',
+        selectedItemIds: [],
+      };
+    }
+    return section;
+  });
+};
+
+const PREBUILT_META_CAROUSEL_TEMPLATES = [
+  {
+    id: 'show_properties',
+    name: 'Show Properties',
+    badge: 'Image carousel',
+    icon: Home,
+    mediaMode: 'IMAGE',
+    body: 'Hi {{name}}, here are handpicked stays for your next trip. Tap a card to check availability or ask for similar properties.',
+    sections: ['properties', 'custom_trip'],
+    cards: [
+      { title: 'Premium Villa Stay', body: 'Private pool, kitchen, caretaker support, and family-friendly amenities.', mediaType: 'IMAGE', ctaLabel: 'Check Dates', secondaryCtaLabel: 'Show Properties', ctaAction: 'SHOW_PROPERTIES' },
+      { title: 'Boutique Resort', body: 'Scenic resort option with breakfast, transfers, and curated local experiences.', mediaType: 'IMAGE', ctaLabel: 'View Stay', secondaryCtaLabel: 'Custom Trip', ctaAction: 'SHOW_PROPERTIES' },
+    ],
+  },
+  {
+    id: 'international_packages',
+    name: 'International Packages',
+    badge: 'Image carousel',
+    icon: Globe,
+    mediaMode: 'IMAGE',
+    body: 'Hi {{name}}, explore our best international holiday picks. Choose a package and we will share flights, hotels, and full pricing.',
+    sections: ['international', 'custom_trip'],
+    cards: [
+      { title: 'Dubai City Break', body: 'Flights, 4-star stay, desert safari, city tour, and visa assistance included.', mediaType: 'IMAGE', ctaLabel: 'Get Quote', secondaryCtaLabel: 'More Intl', ctaAction: 'SHOW_INTERNATIONAL_PACKAGES' },
+      { title: 'Bali Escape', body: 'Beach resort, transfers, island tour, and romantic add-ons for couples.', mediaType: 'IMAGE', ctaLabel: 'See Package', secondaryCtaLabel: 'Custom Trip', ctaAction: 'SHOW_INTERNATIONAL_PACKAGES' },
+    ],
+  },
+  {
+    id: 'domestic_packages',
+    name: 'Domestic Packages',
+    badge: 'Image carousel',
+    icon: Plane,
+    mediaMode: 'IMAGE',
+    body: 'Hi {{name}}, these domestic getaways are ready for quick booking. Pick one and we will send itinerary, inclusions, and price.',
+    sections: ['domestic', 'properties', 'custom_trip'],
+    cards: [
+      { title: 'Kerala Backwaters', body: 'Houseboat, Munnar, Alleppey, private cab, and hotel stays in one plan.', mediaType: 'IMAGE', ctaLabel: 'Send Details', secondaryCtaLabel: 'More India', ctaAction: 'SHOW_DOMESTIC_PACKAGES' },
+      { title: 'Himachal Adventure', body: 'Manali, Solang, sightseeing, transfers, and stays for families or groups.', mediaType: 'IMAGE', ctaLabel: 'Get Price', secondaryCtaLabel: 'Custom Trip', ctaAction: 'SHOW_DOMESTIC_PACKAGES' },
+    ],
+  },
+  {
+    id: 'custom_trip',
+    name: 'Custom Trip',
+    badge: 'Video carousel',
+    icon: UserPlus,
+    mediaMode: 'VIDEO',
+    body: 'Hi {{name}}, want a trip built around your dates, budget, and style? Share your preferences and our team will create a custom plan.',
+    sections: ['custom_trip', 'international', 'domestic'],
+    cards: [
+      { title: 'Plan From Scratch', body: 'Tell us destination, dates, travellers, hotel preference, and budget range.', mediaType: 'VIDEO', ctaLabel: 'Custom Trip', secondaryCtaLabel: 'Call Expert', ctaAction: 'CUSTOM_TRIP' },
+      { title: 'Upgrade Existing Plan', body: 'Already shortlisted places? We can optimize hotels, route, activities, and cost.', mediaType: 'VIDEO', ctaLabel: 'Plan My Trip', secondaryCtaLabel: 'Show Deals', ctaAction: 'CUSTOM_TRIP' },
+    ],
+  },
+  {
+    id: 'travel_scenario_mix',
+    name: 'Travel Desk Mix',
+    badge: 'Mixed carousel',
+    icon: Layers,
+    mediaMode: 'MIXED',
+    body: 'Hi {{name}}, choose what you want to explore today. We can show stays, international deals, domestic packages, or build a custom trip.',
+    sections: ['properties', 'international', 'domestic', 'custom_trip'],
+    cards: [
+      { title: 'Browse Properties', body: 'Resorts, villas, apartments, and hotels matched to your dates.', mediaType: 'IMAGE', ctaLabel: 'Show Properties', secondaryCtaLabel: 'Custom Trip', ctaAction: 'SHOW_PROPERTIES' },
+      { title: 'International Deals', body: 'Curated overseas packages with visa, flights, hotel, and activities.', mediaType: 'IMAGE', ctaLabel: 'International', secondaryCtaLabel: 'Get Quote', ctaAction: 'SHOW_INTERNATIONAL_PACKAGES' },
+      { title: 'Domestic Packages', body: 'India holiday plans with stays, transfers, sightseeing, and support.', mediaType: 'VIDEO', ctaLabel: 'Domestic', secondaryCtaLabel: 'Plan Trip', ctaAction: 'SHOW_DOMESTIC_PACKAGES' },
+    ],
+  },
+];
+
+const PREBUILT_META_MESSAGE_TEMPLATES = [
+  {
+    id: 'image_message_trips_properties',
+    name: 'Image + Description + CTA',
+    badge: 'Image message',
+    icon: Image,
+    mediaType: 'IMAGE',
+    body: 'Hi {{name}}, we have fresh travel options ready for you. Tap below to enquire, see more trips, or browse properties.',
+    buttons: [
+      { type: 'QUICK_REPLY', text: 'Enquiry' },
+      { type: 'QUICK_REPLY', text: 'Show Another Trips' },
+      { type: 'QUICK_REPLY', text: 'Show Properties' },
+    ],
+  },
+  {
+    id: 'video_message_trips_properties',
+    name: 'Video + Description + CTA',
+    badge: 'Video message',
+    icon: Video,
+    mediaType: 'VIDEO',
+    body: 'Hi {{name}}, watch this featured trip update and choose what you want next. We can share more trips or matching properties instantly.',
+    buttons: [
+      { type: 'QUICK_REPLY', text: 'Enquiry' },
+      { type: 'QUICK_REPLY', text: 'Show Another Trips' },
+      { type: 'QUICK_REPLY', text: 'Show Properties' },
+    ],
+  },
 ];
 
 export default function CreateCampaign() {
@@ -87,9 +296,9 @@ export default function CreateCampaign() {
     scheduleMode: 'now',
     linkedPackageIds: [],
     format: 'SECTION_CTA',
-    mediaType: 'NONE',
+    mediaType: 'IMAGE',
     mediaUrl: '',
-    campaignSections: DEFAULT_CAMPAIGN_SECTIONS,
+    campaignSections: createDefaultCampaignSections(),
     carouselConfig: { contentType: 'MIXED', items: [] },
     ctaConfig: {},
   });
@@ -110,6 +319,8 @@ export default function CreateCampaign() {
   const [importStatus, setImportStatus] = useState(''); // '' | 'importing' | 'done' | 'error'
   const [importCount, setImportCount] = useState(0);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [approvalStatus, setApprovalStatus] = useState(null);
+  const [prebuiltPreviewId, setPrebuiltPreviewId] = useState('show_properties');
   const fileInputRef = useRef(null);
 
   // Load edit data when available
@@ -124,11 +335,14 @@ export default function CreateCampaign() {
         scheduledAt: editCampaign.scheduledAt || null,
         scheduleMode: editCampaign.scheduledAt ? 'scheduled' : 'now',
         linkedPackageIds: editCampaign.linkedPackageIds || [],
-        format: editCampaign.format || 'STANDARD',
-        mediaType: editCampaign.mediaType || 'NONE',
+        format: editCampaign.format === 'ITEM_CAROUSEL' ? 'ITEM_CAROUSEL' : 'SECTION_CTA',
+        mediaType: editCampaign.mediaType === 'VIDEO' ? 'VIDEO' : 'IMAGE',
         mediaUrl: editCampaign.mediaUrl || '',
-        campaignSections: editCampaign.campaignSections?.length ? editCampaign.campaignSections : DEFAULT_CAMPAIGN_SECTIONS,
-        carouselConfig: editCampaign.carouselConfig || { contentType: 'MIXED', items: [] },
+        campaignSections: normalizeCampaignSections(editCampaign.campaignSections),
+        carouselConfig: {
+          contentType: editCampaign.carouselConfig?.contentType || 'MIXED',
+          items: editCampaign.carouselConfig?.items || [],
+        },
         ctaConfig: editCampaign.ctaConfig || {},
       });
     }
@@ -137,6 +351,8 @@ export default function CreateCampaign() {
   const createMutation = useCreateCampaign();
   const updateMutation = useUpdateCampaign();
   const previewMutation = usePreviewAudience();
+  const createTemplateMutation = useCreateTemplate();
+  const submitTemplateMutation = useSubmitTemplate();
   const { data: agencyTemplates } = useAgencyTemplates();
 
   const approvedTemplates = (agencyTemplates?.data || []).filter((template) => template.status === 'APPROVED');
@@ -287,16 +503,60 @@ export default function CreateCampaign() {
 
   const activeSections = (formData.campaignSections || []).filter((section) => section.enabled);
   const carouselItems = formData.carouselConfig?.items || [];
+  const builderMode = formData.format === 'ITEM_CAROUSEL' ? 'carousel' : 'cta';
+  const currentExperienceId = formData.format === 'SECTION_CTA'
+    ? 'CTA_MENU'
+    : formData.format === 'ITEM_CAROUSEL' && formData.carouselConfig?.mediaMode === 'VIDEO'
+      ? 'VIDEO_CAROUSEL'
+      : formData.format === 'ITEM_CAROUSEL'
+        ? 'IMAGE_CAROUSEL'
+        : 'CTA_MENU';
+  const currentExperience = MESSAGE_EXPERIENCES.find((experience) => experience.id === currentExperienceId) || MESSAGE_EXPERIENCES[0];
   const activePackages = packages.filter((pkg) => pkg.isActive !== false);
   const activeProperties = properties.filter((property) => property.isActive !== false);
+
+  const getSectionByKey = useCallback(
+    (key) => (formData.campaignSections || []).find((section) => section.key === key) || createDefaultCampaignSections().find((section) => section.key === key),
+    [formData.campaignSections]
+  );
+
+  const selectedPackagesForSection = (section) => activePackages.filter((pkg) => (section?.selectedItemIds || []).includes(pkg.id));
+  const selectedPropertiesForSection = (section) => activeProperties.filter((property) => (section?.selectedItemIds || []).includes(property.id));
+
+  const selectMessageExperience = (experience) => {
+    setFormData((prev) => {
+      return {
+        ...prev,
+        format: experience.format,
+        mediaType: experience.mediaMode === 'VIDEO' ? 'VIDEO' : 'IMAGE',
+        carouselConfig: {
+          ...(prev.carouselConfig || {}),
+          mediaMode: experience.mediaMode,
+        },
+      };
+    });
+  };
 
   const updateSection = (key, updates) => {
     setFormData((prev) => ({
       ...prev,
-      campaignSections: (prev.campaignSections || DEFAULT_CAMPAIGN_SECTIONS).map((section) =>
+      campaignSections: (prev.campaignSections || createDefaultCampaignSections()).map((section) =>
         section.key === key ? { ...section, ...updates } : section
       ),
     }));
+  };
+
+  const toggleSectionItem = (key, itemId) => {
+    const section = getSectionByKey(key);
+    const selectedIds = section?.selectedItemIds || [];
+    const nextSelectedIds = selectedIds.includes(itemId)
+      ? selectedIds.filter((id) => id !== itemId)
+      : [...selectedIds, itemId];
+
+    updateSection(key, {
+      selectionMode: 'MANUAL',
+      selectedItemIds: nextSelectedIds,
+    });
   };
 
   const toggleCarouselItem = (itemType, itemId) => {
@@ -326,12 +586,24 @@ export default function CreateCampaign() {
       : activePackages.find((pkg) => pkg.id === item.itemId);
     return record ? { ...record, itemType: item.itemType } : null;
   }).filter(Boolean);
+  const packageSection = getSectionByKey('packages');
+  const propertySection = getSectionByKey('properties');
+  const customTripSection = getSectionByKey('custom_trip');
+  const selectedPackageRecords = selectedPackagesForSection(packageSection);
+  const selectedPropertyRecords = selectedPropertiesForSection(propertySection);
 
   const canProceed = () => {
     if (step === 0) return formData.name.trim().length > 0;
     if (step === 1) {
       if (!(formData.templateId || formData.messageBody.trim().length > 0)) return false;
-      if (formData.format === 'SECTION_CTA') return activeSections.length > 0;
+      if (formData.format === 'SECTION_CTA') {
+        if (activeSections.length === 0) return false;
+
+        return activeSections.every((section) => {
+          if (section.itemType === 'CUSTOM_TRIP') return true;
+          return (section.selectedItemIds || []).length > 0;
+        });
+      }
       if (formData.format === 'ITEM_CAROUSEL') {
         return carouselItems.length >= 2
           && carouselItems.length <= 10
@@ -375,8 +647,8 @@ export default function CreateCampaign() {
         messageBody: formData.messageBody || null,
         audienceFilter: finalFilter,
         linkedPackageIds: formData.linkedPackageIds || [],
-        format: formData.format || 'STANDARD',
-        mediaType: formData.mediaType || 'NONE',
+        format: formData.format || 'SECTION_CTA',
+        mediaType: formData.mediaType || 'IMAGE',
         mediaUrl: formData.mediaUrl || null,
         campaignSections: formData.format === 'SECTION_CTA'
           ? (formData.campaignSections || []).filter((section) => section.enabled)
@@ -412,7 +684,7 @@ export default function CreateCampaign() {
 
   // ── Render ──
   return (
-    <div className="flex min-h-[calc(100dvh-80px)] flex-col campaign-wizard-page">
+    <div className="-mx-3 -mt-3 -mb-[calc(1rem+env(safe-area-inset-bottom))] sm:-mx-4 sm:-mb-4 md:-m-6 flex min-h-[calc(100dvh-60px)] flex-col campaign-wizard-page bg-white">
 
       {/* ── Decorative background orbs ── */}
       <div className="fixed inset-0 pointer-events-none z-0 hidden overflow-hidden md:block">
@@ -421,10 +693,10 @@ export default function CreateCampaign() {
       </div>
 
       {/* ── Page Header ── */}
-      <div className="relative z-10 mb-4 flex items-center gap-3 sm:mb-5 sm:gap-4">
+      <div className="relative z-10 px-4 pt-4 sm:px-6 md:px-8 mb-4 flex items-center gap-3 sm:mb-5 sm:gap-4 bg-white/50 backdrop-blur-sm border-b border-slate-100 pb-4">
         <button
           onClick={() => navigate('/campaigns')}
-          className="group flex h-11 w-11 shrink-0 items-center justify-center rounded-[var(--radius-md)] border border-slate-200/80 bg-white/80 text-slate-400 backdrop-blur-sm transition-all duration-300 hover:bg-white hover:text-slate-700"
+          className="group flex h-11 w-11 shrink-0 items-center justify-center rounded-[var(--radius-md)] border border-slate-200/80 bg-white/80 text-slate-400 backdrop-blur-sm transition-all duration-300 hover:bg-white hover:text-slate-700 hover:shadow-sm"
         >
           <ArrowLeft className="w-5 h-5 group-hover:-translate-x-0.5 transition-transform duration-200" />
         </button>
@@ -440,7 +712,7 @@ export default function CreateCampaign() {
       </div>
 
       {/* ── Main Card ── */}
-      <div className="relative z-10 flex flex-1 flex-col overflow-hidden rounded-[var(--radius-md)] border border-slate-200/80 bg-white/90 shadow-[0_8px_40px_-12px_rgba(15,23,42,0.12)] backdrop-blur-sm sm:rounded-2xl">
+      <div className="relative z-10 flex flex-1 flex-col overflow-hidden bg-white">
 
         {/* ── Step Indicator Bar ── */}
         <div className="relative overflow-x-auto border-b border-slate-100 bg-gradient-to-r from-slate-50/80 via-white to-slate-50/80 px-4 py-4 sm:px-6 sm:py-5 hide-scrollbar">
@@ -564,125 +836,430 @@ export default function CreateCampaign() {
 
           {/* ───── Step 2: Template ───── */}
           {step === 1 && (
-            <div className="max-w-2xl mx-auto space-y-5 animate-fade-in">
-              <div className="wizard-section-header">
+            <div className="w-full space-y-6 animate-fade-in">
+              <div className="wizard-section-header max-w-3xl">
                 <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-[#404040] mb-2">
                   <Send className="w-3.5 h-3.5" />
                   Message Content
                 </div>
-                <h2 className="text-lg font-bold text-slate-900">Choose a template or compose your message</h2>
-                <p className="text-sm text-slate-500 mt-0.5">Select a Meta-approved saved template for reliable delivery, or write a custom message.</p>
+                <h2 className="text-lg font-bold text-slate-900">What do you want to send?</h2>
+                <p className="text-sm text-slate-500 mt-0.5">Choose a carousel to send swipeable cards, or a message with image/video and action buttons.</p>
               </div>
 
-              <div className="relative">
-                <Search className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
-                <input
-                  type="text"
-                  placeholder="Search templates..."
-                  className="w-full rounded-2xl border border-slate-200 pl-11 pr-4 py-3 text-sm bg-slate-50/50 focus:bg-white focus:border-teal-400 focus:ring-4 focus:ring-[#f0f0f0]0/10 outline-none transition-all duration-300"
-                  value={templateSearch}
-                  onChange={(e) => setTemplateSearch(e.target.value)}
-                />
+              {/* ── Open Templates Banner ── */}
+              <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-sm font-bold text-slate-900">Publish templates in Template Messages</p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Open Templates, preview or edit the template, submit it to Meta, wait for Approved, then return here and select it.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => navigate('/templates')}
+                  className="shell-button-secondary min-h-10"
+                >
+                  <ArrowLeft className="h-4 w-4 rotate-180" />
+                  Open Templates
+                </button>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[400px] overflow-y-auto pr-1 hide-scrollbar">
-                {filteredTemplates.map((t) => {
-                  const isSelected = formData.templateId === t.id;
-                  return (
-                    <button
-                      key={t.id}
-                      onClick={() => {
-                        setFormData({ ...formData, templateId: t.id, messageBody: '' });
-                        setSelectedTemplate(t);
-                      }}
-                      className={`group relative flex flex-col gap-2.5 rounded-2xl border-2 p-4 text-left transition-all duration-300 overflow-hidden ${
-                        isSelected
-                          ? 'border-[#2d2d2d] bg-gradient-to-br from-[#f0f0f0] to-[#f5f5f5]/50 shadow-lg shadow-[#e5e5e5]'
-                          : 'border-slate-200/80 hover:border-slate-300 hover:shadow-md hover:bg-slate-50/50'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2.5">
-                          <span className="text-xl">{t.icon || '📝'}</span>
-                          <span className="text-sm font-bold text-slate-900 truncate">{t.displayName}</span>
+              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_390px]">
+                  <div className="space-y-4">
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-5">
+                      <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                        <div>
+                          <p className="text-sm font-bold text-slate-900">Campaign content workspace</p>
+                          <p className="mt-1 text-xs text-slate-500">Write the message and manually choose exactly what customers can view next.</p>
                         </div>
-                        {isSelected && (
-                          <div className="flex h-5 w-5 items-center justify-center rounded-full bg-gradient-to-br from-[#2d2d2d] to-[#404040] text-white flex-shrink-0 animate-scale-in">
-                            <Check className="w-3 h-3" strokeWidth={3} />
+                        <div className="rounded-full bg-white px-3 py-1 text-xs font-bold text-slate-600 ring-1 ring-slate-200">
+                          {builderMode === 'cta' ? 'CTA flow' : 'Manual carousel'}
+                        </div>
+                      </div>
+
+                      <label className="mb-2 block text-xs font-bold uppercase tracking-[0.15em] text-slate-500">Campaign message</label>
+                      <textarea
+                        rows={6}
+                        value={formData.messageBody}
+                        onChange={(e) => setFormData((prev) => ({ ...prev, messageBody: e.target.value }))}
+                        placeholder={builderMode === 'cta'
+                          ? 'Write the message customers will see before choosing View Packages, View Properties, or Custom Trip.'
+                          : 'Write the intro message customers will see above your selected carousel cards.'}
+                        className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-slate-400"
+                      />
+                    </div>
+
+                    {builderMode === 'cta' && (
+                      <div className="space-y-4">
+                        <div className="rounded-2xl border border-slate-200 bg-white p-5">
+                          <div className="mb-4 flex items-start justify-between gap-3">
+                            <div>
+                              <p className="text-sm font-bold text-slate-900">CTA actions</p>
+                              <p className="mt-1 text-xs text-slate-500">Packages and properties use manual selection. Custom Trip is toggle-only.</p>
+                            </div>
+                            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-600">{activeSections.length} enabled</span>
+                          </div>
+
+                          <div className="grid gap-3 md:grid-cols-3">
+                            {(formData.campaignSections || []).map((section) => {
+                              const Icon = section.itemType === 'PROPERTY' ? Home : section.itemType === 'CUSTOM_TRIP' ? UserPlus : Package;
+                              const selectedCount = section.itemType === 'PACKAGE'
+                                ? selectedPackageRecords.length
+                                : section.itemType === 'PROPERTY'
+                                  ? selectedPropertyRecords.length
+                                  : 0;
+                              return (
+                                <button
+                                  key={section.key}
+                                  type="button"
+                                  onClick={() => updateSection(section.key, {
+                                    enabled: !section.enabled,
+                                    selectionMode: 'MANUAL',
+                                    selectedItemIds: section.itemType === 'CUSTOM_TRIP' ? [] : section.selectedItemIds || [],
+                                  })}
+                                  className={`rounded-2xl border p-4 text-left transition ${
+                                    section.enabled ? 'border-slate-900 bg-slate-900 text-white shadow-lg shadow-slate-900/10' : 'border-slate-200 bg-white hover:border-slate-300'
+                                  }`}
+                                >
+                                  <div className="mb-3 flex items-center justify-between gap-3">
+                                    <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${section.enabled ? 'bg-white/15 text-white' : 'bg-slate-100 text-slate-500'}`}>
+                                      <Icon className="h-5 w-5" />
+                                    </div>
+                                    {section.enabled && <Check className="h-4 w-4" strokeWidth={3} />}
+                                  </div>
+                                  <p className={`text-sm font-bold ${section.enabled ? 'text-white' : 'text-slate-900'}`}>{section.label}</p>
+                                  <p className={`mt-1 text-xs ${section.enabled ? 'text-slate-200' : 'text-slate-500'}`}>
+                                    {section.itemType === 'CUSTOM_TRIP'
+                                      ? 'Starts the existing custom-trip flow.'
+                                      : `${selectedCount} item${selectedCount === 1 ? '' : 's'} selected`}
+                                  </p>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        {packageSection.enabled && (
+                          <div className="rounded-2xl border border-slate-200 bg-white p-5">
+                            <div className="mb-4 flex items-start justify-between gap-3">
+                              <div>
+                                <p className="text-sm font-bold text-slate-900">View Packages selection</p>
+                                <p className="mt-1 text-xs text-slate-500">Choose the exact packages shown after the CTA is tapped.</p>
+                              </div>
+                              <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-600">{selectedPackageRecords.length} selected</span>
+                            </div>
+                            <div className="grid gap-3 md:grid-cols-2">
+                              {activePackages.map((pkg) => {
+                                const isSelected = (packageSection.selectedItemIds || []).includes(pkg.id);
+                                return (
+                                  <button
+                                    key={pkg.id}
+                                    type="button"
+                                    onClick={() => toggleSectionItem('packages', pkg.id)}
+                                    className={`flex items-center gap-3 rounded-2xl border p-3 text-left transition ${isSelected ? 'border-slate-900 bg-slate-50 shadow-sm' : 'border-slate-200 bg-white hover:border-slate-300'}`}
+                                  >
+                                    {pkg.imageUrl ? <img src={pkg.imageUrl} alt="" className="h-14 w-14 rounded-xl object-cover" /> : <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-slate-100 text-slate-400"><Package className="h-6 w-6" /></div>}
+                                    <div className="min-w-0 flex-1">
+                                      <p className="truncate text-sm font-bold text-slate-900">{pkg.name}</p>
+                                      <p className="mt-1 text-xs text-slate-500">{(pkg.destinations || []).join(', ') || pkg.category || 'Package'}</p>
+                                    </div>
+                                    <div className={`flex h-6 w-6 items-center justify-center rounded-full border ${isSelected ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-300 text-transparent'}`}>
+                                      <Check className="h-3.5 w-3.5" strokeWidth={3} />
+                                    </div>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+
+                        {propertySection.enabled && (
+                          <div className="rounded-2xl border border-slate-200 bg-white p-5">
+                            <div className="mb-4 flex items-start justify-between gap-3">
+                              <div>
+                                <p className="text-sm font-bold text-slate-900">View Properties selection</p>
+                                <p className="mt-1 text-xs text-slate-500">Choose the exact properties shown after the CTA is tapped.</p>
+                              </div>
+                              <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-600">{selectedPropertyRecords.length} selected</span>
+                            </div>
+                            <div className="grid gap-3 md:grid-cols-2">
+                              {activeProperties.map((property) => {
+                                const isSelected = (propertySection.selectedItemIds || []).includes(property.id);
+                                return (
+                                  <button
+                                    key={property.id}
+                                    type="button"
+                                    onClick={() => toggleSectionItem('properties', property.id)}
+                                    className={`flex items-center gap-3 rounded-2xl border p-3 text-left transition ${isSelected ? 'border-slate-900 bg-slate-50 shadow-sm' : 'border-slate-200 bg-white hover:border-slate-300'}`}
+                                  >
+                                    {property.imageUrl ? <img src={property.imageUrl} alt="" className="h-14 w-14 rounded-xl object-cover" /> : <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-slate-100 text-slate-400"><Home className="h-6 w-6" /></div>}
+                                    <div className="min-w-0 flex-1">
+                                      <p className="truncate text-sm font-bold text-slate-900">{property.name}</p>
+                                      <p className="mt-1 text-xs text-slate-500">{property.location || property.propertyType || 'Property'}</p>
+                                    </div>
+                                    <div className={`flex h-6 w-6 items-center justify-center rounded-full border ${isSelected ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-300 text-transparent'}`}>
+                                      <Check className="h-3.5 w-3.5" strokeWidth={3} />
+                                    </div>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+
+                        {customTripSection.enabled && (
+                          <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4">
+                            <p className="text-sm font-bold text-emerald-900">Custom Trip enabled</p>
+                            <p className="mt-1 text-xs text-emerald-700">No item selection is needed. Customers go directly into the existing custom-trip lead flow.</p>
                           </div>
                         )}
                       </div>
-                      <p className="text-xs text-slate-500 line-clamp-2 leading-relaxed">{t.body}</p>
-                      <div className="flex gap-2">
-                        <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full ${t.category === 'MARKETING' ? 'bg-blue-50 text-blue-600' : 'bg-slate-100 text-slate-500'}`}>
-                          {t.category}
-                        </span>
-                        {t.isPrebuilt && (
-                          <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-violet-50 text-violet-600">Prebuilt</span>
-                        )}
+                    )}
+
+                    {builderMode === 'carousel' && (
+                      <div className="space-y-4">
+                        <div className="rounded-2xl border border-slate-200 bg-white p-5">
+                          <div className="mb-4 flex items-start justify-between gap-3">
+                            <div>
+                              <p className="text-sm font-bold text-slate-900">Carousel selection</p>
+                              <p className="mt-1 text-xs text-slate-500">Pick 2 to 10 packages, properties, or a mix. Selection order is preserved.</p>
+                            </div>
+                            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-600">{selectedCarouselRecords.length} selected</span>
+                          </div>
+                          <div className="grid gap-3 lg:grid-cols-2">
+                            <div className="space-y-2">
+                              <p className="text-xs font-bold uppercase tracking-[0.15em] text-slate-500">Packages</p>
+                              {activePackages.map((pkg) => {
+                                const isSelected = carouselItems.some((item) => item.itemType === 'PACKAGE' && item.itemId === pkg.id);
+                                return (
+                                  <button
+                                    key={pkg.id}
+                                    type="button"
+                                    onClick={() => toggleCarouselItem('PACKAGE', pkg.id)}
+                                    className={`flex w-full items-center gap-3 rounded-2xl border p-3 text-left transition ${isSelected ? 'border-slate-900 bg-slate-50 shadow-sm' : 'border-slate-200 bg-white hover:border-slate-300'}`}
+                                  >
+                                    {pkg.imageUrl ? <img src={pkg.imageUrl} alt="" className="h-14 w-14 rounded-xl object-cover" /> : <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-slate-100 text-slate-400"><Package className="h-6 w-6" /></div>}
+                                    <div className="min-w-0 flex-1">
+                                      <p className="truncate text-sm font-bold text-slate-900">{pkg.name}</p>
+                                      <p className="mt-1 text-xs text-slate-500">{(pkg.destinations || []).join(', ') || pkg.category || 'Package'}</p>
+                                    </div>
+                                    <div className={`flex h-6 w-6 items-center justify-center rounded-full border ${isSelected ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-300 text-transparent'}`}>
+                                      <Check className="h-3.5 w-3.5" strokeWidth={3} />
+                                    </div>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                            <div className="space-y-2">
+                              <p className="text-xs font-bold uppercase tracking-[0.15em] text-slate-500">Properties</p>
+                              {activeProperties.map((property) => {
+                                const isSelected = carouselItems.some((item) => item.itemType === 'PROPERTY' && item.itemId === property.id);
+                                return (
+                                  <button
+                                    key={property.id}
+                                    type="button"
+                                    onClick={() => toggleCarouselItem('PROPERTY', property.id)}
+                                    className={`flex w-full items-center gap-3 rounded-2xl border p-3 text-left transition ${isSelected ? 'border-slate-900 bg-slate-50 shadow-sm' : 'border-slate-200 bg-white hover:border-slate-300'}`}
+                                  >
+                                    {property.imageUrl ? <img src={property.imageUrl} alt="" className="h-14 w-14 rounded-xl object-cover" /> : <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-slate-100 text-slate-400"><Home className="h-6 w-6" /></div>}
+                                    <div className="min-w-0 flex-1">
+                                      <p className="truncate text-sm font-bold text-slate-900">{property.name}</p>
+                                      <p className="mt-1 text-xs text-slate-500">{property.location || property.propertyType || 'Property'}</p>
+                                    </div>
+                                    <div className={`flex h-6 w-6 items-center justify-center rounded-full border ${isSelected ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-300 text-transparent'}`}>
+                                      <Check className="h-3.5 w-3.5" strokeWidth={3} />
+                                    </div>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </div>
                       </div>
-                      {isSelected && <div className="absolute -bottom-8 -right-8 w-24 h-24 bg-teal-400/10 rounded-full blur-2xl" />}
-                    </button>
-                  );
-                })}
-                {filteredTemplates.length === 0 && (
-                  <div className="col-span-full rounded-2xl border border-dashed border-slate-200 bg-slate-50/70 px-5 py-8 text-center text-sm text-slate-500">
-                    No Meta-approved saved templates found.
+                    )}
                   </div>
-                )}
-              </div>
 
-              <div className="border-t border-slate-100 pt-5">
-                <label className="block text-sm font-semibold text-slate-700 mb-2">Or compose a custom message</label>
-                <textarea
-                  rows={4}
-                  placeholder="Type your message here... Use {{name}} for personalization."
-                  className="w-full rounded-2xl border border-slate-200 px-5 py-3.5 text-sm bg-slate-50/50 focus:bg-white focus:border-teal-400 focus:ring-4 focus:ring-[#f0f0f0]0/10 outline-none transition-all duration-300 resize-none"
-                  value={formData.messageBody}
-                  onChange={(e) => setFormData({ ...formData, messageBody: e.target.value, templateId: null })}
-                />
-                <p className="mt-2 text-xs text-slate-400 flex items-center gap-1.5">
-                  <Sparkles className="w-3 h-3 text-violet-400" />
-                  Variables: {'{{name}}'} = customer name. Note: Custom messages require an approved template for WhatsApp delivery.
-                </p>
-              </div>
+                  <div className="space-y-4 xl:sticky xl:top-6 xl:self-start">
+                    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
+                      <p className="text-sm font-bold text-slate-900">Builder mode</p>
+                      <div className="grid grid-cols-1 gap-3">
+                        {TOP_LEVEL_MODES.map((mode) => {
+                          const Icon = mode.icon;
+                          const isActive = builderMode === mode.id;
+                          return (
+                            <button
+                              key={mode.id}
+                              type="button"
+                              onClick={() => {
+                                if (mode.id === 'carousel') {
+                                  selectMessageExperience(MESSAGE_EXPERIENCES.find((e) => e.id === 'IMAGE_CAROUSEL'));
+                                } else {
+                                  setFormData((prev) => ({ ...prev, format: 'SECTION_CTA' }));
+                                }
+                              }}
+                              className={`group relative flex items-center gap-3 overflow-hidden rounded-xl border-2 p-3.5 text-left transition-all duration-300 ${
+                                isActive
+                                  ? 'border-slate-900 bg-gradient-to-br from-slate-950 to-slate-800 text-white shadow-md shadow-slate-900/10'
+                                  : 'border-slate-200/80 bg-white hover:border-slate-300 hover:shadow-sm'
+                              }`}
+                            >
+                              <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition-all duration-300 ${
+                                isActive
+                                  ? `bg-gradient-to-br ${mode.gradient} text-white shadow-sm`
+                                  : 'bg-slate-100 text-slate-500 group-hover:bg-slate-200'
+                              }`}>
+                                <Icon className="w-5 h-5" />
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <p className={`text-sm font-bold ${isActive ? 'text-white' : 'text-slate-900'}`}>{mode.label}</p>
+                              </div>
+                              {isActive && (
+                                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-white text-slate-900 animate-scale-in">
+                                  <Check className="h-3 w-3" strokeWidth={3} />
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
 
-              <div className="border-t border-slate-100 pt-5 space-y-5">
-                <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-3">Campaign Format</label>
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                    {CAMPAIGN_FORMATS.map((format) => {
-                      const Icon = format.icon;
-                      const selected = formData.format === format.value;
-                      return (
-                        <button
-                          key={format.value}
-                          type="button"
-                          onClick={() => setFormData((prev) => ({ ...prev, format: format.value }))}
-                          className={`rounded-2xl border-2 p-4 text-left transition-all duration-300 ${
-                            selected
-                              ? 'border-[#2d2d2d] bg-slate-50 shadow-md'
-                              : 'border-slate-200/80 hover:border-slate-300 hover:bg-slate-50/60'
-                          }`}
-                        >
-                          <div className="mb-3 flex items-center justify-between">
-                            <Icon className="h-5 w-5 text-slate-700" />
-                            {selected && (
-                              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-slate-900 text-white">
-                                <Check className="h-3 w-3" strokeWidth={3} />
-                              </span>
+                      {/* ── Sub-options ── */}
+                      {builderMode === 'carousel' && (
+                        <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">
+                          <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-slate-500 mb-2">Media Type</p>
+                          <div className="flex gap-2">
+                            {MESSAGE_EXPERIENCES.filter((e) => e.group === 'carousel').map((experience) => {
+                              const Icon = experience.icon;
+                              const selected = currentExperience.id === experience.id;
+                              return (
+                                <button
+                                  key={experience.id}
+                                  type="button"
+                                  onClick={() => selectMessageExperience(experience)}
+                                  className={`flex-1 flex items-center justify-center gap-1.5 rounded-lg py-2 text-xs font-bold transition-all duration-200 ${
+                                    selected
+                                      ? 'bg-slate-900 text-white shadow-sm'
+                                      : 'bg-white text-slate-600 ring-1 ring-slate-200 hover:ring-slate-300 hover:bg-white'
+                                  }`}
+                                >
+                                  <Icon className="h-3.5 w-3.5" />
+                                  {experience.mediaMode}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      {builderMode === 'cta' && (
+                        <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">
+                          <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-slate-500 mb-2">Media Type</p>
+                          <div className="flex gap-2">
+                            {[
+                              { value: 'IMAGE', label: 'Image', icon: Image },
+                              { value: 'VIDEO', label: 'Video', icon: Video },
+                            ].map((opt) => {
+                              const Icon = opt.icon;
+                              const selected = formData.mediaType === opt.value && formData.format === 'SECTION_CTA';
+                              return (
+                                <button
+                                  key={opt.value}
+                                  type="button"
+                                  onClick={() => {
+                                    setFormData((prev) => ({ ...prev, format: 'SECTION_CTA', mediaType: opt.value }));
+                                  }}
+                                  className={`flex-1 flex items-center justify-center gap-1.5 rounded-lg py-2 text-xs font-bold transition-all duration-200 ${
+                                    selected
+                                      ? 'bg-slate-900 text-white shadow-sm'
+                                      : 'bg-white text-slate-600 ring-1 ring-slate-200 hover:ring-slate-300 hover:bg-white'
+                                  }`}
+                                >
+                                  <Icon className="h-3.5 w-3.5" />
+                                  {opt.label}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                    <div className="mb-3 flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-xs font-bold uppercase tracking-[0.16em] text-slate-500">Live Preview</p>
+                        <p className="mt-1 text-sm font-bold text-slate-900">{builderMode === 'cta' ? 'CTA message' : 'Carousel'}</p>
+                      </div>
+                      <span className="rounded-full bg-white px-3 py-1 text-[11px] font-bold text-slate-600 ring-1 ring-slate-200">
+                        {formData.mediaType}
+                      </span>
+                    </div>
+                    <div className="rounded-xl bg-[#efeae2] p-3 shadow-sm ring-1 ring-slate-200">
+                      <div className="ml-auto max-w-[92%] rounded-[12px] rounded-tr-sm bg-[#dcf8c6] p-3 text-xs text-slate-800 shadow-sm">
+                        <p className="whitespace-pre-line leading-relaxed">
+                          {(formData.messageBody || 'Your campaign message will appear here.').replace('{{name}}', 'Rahul')}
+                        </p>
+
+                        {builderMode === 'cta' && (
+                          <div className="mt-3 space-y-1.5 border-t border-black/10 pt-2">
+                            {activeSections.length > 0 ? activeSections.map((section) => (
+                              <div key={section.key} className="rounded-md bg-white px-3 py-2 text-center text-[11px] font-bold text-sky-700">
+                                {section.label}
+                              </div>
+                            )) : (
+                              <div className="rounded-md bg-white px-3 py-2 text-center text-[11px] font-bold text-slate-400">
+                                Enable at least one CTA action
+                              </div>
                             )}
                           </div>
-                          <p className="text-sm font-bold text-slate-900">{format.label}</p>
-                          <p className="mt-1 text-xs leading-relaxed text-slate-500">{format.desc}</p>
-                        </button>
-                      );
-                    })}
+                        )}
+
+                        {builderMode === 'carousel' && (
+                          <div className="mt-3 space-y-2 border-t border-black/10 pt-2">
+                            {selectedCarouselRecords.length > 0 ? selectedCarouselRecords.slice(0, 4).map((card, index) => {
+                              const mediaType = String(formData.mediaType || 'IMAGE').toUpperCase();
+                              return (
+                                <div key={`${card.itemType}-${card.id}`} className="overflow-hidden rounded-lg border border-black/10 bg-white">
+                                  <div className="flex aspect-[4/3] items-center justify-center bg-slate-100 text-slate-500">
+                                    {(card.imageUrl || card.coverImageUrl) ? (
+                                      <img src={card.imageUrl || card.coverImageUrl} alt="" className="h-full w-full object-cover" />
+                                    ) : mediaType === 'VIDEO' ? (
+                                      <Video className="h-7 w-7" />
+                                    ) : (
+                                      <Image className="h-7 w-7" />
+                                    )}
+                                  </div>
+                                  <div className="p-2">
+                                    <p className="truncate text-[11px] font-bold text-slate-900">{card.name || `Card ${index + 1}`}</p>
+                                    <p className="mt-1 line-clamp-2 text-[10px] text-slate-500">
+                                      {card.itemType === 'PACKAGE'
+                                        ? (card.destinations || []).join(', ') || card.category || 'Package'
+                                        : card.location || card.propertyType || 'Property'}
+                                    </p>
+                                    <div className="mt-2 rounded border border-sky-100 px-2 py-1 text-center text-[9px] font-bold text-sky-700">Enquiry</div>
+                                  </div>
+                                </div>
+                              );
+                            }) : (
+                              <div className="rounded-md bg-white px-3 py-3 text-center text-[11px] font-bold text-slate-400">
+                                Select 2 to 10 items to preview the carousel
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 </div>
+              </div>
+
+
+              {/* ── Format specific configurations ── */}
+              {false && <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-5">
 
                 {formData.format === 'SECTION_CTA' && (
-                  <div className="rounded-2xl border border-slate-200/80 bg-slate-50/60 p-4">
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-5">
                     <div className="mb-4 flex items-start justify-between gap-3">
                       <div>
                         <p className="text-sm font-bold text-slate-900">Customer Choice Menu</p>
@@ -695,7 +1272,7 @@ export default function CreateCampaign() {
                       </span>
                     </div>
 
-                    <div className="space-y-3">
+                    <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
                       {(formData.campaignSections || DEFAULT_CAMPAIGN_SECTIONS).map((section) => {
                         const Icon = section.itemType === 'PROPERTY' ? Home : section.itemType === 'CUSTOM_TRIP' ? UserPlus : Package;
                         const availableCount = section.itemType === 'PROPERTY'
@@ -709,8 +1286,8 @@ export default function CreateCampaign() {
                             : null;
 
                         return (
-                          <div key={section.key} className="rounded-xl border border-slate-200 bg-white p-3">
-                            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                          <div key={section.key} className={`rounded-xl border p-3 transition ${section.enabled ? 'border-slate-300 bg-white shadow-sm' : 'border-slate-200 bg-white/70'}`}>
+                            <div className="flex items-start gap-3">
                               <button
                                 type="button"
                                 onClick={() => updateSection(section.key, { enabled: !section.enabled })}
@@ -727,7 +1304,7 @@ export default function CreateCampaign() {
                                   type="text"
                                   value={section.label}
                                   onChange={(e) => updateSection(section.key, { label: e.target.value })}
-                                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm font-bold text-slate-900 outline-none transition focus:border-slate-400"
+                                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-900 outline-none transition focus:border-slate-400"
                                 />
                                 <p className="mt-1 text-xs text-slate-500">
                                   {section.itemType === 'CUSTOM_TRIP'
@@ -739,7 +1316,7 @@ export default function CreateCampaign() {
                                 <select
                                   value={section.filter?.category || 'ALL'}
                                   onChange={(e) => updateSection(section.key, { filter: { ...(section.filter || {}), category: e.target.value } })}
-                                  className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold text-slate-600 outline-none focus:border-slate-400"
+                                  className="mt-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 outline-none focus:border-slate-400"
                                 >
                                   <option value="ALL">All packages</option>
                                   <option value="INTERNATIONAL">International</option>
@@ -754,98 +1331,12 @@ export default function CreateCampaign() {
                   </div>
                 )}
 
-                {formData.format === 'ITEM_CAROUSEL' && (
-                  <div className="rounded-2xl border border-slate-200/80 bg-slate-50/60 p-4">
-                    <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                      <div>
-                        <p className="text-sm font-bold text-slate-900">Carousel Items</p>
-                        <p className="mt-1 text-xs text-slate-500">
-                          Select 2 to 10 packages or properties. Every selected item needs an image for WhatsApp carousel delivery.
-                        </p>
-                      </div>
-                      <span className={`rounded-full px-3 py-1 text-xs font-bold ring-1 ${
-                        carouselItems.length >= 2 && carouselItems.length <= 10
-                          ? 'bg-emerald-50 text-emerald-700 ring-emerald-100'
-                          : 'bg-amber-50 text-amber-700 ring-amber-100'
-                      }`}>
-                        {carouselItems.length}/10 selected
-                      </span>
-                    </div>
 
-                    <div className="space-y-4">
-                      {[
-                        { label: 'Packages', icon: Package, itemType: 'PACKAGE', items: activePackages },
-                        { label: 'Properties', icon: Home, itemType: 'PROPERTY', items: activeProperties },
-                      ].map((group) => {
-                        const GroupIcon = group.icon;
-                        return (
-                          <div key={group.itemType}>
-                            <div className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.15em] text-slate-500">
-                              <GroupIcon className="h-3.5 w-3.5" />
-                              {group.label}
-                            </div>
-                            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                              {group.items.map((item) => {
-                                const isSelected = carouselItems.some((selected) => selected.itemType === group.itemType && selected.itemId === item.id);
-                                const imageUrl = item.imageUrl || item.coverImageUrl;
-                                return (
-                                  <button
-                                    key={`${group.itemType}-${item.id}`}
-                                    type="button"
-                                    onClick={() => toggleCarouselItem(group.itemType, item.id)}
-                                    className={`flex items-center gap-3 rounded-xl border-2 p-3 text-left transition-all duration-300 ${
-                                      isSelected
-                                        ? 'border-slate-900 bg-white shadow-md'
-                                        : 'border-slate-200 bg-white/70 hover:border-slate-300'
-                                    }`}
-                                  >
-                                    {imageUrl ? (
-                                      <img src={imageUrl} alt="" className="h-12 w-12 shrink-0 rounded-lg object-cover" />
-                                    ) : (
-                                      <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-amber-50 text-amber-600">
-                                        <AlertTriangle className="h-5 w-5" />
-                                      </div>
-                                    )}
-                                    <div className="min-w-0 flex-1">
-                                      <p className="truncate text-sm font-bold text-slate-900">{item.name}</p>
-                                      <p className="truncate text-xs text-slate-500">
-                                        {group.itemType === 'PROPERTY'
-                                          ? [item.propertyType, item.location].filter(Boolean).join(' | ') || 'Property'
-                                          : [item.category, item.duration].filter(Boolean).join(' | ') || 'Package'}
-                                      </p>
-                                      {!imageUrl && <p className="mt-0.5 text-[11px] font-bold text-amber-600">Image required</p>}
-                                    </div>
-                                    {isSelected && (
-                                      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-900 text-white">
-                                        <Check className="h-3 w-3" strokeWidth={3} />
-                                      </span>
-                                    )}
-                                  </button>
-                                );
-                              })}
-                              {group.items.length === 0 && (
-                                <div className="rounded-xl border border-dashed border-slate-200 bg-white/70 px-4 py-5 text-center text-xs text-slate-500">
-                                  No active {group.label.toLowerCase()} found.
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
 
-                    {selectedCarouselRecords.some((item) => !(item.imageUrl || item.coverImageUrl)) && (
-                      <div className="mt-4 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs font-medium text-amber-800">
-                        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                        Add images to selected packages/properties before continuing.
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
+              </div>}
 
               {/* ── Link Packages (for Seasonal / Promotional) ── */}
-              {['SEASONAL', 'PROMOTIONAL'].includes(formData.type) && packages.length > 0 && (
+              {false && ['SEASONAL', 'PROMOTIONAL'].includes(formData.type) && packages.length > 0 && (
                 <div className="border-t border-slate-100 pt-5">
                   <div className="flex items-center justify-between mb-3">
                     <div>
@@ -912,7 +1403,8 @@ export default function CreateCampaign() {
                 </div>
               )}
             </div>
-          )}
+          </div>
+        )}
 
           {/* ───── Step 3: Audience ───── */}
           {step === 2 && (

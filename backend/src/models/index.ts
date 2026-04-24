@@ -45,6 +45,7 @@ const LeadNote = require('./LeadNote')(sequelize);
 const Property = require('./Property')(sequelize);
 const InstagramAutomation = require('./InstagramAutomation')(sequelize);
 const InstagramAutomationLog = require('./InstagramAutomationLog')(sequelize);
+const WhatsAppFlow = require('./WhatsAppFlow')(sequelize);
 
 // Marketing models
 const MessageTemplate = require('./MessageTemplate')(sequelize);
@@ -77,6 +78,7 @@ Agency.hasMany(Review, { foreignKey: 'agencyId', as: 'reviews' });
 Agency.hasMany(Property, { foreignKey: 'agencyId', as: 'properties' });
 Agency.hasMany(InstagramAutomation, { foreignKey: 'agencyId', as: 'instagramAutomations' });
 Agency.hasMany(InstagramAutomationLog, { foreignKey: 'agencyId', as: 'instagramAutomationLogs' });
+Agency.hasMany(WhatsAppFlow, { foreignKey: 'agencyId', as: 'whatsappFlows' });
 
 // Property belongs to Agency
 Property.belongsTo(Agency, { foreignKey: 'agencyId', as: 'agency' });
@@ -164,6 +166,7 @@ ScheduledJob.belongsTo(Agency, { foreignKey: 'agencyId', as: 'agency' });
 
 // MessageTemplate
 MessageTemplate.belongsTo(Agency, { foreignKey: 'agencyId', as: 'agency' });
+WhatsAppFlow.belongsTo(Agency, { foreignKey: 'agencyId', as: 'agency' });
 
 // Campaign
 Campaign.belongsTo(Agency, { foreignKey: 'agencyId', as: 'agency' });
@@ -238,4 +241,5 @@ module.exports = {
   Property,
   InstagramAutomation,
   InstagramAutomationLog,
+  WhatsAppFlow,
 };

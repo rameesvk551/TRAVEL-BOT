@@ -16,9 +16,11 @@ import toast from 'react-hot-toast';
 
 export default function TemplateDetailDrawer({
    template: initialTemplate,
+   draftSeed,
    isOpen,
    onClose,
-   isPrebuilt: initialIsPrebuilt
+   isPrebuilt: initialIsPrebuilt,
+   initialMode = 'view'
 }) {
    const newCarouselCard = () => ({
       title: '',
@@ -37,6 +39,7 @@ export default function TemplateDetailDrawer({
       category: 'MARKETING',
       templateType: 'STANDARD',
       headerType: 'NONE',
+      headerContent: '',
       body: '',
       footer: '',
       buttons: [],
@@ -58,34 +61,32 @@ export default function TemplateDetailDrawer({
             category: initialTemplate.category || 'MARKETING',
             templateType: initialTemplate.templateType || 'STANDARD',
             headerType: initialTemplate.headerType || 'NONE',
+            headerContent: initialTemplate.headerContent || '',
             body: initialTemplate.body || '',
             footer: initialTemplate.footer || '',
             buttons: initialTemplate.buttons || [],
             carouselCards: initialTemplate.carouselCards || [],
-            icon: initialTemplate.icon || '💬',
+            icon: initialTemplate.icon || '????',
             tags: initialTemplate.tags || []
          });
-         // If it's prebuilt and we want to "Use Template", we start in edit mode
-         // If we clicked "Preview", we start in view mode
-         // If we clicked "Edit", we start in edit mode
-         // This is handled by the parent passing the template
+         setMode(initialMode);
       } else {
-         // New template mode
          setFormData({
-            displayName: '',
-            category: 'MARKETING',
-            templateType: 'STANDARD',
-            headerType: 'NONE',
-            body: '',
-            footer: '',
-            buttons: [],
-            carouselCards: [],
-            icon: '💬',
-            tags: []
+            displayName: draftSeed?.displayName || '',
+            category: draftSeed?.category || 'MARKETING',
+            templateType: draftSeed?.templateType || 'STANDARD',
+            headerType: draftSeed?.headerType || 'NONE',
+            headerContent: draftSeed?.headerContent || '',
+            body: draftSeed?.body || '',
+            footer: draftSeed?.footer || '',
+            buttons: draftSeed?.buttons || [],
+            carouselCards: draftSeed?.carouselCards || [],
+            icon: draftSeed?.icon || '????',
+            tags: draftSeed?.tags || []
          });
-         setMode('edit');
+         setMode(initialMode || 'edit');
       }
-   }, [initialTemplate]);
+   }, [draftSeed, initialMode, initialTemplate]);
 
    if (!isOpen) return null;
 
@@ -116,6 +117,14 @@ export default function TemplateDetailDrawer({
 
    const handleSubmitForApproval = async () => {
       if (!initialTemplate?.id || initialIsPrebuilt) return;
+      if (!hasValidHeader) {
+         toast.error('Add the required header text or media sample URL before submitting.');
+         return;
+      }
+      if (!hasValidButtons) {
+         toast.error('URL buttons need a URL and phone buttons need a phone number.');
+         return;
+      }
 
       try {
          await submitMutation.mutateAsync(initialTemplate.id);
@@ -128,15 +137,30 @@ export default function TemplateDetailDrawer({
    };
 
    const isPending = createMutation.isPending || updateMutation.isPending || usePrebuiltMutation.isPending || submitMutation.isPending;
-   const canSubmit = !initialIsPrebuilt && initialTemplate?.id && ['DRAFT', 'REJECTED', 'PAUSED'].includes(initialTemplate.status);
    const isCarousel = String(formData.templateType || '').toUpperCase() === 'CAROUSEL';
+   const hasValidHeader = formData.headerType === 'NONE'
+      || (formData.headerType === 'TEXT' && !!String(formData.headerContent || '').trim())
+      || (['IMAGE', 'VIDEO', 'DOCUMENT'].includes(String(formData.headerType || '').toUpperCase()) && !!String(formData.headerContent || '').trim());
+   const hasValidButtons = !Array.isArray(formData.buttons) || formData.buttons.every((button) => {
+      const type = String(button.type || 'QUICK_REPLY').toUpperCase();
+      if (!String(button.text || '').trim()) return false;
+      if (type === 'URL') return !!String(button.url || '').trim();
+      if (type === 'PHONE_NUMBER') return !!String(button.phoneNumber || '').trim();
+      return true;
+   });
    const canSave = !!formData.displayName
       && !!formData.body
+      && hasValidHeader
+      && hasValidButtons
       && (!isCarousel || (
          formData.carouselCards.length >= 2
          && formData.carouselCards.length <= 10
          && formData.carouselCards.every((card) => card.mediaUrl && card.body)
       ));
+   const canSubmit = !initialIsPrebuilt
+      && initialTemplate?.id
+      && ['DRAFT', 'REJECTED', 'PAUSED'].includes(initialTemplate.status)
+      && canSave;
 
    const updateCarouselCard = (index, updates) => {
       setFormData((current) => ({
@@ -165,7 +189,7 @@ export default function TemplateDetailDrawer({
             onClick={onClose}
          />
 
-         <aside className="relative flex h-full w-full transform flex-col border-l border-neutral-200 bg-white shadow-2xl transition-transform duration-300 ease-out md:max-w-2xl">
+         <aside className="relative flex h-full w-full transform flex-col border-l border-neutral-200 bg-white shadow-2xl transition-transform duration-300 ease-out md:max-w-4xl lg:max-w-5xl">
             {/* Header */}
             <div className="sticky top-0 z-10 flex items-center justify-between border-b border-neutral-100 bg-white px-4 py-4 sm:px-6">
                <div className="flex items-center gap-3">
@@ -354,6 +378,34 @@ export default function TemplateDetailDrawer({
                         </div>
                         )}
                      </div>
+
+                     {!isCarousel && formData.headerType !== 'NONE' && (
+                        <div>
+                           <label className="block text-xs font-bold text-neutral-500 mb-1">
+                              {formData.headerType === 'TEXT' ? 'Header Text' : 'Header Media Sample URL'}
+                           </label>
+                           <input
+                              type={formData.headerType === 'TEXT' ? 'text' : 'url'}
+                              value={formData.headerContent || ''}
+                              onChange={e => setFormData({ ...formData, headerContent: e.target.value })}
+                              placeholder={
+                                 formData.headerType === 'TEXT'
+                                    ? 'Short header text for Meta approval'
+                                    : formData.headerType === 'VIDEO'
+                                       ? 'Public video URL required by Meta'
+                                       : formData.headerType === 'DOCUMENT'
+                                          ? 'Public document URL required by Meta'
+                                          : 'Public image URL required by Meta'
+                              }
+                              className="shell-input-rect bg-white"
+                           />
+                           <p className="mt-1 text-[11px] text-neutral-400">
+                              {formData.headerType === 'TEXT'
+                                 ? 'Meta needs header text when you choose a text header.'
+                                 : 'Meta needs a public sample file URL for media headers during approval.'}
+                           </p>
+                        </div>
+                     )}
                   </section>
 
                   <section className="space-y-4">
@@ -413,6 +465,8 @@ export default function TemplateDetailDrawer({
                                  onChange={e => {
                                     const newBtns = [...formData.buttons];
                                     newBtns[idx].type = e.target.value;
+                                    if (e.target.value !== 'URL') newBtns[idx].url = '';
+                                    if (e.target.value !== 'PHONE_NUMBER') newBtns[idx].phoneNumber = '';
                                     setFormData({ ...formData, buttons: newBtns });
                                  }}
                                  className="w-full rounded border border-neutral-200 bg-white px-2 py-1.5 text-xs focus:outline-none focus:ring-0 sm:w-32"
@@ -432,6 +486,32 @@ export default function TemplateDetailDrawer({
                                  placeholder="Button Text"
                                  className="flex-1 bg-white border border-neutral-200 rounded px-3 py-1.5 text-xs focus:ring-0 focus:outline-none"
                               />
+                              {btn.type === 'URL' && (
+                                 <input
+                                    type="url"
+                                    value={btn.url || ''}
+                                    onChange={e => {
+                                       const newBtns = [...formData.buttons];
+                                       newBtns[idx].url = e.target.value;
+                                       setFormData({ ...formData, buttons: newBtns });
+                                    }}
+                                    placeholder="https://example.com/page"
+                                    className="flex-1 bg-white border border-neutral-200 rounded px-3 py-1.5 text-xs focus:ring-0 focus:outline-none"
+                                 />
+                              )}
+                              {btn.type === 'PHONE_NUMBER' && (
+                                 <input
+                                    type="text"
+                                    value={btn.phoneNumber || ''}
+                                    onChange={e => {
+                                       const newBtns = [...formData.buttons];
+                                       newBtns[idx].phoneNumber = e.target.value;
+                                       setFormData({ ...formData, buttons: newBtns });
+                                    }}
+                                    placeholder="+91 9876543210"
+                                    className="flex-1 bg-white border border-neutral-200 rounded px-3 py-1.5 text-xs focus:ring-0 focus:outline-none"
+                                 />
+                              )}
                               <button
                                  onClick={() => {
                                     const newBtns = formData.buttons.filter((_, i) => i !== idx);
@@ -454,7 +534,7 @@ export default function TemplateDetailDrawer({
                </div>
 
                {/* Preview Section */}
-               <div className="flex w-full flex-col border-l border-neutral-100 bg-neutral-100/50 md:w-[280px] lg:w-[320px]">
+               <div className="flex w-full flex-col border-l border-neutral-100 bg-neutral-100/50 md:w-[280px] md:shrink-0 lg:w-[320px]">
                   <div className="h-full p-4 sm:p-6">
                      <div className="sticky top-6 flex flex-col gap-4">
                         <div className="flex items-center gap-2 mb-2">
@@ -519,11 +599,23 @@ export default function TemplateDetailDrawer({
                                        <div className="p-1 pb-0">
                                           <div className="bg-black/5 rounded-[8px] aspect-[16/9] flex items-center justify-center overflow-hidden border border-black/5">
                                              {formData.headerType === 'IMAGE' ? (
-                                                <ImageIcon className="w-10 h-10 text-black/10" />
+                                                formData.headerContent
+                                                   ? <img src={formData.headerContent} alt="" className="h-full w-full object-cover" />
+                                                   : <ImageIcon className="w-10 h-10 text-black/10" />
                                              ) : formData.headerType === 'VIDEO' ? (
+                                                formData.headerContent ? (
+                                                   <div className="relative h-full w-full bg-black/20">
+                                                      <div className="absolute inset-0 flex items-center justify-center">
+                                                         <div className="w-10 h-10 rounded-full bg-black/20 flex items-center justify-center">
+                                                            <div className="w-0 h-0 border-t-[8px] border-t-transparent border-l-[12px] border-l-white/80 border-b-[8px] border-b-transparent ml-1" />
+                                                         </div>
+                                                      </div>
+                                                   </div>
+                                                ) : (
                                                 <div className="w-10 h-10 rounded-full bg-black/10 flex items-center justify-center">
                                                    <div className="w-0 h-0 border-t-[8px] border-t-transparent border-l-[12px] border-l-white/60 border-b-[8px] border-b-transparent ml-1" />
                                                 </div>
+                                                )
                                              ) : (
                                                 <div className="flex flex-col items-center gap-1">
                                                    <div className="w-10 h-10 bg-black/10 rounded flex items-center justify-center">

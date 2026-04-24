@@ -19,6 +19,7 @@ import Payments from './pages/Payments';
 import Analytics from './pages/Analytics';
 import Settings from './pages/Settings';
 import Templates from './pages/Templates';
+import Flows from './pages/Flows';
 import Itineraries from './pages/Itineraries';
 import ItineraryBuilder from './pages/ItineraryBuilder';
 import Campaigns from './pages/Campaigns';
@@ -103,6 +104,7 @@ export default function App() {
                   <Route path="/itineraries/new" element={<ItineraryBuilder />} />
                   <Route path="/itineraries/:id/edit" element={<ItineraryBuilder />} />
                   <Route path="/templates" element={<Templates />} />
+                  <Route path="/flows" element={<Flows />} />
                   <Route path="/campaigns" element={<Campaigns />} />
                   <Route path="/campaigns/new" element={<CreateCampaign />} />
                   <Route path="/campaigns/:id/edit" element={<CreateCampaign />} />

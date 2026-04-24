@@ -288,6 +288,90 @@ async function ensureCampaignsSchema() {
   });
 }
 
+async function ensureWhatsAppFlowsSchema() {
+  const queryInterface = sequelize.getQueryInterface();
+
+  if (!(await tableExists('whatsapp_flows'))) {
+    await queryInterface.createTable('whatsapp_flows', {
+      id: {
+        type: Sequelize.UUID,
+        defaultValue: Sequelize.UUIDV4,
+        primaryKey: true,
+        allowNull: false,
+      },
+      agency_id: {
+        type: Sequelize.UUID,
+        allowNull: false,
+      },
+      name: {
+        type: Sequelize.STRING(255),
+        allowNull: false,
+      },
+      flow_type: {
+        type: Sequelize.ENUM('PACKAGE', 'PROPERTY', 'CUSTOM_TRIP', 'GENERIC'),
+        allowNull: false,
+        defaultValue: 'GENERIC',
+      },
+      status: {
+        type: Sequelize.ENUM('DRAFT', 'PUBLISHED', 'FAILED', 'ARCHIVED'),
+        allowNull: false,
+        defaultValue: 'DRAFT',
+      },
+      meta_flow_id: {
+        type: Sequelize.STRING(255),
+        allowNull: true,
+      },
+      endpoint_uri: {
+        type: Sequelize.TEXT,
+        allowNull: true,
+      },
+      first_screen_id: {
+        type: Sequelize.STRING(120),
+        allowNull: true,
+      },
+      categories: {
+        type: Sequelize.ARRAY(Sequelize.STRING),
+        allowNull: false,
+        defaultValue: ['OTHER'],
+      },
+      json_definition: {
+        type: Sequelize.JSONB,
+        allowNull: false,
+        defaultValue: {},
+      },
+      validation_errors: {
+        type: Sequelize.JSONB,
+        allowNull: false,
+        defaultValue: [],
+      },
+      health_status: {
+        type: Sequelize.JSONB,
+        allowNull: true,
+      },
+      last_synced_at: {
+        type: Sequelize.DATE,
+        allowNull: true,
+      },
+      created_at: {
+        type: Sequelize.DATE,
+        allowNull: false,
+        defaultValue: Sequelize.literal('CURRENT_TIMESTAMP'),
+      },
+      updated_at: {
+        type: Sequelize.DATE,
+        allowNull: false,
+        defaultValue: Sequelize.literal('CURRENT_TIMESTAMP'),
+      },
+    });
+    await queryInterface.addIndex('whatsapp_flows', ['agency_id']);
+    await queryInterface.addIndex('whatsapp_flows', ['agency_id', 'status']);
+    await queryInterface.addIndex('whatsapp_flows', ['agency_id', 'flow_type']);
+    await queryInterface.addIndex('whatsapp_flows', ['meta_flow_id']);
+    await queryInterface.addIndex('whatsapp_flows', ['agency_id', 'name'], { unique: true });
+    console.log('[SchemaBootstrap] Created whatsapp_flows table');
+  }
+}
+
 async function ensureFollowUpsTable() {
   const queryInterface = sequelize.getQueryInterface();
 
@@ -492,6 +576,7 @@ async function ensureProductionSchema() {
   await ensureBookingsSchema();
   await ensureItinerariesSchema();
   await ensureCampaignsSchema();
+  await ensureWhatsAppFlowsSchema();
   await ensureFollowUpsTable();
   await ensureLeadNotesTable();
   await ensureInstagramAutomationTables();
