@@ -53,18 +53,9 @@
             "name": "package_selector_form",
             "children": [
               {
-                "type": "TextHeading",
-                "text": "${data.category_label} Packages"
-              },
-              {
-                "type": "TextBody",
-                "text": "Choose one package to view details or start enquiry."
-              },
-              {
                 "type": "RadioButtonsGroup",
                 "label": "Available Packages",
                 "name": "packageId",
-                "description": "Each card shows image, price, duration, and a short summary.",
                 "data-source": "${data.package_options}",
                 "media-size": "large",
                 "required": true

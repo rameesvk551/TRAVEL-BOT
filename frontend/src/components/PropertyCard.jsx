@@ -4,94 +4,126 @@ import { MapPinIcon, ArrowUpRightIcon } from '@heroicons/react/24/outline';
 export default function PropertyCard({ property, onEdit, toggleActive, canManage, onClick }) {
   const isActive = property.isActive;
 
+  // Derive badge label
+  const statusLabel = property.listingStatus === 'For Rent'
+    ? 'For Rent'
+    : property.listingStatus === 'Sold'
+      ? 'Sold'
+      : isActive ? 'For Sale' : 'Inactive';
+
+  const statusColor = statusLabel === 'For Rent'
+    ? 'bg-teal-500 text-white'
+    : statusLabel === 'Sold'
+      ? 'bg-neutral-700 text-white'
+      : statusLabel === 'Inactive'
+        ? 'bg-neutral-400 text-white'
+        : 'bg-emerald-500 text-white';
+
+  // Category label
+  const categoryLabel = property.propertyType === 'Hotel' || property.propertyType === 'Resort'
+    ? 'Commercial'
+    : property.propertyType === 'Villa'
+      ? 'Luxury'
+      : property.propertyType === 'Apartment'
+        ? 'Residential'
+        : property.category || 'Residential';
+
   return (
-    <div 
-      className="group bg-white rounded-[32px] p-4 shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-neutral-100 transition-all duration-300 hover:shadow-[0_20px_40px_-12px_rgba(0,0,0,0.08)] hover:-translate-y-1 cursor-pointer"
+    <div
+      className="property-listing-card group"
       onClick={onClick}
     >
       {/* Image Container */}
-      <div className="relative aspect-[4/3] overflow-hidden rounded-[24px] bg-neutral-100">
+      <div className="property-card-image-wrapper">
         {property.imageUrl ? (
-          <img 
-            src={property.imageUrl} 
-            alt={property.name} 
-            className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110" 
+          <img
+            src={property.imageUrl}
+            alt={property.name}
+            className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
           />
         ) : (
-          <div className="flex h-full w-full items-center justify-center bg-neutral-50">
+          <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-neutral-100 to-neutral-50">
             <span className="text-neutral-300 font-bold uppercase tracking-widest text-[10px]">No Image</span>
           </div>
         )}
-        
-        {/* Top Badges */}
-        <div className="absolute top-3 left-3 flex gap-2">
-          <span className="bg-white/90 backdrop-blur-md text-neutral-800 text-[10px] font-bold px-3 py-1.5 rounded-full shadow-sm">
-            {isActive ? 'For Sale' : 'Inactive'}
+
+        {/* Status Badge */}
+        <div className="absolute top-3 left-3">
+          <span className={`${statusColor} text-[10px] font-bold px-3 py-1.5 rounded-md shadow-sm`}>
+            {statusLabel}
           </span>
         </div>
 
-        {/* Action Button */}
+        {/* Arrow Button */}
         <div className="absolute top-3 right-3">
-          <button className="h-10 w-10 flex items-center justify-center rounded-full bg-black/20 backdrop-blur-md text-white border border-white/30 transition-all hover:bg-black/40">
-            <ArrowUpRightIcon className="h-4 w-4" />
+          <button className="h-8 w-8 flex items-center justify-center rounded-full bg-white/80 backdrop-blur-sm text-neutral-700 shadow-sm border border-white/50 transition-all hover:bg-white hover:scale-110 hover:shadow-md">
+            <ArrowUpRightIcon className="h-3.5 w-3.5" />
           </button>
         </div>
       </div>
 
       {/* Content */}
-      <div className="mt-5 px-1">
-        <div className="flex justify-between items-start">
-          <h3 className="text-[17px] font-bold text-neutral-900 leading-snug line-clamp-1">
-            {property.name}
-          </h3>
-        </div>
+      <div className="p-4 pb-5">
+        <h3 className="text-[15px] font-bold text-neutral-900 leading-snug line-clamp-1">
+          {property.name}
+        </h3>
 
-        <div className="mt-2 flex items-center gap-1.5 text-neutral-500">
-          <MapPinIcon className="h-3.5 w-3.5 text-neutral-400" />
+        <div className="mt-1.5 flex items-center gap-1 text-neutral-500">
+          <MapPinIcon className="h-3.5 w-3.5 text-neutral-400 flex-shrink-0" />
           <span className="text-xs font-medium truncate">{property.location || 'Unknown Location'}</span>
         </div>
 
-        {/* Feature Tags */}
-        <div className="mt-4 flex flex-wrap gap-2">
-          {property.propertyType && (
-            <span className="bg-neutral-50 text-neutral-500 text-[10px] font-bold px-3 py-1.5 rounded-lg border border-neutral-100">
+        {/* Feature Tags Row */}
+        <div className="mt-3 flex items-center gap-2 text-[11px] text-neutral-500 font-medium">
+          {property.beds && (
+            <span className="flex items-center gap-1 bg-neutral-50 border border-neutral-100 rounded-md px-2 py-1">
+              {property.beds} Beds
+            </span>
+          )}
+          {property.baths && (
+            <span className="flex items-center gap-1 bg-neutral-50 border border-neutral-100 rounded-md px-2 py-1">
+              {property.baths} Baths
+            </span>
+          )}
+          {property.sqft && (
+            <span className="flex items-center gap-1 bg-neutral-50 border border-neutral-100 rounded-md px-2 py-1">
+              {Number(property.sqft).toLocaleString()} sq.ft.
+            </span>
+          )}
+          {!property.beds && !property.baths && !property.sqft && property.propertyType && (
+            <span className="flex items-center gap-1 bg-neutral-50 border border-neutral-100 rounded-md px-2 py-1">
               {property.propertyType}
             </span>
           )}
-          {property.amenities?.slice(0, 2).map((amenity, idx) => (
-            <span key={idx} className="bg-neutral-50 text-neutral-500 text-[10px] font-bold px-3 py-1.5 rounded-lg border border-neutral-100">
-              {amenity}
+          {!property.beds && !property.baths && !property.sqft && property.amenities?.slice(0, 2).map((a, i) => (
+            <span key={i} className="flex items-center gap-1 bg-neutral-50 border border-neutral-100 rounded-md px-2 py-1">
+              {a}
             </span>
           ))}
         </div>
 
-        {/* Footer */}
-        <div className="mt-5 flex items-center justify-between border-t border-neutral-50 pt-4">
-          <div className="flex flex-col">
-            <span className="text-2xl font-black text-neutral-900">
-              {property.pricePerNight ? formatCurrency(property.pricePerNight) : '—'}
-            </span>
-          </div>
-          
-          <div className="flex items-center gap-2">
-            <span className="bg-neutral-50 text-neutral-400 text-[9px] font-black uppercase tracking-widest px-2.5 py-1.5 rounded-md border border-neutral-100">
-              {property.propertyType === 'Hotel' ? 'COMMERCIAL' : 'RESIDENTIAL'}
-            </span>
-          </div>
+        {/* Price Row */}
+        <div className="mt-4 flex items-end justify-between">
+          <span className="text-xl font-black text-neutral-900 tracking-tight">
+            {property.pricePerNight ? formatCurrency(property.pricePerNight) : '—'}
+          </span>
+          <span className="text-[10px] font-semibold text-neutral-400 tracking-wide">
+            {categoryLabel}
+          </span>
         </div>
 
-        {/* Management Actions (Visible on Hover) */}
+        {/* Management Actions */}
         {canManage && (
-          <div className="mt-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-            <button 
+          <div className="mt-3 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+            <button
               onClick={(e) => { e.stopPropagation(); onEdit(); }}
-              className="flex-1 text-[11px] font-bold py-2 bg-neutral-900 text-white rounded-xl hover:bg-neutral-800 transition"
+              className="flex-1 text-[11px] font-bold py-2 bg-neutral-900 text-white rounded-lg hover:bg-neutral-800 transition"
             >
               Edit
             </button>
-            <button 
+            <button
               onClick={(e) => { e.stopPropagation(); toggleActive(); }}
-              className="flex-1 text-[11px] font-bold py-2 bg-neutral-100 text-neutral-600 rounded-xl hover:bg-neutral-200 transition"
+              className="flex-1 text-[11px] font-bold py-2 bg-neutral-100 text-neutral-600 rounded-lg hover:bg-neutral-200 transition"
             >
               {isActive ? 'Hide' : 'Show'}
             </button>

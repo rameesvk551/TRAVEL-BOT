@@ -301,7 +301,8 @@ async function sendViaMarketingOs(phone, payload, tenantId) {
       to: actualRecipient,
       templateName: payload.templateName,
       language: payload.languageCode || 'en',
-      components: payload.components || payload.variables || {},
+      components: payload.components || null,
+      variables: payload.variables || {},
       idempotencyKey,
     });
   } else if (payload.type === 'interactive') {
@@ -358,17 +359,20 @@ function normalizeImageUrlForWhatsApp(imageUrl) {
   const url = String(imageUrl || '').trim();
   if (!url) return url;
 
-  const isCloudinarySvg = url.includes('res.cloudinary.com')
-    && url.includes('/image/upload/')
-    && /\.svg(?:\?|$)/i.test(url);
+  const isCloudinaryUpload = url.includes('res.cloudinary.com')
+    && url.includes('/image/upload/');
 
-  if (!isCloudinarySvg) {
+  if (!isCloudinaryUpload) {
     return url;
   }
 
-  return url
-    .replace('/image/upload/', '/image/upload/f_png/')
-    .replace(/\.svg(\?|$)/i, '.png$1');
+  if (/\.svg(?:\?|$)/i.test(url) || /\.webp(?:\?|$)/i.test(url)) {
+    return url
+      .replace('/image/upload/', '/image/upload/f_png/')
+      .replace(/\.(svg|webp)(\?|$)/i, '.png$2');
+  }
+
+  return url;
 }
 
 async function sendTextMessage(phone, content, context) {
@@ -1229,7 +1233,7 @@ function buildTextParameters(text, variableMap) {
 
 function buildMediaParameter(mediaType, mediaUrl) {
   const type = String(mediaType || 'IMAGE').toLowerCase();
-  const link = String(mediaUrl || '').trim();
+  const link = normalizeImageUrlForWhatsApp(mediaUrl);
   if (!link || !['image', 'video', 'document'].includes(type)) return null;
 
   return {

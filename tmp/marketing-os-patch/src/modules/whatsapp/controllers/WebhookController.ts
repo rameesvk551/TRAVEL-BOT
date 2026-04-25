@@ -234,13 +234,17 @@ export const createWebhookController = (
                 res.status(400).json({ success: false, error: 'Unable to resolve tenant for WhatsApp send' });
                 return;
             }
+            const runtimeComponents = Array.isArray(components) ? components : [];
+            const templateVariables = variables && typeof variables === 'object' && !Array.isArray(variables)
+                ? variables
+                : (components && typeof components === 'object' && !Array.isArray(components) ? components : {});
             const result = await messageService.sendTemplate({
                 tenantId: effectiveTenantId,
                 recipientPhone: to,
                 templateName,
                 language: language || 'en',
-                variables: variables || {},
-                components: Array.isArray(components) ? components : [],
+                variables: templateVariables,
+                components: runtimeComponents,
                 senderUserId: 'PARTNER_API',
             });
             res.json(result);

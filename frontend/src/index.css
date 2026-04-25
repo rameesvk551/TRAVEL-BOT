@@ -292,6 +292,56 @@
   .icon-left {
     @apply absolute left-3.5 h-5 w-5 text-neutral-400;
   }
+
+  /* ── Listing Page: Card View ── */
+  .property-listing-card {
+    @apply bg-white rounded-2xl overflow-hidden border border-neutral-100 shadow-[0_1px_4px_rgba(0,0,0,0.04)] transition-all duration-300 hover:shadow-[0_12px_32px_-8px_rgba(0,0,0,0.10)] hover:-translate-y-0.5 cursor-pointer;
+  }
+
+  .property-card-image-wrapper {
+    @apply relative aspect-[4/3] overflow-hidden bg-neutral-100;
+  }
+
+  /* ── Listing Page: List View ── */
+  .listing-list-card {
+    @apply flex bg-white rounded-2xl overflow-hidden border border-neutral-100 shadow-[0_1px_4px_rgba(0,0,0,0.04)] transition-all duration-300 hover:shadow-[0_12px_32px_-8px_rgba(0,0,0,0.10)] cursor-pointer;
+  }
+
+  .listing-list-card-image {
+    @apply relative w-[260px] flex-shrink-0 overflow-hidden bg-neutral-100;
+  }
+
+  /* ── Listing Page: Filter Tabs ── */
+  .listing-filter-tab {
+    @apply rounded-full border border-neutral-200 bg-white px-4 py-2 text-xs font-semibold text-neutral-600 transition-all hover:border-neutral-300 hover:bg-neutral-50 cursor-pointer;
+  }
+
+  .listing-filter-tab-active {
+    @apply bg-neutral-900 border-neutral-900 text-white hover:bg-neutral-800 hover:border-neutral-800;
+  }
+
+  /* ── Listing Page: Add Button ── */
+  .listing-add-button {
+    @apply inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-all hover:bg-emerald-700 active:scale-[0.98];
+  }
+
+  /* ── Listing Page: View Toggle ── */
+  .listing-view-toggle {
+    @apply flex items-center justify-center rounded-lg p-2 transition-all text-neutral-400 hover:text-neutral-600 cursor-pointer;
+  }
+
+  .listing-view-toggle-active {
+    @apply bg-neutral-900 text-white shadow-sm hover:text-white;
+  }
+
+  /* ── Listing Page: Pagination ── */
+  .listing-pagination-btn {
+    @apply flex items-center justify-center h-9 min-w-[36px] px-2 rounded-lg border border-neutral-200 bg-white text-xs font-semibold text-neutral-600 transition-all hover:bg-neutral-50 hover:border-neutral-300 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer;
+  }
+
+  .listing-pagination-btn-active {
+    @apply bg-emerald-600 border-emerald-600 text-white hover:bg-emerald-700 hover:border-emerald-700;
+  }
 }
 
 @media (max-width: 767px) {

@@ -65,6 +65,19 @@ function normalizeCarouselConfig(data = {}) {
   };
 }
 
+function normalizeCtaConfig(data = {}) {
+  const source = data.ctaConfig && typeof data.ctaConfig === 'object' ? data.ctaConfig : {};
+  const featuredItemType = ITEM_TYPES.has(String(source.featuredItemType || '').toUpperCase())
+    ? String(source.featuredItemType).toUpperCase()
+    : null;
+
+  return {
+    ...source,
+    featuredItemType,
+    featuredItemId: source.featuredItemId || null,
+  };
+}
+
 function validateCampaignPayload(payload = {}) {
   const format = String(payload.format || 'STANDARD').toUpperCase();
 
@@ -109,7 +122,7 @@ function normalizeCampaignPayload(data = {}) {
     mediaUrl: data.mediaUrl || null,
     campaignSections: normalizeCampaignSections(data),
     carouselConfig: normalizeCarouselConfig(data),
-    ctaConfig: data.ctaConfig && typeof data.ctaConfig === 'object' ? data.ctaConfig : {},
+    ctaConfig: normalizeCtaConfig(data),
     linkedPackageIds: normalizeArray(data.linkedPackageIds),
   };
 }

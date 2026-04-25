@@ -55,18 +55,9 @@
             "name": "property_selector_form",
             "children": [
               {
-                "type": "TextHeading",
-                "text": "${data.property_category_label} Properties"
-              },
-              {
-                "type": "TextBody",
-                "text": "Choose one property to view details or start enquiry."
-              },
-              {
                 "type": "RadioButtonsGroup",
                 "label": "Available Properties",
                 "name": "propertyId",
-                "description": "Each card shows image, price, location, and a short summary.",
                 "data-source": "${data.property_options}",
                 "media-size": "large",
                 "required": true

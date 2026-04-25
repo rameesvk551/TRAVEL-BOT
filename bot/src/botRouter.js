@@ -2,7 +2,7 @@ const { shouldHandoff, handoffToAgent, forwardToAgent } = require('./handlers/ha
 const { handlePaymentMessage } = require('./handlers/paymentHandler');
 const { handleReview } = require('./handlers/reviewHandler');
 const { handleTravelFlow, createFreshGreetingLead } = require('./handlers/travelFlowHandler');
-const { isCampaignAction, handleCampaignAction } = require('./handlers/campaignActionHandler');
+const { isCampaignAction, handleCampaignAction, tryHandleCampaignTextAction } = require('./handlers/campaignActionHandler');
 const { updateSession } = require('./utils/sessionManager');
 
 const RESET_TO_MENU_KEYWORDS = new Set([
@@ -86,10 +86,21 @@ async function routeMessage(session, incoming, customer, agency) {
       return;
     }
 
+    // Template quick replies arrive with an actionId too, but their payload is often
+    // just plain text like "View Packages" instead of a campaign_* action id.
+    // Give campaign text matching a chance before falling back to the generic flow.
+    if (await tryHandleCampaignTextAction(session, messageText || actionId, customer, agency)) {
+      return;
+    }
+
     await handleTravelFlow(session, incoming, customer, agency, {
       handoffToAgent,
       forwardToAgent,
     });
+    return;
+  }
+
+  if (await tryHandleCampaignTextAction(session, messageText, customer, agency)) {
     return;
   }
 

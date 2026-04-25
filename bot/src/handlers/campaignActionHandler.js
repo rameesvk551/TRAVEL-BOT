@@ -2,15 +2,26 @@
 // Handles campaign CTA, carousel, package, property, and custom-trip actions.
 
 const path = require('path');
+const { Op } = require('sequelize');
 const {
   Campaign,
   CampaignRecipient,
   Package,
   Property,
+  WhatsAppFlow,
 } = require(path.resolve(__dirname, '../../../backend/src/models/index.ts'));
 const whatsappService = require(path.resolve(__dirname, '../../../backend/src/services/whatsappService.ts'));
 const { updateSession } = require('../utils/sessionManager');
-const { ensureLead } = require('./travelFlowHandler');
+const {
+  ensureLead,
+  getFlowBase64Image,
+  buildFlowPackageOptions,
+  buildFlowPropertyOptions,
+  getAgencyTripFlowId,
+  isMetaTripFlowConfigured,
+  PROPERTY_FLOW_FIRST_SCREEN_ID,
+  CUSTOM_TRIP_FLOW_FIRST_SCREEN_ID,
+} = require('./travelFlowHandler');
 
 const CAMPAIGN_PREFIXES = [
   'campaign_view_packages:',
@@ -40,9 +51,43 @@ function parseAction(actionId = '') {
   return String(actionId || '').split(':');
 }
 
+function normalizeText(value = '') {
+  return String(value || '').trim().toLowerCase();
+}
+
+function normalizeLooseText(value = '') {
+  return normalizeText(value)
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function textIncludesAny(text, candidates = []) {
+  const normalized = normalizeLooseText(text);
+  return candidates.some((candidate) => normalized.includes(normalizeLooseText(candidate)));
+}
+
 async function getCampaign(campaignId, agency) {
   if (!campaignId) return null;
   return Campaign.findOne({ where: { id: campaignId, agencyId: agency.id } });
+}
+
+async function getLatestCampaignRecipient(customer, agency) {
+  if (!customer?.id || !agency?.id) return null;
+
+  return CampaignRecipient.findOne({
+    where: {
+      customerId: customer.id,
+      status: { [Op.in]: ['SENT', 'DELIVERED', 'READ', 'REPLIED'] },
+    },
+    include: [{
+      model: Campaign,
+      as: 'campaign',
+      where: { agencyId: agency.id },
+      required: true,
+    }],
+    order: [['sentAt', 'DESC'], ['createdAt', 'DESC']],
+  });
 }
 
 function getSections(campaign) {
@@ -66,6 +111,51 @@ function getSections(campaign) {
   }
 
   return [];
+}
+
+async function getPublishedFlowByType(agencyId, flowType) {
+  if (!agencyId || !flowType) return null;
+
+  return WhatsAppFlow.findOne({
+    where: {
+      agencyId,
+      flowType,
+      status: 'PUBLISHED',
+      metaFlowId: { [Op.ne]: null },
+    },
+    order: [['updatedAt', 'DESC']],
+  });
+}
+
+async function getPackageFlowConfig(agency) {
+  const packageFlow = await getPublishedFlowByType(agency.id, 'PACKAGE');
+  const legacyFlowId = getAgencyTripFlowId(agency);
+  if (!packageFlow?.metaFlowId && !legacyFlowId) return null;
+
+  return {
+    flowId: packageFlow?.metaFlowId || legacyFlowId,
+    firstScreenId: packageFlow?.firstScreenId || null,
+  };
+}
+
+async function getPropertyFlowConfig(agency) {
+  const propertyFlow = await getPublishedFlowByType(agency.id, 'PROPERTY');
+  if (!propertyFlow?.metaFlowId) return null;
+
+  return {
+    flowId: propertyFlow.metaFlowId,
+    firstScreenId: propertyFlow.firstScreenId || PROPERTY_FLOW_FIRST_SCREEN_ID,
+  };
+}
+
+async function getCustomTripFlowConfig(agency) {
+  const customTripFlow = await getPublishedFlowByType(agency.id, 'CUSTOM_TRIP');
+  if (!customTripFlow?.metaFlowId) return null;
+
+  return {
+    flowId: customTripFlow.metaFlowId,
+    firstScreenId: customTripFlow.firstScreenId || CUSTOM_TRIP_FLOW_FIRST_SCREEN_ID,
+  };
 }
 
 async function trackCampaignClick(campaignId, customer, agency, details = {}) {
@@ -207,6 +297,60 @@ async function showCampaignSection(session, campaignId, sectionKey, customer, ag
   return showCampaignItems(session, campaign, section, items, customer, agency);
 }
 
+async function openCampaignPackageFlow(campaign, section, items, customer, agency, ctx) {
+  const packageFlow = await getPackageFlowConfig(agency);
+  if (!packageFlow?.flowId) return null;
+
+  const packageOptions = await buildFlowPackageOptions(items.map((pkg) => ({ pkg })));
+  const pkgSectionLabel = escapeMarkdown(section?.label || 'View Packages');
+  return whatsappService.sendFlowMessage(
+    customer.phone,
+    `Browse selected packages from ${pkgSectionLabel} 👇`,
+    {
+      flowId: packageFlow.flowId,
+      firstScreenId: packageFlow.firstScreenId,
+      flowCta: String(section?.label || 'View Packages').slice(0, 30),
+      flowToken: `campaign-pkg|${agency.id}|${campaign.id}|${customer.id}|${Date.now()}`,
+      data: {
+        category_label: escapeMarkdown(section?.label || 'Featured').slice(0, 20),
+        package_options: packageOptions,
+      },
+    },
+    ctx,
+    {
+      headerText: pkgSectionLabel,
+      footerText: 'Reply LIST if the flow does not open.',
+    }
+  );
+}
+
+async function openCampaignPropertyFlow(campaign, section, items, customer, agency, ctx) {
+  const propertyFlow = await getPropertyFlowConfig(agency);
+  if (!propertyFlow?.flowId) return null;
+
+  const propertyOptions = await buildFlowPropertyOptions(items);
+  const propSectionLabel = escapeMarkdown(section?.label || 'View Properties');
+  return whatsappService.sendFlowMessage(
+    customer.phone,
+    `Browse selected properties from ${propSectionLabel} 👇`,
+    {
+      flowId: propertyFlow.flowId,
+      firstScreenId: propertyFlow.firstScreenId,
+      flowCta: String(section?.label || 'View Properties').slice(0, 30),
+      flowToken: `campaign-prop|${agency.id}|${campaign.id}|${customer.id}|${Date.now()}`,
+      data: {
+        property_category_label: escapeMarkdown(section?.label || 'Featured').slice(0, 20),
+        property_options: propertyOptions,
+      },
+    },
+    ctx,
+    {
+      headerText: propSectionLabel,
+      footerText: 'Reply LIST if the flow does not open.',
+    }
+  );
+}
+
 async function showCampaignItems(session, campaign, section, items, customer, agency) {
   const ctx = { customerId: customer.id, agencyId: agency.id };
   const itemType = String(section?.itemType || 'PACKAGE').toUpperCase();
@@ -243,6 +387,20 @@ async function showCampaignItems(session, campaign, section, items, customer, ag
     notes: `Viewed ${itemType.toLowerCase()} items from campaign: ${campaign.name}`,
   });
 
+  if (itemType === 'PACKAGE') {
+    const flowResponse = await openCampaignPackageFlow(campaign, section, items, customer, agency, ctx);
+    if (flowResponse?.status !== 'FAILED') {
+      return flowResponse;
+    }
+  }
+
+  if (itemType === 'PROPERTY') {
+    const flowResponse = await openCampaignPropertyFlow(campaign, section, items, customer, agency, ctx);
+    if (flowResponse?.status !== 'FAILED') {
+      return flowResponse;
+    }
+  }
+
   if (items.length <= 3) {
     const buttons = items.map((item) => ({
       id: `campaign_item_pick:${campaign.id}:${itemType}:${item.id}`,
@@ -266,11 +424,11 @@ async function showCampaignItems(session, campaign, section, items, customer, ag
 
   return whatsappService.sendListMessage(
     customer.phone,
-    `Here are more ${itemType === 'PROPERTY' ? 'properties' : 'packages'} from ${escapeMarkdown(campaign.name)}.`,
+    `Here are more ${itemType === 'PROPERTY' ? 'properties' : 'packages'} available for you.`,
     'View Deals',
     [{ title: section?.label || 'Available Deals', rows }],
     ctx,
-    { headerText: campaign.name, footerText: 'Tap one item for full details.' }
+    { headerText: section?.label || 'Available Deals', footerText: 'Tap one item for full details.' }
   );
 }
 
@@ -300,10 +458,36 @@ async function showCampaignOverview(session, campaignId, customer, agency) {
     customer.phone,
     'What would you like to explore?',
     'Explore',
-    [{ title: 'Campaign Deals', rows }],
+    [{ title: 'Available Deals', rows }],
     ctx,
-    { headerText: campaign.name, footerText: 'Choose a section to continue.' }
+    { headerText: 'Explore Deals', footerText: 'Choose a section to continue.' }
   );
+}
+
+async function showCampaignCarouselOthers(session, campaignId, requestedItemType, customer, agency) {
+  const campaign = await getCampaign(campaignId, agency);
+  const ctx = { customerId: customer.id, agencyId: agency.id };
+  if (!campaign) {
+    return whatsappService.sendTextMessage(customer.phone, 'This campaign is no longer available.', ctx);
+  }
+
+  const normalizedItemType = String(requestedItemType || '').toUpperCase();
+  await trackCampaignClick(campaign.id, customer, agency, {
+    clickedAction: `SEE_OTHERS_${normalizedItemType || 'UNKNOWN'}`,
+    selectedItemType: normalizedItemType || null,
+  });
+
+  const groups = await resolveAllCampaignItems(campaign, agency);
+  const matchingGroups = groups.filter(({ section }) => String(section?.itemType || '').toUpperCase() === normalizedItemType);
+
+  if (!matchingGroups.length) {
+    return showCampaignOverview(session, campaignId, customer, agency);
+  }
+
+  const preferredGroup = matchingGroups.find(({ section }) => String(section?.key || '').startsWith('carousel_'))
+    || matchingGroups[0];
+
+  return showCampaignItems(session, campaign, preferredGroup.section, preferredGroup.items, customer, agency);
 }
 
 async function showCampaignPackageDetail(session, campaignId, packageId, customer, agency, action = 'PACKAGE_SELECTED') {
@@ -496,6 +680,43 @@ async function startCustomTripLead(session, campaign, customer, agency) {
     notes: `Custom trip request from campaign: ${campaign.name}`,
   });
 
+  const customTripFlow = await getCustomTripFlowConfig(agency);
+  if (customTripFlow?.flowId) {
+    await updateSession(session, {
+      currentStep: 'COMPLETE',
+      collectedData: {
+        activeLeadId: lead.id,
+        campaignId: campaign.id,
+        campaignName: campaign.name,
+        enquiryDraft: customer.name ? { name: customer.name } : {},
+      },
+    });
+
+    const flowResponse = await whatsappService.sendFlowMessage(
+      customer.phone,
+      `Share your custom trip preferences 👇`,
+      {
+        flowId: customTripFlow.flowId,
+        firstScreenId: customTripFlow.firstScreenId,
+        flowCta: 'Custom Trip',
+        flowToken: `campaign-custom|${agency.id}|${campaign.id}|${customer.id}|${Date.now()}`,
+        data: {
+          campaign_name: escapeMarkdown(campaign.name).slice(0, 60),
+          customer_name: String(customer.name || '').trim(),
+        },
+      },
+      ctx,
+      {
+        headerText: 'Custom Trip',
+        footerText: 'Submit your trip preferences in the flow.',
+      }
+    );
+
+    if (flowResponse?.status !== 'FAILED') {
+      return flowResponse;
+    }
+  }
+
   await attachLeadToRecipient(campaign.id, customer, lead, { selectedItemType: 'CUSTOM_TRIP', selectedItemId: null, flowSubmittedAt: new Date() });
   await updateSession(session, {
     currentStep: 'ENQUIRY_NAME',
@@ -563,6 +784,10 @@ async function handleCampaignAction(session, actionId, customer, agency) {
 
   if (actionId.startsWith('campaign_carousel_others:')) {
     const campaignId = parts[1];
+    const itemType = parts[2];
+    if (itemType) {
+      return showCampaignCarouselOthers(session, campaignId, itemType, customer, agency);
+    }
     return showCampaignOverview(session, campaignId, customer, agency);
   }
 
@@ -570,6 +795,58 @@ async function handleCampaignAction(session, actionId, customer, agency) {
     const [, campaignId, propertyId] = parts;
     return startPropertyLead(session, campaignId, propertyId, customer, agency);
   }
+}
+
+async function tryHandleCampaignTextAction(session, text, customer, agency) {
+  const normalized = normalizeText(text);
+  if (!normalized) return false;
+
+  const recipient = await getLatestCampaignRecipient(customer, agency);
+  const campaign = recipient?.campaign;
+  if (!campaign) return false;
+
+  const sections = getSections(campaign);
+  if (!sections.length) return false;
+
+  if (textIncludesAny(normalized, ['view packages', 'packages', 'show packages'])) {
+    const packageSection = sections.find((section) => String(section.itemType || '').toUpperCase() === 'PACKAGE')
+      || sections[0];
+    if (!packageSection) return false;
+    await showCampaignSection(session, campaign.id, packageSection.key, customer, agency);
+    return true;
+  }
+
+  if (textIncludesAny(normalized, ['view properties', 'properties', 'show properties'])) {
+    const propertySection = sections.find((section) => String(section.itemType || '').toUpperCase() === 'PROPERTY');
+    if (!propertySection) return false;
+    await showCampaignSection(session, campaign.id, propertySection.key, customer, agency);
+    return true;
+  }
+
+  if (textIncludesAny(normalized, ['custom trip', 'plan trip', 'customize trip'])) {
+    const customTripSection = sections.find((section) => String(section.itemType || '').toUpperCase() === 'CUSTOM_TRIP');
+    if (!customTripSection) return false;
+    await startCustomTripLead(session, campaign, customer, agency);
+    return true;
+  }
+
+  const matchingSection = sections.find((section) => {
+    const sectionLabel = String(section.label || section.key || '').trim();
+    if (!sectionLabel) return false;
+    return textIncludesAny(normalized, [sectionLabel, section.key]);
+  });
+
+  if (matchingSection) {
+    if (String(matchingSection.itemType || '').toUpperCase() === 'CUSTOM_TRIP') {
+      await startCustomTripLead(session, campaign, customer, agency);
+      return true;
+    }
+
+    await showCampaignSection(session, campaign.id, matchingSection.key, customer, agency);
+    return true;
+  }
+
+  return false;
 }
 
 function formatItemRow(item, itemType) {
@@ -606,5 +883,8 @@ function buildPackageHighlights(pkg) {
 module.exports = {
   isCampaignAction,
   handleCampaignAction,
+  tryHandleCampaignTextAction,
   showCampaignPackages: (session, campaignId, customer, agency) => showCampaignOverview(session, campaignId, customer, agency),
+  showCampaignPropertyDetail,
+  showCampaignPackageDetail,
 };

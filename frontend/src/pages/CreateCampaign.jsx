@@ -8,7 +8,7 @@ import {
   Clock, Filter, Eye, AlertTriangle, Upload, UserPlus,
   Package, Globe, Plane, ShieldCheck, FileSpreadsheet,
   Inbox, UserCheck, Star, ArrowLeft, Zap, Target,
-  Home, Layers, Image, Video,
+  Home, Layers, Image, Video, Plus, X,
 } from 'lucide-react';
 import { useCreateCampaign, useUpdateCampaign, usePreviewAudience, useCampaign } from '../hooks/useCampaigns';
 import { useAgencyTemplates, useCreateTemplate, useSubmitTemplate } from '../hooks/useTemplates';
@@ -19,9 +19,6 @@ import { propertiesApi } from '../api/propertiesApi';
 const CAMPAIGN_TYPES = [
   { value: 'BROADCAST', label: 'Broadcast', icon: Megaphone, desc: 'General announcement to all or filtered audiences', gradient: 'from-blue-500 to-indigo-600' },
   { value: 'PROMOTIONAL', label: 'Promotional', icon: Gift, desc: 'Special offers, discounts, and deals', gradient: 'from-[#f5f5f5]0 to-[#404040]' },
-  { value: 'RE_ENGAGEMENT', label: 'Re-engagement', icon: RotateCcw, desc: 'Win back inactive customers', gradient: 'from-amber-500 to-orange-600' },
-  { value: 'SEASONAL', label: 'Seasonal', icon: Sparkles, desc: 'Holiday/season-based campaigns', gradient: 'from-violet-500 to-purple-600' },
-  { value: 'REVIEW_COLLECTION', label: 'Review Collection', icon: Star, desc: 'Request trip reviews manually', gradient: 'from-pink-500 to-rose-600' },
 ];
 
 const AUDIENCE_MODES = [
@@ -389,6 +386,8 @@ export default function CreateCampaign() {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [approvalStatus, setApprovalStatus] = useState(null);
   const [prebuiltPreviewId, setPrebuiltPreviewId] = useState('show_properties');
+  const [showMediaModal, setShowMediaModal] = useState(false);
+  const [mediaSearch, setMediaSearch] = useState('');
   const fileInputRef = useRef(null);
 
   // Load edit data when available
@@ -669,7 +668,17 @@ export default function CreateCampaign() {
     }
     return [];
   });
-  const featuredCtaRecord = selectedCtaCatalogRecords.find((item) => getCatalogItemMediaUrl(item)) || null;
+  const allCatalogRecords = [
+    ...activePackages.map((pkg) => ({ ...pkg, itemType: 'PACKAGE' })),
+    ...activeProperties.map((property) => ({ ...property, itemType: 'PROPERTY' })),
+  ];
+  const configuredFeaturedCtaRecord = allCatalogRecords.find((item) =>
+    item.itemType === formData.ctaConfig?.featuredItemType
+    && item.id === formData.ctaConfig?.featuredItemId
+  ) || null;
+  const featuredCtaRecord = configuredFeaturedCtaRecord && getCatalogItemMediaUrl(configuredFeaturedCtaRecord)
+    ? configuredFeaturedCtaRecord
+    : null;
   const ctaNeedsFeaturedMedia = builderMode === 'cta' && formData.mediaType === 'IMAGE';
   const compatibleApprovedTemplates = approvedTemplates.filter((template) =>
     isTemplateMediaCompatible(template, builderMode, formData.mediaType)
@@ -998,38 +1007,9 @@ export default function CreateCampaign() {
           {/* ───── Step 2: Template ───── */}
           {step === 1 && (
             <div className="w-full space-y-6 animate-fade-in">
-
-
-
-
-
-
-
-
-
-              {/* ── Open Templates Banner ── */}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
               <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
                 <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_390px]">
                   <div className="space-y-4">
-
-
                     {builderMode === 'cta' && (
                       <div className="space-y-4">
                         <div className="rounded-2xl border border-slate-200 bg-white p-5">
@@ -1079,19 +1059,6 @@ export default function CreateCampaign() {
                             })}
                           </div>
                         </div>
-
-                        {ctaNeedsFeaturedMedia && (
-                          <div className={`rounded-2xl border p-4 ${featuredCtaRecord ? 'border-emerald-200 bg-emerald-50/70' : 'border-amber-200 bg-amber-50/70'}`}>
-                            <p className={`text-sm font-bold ${featuredCtaRecord ? 'text-emerald-900' : 'text-amber-900'}`}>
-                              CTA header media
-                            </p>
-                            <p className={`mt-1 text-xs ${featuredCtaRecord ? 'text-emerald-700' : 'text-amber-700'}`}>
-                              {featuredCtaRecord
-                                ? `Meta will use the image from ${featuredCtaRecord.name} as the CTA header media.`
-                                : 'Select at least one package or property with an image so the CTA template can send valid media.'}
-                            </p>
-                          </div>
-                        )}
 
                         {packageSection.enabled && (
                           <div className="rounded-2xl border border-slate-200 bg-white p-5">
@@ -1421,20 +1388,29 @@ export default function CreateCampaign() {
                     <div className="rounded-xl bg-[#efeae2] p-3 shadow-sm ring-1 ring-slate-200">
                       <div className="ml-auto max-w-[92%] rounded-[12px] rounded-tr-sm bg-[#dcf8c6] p-3 text-xs text-slate-800 shadow-sm">
                         {builderMode === 'cta' && ctaNeedsFeaturedMedia && (
-                          <div className="mb-3 overflow-hidden rounded-lg border border-black/10 bg-white">
+                          <div className="mb-3 overflow-hidden rounded-lg border border-black/10 bg-white group relative">
                             {featuredCtaRecord ? (
                               <>
-                                <div className="aspect-[4/3] bg-slate-100">
+                                <div className="aspect-[4/3] bg-slate-100 relative">
                                   <img src={getCatalogItemMediaUrl(featuredCtaRecord)} alt="" className="h-full w-full object-cover" />
                                 </div>
-                                <div className="border-t border-black/10 px-2 py-1 text-[10px] font-bold text-slate-600">
-                                  {featuredCtaRecord.name}
+                                <div className="border-t border-black/10 px-2 py-1 text-[10px] font-bold text-slate-600 flex items-center justify-between">
+                                  <span>{featuredCtaRecord.name}</span>
+                                </div>
+                                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center z-10">
+                                  <button onClick={() => setShowMediaModal(true)} className="px-4 py-2 bg-white rounded-lg text-xs font-bold text-slate-900 shadow-lg flex items-center gap-2 hover:scale-105 transition-transform">
+                                    <Plus className="w-4 h-4"/> Change Media
+                                  </button>
                                 </div>
                               </>
                             ) : (
-                              <div className="flex aspect-[4/3] items-center justify-center bg-slate-100 text-slate-400">
-                                <Image className="h-7 w-7" />
-                              </div>
+                              <button onClick={() => setShowMediaModal(true)} className="flex w-full flex-col aspect-[4/3] items-center justify-center bg-slate-100 text-slate-500 hover:bg-slate-200 transition">
+                                <div className="w-10 h-10 rounded-full bg-white shadow-sm flex items-center justify-center mb-2">
+                                  <Plus className="h-5 w-5 text-slate-700" />
+                                </div>
+                                <span className="text-xs font-bold text-slate-600">Add Package / Property</span>
+                                <span className="text-[10px] text-slate-400 mt-1">Select header media</span>
+                              </button>
                             )}
                           </div>
                         )}
@@ -2203,6 +2179,87 @@ export default function CreateCampaign() {
           )}
         </div>
       </div>
+      {/* ── Media Selection Modal ── */}
+      {showMediaModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6">
+          <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setShowMediaModal(false)} />
+          <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[85vh] flex flex-col overflow-hidden animate-scale-in">
+            <div className="flex items-center justify-between border-b border-slate-100 p-5">
+              <div>
+                <h3 className="text-lg font-bold text-slate-900">Select Header Media</h3>
+                <p className="text-xs text-slate-500 mt-0.5">Choose a package or property to feature in the CTA image header.</p>
+              </div>
+              <button onClick={() => setShowMediaModal(false)} className="p-2 rounded-xl hover:bg-slate-100 transition text-slate-500">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-4 border-b border-slate-100 bg-slate-50/50">
+              <div className="relative">
+                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Search packages or properties..."
+                  value={mediaSearch}
+                  onChange={(e) => setMediaSearch(e.target.value)}
+                  className="w-full rounded-xl border border-slate-200 bg-white pl-10 pr-4 py-2.5 text-sm text-slate-700 outline-none transition focus:border-teal-400 focus:ring-4 focus:ring-teal-400/10"
+                />
+              </div>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 bg-slate-50/30">
+              <div className="grid gap-2">
+                {allCatalogRecords
+                  .filter(item => getCatalogItemMediaUrl(item) && item.name.toLowerCase().includes(mediaSearch.toLowerCase()))
+                  .map(item => {
+                    const isSelected = formData.ctaConfig?.featuredItemType === item.itemType && formData.ctaConfig?.featuredItemId === item.id;
+                    return (
+                      <button
+                        key={`${item.itemType}-${item.id}`}
+                        onClick={() => {
+                          setFormData((prev) => ({
+                            ...prev,
+                            ctaConfig: {
+                              ...(prev.ctaConfig || {}),
+                              featuredItemType: item.itemType,
+                              featuredItemId: item.id,
+                            },
+                          }));
+                          setShowMediaModal(false);
+                        }}
+                        className={`flex w-full items-center gap-3 rounded-2xl border p-3 text-left transition ${
+                          isSelected
+                            ? 'border-slate-900 bg-slate-50 shadow-sm'
+                            : 'border-slate-200 bg-white hover:border-slate-300 hover:shadow-sm'
+                        }`}
+                      >
+                        <img src={getCatalogItemMediaUrl(item)} alt="" className="h-14 w-14 rounded-xl object-cover shadow-sm" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-bold text-slate-900 truncate">{item.name}</p>
+                          <p className="text-[11px] text-slate-500 truncate mt-0.5">{item.itemType === 'PROPERTY' ? item.location || 'Property' : (item.destinations || []).join(', ') || 'Package'}</p>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <div className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-1 rounded-md uppercase tracking-wider">
+                            {item.itemType}
+                          </div>
+                          {isSelected && (
+                            <div className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-900 text-white">
+                              <Check className="h-3.5 w-3.5" strokeWidth={3} />
+                            </div>
+                          )}
+                        </div>
+                      </button>
+                    );
+                })}
+                {allCatalogRecords.filter(item => getCatalogItemMediaUrl(item) && item.name.toLowerCase().includes(mediaSearch.toLowerCase())).length === 0 && (
+                  <div className="text-center py-10 px-4">
+                    <p className="text-sm font-bold text-slate-600">No media items found</p>
+                    <p className="text-xs text-slate-500 mt-1">Try a different search term or add properties/packages with images.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

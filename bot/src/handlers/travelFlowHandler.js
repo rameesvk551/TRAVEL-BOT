@@ -8,6 +8,8 @@ const {
   Lead,
   Customer,
   Agent,
+  Property,
+  CampaignRecipient,
 } = require(path.resolve(__dirname, '../../../backend/src/models/index.ts'));
 const whatsappService = require(path.resolve(__dirname, '../../../backend/src/services/whatsappService.ts'));
 const leadService = require(path.resolve(__dirname, '../../../backend/src/services/leadService.ts'));
@@ -31,6 +33,8 @@ const FLOW_CTA = process.env.WHATSAPP_TRIP_FLOW_CTA || 'View Packages';
 const FLOW_ENQUIRY_ID = normalizeText(process.env.WHATSAPP_TRIP_ENQUIRY_FLOW_ID || '');
 const FLOW_ENQUIRY_FIRST_SCREEN_ID = process.env.WHATSAPP_TRIP_FLOW_ENQUIRY_FIRST_SCREEN_ID || 'ENQUIRY_FORM';
 const FLOW_ENQUIRY_CTA = process.env.WHATSAPP_TRIP_FLOW_ENQUIRY_CTA || 'Share Enquiry';
+const PROPERTY_FLOW_FIRST_SCREEN_ID = process.env.WHATSAPP_PROPERTY_FLOW_FIRST_SCREEN_ID || 'PROPERTY_SELECTOR';
+const CUSTOM_TRIP_FLOW_FIRST_SCREEN_ID = process.env.WHATSAPP_CUSTOM_TRIP_FLOW_FIRST_SCREEN_ID || 'CUSTOM_TRIP_FORM';
 const FLOW_PLACEHOLDER_IMAGE = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+yh8cAAAAASUVORK5CYII=';
 const FLOW_IMAGE_TRANSFORM = 'w_400,h_300,c_fill,f_jpg,q_auto';
 const imageCache = new Map();
@@ -119,7 +123,13 @@ function getProfile(session) {
     packageResults: Array.isArray(session.collectedData?.packageResults)
       ? session.collectedData.packageResults
       : [],
+    propertyResults: Array.isArray(session.collectedData?.propertyResults)
+      ? session.collectedData.propertyResults
+      : [],
     selectedPackageId: session.collectedData?.selectedPackageId || null,
+    selectedPropertyId: session.collectedData?.selectedPropertyId || null,
+    campaignId: session.collectedData?.campaignId || null,
+    campaignName: session.collectedData?.campaignName || null,
     activeLeadId: session.collectedData?.activeLeadId || null,
     enquiryDraft: {
       name: enquiry.name || '',
@@ -160,6 +170,15 @@ async function sendInvalidChoice(session, customer, agency, fallback = null) {
   }
 
   return renderCurrentStep(session, customer, agency, { resendOnly: true });
+}
+
+async function reopenPackageContext(session, customer, agency, profile = getProfile(session)) {
+  if (profile.campaignId) {
+    const { showCampaignPackages } = require('./campaignActionHandler');
+    return showCampaignPackages(session, profile.campaignId, customer, agency);
+  }
+
+  return openPackageFlow(session, customer, agency, profile.packageCategory || 'DOMESTIC');
 }
 
 function firstName(customer) {
@@ -412,6 +431,16 @@ async function buildFlowPackageOptions(packages) {
     description: `${formatCurrency(pkg.basePrice)} • ${escapeMarkdown(pkg.duration || 'Custom itinerary')}\n${buildShortDescription(pkg)}`.slice(0, 300),
     metadata: escapeMarkdown(categoryLabel(inferPackageCategory(pkg))).slice(0, 20),
     image: await getFlowBase64Image(pkg.imageUrl),
+  })));
+}
+
+async function buildFlowPropertyOptions(properties) {
+  return Promise.all(properties.map(async (property) => ({
+    id: property.id,
+    title: escapeMarkdown(property.name).slice(0, 30) || 'Property',
+    description: `${property.pricePerNight ? `${formatCurrency(property.pricePerNight)}/night` : 'Price on request'} â€¢ ${escapeMarkdown(property.location || 'Selected destination')}\n${escapeMarkdown(property.description || `${property.propertyType || 'Property'} stay with curated support`).slice(0, 180)}`.slice(0, 300),
+    metadata: escapeMarkdown([property.propertyType || 'Property', property.location || ''].filter(Boolean).join(' - ')).slice(0, 20),
+    image: await getFlowBase64Image(property.imageUrl),
   })));
 }
 
@@ -795,6 +824,7 @@ async function showPackageDetail(session, customer, agency, packageId) {
 }
 
 async function handleFlowSubmission(session, incoming, customer, agency) {
+  const profile = getProfile(session);
   const rawResponse = incoming?.flowResponse || {};
   const response = typeof rawResponse === 'string'
     ? (() => {
@@ -818,6 +848,24 @@ async function handleFlowSubmission(session, incoming, customer, agency) {
       ? response.enquiryForm
       : {};
 
+  const propertyFormResponse = response.property_selector_form && typeof response.property_selector_form === 'object'
+    ? response.property_selector_form
+    : response.propertySelectorForm && typeof response.propertySelectorForm === 'object'
+      ? response.propertySelectorForm
+      : {};
+
+  const propertyEnquiryFormResponse = response.property_enquiry_form && typeof response.property_enquiry_form === 'object'
+    ? response.property_enquiry_form
+    : response.propertyEnquiryForm && typeof response.propertyEnquiryForm === 'object'
+      ? response.propertyEnquiryForm
+      : {};
+
+  const customTripFormResponse = response.custom_trip_form && typeof response.custom_trip_form === 'object'
+    ? response.custom_trip_form
+    : response.customTripForm && typeof response.customTripForm === 'object'
+      ? response.customTripForm
+      : {};
+
   const packageId = normalizeText(
     response.packageId
     || response.package_id
@@ -833,6 +881,21 @@ async function handleFlowSubmission(session, incoming, customer, agency) {
     || enquiryFormResponse.selectedPackage
   );
 
+  const propertyId = normalizeText(
+    response.propertyId
+    || response.property_id
+    || response.selected_property
+    || response.selectedProperty
+    || propertyFormResponse.propertyId
+    || propertyFormResponse.property_id
+    || propertyFormResponse.selected_property
+    || propertyFormResponse.selectedProperty
+    || propertyEnquiryFormResponse.propertyId
+    || propertyEnquiryFormResponse.property_id
+    || propertyEnquiryFormResponse.selected_property
+    || propertyEnquiryFormResponse.selectedProperty
+  );
+
   const enquiryPayload = {
     name: normalizeText(
       response.name
@@ -841,6 +904,12 @@ async function handleFlowSubmission(session, incoming, customer, agency) {
       || enquiryFormResponse.name
       || enquiryFormResponse.fullName
       || enquiryFormResponse.full_name
+      || propertyEnquiryFormResponse.name
+      || propertyEnquiryFormResponse.fullName
+      || propertyEnquiryFormResponse.full_name
+      || customTripFormResponse.name
+      || customTripFormResponse.fullName
+      || customTripFormResponse.full_name
     ),
     place: normalizeText(
       response.place
@@ -849,6 +918,14 @@ async function handleFlowSubmission(session, incoming, customer, agency) {
       || enquiryFormResponse.place
       || enquiryFormResponse.city
       || enquiryFormResponse.location
+      || response.destination
+      || propertyEnquiryFormResponse.place
+      || propertyEnquiryFormResponse.city
+      || propertyEnquiryFormResponse.location
+      || customTripFormResponse.place
+      || customTripFormResponse.city
+      || customTripFormResponse.location
+      || customTripFormResponse.destination
     ),
     travelDate: normalizeText(
       response.travelDate
@@ -857,6 +934,12 @@ async function handleFlowSubmission(session, incoming, customer, agency) {
       || enquiryFormResponse.travelDate
       || enquiryFormResponse.travel_date
       || enquiryFormResponse.travelMonth
+      || propertyEnquiryFormResponse.travelDate
+      || propertyEnquiryFormResponse.travel_date
+      || propertyEnquiryFormResponse.travelMonth
+      || customTripFormResponse.travelDate
+      || customTripFormResponse.travel_date
+      || customTripFormResponse.travelMonth
     ),
     travellers: normalizeText(
       response.travellers
@@ -867,6 +950,14 @@ async function handleFlowSubmission(session, incoming, customer, agency) {
       || enquiryFormResponse.travelers
       || enquiryFormResponse.travellerCount
       || enquiryFormResponse.travelerCount
+      || propertyEnquiryFormResponse.travellers
+      || propertyEnquiryFormResponse.travelers
+      || propertyEnquiryFormResponse.travellerCount
+      || propertyEnquiryFormResponse.travelerCount
+      || customTripFormResponse.travellers
+      || customTripFormResponse.travelers
+      || customTripFormResponse.travellerCount
+      || customTripFormResponse.travelerCount
     ),
     budgetPerPerson: normalizeText(
       response.budget
@@ -875,6 +966,12 @@ async function handleFlowSubmission(session, incoming, customer, agency) {
       || enquiryFormResponse.budget
       || enquiryFormResponse.budgetPerPerson
       || enquiryFormResponse.budget_per_person
+      || propertyEnquiryFormResponse.budget
+      || propertyEnquiryFormResponse.budgetPerPerson
+      || propertyEnquiryFormResponse.budget_per_person
+      || customTripFormResponse.budget
+      || customTripFormResponse.budgetPerPerson
+      || customTripFormResponse.budget_per_person
     ),
     notes: normalizeText(
       response.notes
@@ -883,6 +980,12 @@ async function handleFlowSubmission(session, incoming, customer, agency) {
       || enquiryFormResponse.notes
       || enquiryFormResponse.otherDetails
       || enquiryFormResponse.other_details
+      || propertyEnquiryFormResponse.notes
+      || propertyEnquiryFormResponse.otherDetails
+      || propertyEnquiryFormResponse.other_details
+      || customTripFormResponse.notes
+      || customTripFormResponse.otherDetails
+      || customTripFormResponse.other_details
     ),
   };
 
@@ -894,12 +997,13 @@ async function handleFlowSubmission(session, incoming, customer, agency) {
   logFlowEvent('flow_submission_received', customer, agency, {
     step: session?.currentStep || null,
     selectedPackageId: packageId || null,
+    selectedPropertyId: propertyId || null,
     flowName: normalizeText(incoming?.flowName || ''),
     hasFlowEnquiryFields,
   });
 
-  if (!packageId) {
-    return sendInvalidChoice(session, customer, agency, () => openPackageFlow(session, customer, agency, getProfile(session).packageCategory));
+  if (!packageId && !propertyId && !hasFlowEnquiryFields) {
+    return sendInvalidChoice(session, customer, agency, () => reopenPackageContext(session, customer, agency, profile));
   }
 
   if (hasFlowEnquiryFields) {
@@ -909,14 +1013,28 @@ async function handleFlowSubmission(session, incoming, customer, agency) {
         'Please submit valid enquiry details in the form. Name, travel date, travellers, and budget are required.',
         getContext(customer, agency)
       );
-      return showPackageDetail(session, customer, agency, packageId);
+      if (propertyId) {
+        const { showCampaignPropertyDetail } = require('./campaignActionHandler');
+        if (profile.campaignId) {
+          return showCampaignPropertyDetail(session, profile.campaignId, propertyId, customer, agency, 'PROPERTY_SELECTED');
+        }
+        return reopenPackageContext(session, customer, agency, profile);
+      }
+      if (!packageId && profile.campaignId) {
+        return reopenPackageContext(session, customer, agency, profile);
+      }
+      return showPackageDetail(session, customer, agency, packageId || profile.selectedPackageId);
     }
 
     await transitionTo(session, STEPS.COMPLETE, {
-      selectedPackageId: packageId,
+      selectedPackageId: packageId || profile.selectedPackageId || null,
+      selectedPropertyId: propertyId || profile.selectedPropertyId || null,
+      campaignId: profile.campaignId || null,
+      campaignName: profile.campaignName || null,
       enquiryDraft: {
-        ...getProfile(session).enquiryDraft,
+        ...profile.enquiryDraft,
         name: enquiryPayload.name,
+        place: enquiryPayload.place,
         travelDate: enquiryPayload.travelDate,
         travellers,
         budgetPerPerson,
@@ -924,7 +1042,29 @@ async function handleFlowSubmission(session, incoming, customer, agency) {
       },
     });
 
-    return finalizeEnquiry(session, customer, agency);
+    if (propertyId) {
+      return finalizePropertyFlowEnquiry(session, customer, agency, propertyId);
+    }
+
+    if (!packageId && !propertyId) {
+      return finalizeCustomTripFlowEnquiry(session, customer, agency);
+    }
+
+    const result = await finalizeEnquiry(session, customer, agency);
+    const activeLead = await findActiveLead(session, customer, agency);
+    await attachCampaignRecipientFlowResult(profile.campaignId, customer.id, activeLead, {
+      selectedItemType: 'PACKAGE',
+      selectedItemId: packageId || profile.selectedPackageId || null,
+    });
+    return result;
+  }
+
+  if (propertyId) {
+    const { showCampaignPropertyDetail } = require('./campaignActionHandler');
+    if (profile.campaignId) {
+      return showCampaignPropertyDetail(session, profile.campaignId, propertyId, customer, agency, 'PROPERTY_SELECTED');
+    }
+    return reopenPackageContext(session, customer, agency, profile);
   }
 
   return showPackageDetail(session, customer, agency, packageId);
@@ -1117,6 +1257,140 @@ async function finalizeEnquiry(session, customer, agency) {
   return whatsappService.sendTextMessage(
     customer.phone,
     `Thanks ${escapeMarkdown(enquiry.name || firstName(customer))} 🙌\nOur travel expert will contact you shortly.`,
+    getContext(customer, agency)
+  );
+}
+
+async function attachCampaignRecipientFlowResult(campaignId, customerId, lead, details = {}) {
+  if (!campaignId || !customerId || !lead?.id) return;
+
+  await CampaignRecipient.update(
+    {
+      leadId: lead.id,
+      flowSubmittedAt: details.flowSubmittedAt || new Date(),
+      selectedItemType: details.selectedItemType || undefined,
+      selectedItemId: details.selectedItemId || undefined,
+    },
+    { where: { campaignId, customerId } }
+  );
+}
+
+async function finalizePropertyFlowEnquiry(session, customer, agency, propertyId) {
+  const profile = getProfile(session);
+  const enquiry = profile.enquiryDraft;
+  const property = propertyId
+    ? await Property.findOne({ where: { id: propertyId, agencyId: agency.id, isActive: true } })
+    : null;
+
+  if (!property) {
+    return sendInvalidChoice(session, customer, agency, () => reopenPackageContext(session, customer, agency, profile));
+  }
+
+  if (enquiry.name) {
+    await Customer.update(
+      { name: enquiry.name },
+      { where: { id: customer.id } }
+    );
+  }
+
+  const notes = [
+    'Lead captured from WhatsApp property enquiry flow',
+    property.name ? `Property: ${property.name}` : null,
+    enquiry.travelDate ? `Check-in: ${enquiry.travelDate}` : null,
+    enquiry.travellers ? `Guests: ${enquiry.travellers}` : null,
+    enquiry.budgetPerPerson ? `Budget: ₹${Math.round(Number(enquiry.budgetPerPerson) / 100).toLocaleString('en-IN')}` : null,
+    enquiry.notes ? `Other details: ${enquiry.notes}` : null,
+  ].filter(Boolean).join(' | ');
+
+  const lead = await ensureLead(session, customer, agency, {
+    propertyId: property.id,
+    itemType: 'PROPERTY',
+    campaignId: profile.campaignId || null,
+    campaignName: profile.campaignName || null,
+    campaignAction: profile.campaignId ? 'PROPERTY_ENQUIRY_FLOW' : null,
+    destination: property.location || null,
+    travelDates: enquiry.travelDate || null,
+    travellers: enquiry.travellers || null,
+    budgetPerPerson: enquiry.budgetPerPerson || null,
+    interest: 'PROPERTY',
+    status: 'ENQUIRY',
+    notes,
+  });
+
+  await attachCampaignRecipientFlowResult(profile.campaignId, customer.id, lead, {
+    selectedItemType: 'PROPERTY',
+    selectedItemId: property.id,
+  });
+
+  await updateSession(session, {
+    currentStep: STEPS.COMPLETE,
+    collectedData: {
+      activeLeadId: lead.id,
+      selectedPropertyId: property.id,
+      campaignId: profile.campaignId || null,
+      campaignName: profile.campaignName || null,
+    },
+  });
+
+  return whatsappService.sendTextMessage(
+    customer.phone,
+    `Thanks ${escapeMarkdown(enquiry.name || firstName(customer))} 🙌\nOur stay expert will contact you shortly about ${escapeMarkdown(property.name)}.`,
+    getContext(customer, agency)
+  );
+}
+
+async function finalizeCustomTripFlowEnquiry(session, customer, agency) {
+  const profile = getProfile(session);
+  const enquiry = profile.enquiryDraft;
+
+  if (enquiry.name) {
+    await Customer.update(
+      { name: enquiry.name },
+      { where: { id: customer.id } }
+    );
+  }
+
+  const notes = [
+    'Lead captured from WhatsApp custom trip flow',
+    profile.campaignName ? `Campaign: ${profile.campaignName}` : null,
+    enquiry.place ? `Destination: ${enquiry.place}` : null,
+    enquiry.travelDate ? `Travel date: ${enquiry.travelDate}` : null,
+    enquiry.travellers ? `Travellers: ${enquiry.travellers}` : null,
+    enquiry.budgetPerPerson ? `Budget per person: ₹${Math.round(Number(enquiry.budgetPerPerson) / 100).toLocaleString('en-IN')}` : null,
+    enquiry.notes ? `Other details: ${enquiry.notes}` : null,
+  ].filter(Boolean).join(' | ');
+
+  const lead = await ensureLead(session, customer, agency, {
+    itemType: 'CUSTOM_TRIP',
+    campaignId: profile.campaignId || null,
+    campaignName: profile.campaignName || null,
+    campaignAction: profile.campaignId ? 'CUSTOM_TRIP_FLOW' : null,
+    destination: enquiry.place || null,
+    travelDates: enquiry.travelDate || null,
+    travellers: enquiry.travellers || null,
+    budgetPerPerson: enquiry.budgetPerPerson || null,
+    interest: 'CUSTOM_TRIP',
+    status: 'ENQUIRY',
+    notes,
+  });
+
+  await attachCampaignRecipientFlowResult(profile.campaignId, customer.id, lead, {
+    selectedItemType: 'CUSTOM_TRIP',
+    selectedItemId: null,
+  });
+
+  await updateSession(session, {
+    currentStep: STEPS.COMPLETE,
+    collectedData: {
+      activeLeadId: lead.id,
+      campaignId: profile.campaignId || null,
+      campaignName: profile.campaignName || null,
+    },
+  });
+
+  return whatsappService.sendTextMessage(
+    customer.phone,
+    `Thanks ${escapeMarkdown(enquiry.name || firstName(customer))} 🙌\nOur travel expert will contact you shortly with your custom trip plan.`,
     getContext(customer, agency)
   );
 }
@@ -1322,7 +1596,7 @@ async function renderCurrentStep(session, customer, agency) {
     case STEPS.COMPLETE:
       return showMainMenu(session, customer, agency);
     case STEPS.CATEGORY_PACKAGES:
-      return openPackageFlow(session, customer, agency, getProfile(session).packageCategory || 'DOMESTIC');
+      return reopenPackageContext(session, customer, agency, getProfile(session));
     case STEPS.PACKAGE_DETAIL:
       return showPackageDetail(session, customer, agency, getProfile(session).selectedPackageId);
     case STEPS.ENQUIRY_NAME:
@@ -1357,7 +1631,7 @@ function resolveCategory(actionId, text) {
 }
 
 async function handleCategoryPackageReply(session, customer, agency, text) {
-  return sendInvalidChoice(session, customer, agency, () => openPackageFlow(session, customer, agency, getProfile(session).packageCategory || 'DOMESTIC'));
+  return sendInvalidChoice(session, customer, agency, () => reopenPackageContext(session, customer, agency, getProfile(session)));
 }
 
 async function handlePackageDetailReply(session, customer, agency, actionId, text) {
@@ -1385,7 +1659,7 @@ async function handlePackageDetailReply(session, customer, agency, actionId, tex
     || (pkg?.brochureUrl && text === '4')
     || text === 'back'
   ) {
-    return openPackageFlow(session, customer, agency, profile.packageCategory || 'DOMESTIC');
+    return reopenPackageContext(session, customer, agency, profile);
   }
 
   return sendInvalidChoice(session, customer, agency, () => showPackageDetail(session, customer, agency, profile.selectedPackageId));
@@ -1430,12 +1704,16 @@ async function handleTravelFlow(session, incoming, customer, agency) {
   }
 
   if (session.currentStep === STEPS.CATEGORY_PACKAGES && ['list', 'show list', 'package list', 'packages list'].includes(text)) {
+    if (profile.campaignId) {
+      return reopenPackageContext(session, customer, agency, profile);
+    }
+
     const packages = await findPackagesForCategory(agency.id, profile.packageCategory || 'DOMESTIC', 5);
     return showPackageListFallback(session, customer, agency, profile.packageCategory || 'DOMESTIC', packages);
   }
 
   if (actionId === 'action_back_packages' || text === 'back to packages' || text === 'view packages') {
-    return openPackageFlow(session, customer, agency, profile.packageCategory || 'DOMESTIC');
+    return reopenPackageContext(session, customer, agency, profile);
   }
 
   if (actionId === 'pkg_pick:' || actionId.startsWith('pkg_pick:')) {
@@ -1495,4 +1773,11 @@ module.exports = {
   buildProfileSummary,
   ensureLead,
   createFreshGreetingLead,
+  getFlowBase64Image,
+  buildFlowPackageOptions,
+  buildFlowPropertyOptions,
+  getAgencyTripFlowId,
+  isMetaTripFlowConfigured,
+  PROPERTY_FLOW_FIRST_SCREEN_ID,
+  CUSTOM_TRIP_FLOW_FIRST_SCREEN_ID,
 };

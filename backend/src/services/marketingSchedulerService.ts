@@ -197,7 +197,7 @@ async function sendCampaignSectionEntry(customer, campaign, agencyId) {
     'Explore',
     [{ title: 'Campaign Deals', rows }],
     context,
-    { headerText: campaign.name, footerText: 'Tap one option to continue.' }
+    { headerText: 'Explore Deals', footerText: 'Tap one option to continue.' }
   );
 }
 
@@ -242,6 +242,19 @@ function getCatalogRecordMediaUrl(record) {
 }
 
 async function resolveCampaignFeaturedCatalogItem(campaign, agencyId) {
+  const featuredType = String(campaign?.ctaConfig?.featuredItemType || '').toUpperCase();
+  const featuredId = String(campaign?.ctaConfig?.featuredItemId || '').trim();
+
+  if (featuredType && featuredId && ['PACKAGE', 'PROPERTY'].includes(featuredType)) {
+    const Model = featuredType === 'PROPERTY' ? Property : Package;
+    const record = await Model.findOne({
+      where: { agencyId, id: featuredId, isActive: { [Op.ne]: false } },
+    });
+    if (record) {
+      return { itemType: featuredType, record };
+    }
+  }
+
   const sections = getEnabledCampaignSections(campaign)
     .filter((section) => ['PACKAGE', 'PROPERTY'].includes(String(section.itemType || '').toUpperCase()));
   if (!sections.length) return null;
@@ -366,7 +379,7 @@ async function sendCampaignCarouselEntry(customer, campaign, agencyId) {
   for (const item of items) {
     const buttons = [
       { id: `campaign_carousel_enquire:${campaign.id}:${item.itemType}:${item.record.id}`, title: 'Enquiry' },
-      { id: `campaign_carousel_others:${campaign.id}`, title: 'See Others' },
+      { id: `campaign_carousel_others:${campaign.id}:${item.itemType}`, title: 'See Others' },
     ];
 
     await whatsappService.sendMediaButtonsMessage(
@@ -375,7 +388,7 @@ async function sendCampaignCarouselEntry(customer, campaign, agencyId) {
       item.record.imageUrl,
       buttons,
       context,
-      { footerText: campaign.name }
+      { footerText: 'Tap Enquiry to know more.' }
     );
   }
 
@@ -480,11 +493,15 @@ async function sendToRecipient(recipient, campaign, template, agencyId) {
     const format = String(campaign.format || 'STANDARD').toUpperCase();
     const hasCarouselItems = Array.isArray(campaign.carouselConfig?.items) && campaign.carouselConfig.items.length > 0;
     const isApprovedCarouselTemplate = String(template?.templateType || '').toUpperCase() === 'CAROUSEL';
-    const isApprovedCtaTemplate = String(template?.templateType || 'STANDARD').toUpperCase() !== 'CAROUSEL'
-      && hasInteractiveTemplateButtons(template);
     if ((linkedPkgIds.length > 0 || hasDynamicSections || hasCarouselItems) && campaign.type !== 'REVIEW_COLLECTION') {
       const canSendInteractive = await whatsappService.isCustomerIn24hWindow(context);
       if (canSendInteractive) {
+        // If the approved template already includes CTA buttons, let those be the only
+        // entry point so customers do not receive a duplicate standalone CTA message.
+        if (hasInteractiveTemplateButtons(template)) {
+          return 'SENT';
+        }
+
         if (format === 'ITEM_CAROUSEL') {
           if (isApprovedCarouselTemplate) {
             return 'SENT';
@@ -493,9 +510,6 @@ async function sendToRecipient(recipient, campaign, template, agencyId) {
             console.error(`[CampaignBroadcast] Failed to send campaign carousel to ${customer.phone}:`, err.message);
           });
         } else if (format === 'SECTION_CTA' || hasDynamicSections) {
-          if (isApprovedCtaTemplate) {
-            return 'SENT';
-          }
           await sendCampaignSectionEntry(customer, campaign, agencyId).catch((err) => {
             console.error(`[CampaignBroadcast] Failed to send campaign section entry to ${customer.phone}:`, err.message);
           });
