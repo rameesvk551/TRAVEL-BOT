@@ -775,8 +775,14 @@ async function sendFlowMessage(phone, body, flowConfig, context, options = {}) {
 
       return markMessageSent(message, response);
     } catch (err) {
-      await markMessageFailed(message, 'sendFlowMessage', err);
-      return sendTextMessage(phone, fallbackContent, context);
+      console.error('[WhatsAppService] sendFlowMessage failed via Marketing OS:', {
+        tenantId: channel.marketingOsTenantId,
+        flowId,
+        flowName,
+        firstScreenId,
+        error: err?.response?.data || err?.message || err,
+      });
+      return markMessageFailed(message, 'sendFlowMessage', err);
     }
   }
 
@@ -822,8 +828,14 @@ async function sendFlowMessage(phone, body, flowConfig, context, options = {}) {
 
     return markMessageSent(message, response);
   } catch (err) {
-    await markMessageFailed(message, 'sendFlowMessage', err);
-    return sendTextMessage(phone, fallbackContent, context);
+    console.error('[WhatsAppService] sendFlowMessage failed via Cloud API:', {
+      phoneNumberId: channel.phoneNumberId,
+      flowId,
+      flowName,
+      firstScreenId,
+      error: err?.response?.data || err?.message || err,
+    });
+    return markMessageFailed(message, 'sendFlowMessage', err);
   }
 }
 

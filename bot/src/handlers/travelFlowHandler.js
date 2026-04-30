@@ -10,6 +10,7 @@ const {
   Agent,
   Property,
   CampaignRecipient,
+  WhatsAppFlow,
 } = require(path.resolve(__dirname, '../../../backend/src/models/index.ts'));
 const whatsappService = require(path.resolve(__dirname, '../../../backend/src/services/whatsappService.ts'));
 const leadService = require(path.resolve(__dirname, '../../../backend/src/services/leadService.ts'));
@@ -274,8 +275,43 @@ function getAgencyTripFlowId(agency) {
     || normalizeText(process.env.WHATSAPP_TRIP_FLOW_ID);
 }
 
-function isMetaTripFlowConfigured(agency) {
-  return !!getAgencyTripFlowId(agency);
+async function getPublishedFlowByType(agencyId, flowType) {
+  if (!agencyId || !flowType) return null;
+  return WhatsAppFlow.findOne({
+    where: {
+      agencyId,
+      flowType,
+      status: 'PUBLISHED',
+      metaFlowId: { [Op.ne]: null },
+    },
+    order: [['updatedAt', 'DESC']],
+  });
+}
+
+async function getPackageFlowConfig(agency) {
+  const packageFlow = await getPublishedFlowByType(agency.id, 'PACKAGE');
+  const legacyFlowId = getAgencyTripFlowId(agency);
+  if (!packageFlow?.metaFlowId && !legacyFlowId) return null;
+
+  return {
+    flowId: packageFlow?.metaFlowId || legacyFlowId,
+    firstScreenId: packageFlow?.firstScreenId || FLOW_FIRST_SCREEN_ID,
+  };
+}
+
+async function getEnquiryFlowConfig(agency) {
+  const customTripFlow = await getPublishedFlowByType(agency.id, 'CUSTOM_TRIP');
+  const legacyFlowId = FLOW_ENQUIRY_ID || getAgencyTripFlowId(agency);
+  if (!customTripFlow?.metaFlowId && !legacyFlowId) return null;
+
+  return {
+    flowId: legacyFlowId || customTripFlow?.metaFlowId,
+    firstScreenId: customTripFlow?.firstScreenId || FLOW_ENQUIRY_FIRST_SCREEN_ID,
+  };
+}
+
+async function isMetaTripFlowConfigured(agency) {
+  return Boolean(await getPackageFlowConfig(agency));
 }
 
 function toAbsoluteFlowImageUrl(imageUrl = '') {
@@ -648,7 +684,9 @@ async function openPackageFlow(session, customer, agency, category) {
     return;
   }
 
-  if (!isMetaTripFlowConfigured(agency)) {
+  const packageFlowConfig = await getPackageFlowConfig(agency);
+  if (!packageFlowConfig?.flowId) {
+    console.error('[TravelFlow] package_flow_missing', { agencyId: agency.id, agencyName: agency.name });
     return showPackageListFallback(session, customer, agency, normalizedCategory, packages);
   }
 
@@ -657,8 +695,8 @@ async function openPackageFlow(session, customer, agency, category) {
     customer.phone,
     `Browse our best ${categoryLabel(normalizedCategory)} packages 👇`,
     {
-      flowId: getAgencyTripFlowId(agency),
-      firstScreenId: FLOW_FIRST_SCREEN_ID,
+      flowId: packageFlowConfig.flowId,
+      firstScreenId: packageFlowConfig.firstScreenId || FLOW_FIRST_SCREEN_ID,
       flowCta: FLOW_CTA,
       flowToken: `pkg|${agency.id}|${normalizedCategory || 'DOMESTIC'}|${customer.id}|${Date.now()}`,
       data: {
@@ -674,7 +712,12 @@ async function openPackageFlow(session, customer, agency, category) {
   );
 
   if (flowResponse?.status === 'FAILED') {
-    return showPackageListFallback(session, customer, agency, normalizedCategory, packages);
+    console.error('[TravelFlow] package_flow_send_failed', {
+      agencyId: agency.id,
+      flowId: packageFlowConfig.flowId,
+      firstScreenId: packageFlowConfig.firstScreenId || FLOW_FIRST_SCREEN_ID,
+    });
+    return flowResponse;
   }
 
   return flowResponse;
@@ -1078,7 +1121,9 @@ async function openEnquiryFlow(session, customer, agency) {
     return sendInvalidChoice(session, customer, agency, () => openPackageFlow(session, customer, agency, profile.packageCategory));
   }
 
-  if (!isMetaTripFlowConfigured(agency)) {
+  const enquiryFlowConfig = await getEnquiryFlowConfig(agency);
+  if (!enquiryFlowConfig?.flowId) {
+    console.error('[TravelFlow] enquiry_flow_missing', { agencyId: agency.id, agencyName: agency.name });
     return startEnquiry(session, customer, agency);
   }
 
@@ -1098,8 +1143,8 @@ async function openEnquiryFlow(session, customer, agency) {
     customer.phone,
     `Share your enquiry details for ${escapeMarkdown(pkg.name)} 👇`,
     {
-      flowId: FLOW_ENQUIRY_ID || getAgencyTripFlowId(agency),
-      firstScreenId: FLOW_ENQUIRY_FIRST_SCREEN_ID,
+      flowId: enquiryFlowConfig.flowId,
+      firstScreenId: enquiryFlowConfig.firstScreenId || FLOW_ENQUIRY_FIRST_SCREEN_ID,
       flowCta: FLOW_ENQUIRY_CTA,
       flowToken: `enq|${agency.id}|${selectedPackageId}|${customer.id}|${Date.now()}`,
       data: {
@@ -1118,7 +1163,12 @@ async function openEnquiryFlow(session, customer, agency) {
   );
 
   if (flowResponse?.status === 'FAILED') {
-    return startEnquiry(session, customer, agency);
+    console.error('[TravelFlow] enquiry_flow_send_failed', {
+      agencyId: agency.id,
+      flowId: enquiryFlowConfig.flowId,
+      firstScreenId: enquiryFlowConfig.firstScreenId || FLOW_ENQUIRY_FIRST_SCREEN_ID,
+    });
+    return flowResponse;
   }
 
   return flowResponse;
@@ -1778,6 +1828,8 @@ module.exports = {
   buildFlowPropertyOptions,
   getAgencyTripFlowId,
   isMetaTripFlowConfigured,
+  getPackageFlowConfig,
+  getEnquiryFlowConfig,
   PROPERTY_FLOW_FIRST_SCREEN_ID,
   CUSTOM_TRIP_FLOW_FIRST_SCREEN_ID,
 };
