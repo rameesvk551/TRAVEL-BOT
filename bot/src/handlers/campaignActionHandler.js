@@ -806,9 +806,25 @@ async function tryHandleCampaignTextAction(session, text, customer, agency) {
   if (!campaign) return false;
 
   const sections = getSections(campaign);
-  if (!sections.length) return false;
+  const wantsPackages = textIncludesAny(normalized, ['view packages', 'packages', 'show packages', 'see others']);
+  const wantsProperties = textIncludesAny(normalized, ['view properties', 'properties', 'show properties']);
 
-  if (textIncludesAny(normalized, ['view packages', 'packages', 'show packages'])) {
+  if (!sections.length) {
+    if (wantsPackages || wantsProperties) {
+      const groups = await resolveAllCampaignItems(campaign, agency);
+      const desiredType = wantsProperties ? 'PROPERTY' : 'PACKAGE';
+      const matchingGroup = groups.find(({ section }) => String(section?.itemType || '').toUpperCase() === desiredType)
+        || groups[0];
+      if (!matchingGroup) return false;
+
+      await showCampaignSection(session, campaign.id, matchingGroup.section.key, customer, agency);
+      return true;
+    }
+
+    return false;
+  }
+
+  if (wantsPackages) {
     const packageSection = sections.find((section) => String(section.itemType || '').toUpperCase() === 'PACKAGE')
       || sections[0];
     if (!packageSection) return false;
@@ -816,7 +832,7 @@ async function tryHandleCampaignTextAction(session, text, customer, agency) {
     return true;
   }
 
-  if (textIncludesAny(normalized, ['view properties', 'properties', 'show properties'])) {
+  if (wantsProperties) {
     const propertySection = sections.find((section) => String(section.itemType || '').toUpperCase() === 'PROPERTY');
     if (!propertySection) return false;
     await showCampaignSection(session, campaign.id, propertySection.key, customer, agency);
