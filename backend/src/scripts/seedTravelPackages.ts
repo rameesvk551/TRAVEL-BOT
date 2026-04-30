@@ -473,7 +473,7 @@ async function seedTravelPackages() {
   ensureCloudinaryConfig();
 
   const args = parseArgs();
-  const agencyName = args.agencyName || process.env.SEED_AGENCY_NAME || 'ABC Trours';
+  const agencyName = args.agencyName || process.env.SEED_AGENCY_NAME || 'Wayon Travels';
   const limit = Number.isInteger(args.limit) && args.limit > 0 ? args.limit : getPackageSeeds().length;
 
   await sequelize.authenticate();
