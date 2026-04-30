@@ -6,6 +6,7 @@ const jwt = require('jsonwebtoken');
 const { z } = require('zod');
 const marketingOsPartnerService = require('./marketingOsPartnerService');
 const flowService = require('./flowService');
+const templateService = require('./templateService');
 
 const CALLBACK_SECRET = process.env.MARKETING_OS_WEBHOOK_SECRET || '';
 const WEBHOOK_APP_SECRET = process.env.WEBHOOK_APP_SECRET || '';
@@ -412,6 +413,9 @@ async function completeMarketingOsConnectSession(agencyId, payload) {
     await initiateCoexistenceSync(refreshedAgency, session.tenantToken);
   }
   await flowService.ensureDefaultFlowsForAgency(refreshedAgency);
+  templateService.ensureDefaultApprovalTemplatesForAgency(refreshedAgency).catch((err) => {
+    console.error('[AgencyService] Default WhatsApp template submission failed:', err.message);
+  });
   return serializeWhatsAppConnection(await agencyRepository.findById(agencyId));
 }
 

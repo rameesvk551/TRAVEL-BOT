@@ -295,6 +295,155 @@ const PREBUILT_TEMPLATES = [
   },
 ];
 
+const DEFAULT_TEMPLATE_MEDIA = {
+  image1: 'https://res.cloudinary.com/djruimp0d/image/upload/v1777548757/travel-bot/packages/768f7576-35b4-4f83-bcf6-5e51bf3b9c81/vidpcschrp1k6yqolvxn.jpg',
+  image2: 'https://res.cloudinary.com/djruimp0d/image/upload/v1777562253/travel-bot/packages/768f7576-35b4-4f83-bcf6-5e51bf3b9c81/uqghxy6kwqvbnmxbn8oo.jpg',
+  image3: 'https://res.cloudinary.com/djruimp0d/image/upload/v1777548757/travel-bot/packages/768f7576-35b4-4f83-bcf6-5e51bf3b9c81/vidpcschrp1k6yqolvxn.jpg',
+  video1: 'https://scontent.whatsapp.net/v/t61.29466-34/677285023_1551552316309307_1265374083007597790_n.jpg?ccb=1-7&_nc_sid=a80384&_nc_ohc=_4mLCxnmEXcQ7kNvwFDgw13&_nc_oc=AdoVJwFtK3IKimTdFz7al68sZzwn1YAFR6c4iPQ8XN-z69L_RSnDsLC8K3ES_bba6iw&_nc_zt=3&_nc_ht=scontent.whatsapp.net&edm=AH51TzQEAAAA&_nc_gid=Vkdu6l0FXzkO-BvQUyZtSQ&oh=01_Q5Aa4QHO54h9EjcmxlSVMT2jtHH4qBZu3ZseFBOSbXgB2TxS9A&oe=6A1A69D7',
+  video2: 'https://scontent.whatsapp.net/v/t61.29466-34/652732328_1620509109208391_6872574975304393197_n.jpg?ccb=1-7&_nc_sid=a80384&_nc_ohc=Qj36WJN_WtYQ7kNvwHmWOZB&_nc_oc=Adq2auO875xs1U6knH_otE9NAAQZ847GsLkvBuFU8zZJFgY-fD_yxeVskYEO5A32LrM&_nc_zt=3&_nc_ht=scontent.whatsapp.net&edm=AH51TzQEAAAA&_nc_gid=Vkdu6l0FXzkO-BvQUyZtSQ&oh=01_Q5Aa4QE_brt5Fjwe1855Nh2qDzt50wTSzELZhjbQeHcrFSLr2A&oe=6A1A6844',
+};
+
+function defaultApprovalTemplatesForAgency(agencyName = 'your travel team') {
+  const brand = String(agencyName || 'your travel team').trim();
+  const brandSlug = slugifyTemplateName(brand).slice(0, 24) || 'travel';
+
+  return [
+    {
+      name: `${brandSlug}_review_request`,
+      displayName: 'Review Request',
+      category: 'MARKETING',
+      language: 'en',
+      headerType: 'NONE',
+      body: "Welcome back, {{1}}! 🏡\n\nHow was your {{2}} trip? We'd love to hear about it!\n\n⭐ Rate your experience from 1-5\n📝 Share a quick review\n\nYour feedback helps us serve you better!",
+      buttons: [],
+      variableCount: 2,
+      sampleVariables: ['there', 'holiday'],
+      templateType: 'STANDARD',
+      carouselCards: [],
+    },
+    {
+      name: `${brandSlug}_abandoned_inquiry_2`,
+      displayName: 'Abandoned Inquiry 2',
+      category: 'MARKETING',
+      language: 'en',
+      headerType: 'NONE',
+      body: "Hi {{1}},\n\nLooks like we didn't finish planning your {{2}} trip! 🗺️\n\nNo worries — I'm here whenever you're ready. Your details are saved, so we can pick up right where we left off.\n\nJust reply START to continue.",
+      buttons: [
+        { type: 'QUICK_REPLY', text: 'Continue' },
+        { type: 'QUICK_REPLY', text: 'Start Over' },
+      ],
+      variableCount: 2,
+      sampleVariables: ['there', 'holiday'],
+      templateType: 'STANDARD',
+      carouselCards: [],
+    },
+    {
+      name: `${brandSlug}_carousel_image`,
+      displayName: `${brand} Carousel Image`,
+      category: 'MARKETING',
+      language: 'en',
+      headerType: 'NONE',
+      body: `Hi {{1}}, browse a few popular trips from ${brand} and choose the one you want details for.`,
+      buttons: [],
+      variableCount: 1,
+      sampleVariables: ['there'],
+      templateType: 'CAROUSEL',
+      carouselCards: [
+        { id: 'card_1', mediaType: 'IMAGE', mediaUrl: DEFAULT_TEMPLATE_MEDIA.image1, body: 'Paris City Romance. 5 Nights 6 Days. Starting from Rs 148999 per person.', buttons: [{ type: 'QUICK_REPLY', text: 'Enquiry' }, { type: 'QUICK_REPLY', text: 'See Others' }] },
+        { id: 'card_2', mediaType: 'IMAGE', mediaUrl: DEFAULT_TEMPLATE_MEDIA.image2, body: 'Maldives Water Villa Escape. 3 Nights 4 Days. Starting from Rs 135999 per person.', buttons: [{ type: 'QUICK_REPLY', text: 'Enquiry' }, { type: 'QUICK_REPLY', text: 'See Others' }] },
+        { id: 'card_3', mediaType: 'IMAGE', mediaUrl: DEFAULT_TEMPLATE_MEDIA.image3, body: 'Bali Island Bliss. 5 Nights 6 Days. Starting from Rs 67999 per person.', buttons: [{ type: 'QUICK_REPLY', text: 'Enquiry' }, { type: 'QUICK_REPLY', text: 'See Others' }] },
+      ],
+    },
+    {
+      name: `${brandSlug}_carousel_video`,
+      displayName: `${brand} Carousel Video`,
+      category: 'MARKETING',
+      language: 'en',
+      headerType: 'NONE',
+      body: `Hi {{1}}, explore featured travel ideas from ${brand} in this video carousel and reply to continue.`,
+      buttons: [],
+      variableCount: 1,
+      sampleVariables: ['there'],
+      templateType: 'CAROUSEL',
+      carouselCards: [
+        { id: 'card_1', mediaType: 'VIDEO', mediaUrl: DEFAULT_TEMPLATE_MEDIA.video1, body: `Beach Escape packages from ${brand}. Tap enquiry to get dates and pricing.`, buttons: [{ type: 'QUICK_REPLY', text: 'Enquiry' }, { type: 'QUICK_REPLY', text: 'See Others' }] },
+        { id: 'card_2', mediaType: 'VIDEO', mediaUrl: DEFAULT_TEMPLATE_MEDIA.video2, body: `Mountain Escape packages from ${brand}. Tap enquiry to get dates and pricing.`, buttons: [{ type: 'QUICK_REPLY', text: 'Enquiry' }, { type: 'QUICK_REPLY', text: 'See Others' }] },
+      ],
+    },
+    {
+      name: `${brandSlug}_cta_image`,
+      displayName: `${brand} CTA Image`,
+      category: 'MARKETING',
+      language: 'en',
+      headerType: 'IMAGE',
+      headerContent: DEFAULT_TEMPLATE_MEDIA.image1,
+      body: `Hi {{1}}, explore handpicked holiday packages from ${brand}. Featured today: {{2}}. Tap below and our team will help you with pricing, dates, and a custom plan.`,
+      footer: brand,
+      buttons: [
+        { type: 'QUICK_REPLY', text: 'View Packages' },
+        { type: 'QUICK_REPLY', text: 'View Properties' },
+        { type: 'QUICK_REPLY', text: 'Custom Trip' },
+      ],
+      variableCount: 2,
+      sampleVariables: ['there', 'Maldives'],
+      templateType: 'STANDARD',
+      carouselCards: [],
+    },
+    {
+      name: `${brandSlug}_cta_video`,
+      displayName: `${brand} CTA Video`,
+      category: 'MARKETING',
+      language: 'en',
+      headerType: 'VIDEO',
+      headerContent: DEFAULT_TEMPLATE_MEDIA.video1,
+      body: `Hi {{1}}, take a quick look at the kind of trips ${brand} can plan for you. Tell us your dream destination like {{2}} and we will share the best options.`,
+      footer: brand,
+      buttons: [
+        { type: 'QUICK_REPLY', text: 'View Packages' },
+        { type: 'QUICK_REPLY', text: 'View Properties' },
+        { type: 'QUICK_REPLY', text: 'Custom Trip' },
+      ],
+      variableCount: 2,
+      sampleVariables: ['there', 'Dubai'],
+      templateType: 'STANDARD',
+      carouselCards: [],
+    },
+    {
+      name: `${brandSlug}_carousel_image_v2`,
+      displayName: `${brand} Carousel Image V2`,
+      category: 'MARKETING',
+      language: 'en',
+      headerType: 'NONE',
+      body: `Hi {{1}}, browse a few popular trips from ${brand} and choose the one you want details for.`,
+      buttons: [],
+      variableCount: 1,
+      sampleVariables: ['there'],
+      templateType: 'CAROUSEL',
+      carouselCards: [
+        { id: 'card_1', mediaType: 'IMAGE', mediaUrl: DEFAULT_TEMPLATE_MEDIA.image1, body: 'Paris City Romance. 5 Nights 6 Days. Starting from Rs 148999 per person.', buttons: [{ type: 'QUICK_REPLY', text: 'View Packages' }, { type: 'QUICK_REPLY', text: 'View Properties' }] },
+        { id: 'card_2', mediaType: 'IMAGE', mediaUrl: DEFAULT_TEMPLATE_MEDIA.image2, body: 'Maldives Water Villa Escape. 3 Nights 4 Days. Starting from Rs 135999 per person.', buttons: [{ type: 'QUICK_REPLY', text: 'View Packages' }, { type: 'QUICK_REPLY', text: 'View Properties' }] },
+        { id: 'card_3', mediaType: 'IMAGE', mediaUrl: DEFAULT_TEMPLATE_MEDIA.image3, body: 'Bali Island Bliss. 5 Nights 6 Days. Starting from Rs 67999 per person.', buttons: [{ type: 'QUICK_REPLY', text: 'View Packages' }, { type: 'QUICK_REPLY', text: 'View Properties' }] },
+      ],
+    },
+    {
+      name: `${brandSlug}_carousel_video_v2`,
+      displayName: `${brand} Carousel Video V2`,
+      category: 'MARKETING',
+      language: 'en',
+      headerType: 'NONE',
+      body: `Hi {{1}}, explore featured travel ideas from ${brand} in this video carousel and reply to continue.`,
+      buttons: [],
+      variableCount: 1,
+      sampleVariables: ['there'],
+      templateType: 'CAROUSEL',
+      carouselCards: [
+        { id: 'card_1', mediaType: 'VIDEO', mediaUrl: DEFAULT_TEMPLATE_MEDIA.video1, body: `Beach Escape packages from ${brand}. Tap enquiry to get dates and pricing.`, buttons: [{ type: 'QUICK_REPLY', text: 'View Packages' }, { type: 'QUICK_REPLY', text: 'View Properties' }] },
+        { id: 'card_2', mediaType: 'VIDEO', mediaUrl: DEFAULT_TEMPLATE_MEDIA.video2, body: `Mountain Escape packages from ${brand}. Tap enquiry to get dates and pricing.`, buttons: [{ type: 'QUICK_REPLY', text: 'View Packages' }, { type: 'QUICK_REPLY', text: 'View Properties' }] },
+      ],
+    },
+  ];
+}
+
 /**
  * Ensures prebuilt templates exist in the database.
  */
@@ -865,8 +1014,73 @@ async function submitForApproval(id, agencyId) {
   }
 }
 
+async function ensureDefaultApprovalTemplatesForAgency(agency) {
+  const agencyId = typeof agency === 'string' ? agency : agency?.id;
+  const agencyName = typeof agency === 'string' ? 'your travel team' : agency?.name;
+  if (!agencyId) throw new Error('Agency ID is required to prepare default templates');
+
+  const results = [];
+  const defaults = defaultApprovalTemplatesForAgency(agencyName);
+
+  for (const definition of defaults) {
+    const existing = await MessageTemplate.findOne({
+      where: { agencyId, name: definition.name },
+    });
+
+    if (existing) {
+      if (['APPROVED', 'PENDING'].includes(existing.status)) {
+        results.push({ name: existing.name, status: existing.status, skipped: true });
+        continue;
+      }
+
+      try {
+        const submitted = await submitForApproval(existing.id, agencyId);
+        results.push({ name: submitted.name, status: submitted.status, submitted: true });
+      } catch (err) {
+        await existing.update({ rejectionReason: err.message }).catch(() => {});
+        results.push({ name: existing.name, status: existing.status, error: err.message });
+      }
+      continue;
+    }
+
+    let template = null;
+    try {
+      const payload = buildTemplateData(definition);
+      template = await MessageTemplate.create({
+        ...payload,
+        name: definition.name,
+        agencyId,
+        isPrebuilt: false,
+        status: 'DRAFT',
+        metaTemplateId: null,
+        usageCount: 0,
+      });
+
+      const submitted = await submitForApproval(template.id, agencyId);
+      results.push({ name: submitted.name, status: submitted.status, created: true, submitted: true });
+    } catch (err) {
+      if (template) {
+        await template.update({ status: 'DRAFT', rejectionReason: err.message }).catch(() => {});
+        results.push({ name: template.name, status: 'DRAFT', created: true, error: err.message });
+      } else {
+        results.push({ name: definition.name, error: err.message });
+      }
+    }
+  }
+
+  return {
+    success: results.every((result) => !result.error),
+    count: results.length,
+    submitted: results.filter((result) => result.submitted).length,
+    skipped: results.filter((result) => result.skipped).length,
+    failed: results.filter((result) => result.error).length,
+    results,
+  };
+}
+
 module.exports = {
   seedPrebuiltTemplates,
+  ensureDefaultApprovalTemplatesForAgency,
   listPrebuiltTemplates,
   listAgencyTemplates,
   getTemplate,
