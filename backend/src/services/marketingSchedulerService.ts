@@ -339,6 +339,20 @@ async function buildRuntimeCampaignTemplate(campaign, template, agencyId) {
       ? runtimeTemplate.carouselCards
       : [{}];
 
+    if (baseCards.length > 1 && items.length !== baseCards.length) {
+      console.warn('[CampaignBroadcast] Carousel item count does not match approved template cards; using approved template card structure.', {
+        campaignId: campaign.id,
+        selectedItems: items.length,
+        templateCards: baseCards.length,
+        templateName: runtimeTemplate.name,
+      });
+      runtimeTemplate.carouselCards = baseCards.map((card, index) => ({
+        ...card,
+        body: String(card.body || `Featured trip ${index + 1}`).replace(/ABC Trours|ABC Tours/gi, 'Wayon Travels').slice(0, 1024),
+      }));
+      return runtimeTemplate;
+    }
+
     runtimeTemplate.carouselCards = items.map((item, index) => {
       const baseCard = baseCards[index] || baseCards[baseCards.length - 1] || {};
       const mediaUrl = getCatalogRecordMediaUrl(item.record);
