@@ -70,9 +70,10 @@ function resolveTemplateBody(body, variables) {
 
 function buildTemplateVariables(template, customer) {
   const count = template.variableCount || template.sampleVariables?.length || 0;
+  const defaultVariables = ['there', 'travel', 'our offer', 'today'];
   const variables = Array.from({ length: count }, (_, index) => {
     if (index === 0) return customer.name || 'there';
-    return template.sampleVariables?.[index] || '';
+    return template.sampleVariables?.[index] || defaultVariables[index] || defaultVariables[defaultVariables.length - 1];
   });
 
   return variables;
