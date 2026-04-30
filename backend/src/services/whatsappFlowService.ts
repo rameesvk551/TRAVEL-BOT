@@ -133,7 +133,7 @@ function buildEncryptedResponse(decryptedBody = {}) {
 async function handleFlowRequest(payload = {}) {
   const body = getNestedFlowBody(payload);
 
-  if (body?.action === 'ping') {
+  if (String(body?.action || '').toUpperCase() === 'PING') {
     return {
       statusCode: 200,
       isEncrypted: false,
