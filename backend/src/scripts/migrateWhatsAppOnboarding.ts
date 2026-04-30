@@ -55,6 +55,35 @@ async function migrate() {
     allowNull: true,
   });
 
+  await ensureColumn('agencies', 'whatsapp_onboarding_mode', {
+    type: Sequelize.ENUM('STANDARD', 'COEXISTENCE'),
+    allowNull: false,
+    defaultValue: 'STANDARD',
+  });
+
+  await ensureColumn('agencies', 'whatsapp_coexistence_status', {
+    type: Sequelize.ENUM('NOT_ENABLED', 'PENDING', 'ACTIVE', 'DISCONNECTED', 'FAILED'),
+    allowNull: false,
+    defaultValue: 'NOT_ENABLED',
+  });
+
+  await ensureColumn('agencies', 'whatsapp_contact_sync_status', {
+    type: Sequelize.ENUM('NOT_STARTED', 'PENDING', 'COMPLETE', 'FAILED'),
+    allowNull: false,
+    defaultValue: 'NOT_STARTED',
+  });
+
+  await ensureColumn('agencies', 'whatsapp_history_sync_status', {
+    type: Sequelize.ENUM('NOT_STARTED', 'PENDING', 'COMPLETE', 'FAILED', 'DECLINED'),
+    allowNull: false,
+    defaultValue: 'NOT_STARTED',
+  });
+
+  await ensureColumn('agencies', 'whatsapp_coexistence_last_synced_at', {
+    type: Sequelize.DATE,
+    allowNull: true,
+  });
+
   await ensureColumn('agencies', 'whatsapp_catalog_id', {
     type: Sequelize.STRING(255),
     allowNull: true,

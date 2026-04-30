@@ -76,6 +76,62 @@ const resolveSqlTenantId = async (tenantId: string | undefined | null): Promise<
     }
 };
 
+const getTenantWhatsAppGraphConfig = async (tenantId: string, fallbackPhoneNumberId?: string | null) => {
+    const pool = getPool();
+    const result = await pool.query(
+        `SELECT phone_number_id, access_token
+         FROM whatsapp_business_configs
+         WHERE tenant_id = $1
+         ORDER BY updated_at DESC NULLS LAST, created_at DESC NULLS LAST
+         LIMIT 1`,
+        [tenantId]
+    );
+
+    const row = result.rows?.[0];
+    const phoneNumberId = fallbackPhoneNumberId || row?.phone_number_id;
+    const accessToken = row?.access_token || process.env.META_ACCESS_TOKEN;
+
+    if (!phoneNumberId) {
+        throw new Error('WhatsApp phone number ID is required for Business App sync');
+    }
+
+    if (!accessToken) {
+        throw new Error('Meta access token is required for Business App sync');
+    }
+
+    return { phoneNumberId, accessToken };
+};
+
+const requestSmbAppDataSync = async (params: {
+    tenantId: string;
+    phoneNumberId?: string | null;
+    syncType: 'smb_app_state_sync' | 'history';
+}) => {
+    const { phoneNumberId, accessToken } = await getTenantWhatsAppGraphConfig(params.tenantId, params.phoneNumberId);
+    const apiVersion = process.env.META_API_VERSION || process.env.WHATSAPP_API_VERSION || 'v25.0';
+    const response = await fetch(`https://graph.facebook.com/${apiVersion}/${phoneNumberId}/smb_app_data`, {
+        method: 'POST',
+        headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            messaging_product: 'whatsapp',
+            sync_type: params.syncType,
+        }),
+    });
+
+    const data = await response.json().catch(async () => ({
+        message: await response.text(),
+    }));
+
+    if (!response.ok) {
+        throw new Error((data as any)?.error?.message || (data as any)?.message || 'Meta Business App sync request failed');
+    }
+
+    return data;
+};
+
 export const createWebhookController = (
     provider: any,
     conversationService: any,
@@ -314,6 +370,27 @@ export const createWebhookController = (
             });
 
             res.json(result);
+        },
+        triggerSmbAppDataSync: async (req: any, res: any) => {
+            const syncType = req.body?.sync_type || req.body?.syncType;
+            if (!['smb_app_state_sync', 'history'].includes(syncType)) {
+                res.status(400).json({ success: false, error: 'sync_type must be smb_app_state_sync or history' });
+                return;
+            }
+
+            const effectiveTenantId = await resolveSqlTenantId(req.body?.tenantId || req.context?.tenantId);
+            if (!effectiveTenantId) {
+                res.status(400).json({ success: false, error: 'Unable to resolve tenant for Business App sync' });
+                return;
+            }
+
+            const data = await requestSmbAppDataSync({
+                tenantId: effectiveTenantId,
+                phoneNumberId: req.body?.phoneNumberId || req.body?.phone_number_id,
+                syncType,
+            });
+
+            res.json({ success: true, data });
         },
         getMessageStatus: async (req: any, res: any) => {
             const { messageId } = req.params;

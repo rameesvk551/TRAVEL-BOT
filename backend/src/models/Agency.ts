@@ -71,6 +71,35 @@ module.exports = (sequelize) => {
       allowNull: true,
       comment: 'Display phone number returned by the provider',
     },
+    whatsappOnboardingMode: {
+      type: DataTypes.ENUM('STANDARD', 'COEXISTENCE'),
+      allowNull: false,
+      defaultValue: 'STANDARD',
+      comment: 'Whether the channel was onboarded directly or via WhatsApp Business App coexistence',
+    },
+    whatsappCoexistenceStatus: {
+      type: DataTypes.ENUM('NOT_ENABLED', 'PENDING', 'ACTIVE', 'DISCONNECTED', 'FAILED'),
+      allowNull: false,
+      defaultValue: 'NOT_ENABLED',
+      comment: 'Current coexistence lifecycle state for WhatsApp Business App + Cloud API',
+    },
+    whatsappContactSyncStatus: {
+      type: DataTypes.ENUM('NOT_STARTED', 'PENDING', 'COMPLETE', 'FAILED'),
+      allowNull: false,
+      defaultValue: 'NOT_STARTED',
+      comment: 'Status of WhatsApp Business App contact synchronization',
+    },
+    whatsappHistorySyncStatus: {
+      type: DataTypes.ENUM('NOT_STARTED', 'PENDING', 'COMPLETE', 'FAILED', 'DECLINED'),
+      allowNull: false,
+      defaultValue: 'NOT_STARTED',
+      comment: 'Status of WhatsApp Business App history synchronization',
+    },
+    whatsappCoexistenceLastSyncedAt: {
+      type: DataTypes.DATE,
+      allowNull: true,
+      comment: 'Last coexistence-specific webhook or sync update timestamp',
+    },
     whatsappTripFlowId: {
       type: DataTypes.STRING(255),
       allowNull: true,

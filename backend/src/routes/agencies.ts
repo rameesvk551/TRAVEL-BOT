@@ -44,6 +44,10 @@ const marketingOsCompleteSchema = z.object({
   sessionToken: z.string().min(1, 'Session token is required'),
 });
 
+const marketingOsConnectSchema = z.object({
+  onboardingMode: z.enum(['standard', 'coexistence']).optional(),
+});
+
 /**
  * GET /api/agencies/me - Get current agency details
  */
@@ -57,7 +61,14 @@ router.get('/me/whatsapp-connection', authenticate, requirePermission(PERMISSION
 /**
  * POST /api/agencies/me/whatsapp-connection/connect - Create partner connect session
  */
-router.post('/me/whatsapp-connection/connect', authenticate, requireRole('ADMIN'), requirePermission(PERMISSIONS.AGENCY_MANAGE), agencyController.createWhatsAppConnectSession);
+router.post(
+  '/me/whatsapp-connection/connect',
+  authenticate,
+  requireRole('ADMIN'),
+  requirePermission(PERMISSIONS.AGENCY_MANAGE),
+  validateBody(marketingOsConnectSchema),
+  agencyController.createWhatsAppConnectSession
+);
 
 /**
  * POST /api/agencies/me/whatsapp-connection/complete - Complete provider embedded signup

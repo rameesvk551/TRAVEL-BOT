@@ -1,6 +1,7 @@
 const { Op } = require('sequelize');
 const { Agency, WhatsAppFlow } = require('../models');
 const marketingOsPartnerService = require('./marketingOsPartnerService');
+const { getDefaultFlowDefinitions } = require('./defaultFlowDefinitions');
 
 const DEFAULT_ENDPOINT_URI = process.env.WHATSAPP_FLOW_ENDPOINT_URL || 'https://travelbot.wayon.in/api/whatsapp/flow';
 
@@ -83,6 +84,57 @@ async function getTenantTokenForAgency(agencyId) {
   return { agency, tenantToken };
 }
 
+function canSeedDefaultFlows(agency) {
+  if (!agency) return false;
+  if (agency.whatsappProvider !== 'MARKETING_OS') return false;
+  if (!agency.marketingOsTenantId) return false;
+
+  const status = String(agency.whatsappConnectionStatus || '').toUpperCase();
+  return status && status !== 'NOT_CONNECTED' && status !== 'FAILED';
+}
+
+async function ensureDefaultFlowsForAgency(agencyOrId) {
+  const agency = typeof agencyOrId === 'string'
+    ? await Agency.findByPk(agencyOrId)
+    : agencyOrId;
+
+  if (!canSeedDefaultFlows(agency)) {
+    return { created: 0, skipped: true };
+  }
+
+  const defaults = getDefaultFlowDefinitions(agency);
+  let created = 0;
+
+  for (const flowDefaults of defaults) {
+    const [flow, wasCreated] = await WhatsAppFlow.findOrCreate({
+      where: {
+        agencyId: agency.id,
+        name: flowDefaults.name,
+      },
+      defaults: {
+        agencyId: agency.id,
+        ...flowDefaults,
+      },
+    });
+
+    if (wasCreated) {
+      created += 1;
+      continue;
+    }
+
+    if (!flow.jsonDefinition || Object.keys(flow.jsonDefinition || {}).length === 0) {
+      await flow.update({
+        endpointUri: flow.endpointUri || flowDefaults.endpointUri,
+        firstScreenId: flow.firstScreenId || flowDefaults.firstScreenId,
+        categories: Array.isArray(flow.categories) && flow.categories.length ? flow.categories : flowDefaults.categories,
+        jsonDefinition: flowDefaults.jsonDefinition,
+      });
+    }
+  }
+
+  return { created, skipped: false };
+}
+
 function mapRemoteFlow(remote = {}) {
   return {
     name: remote.name || '',
@@ -97,6 +149,8 @@ function mapRemoteFlow(remote = {}) {
 }
 
 async function listFlows(agencyId, query = {}) {
+  await ensureDefaultFlowsForAgency(agencyId);
+
   const where = { agencyId };
   if (query.status && query.status !== 'ALL') where.status = String(query.status).toUpperCase();
   if (query.flowType && query.flowType !== 'ALL') where.flowType = String(query.flowType).toUpperCase();
@@ -260,4 +314,5 @@ module.exports = {
   deleteFlow,
   publishFlow,
   syncFlows,
+  ensureDefaultFlowsForAgency,
 };

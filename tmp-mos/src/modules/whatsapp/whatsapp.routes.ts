@@ -277,6 +277,7 @@ export function createWhatsAppRoutes(dependencies: {
   router.post('/messages/read-typing', sendMessageRateLimiter, webhookController.sendReadTyping);
   router.post('/messages/media', sendMessageRateLimiter, validateOptIn(optInRepo), webhookController.sendMedia);
   router.post('/messages/interactive', sendMessageRateLimiter, validateOptIn(optInRepo), webhookController.sendInteractive);
+  router.post('/smb-app-data', sendMessageRateLimiter, webhookController.triggerSmbAppDataSync);
   router.post(
     '/messages/template',
     sendMessageRateLimiter,

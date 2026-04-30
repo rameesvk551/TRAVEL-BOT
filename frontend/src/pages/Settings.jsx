@@ -57,16 +57,22 @@ function loadFacebookSdk(appId) {
 
 function runEmbeddedSignup(embeddedSignup) {
   return loadFacebookSdk(embeddedSignup.appId).then((FB) => new Promise((resolve, reject) => {
+    const extras = {
+      feature: 'whatsapp_embedded_signup',
+      sessionInfoVersion: embeddedSignup.sessionInfoVersion || '3',
+      version: 'v3',
+      setup: {},
+    };
+
+    if (embeddedSignup.featureType) {
+      extras.featureType = embeddedSignup.featureType;
+    }
+
     const loginOptions = {
       scope: 'whatsapp_business_management,whatsapp_business_messaging',
       response_type: 'code',
       override_default_response_type: true,
-      extras: {
-        feature: 'whatsapp_embedded_signup',
-        sessionInfoVersion: '3',
-        version: 'v3',
-        setup: {},
-      },
+      extras,
     };
 
     if (embeddedSignup.configId) {
@@ -175,7 +181,7 @@ export default function Settings() {
   });
 
   const connectMutation = useMutation({
-    mutationFn: () => client.post('/agencies/me/whatsapp-connection/connect'),
+    mutationFn: (payload = {}) => client.post('/agencies/me/whatsapp-connection/connect', payload),
     onSuccess: ({ data: response }) => {
       const connection = response.data;
       updateAgency({ whatsappConnection: connection, whatsappProvider: connection.provider });
@@ -242,7 +248,7 @@ export default function Settings() {
   const handleConnectInstagram = async () => {
     try {
       // Using WhatsApp connect to trigger Marketing OS tenant handshake and get appId
-      const { data } = await client.post('/agencies/me/whatsapp-connection/connect');
+      const { data } = await client.post('/agencies/me/whatsapp-connection/connect', { onboardingMode: 'standard' });
       const appId = data?.data?.embeddedSignup?.appId;
       if (!appId) throw new Error('Facebook App ID not found in Marketing OS config');
 
@@ -296,7 +302,7 @@ export default function Settings() {
     setSuccess('');
 
     try {
-      const response = await connectMutation.mutateAsync();
+      const response = await connectMutation.mutateAsync({ onboardingMode: 'coexistence' });
       const nextConnection = response.data.data;
 
       if (nextConnection?.embeddedSignup?.sessionToken) {
@@ -475,6 +481,9 @@ export default function Settings() {
             <div className="mt-6 flex flex-wrap gap-2">
               <span className={`badge ${statusTone(connection?.status)}`}>{connection?.status || 'NOT_CONNECTED'}</span>
               <span className="badge bg-slate-100 text-slate-600">Provider: {connection?.provider || agency?.whatsappProvider || 'MARKETING_OS'}</span>
+              {connection?.coexistence?.enabled ? (
+                <span className="badge bg-emerald-100 text-emerald-700">Coexistence: {connection.coexistence.status}</span>
+              ) : null}
             </div>
 
             <div className="mt-6 grid gap-4">
@@ -485,6 +494,15 @@ export default function Settings() {
               <div className="shell-panel-soft p-4">
                 <p className="eyebrow">Meta Phone Number ID</p>
                 <p className="mt-2 break-all text-sm font-semibold text-slate-900">{connection?.phoneNumberId || 'Waiting for provider sync'}</p>
+              </div>
+              <div className="shell-panel-soft p-4">
+                <p className="eyebrow">Business App Sync</p>
+                <p className="mt-2 text-sm font-semibold text-slate-900">
+                  Contacts: {connection?.coexistence?.contactSyncStatus || 'NOT_STARTED'}
+                </p>
+                <p className="mt-1 text-sm font-semibold text-slate-900">
+                  History: {connection?.coexistence?.historySyncStatus || 'NOT_STARTED'}
+                </p>
               </div>
               <div className="shell-panel-soft p-4">
                 <p className="eyebrow">Meta Commerce Catalog ID</p>
@@ -507,7 +525,7 @@ export default function Settings() {
             <div className="mt-6 flex flex-wrap gap-3">
               <button type="button" onClick={handleConnectWhatsApp} disabled={connectBusy} className="shell-button-primary">
                 <LinkIcon className="h-4 w-4" />
-                {connectBusy ? 'Connecting...' : 'Connect WhatsApp'}
+                {connectBusy ? 'Connecting...' : 'Connect WhatsApp Business App'}
               </button>
               <button
                 type="button"
@@ -521,11 +539,11 @@ export default function Settings() {
             </div>
 
             <div className="mt-6 rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4 text-xs leading-6 text-slate-500">
-              1. Start the connection handshake.
+              1. Start the coexistence connection handshake.
               <br />
-              2. Complete the Meta embedded signup popup.
+              2. Connect the existing WhatsApp Business app number in the Meta popup.
               <br />
-              3. TravelBot syncs the approved phone number, Meta IDs, and final status back into this workspace.
+              3. Keep the WhatsApp Business app open while TravelBot syncs contacts and chat history.
             </div>
           </article>
 
@@ -592,9 +610,9 @@ export default function Settings() {
             <div className="mb-6 flex items-start justify-between gap-4">
               <div>
                 <p className="eyebrow">Connect WhatsApp</p>
-                <h3 className="mt-2 text-3xl font-extrabold tracking-tight text-slate-950">Embedded signup flow</h3>
+                <h3 className="mt-2 text-3xl font-extrabold tracking-tight text-slate-950">Business app coexistence</h3>
                 <p className="mt-2 text-sm text-slate-500">
-                  We create the Marketing OS session, open the Meta popup, and sync the approved channel back into TravelBot.
+                  We create the Marketing OS session, open the Meta popup, and sync the approved Business app number back into TravelBot.
                 </p>
               </div>
               <button type="button" onClick={closeConnectModal} disabled={connectBusy} className="rounded-full p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 disabled:opacity-40">
@@ -612,13 +630,13 @@ export default function Settings() {
                 },
                 {
                   key: 'meta',
-                  title: 'Meta embedded signup popup',
+                  title: 'Meta Business app connection',
                   done: ['sync', 'connected'].includes(connectFlowStep),
                   active: connectFlowStep === 'meta',
                 },
                 {
                   key: 'sync',
-                  title: 'Sync channel back to TravelBot',
+                  title: 'Sync contacts and history',
                   done: connectFlowStep === 'connected',
                   active: connectFlowStep === 'sync',
                 },
@@ -647,13 +665,13 @@ export default function Settings() {
 
             {connectFlowStep === 'meta' ? (
               <div className="mt-4 rounded-[22px] border border-[#d4d4d4] bg-[#f5f5f5] px-4 py-3 text-sm text-[#2d2d2d]">
-                Complete the Meta popup to approve your WhatsApp Business number.
+                Complete the Meta popup, then enter the verification code inside the WhatsApp Business app.
               </div>
             ) : null}
 
             {connectFlowStep === 'connected' ? (
               <div className="mt-4 rounded-[22px] border border-[#d4d4d4] bg-[#f5f5f5] px-4 py-3 text-sm text-[#2d2d2d]">
-                WhatsApp is connected and synced back into TravelBot.
+                WhatsApp Business app coexistence is active. Keep the app open while history finishes syncing.
               </div>
             ) : null}
 

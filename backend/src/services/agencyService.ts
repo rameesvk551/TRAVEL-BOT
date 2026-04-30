@@ -5,6 +5,7 @@ const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const { z } = require('zod');
 const marketingOsPartnerService = require('./marketingOsPartnerService');
+const flowService = require('./flowService');
 
 const CALLBACK_SECRET = process.env.MARKETING_OS_WEBHOOK_SECRET || '';
 const WEBHOOK_APP_SECRET = process.env.WEBHOOK_APP_SECRET || '';
@@ -20,6 +21,10 @@ const marketingOsCallbackSchema = z.object({
   phoneNumberId: z.string().optional(),
   channelId: z.string().optional(),
   errorMessage: z.string().optional(),
+});
+
+const connectSessionOptionsSchema = z.object({
+  onboardingMode: z.enum(['standard', 'coexistence']).optional(),
 });
 
 function signEmbeddedSession(payload) {
@@ -45,6 +50,7 @@ function getDerivedConnectionStatus(agency) {
 function serializeWhatsAppConnection(agency) {
   const status = getDerivedConnectionStatus(agency);
   const canLaunchEmbeddedSignup = agency.whatsappProvider === 'MARKETING_OS';
+  const onboardingMode = agency.whatsappOnboardingMode || 'STANDARD';
 
   return {
     provider: agency.whatsappProvider,
@@ -58,6 +64,14 @@ function serializeWhatsAppConnection(agency) {
     connectUrl: null,
     canLaunchEmbeddedSignup,
     marketingOsTenantId: agency.marketingOsTenantId || null,
+    onboardingMode,
+    coexistence: {
+      enabled: onboardingMode === 'COEXISTENCE' || agency.whatsappCoexistenceStatus === 'ACTIVE',
+      status: agency.whatsappCoexistenceStatus || 'NOT_ENABLED',
+      contactSyncStatus: agency.whatsappContactSyncStatus || 'NOT_STARTED',
+      historySyncStatus: agency.whatsappHistorySyncStatus || 'NOT_STARTED',
+      lastSyncedAt: agency.whatsappCoexistenceLastSyncedAt || null,
+    },
     tripFlow: {
       id: agency.whatsappTripFlowId || null,
       name: agency.whatsappTripFlowName || null,
@@ -267,28 +281,43 @@ async function getWhatsAppConnection(agencyId) {
   return serializeWhatsAppConnection(agency);
 }
 
-async function createMarketingOsConnectSession(agencyId) {
+async function createMarketingOsConnectSession(agencyId, options = {}) {
   const agency = await agencyRepository.findById(agencyId);
   if (!agency) {
     throw Object.assign(new Error('Agency not found'), { statusCode: 404, code: 'NOT_FOUND' });
   }
+
+  const parsedOptions = connectSessionOptionsSchema.parse(options || {});
+  const onboardingMode = parsedOptions.onboardingMode === 'coexistence' ? 'COEXISTENCE' : 'STANDARD';
+  const isCoexistence = onboardingMode === 'COEXISTENCE';
 
   if (agency.whatsappProvider !== 'MARKETING_OS') {
     await agency.update({
       whatsappProvider: 'MARKETING_OS',
       whatsappConnectionStatus: 'PENDING',
       whatsappConnectionError: null,
+      whatsappOnboardingMode: onboardingMode,
+      whatsappCoexistenceStatus: isCoexistence ? 'PENDING' : 'NOT_ENABLED',
+      whatsappContactSyncStatus: isCoexistence ? 'PENDING' : 'NOT_STARTED',
+      whatsappHistorySyncStatus: isCoexistence ? 'PENDING' : 'NOT_STARTED',
     });
   } else {
     await agency.update({
       whatsappConnectionStatus: 'PENDING',
       whatsappConnectionError: null,
+      whatsappOnboardingMode: onboardingMode,
+      whatsappCoexistenceStatus: isCoexistence ? 'PENDING' : 'NOT_ENABLED',
+      whatsappContactSyncStatus: isCoexistence ? 'PENDING' : 'NOT_STARTED',
+      whatsappHistorySyncStatus: isCoexistence ? 'PENDING' : 'NOT_STARTED',
     });
   }
 
   const tenantId = await resolveMarketingOsTenant(agency);
   const tenantToken = await marketingOsPartnerService.getTenantToken(tenantId);
-  const embeddedConfig = await marketingOsPartnerService.getEmbeddedSignupConfig(tenantToken);
+  const embeddedConfig = await marketingOsPartnerService.getEmbeddedSignupConfig(tenantToken, {
+    featureType: isCoexistence ? 'whatsapp_business_app_onboarding' : undefined,
+    sessionInfoVersion: '3',
+  });
 
   if (!embeddedConfig?.appId) {
     throw Object.assign(new Error('Marketing OS embedded signup is not configured for this environment'), {
@@ -306,6 +335,8 @@ async function createMarketingOsConnectSession(agencyId) {
     state: embeddedConfig.state,
     appId: embeddedConfig.appId,
     configId: embeddedConfig.configId,
+    onboardingMode,
+    featureType: isCoexistence ? 'whatsapp_business_app_onboarding' : null,
   });
 
   return {
@@ -315,6 +346,8 @@ async function createMarketingOsConnectSession(agencyId) {
       appId: embeddedConfig.appId,
       configId: embeddedConfig.configId || null,
       sessionToken,
+      featureType: isCoexistence ? 'whatsapp_business_app_onboarding' : null,
+      sessionInfoVersion: '3',
     },
   };
 }
@@ -345,15 +378,25 @@ async function completeMarketingOsConnectSession(agencyId, payload) {
   const result = await marketingOsPartnerService.completeEmbeddedSignup(session.tenantToken, {
     code: payload.code,
     state: session.state,
+    featureType: session.featureType || undefined,
+    sessionInfoVersion: '3',
   });
 
   const providerConnection = result?.connection;
   const displayPhoneNumber = providerConnection?.displayPhoneNumber || null;
   const normalizedWhatsappNumber = displayPhoneNumber ? normalizePhone(displayPhoneNumber) : agency.whatsappNumber;
+  const onboardingMode = session.onboardingMode || 'STANDARD';
+  const isCoexistence = onboardingMode === 'COEXISTENCE';
 
   await agency.update({
     whatsappProvider: 'MARKETING_OS',
     whatsappConnectionStatus: mapMarketingOsStatus(providerConnection?.status),
+    whatsappOnboardingMode: onboardingMode,
+    whatsappCoexistenceStatus: isCoexistence
+      ? (mapMarketingOsStatus(providerConnection?.status) === 'CONNECTED' ? 'ACTIVE' : 'PENDING')
+      : 'NOT_ENABLED',
+    whatsappContactSyncStatus: isCoexistence ? 'PENDING' : 'NOT_STARTED',
+    whatsappHistorySyncStatus: isCoexistence ? 'PENDING' : 'NOT_STARTED',
     marketingOsTenantId: session.tenantId,
     whatsappBusinessAccountId: providerConnection?.whatsappBusinessAccountId || agency.whatsappBusinessAccountId,
     whatsappPhoneNumberId: providerConnection?.phoneNumberId || agency.whatsappPhoneNumberId,
@@ -361,10 +404,59 @@ async function completeMarketingOsConnectSession(agencyId, payload) {
     whatsappNumber: normalizedWhatsappNumber,
     whatsappConnectionError: providerConnection?.errorMessage || null,
     whatsappLastSyncedAt: new Date(),
+    whatsappCoexistenceLastSyncedAt: isCoexistence ? new Date() : agency.whatsappCoexistenceLastSyncedAt,
   });
 
   const refreshedAgency = await agencyRepository.findById(agencyId);
-  return serializeWhatsAppConnection(refreshedAgency);
+  if (isCoexistence) {
+    await initiateCoexistenceSync(refreshedAgency, session.tenantToken);
+  }
+  await flowService.ensureDefaultFlowsForAgency(refreshedAgency);
+  return serializeWhatsAppConnection(await agencyRepository.findById(agencyId));
+}
+
+async function initiateCoexistenceSync(agency, tenantToken) {
+  const phoneNumberId = agency?.whatsappPhoneNumberId;
+  if (!phoneNumberId) {
+    await agency.update({
+      whatsappContactSyncStatus: 'FAILED',
+      whatsappHistorySyncStatus: 'FAILED',
+      whatsappConnectionError: 'Cannot start Business App sync until Meta phone number ID is available',
+    });
+    return;
+  }
+
+  const syncBasePayload = {
+    tenantId: agency.marketingOsTenantId,
+    phoneNumberId,
+    messaging_product: 'whatsapp',
+  };
+
+  try {
+    await marketingOsPartnerService.syncTenantWhatsAppBusinessAppData(tenantToken, {
+      ...syncBasePayload,
+      sync_type: 'smb_app_state_sync',
+    });
+
+    await marketingOsPartnerService.syncTenantWhatsAppBusinessAppData(tenantToken, {
+      ...syncBasePayload,
+      sync_type: 'history',
+    });
+
+    await agency.update({
+      whatsappContactSyncStatus: 'PENDING',
+      whatsappHistorySyncStatus: 'PENDING',
+      whatsappCoexistenceLastSyncedAt: new Date(),
+      whatsappConnectionError: null,
+    });
+  } catch (err) {
+    await agency.update({
+      whatsappContactSyncStatus: 'FAILED',
+      whatsappHistorySyncStatus: 'FAILED',
+      whatsappConnectionError: err.response?.data?.error || err.response?.data?.message || err.message || 'Failed to start Business App data sync',
+      whatsappCoexistenceLastSyncedAt: new Date(),
+    });
+  }
 }
 
 async function handleMarketingOsCallback(headers, payload, rawBody) {
@@ -408,12 +500,16 @@ async function handleMarketingOsCallback(headers, payload, rawBody) {
   const nextValues = {
     whatsappProvider: 'MARKETING_OS',
     whatsappConnectionStatus: payload.status,
+    whatsappCoexistenceStatus: payload.status === 'CONNECTED'
+      ? (agency.whatsappOnboardingMode === 'COEXISTENCE' ? 'ACTIVE' : agency.whatsappCoexistenceStatus)
+      : (payload.status === 'FAILED' && agency.whatsappOnboardingMode === 'COEXISTENCE' ? 'FAILED' : agency.whatsappCoexistenceStatus),
     whatsappChannelId: payload.channelId || agency.whatsappChannelId,
     whatsappBusinessAccountId: payload.businessAccountId || agency.whatsappBusinessAccountId,
     whatsappPhoneNumberId: payload.phoneNumberId || agency.whatsappPhoneNumberId,
     whatsappDisplayPhoneNumber: payload.displayPhoneNumber || payload.whatsappNumber || agency.whatsappDisplayPhoneNumber,
     whatsappConnectionError: payload.status === 'FAILED' ? (payload.errorMessage || 'Marketing OS reported a connection failure') : null,
     whatsappLastSyncedAt: new Date(),
+    whatsappCoexistenceLastSyncedAt: agency.whatsappOnboardingMode === 'COEXISTENCE' ? new Date() : agency.whatsappCoexistenceLastSyncedAt,
   };
 
   if (payload.whatsappNumber) {
@@ -421,9 +517,11 @@ async function handleMarketingOsCallback(headers, payload, rawBody) {
   }
 
   await agency.update(nextValues);
+  const refreshedAgency = await agencyRepository.findById(payload.agencyId);
+  await flowService.ensureDefaultFlowsForAgency(refreshedAgency);
   return {
     message: 'Marketing OS callback processed',
-    data: serializeWhatsAppConnection(agency),
+    data: serializeWhatsAppConnection(refreshedAgency),
   };
 }
 

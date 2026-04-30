@@ -4,7 +4,7 @@
 
 const crypto = require('crypto');
 const path = require('path');
-const { Agency, Agent, Message } = require(path.resolve(__dirname, '../../backend/src/models/index.ts'));
+const { Agency, Agent, Customer, Message } = require(path.resolve(__dirname, '../../backend/src/models/index.ts'));
 const whatsappService = require(path.resolve(__dirname, '../../backend/src/services/whatsappService.ts'));
 const schedulerService = require(path.resolve(__dirname, '../../backend/src/services/schedulerService.ts'));
 const { loadOrCreateSession } = require('./utils/sessionManager');
@@ -114,6 +114,31 @@ async function handleIncoming(req, res) {
       const changes = entry.changes || [];
       for (const change of changes) {
         const value = change.value || {};
+        const metadata = value.metadata || {};
+
+        if (change.field === 'account_update' || value.event) {
+          await processAccountUpdate(value, entry).catch((err) => {
+            console.error('[Webhook] Error processing account update:', err.message);
+          });
+        }
+
+        if (change.field === 'smb_app_state_sync' || value.state_sync) {
+          await processStateSync(value, metadata).catch((err) => {
+            console.error('[Webhook] Error processing SMB app state sync:', err.message);
+          });
+        }
+
+        if (change.field === 'history' || value.history) {
+          await processHistorySync(value, metadata).catch((err) => {
+            console.error('[Webhook] Error processing history sync:', err.message);
+          });
+        }
+
+        if (change.field === 'smb_message_echoes' || value.message_echoes) {
+          await processMessageEchoes(value, metadata).catch((err) => {
+            console.error('[Webhook] Error processing SMB message echoes:', err.message);
+          });
+        }
 
         // Handle message status updates (delivered, read)
         if (value.statuses) {
@@ -124,9 +149,29 @@ async function handleIncoming(req, res) {
 
         // Handle incoming messages
         const messages = value.messages || [];
-        const metadata = value.metadata || {};
 
         for (const msg of messages) {
+          if (change.field === 'history' && msg.type !== 'edit' && msg.type !== 'revoke') {
+            await processHistoryMediaMessage(msg, metadata).catch((err) => {
+              console.error('[Webhook] Error processing history media message:', err.message);
+            });
+            continue;
+          }
+
+          if (msg.type === 'edit') {
+            await processMessageEdit(msg).catch((err) => {
+              console.error('[Webhook] Error processing message edit:', err.message);
+            });
+            continue;
+          }
+
+          if (msg.type === 'revoke') {
+            await processMessageRevoke(msg).catch((err) => {
+              console.error('[Webhook] Error processing message revoke:', err.message);
+            });
+            continue;
+          }
+
           await processMessage(msg, metadata).catch((err) => {
             console.error('[Webhook] Error processing message:', err.message);
           });
@@ -136,6 +181,276 @@ async function handleIncoming(req, res) {
   } catch (err) {
     console.error('[Webhook] Error handling incoming:', err.message);
   }
+}
+
+async function resolveAgencyFromMetadata(metadata = {}, entry = {}) {
+  const displayPhone = metadata.display_phone_number || metadata.phone_number
+    ? normalizePhone(metadata.display_phone_number || metadata.phone_number)
+    : null;
+  const phoneNumberId = metadata.phone_number_id || null;
+  const wabaId = entry.id || null;
+
+  const whereCandidates = [];
+  if (displayPhone) whereCandidates.push({ whatsappNumber: displayPhone });
+  if (phoneNumberId) whereCandidates.push({ whatsappPhoneNumberId: phoneNumberId });
+  if (wabaId) whereCandidates.push({ whatsappBusinessAccountId: wabaId });
+
+  for (const where of whereCandidates) {
+    const agency = await Agency.findOne({ where });
+    if (agency) return agency;
+  }
+
+  return null;
+}
+
+async function upsertCustomerContact(agencyId, phone, updates = {}) {
+  const normalizedPhone = normalizePhone(phone);
+  if (!normalizedPhone) return null;
+
+  const [customer] = await Customer.findOrCreate({
+    where: { agencyId, phone: normalizedPhone },
+    defaults: {
+      agencyId,
+      phone: normalizedPhone,
+      source: updates.source || 'whatsapp_business_app',
+      name: updates.name || null,
+      notes: updates.notes || null,
+    },
+  });
+
+  const nextValues = {};
+  if (updates.name && updates.name !== customer.name) nextValues.name = updates.name;
+  if (updates.source && updates.source !== customer.source) nextValues.source = updates.source;
+  if (updates.notes && updates.notes !== customer.notes) nextValues.notes = updates.notes;
+
+  if (Object.keys(nextValues).length) {
+    await customer.update(nextValues);
+  }
+
+  return customer;
+}
+
+function normalizeStoredMessageType(type) {
+  const normalized = String(type || '').toLowerCase();
+  if (normalized === 'image' || normalized === 'video') return 'IMAGE';
+  if (normalized === 'document') return 'DOCUMENT';
+  if (normalized === 'audio' || normalized === 'voice') return 'AUDIO';
+  return 'TEXT';
+}
+
+function mapHistoryStatus(status) {
+  const normalized = String(status || '').toUpperCase();
+  if (normalized === 'ERROR' || normalized === 'FAILED') return 'FAILED';
+  if (normalized === 'READ' || normalized === 'PLAYED') return 'READ';
+  if (normalized === 'DELIVERED') return 'DELIVERED';
+  return 'SENT';
+}
+
+function extractMessageContent(msg = {}) {
+  if (msg.text?.body) return msg.text.body;
+  if (msg.image?.caption) return msg.image.caption;
+  if (msg.video?.caption) return msg.video.caption;
+  if (msg.document?.caption) return msg.document.caption;
+  if (msg.document?.filename) return `[Document: ${msg.document.filename}]`;
+  if (msg.image?.id) return `[Image Received: ${msg.image.id}]`;
+  if (msg.video?.id) return `[Video Received: ${msg.video.id}]`;
+  if (msg.audio?.id) return `[Audio Received: ${msg.audio.id}]`;
+  if (msg.type === 'media_placeholder') return '[Media message placeholder]';
+  if (msg.type) return `[${String(msg.type).toUpperCase()} message]`;
+  return '';
+}
+
+async function saveCoexistenceMessage({ agency, customerPhone, msg, direction, status, source }) {
+  if (!agency || !customerPhone || !msg?.id) return null;
+
+  const existing = await Message.findOne({ where: { waMessageId: msg.id } });
+  if (existing) return existing;
+
+  const customer = await upsertCustomerContact(agency.id, customerPhone, { source });
+  if (!customer) return null;
+
+  return Message.create({
+    customerId: customer.id,
+    agencyId: agency.id,
+    direction,
+    content: extractMessageContent(msg) || '',
+    type: normalizeStoredMessageType(msg.type),
+    waMessageId: msg.id,
+    status: status || 'SENT',
+    timestamp: msg.timestamp ? new Date(parseInt(msg.timestamp, 10) * 1000) : new Date(),
+  });
+}
+
+async function processAccountUpdate(value = {}, entry = {}) {
+  const agency = await resolveAgencyFromMetadata({ phone_number: value.phone_number }, entry);
+  if (!agency) return;
+
+  const event = String(value.event || '').toUpperCase();
+  const updates = {
+    whatsappCoexistenceLastSyncedAt: new Date(),
+  };
+
+  if (event === 'PARTNER_REMOVED' || event === 'ACCOUNT_OFFBOARDED') {
+    updates.whatsappConnectionStatus = 'NOT_CONNECTED';
+    updates.whatsappCoexistenceStatus = 'DISCONNECTED';
+    updates.whatsappConnectionError = value.disconnection_info
+      ? JSON.stringify(value.disconnection_info)
+      : 'WhatsApp Business App disconnected from Cloud API';
+  } else if (event === 'ACCOUNT_RECONNECTED') {
+    updates.whatsappConnectionStatus = 'CONNECTED';
+    updates.whatsappCoexistenceStatus = 'ACTIVE';
+    updates.whatsappConnectionError = null;
+  }
+
+  await agency.update(updates);
+}
+
+async function processStateSync(value = {}, metadata = {}) {
+  const agency = await resolveAgencyFromMetadata(metadata);
+  if (!agency) return;
+
+  const contacts = Array.isArray(value.state_sync) ? value.state_sync : [];
+  for (const item of contacts) {
+    if (item?.type !== 'contact' || !item.contact?.phone_number) continue;
+
+    const fullName = item.action === 'remove'
+      ? null
+      : (item.contact.full_name || item.contact.first_name || null);
+
+    await upsertCustomerContact(agency.id, item.contact.phone_number, {
+      name: fullName,
+      source: 'whatsapp_business_app_contact',
+      notes: item.action === 'remove' ? 'Removed from WhatsApp Business App contacts' : null,
+    });
+  }
+
+  await agency.update({
+    whatsappOnboardingMode: 'COEXISTENCE',
+    whatsappCoexistenceStatus: 'ACTIVE',
+    whatsappContactSyncStatus: 'COMPLETE',
+    whatsappCoexistenceLastSyncedAt: new Date(),
+  });
+}
+
+async function processHistorySync(value = {}, metadata = {}) {
+  const agency = await resolveAgencyFromMetadata(metadata);
+  if (!agency) return;
+
+  const historyItems = Array.isArray(value.history) ? value.history : [];
+  let declined = false;
+  let maxProgress = null;
+
+  for (const item of historyItems) {
+    const errors = Array.isArray(item.errors) ? item.errors : [];
+    if (errors.some((error) => Number(error.code) === 2593109)) {
+      declined = true;
+      continue;
+    }
+
+    if (Number.isFinite(Number(item.metadata?.progress))) {
+      maxProgress = Math.max(maxProgress || 0, Number(item.metadata.progress));
+    }
+
+    const threads = Array.isArray(item.threads) ? item.threads : [];
+    for (const thread of threads) {
+      const customerPhone = normalizePhone(thread.id);
+      const messages = Array.isArray(thread.messages) ? thread.messages : [];
+      for (const msg of messages) {
+        const fromPhone = normalizePhone(msg.from);
+        const businessPhone = normalizePhone(metadata.display_phone_number);
+        const direction = businessPhone && fromPhone === businessPhone ? 'OUT' : 'IN';
+        const targetPhone = direction === 'OUT' ? (msg.to || customerPhone) : fromPhone;
+
+        await saveCoexistenceMessage({
+          agency,
+          customerPhone: targetPhone || customerPhone,
+          msg,
+          direction,
+          status: mapHistoryStatus(msg.history_context?.status),
+          source: 'whatsapp_business_app_history',
+        });
+      }
+    }
+  }
+
+  await agency.update({
+    whatsappOnboardingMode: 'COEXISTENCE',
+    whatsappCoexistenceStatus: 'ACTIVE',
+    whatsappHistorySyncStatus: declined ? 'DECLINED' : (maxProgress === 100 ? 'COMPLETE' : 'PENDING'),
+    whatsappCoexistenceLastSyncedAt: new Date(),
+  });
+}
+
+async function processHistoryMediaMessage(msg = {}, metadata = {}) {
+  const agency = await resolveAgencyFromMetadata(metadata);
+  if (!agency) return;
+
+  const fromPhone = normalizePhone(msg.from);
+  const businessPhone = normalizePhone(metadata.display_phone_number);
+  const direction = businessPhone && fromPhone === businessPhone ? 'OUT' : 'IN';
+  const customerPhone = direction === 'OUT' ? msg.to : fromPhone;
+
+  await saveCoexistenceMessage({
+    agency,
+    customerPhone,
+    msg,
+    direction,
+    status: 'DELIVERED',
+    source: 'whatsapp_business_app_history',
+  });
+}
+
+async function processMessageEchoes(value = {}, metadata = {}) {
+  const agency = await resolveAgencyFromMetadata(metadata);
+  if (!agency) return;
+
+  const echoes = Array.isArray(value.message_echoes) ? value.message_echoes : [];
+  for (const msg of echoes) {
+    await saveCoexistenceMessage({
+      agency,
+      customerPhone: msg.to,
+      msg,
+      direction: 'OUT',
+      status: 'SENT',
+      source: 'whatsapp_business_app_echo',
+    });
+  }
+
+  await agency.update({
+    whatsappOnboardingMode: 'COEXISTENCE',
+    whatsappCoexistenceStatus: 'ACTIVE',
+    whatsappCoexistenceLastSyncedAt: new Date(),
+  });
+}
+
+async function processMessageEdit(msg = {}) {
+  const originalMessageId = msg.edit?.original_message_id;
+  if (!originalMessageId) return;
+
+  const existing = await Message.findOne({ where: { waMessageId: originalMessageId } });
+  if (!existing) return;
+
+  const editedMessage = msg.edit?.message || {};
+  const content = extractMessageContent(editedMessage);
+  if (!content) return;
+
+  await existing.update({
+    content,
+    type: normalizeStoredMessageType(editedMessage.type),
+  });
+}
+
+async function processMessageRevoke(msg = {}) {
+  const originalMessageId = msg.revoke?.original_message_id;
+  if (!originalMessageId) return;
+
+  const existing = await Message.findOne({ where: { waMessageId: originalMessageId } });
+  if (!existing) return;
+
+  await existing.update({
+    content: '[Message deleted]',
+    status: 'FAILED',
+  });
 }
 
 /**

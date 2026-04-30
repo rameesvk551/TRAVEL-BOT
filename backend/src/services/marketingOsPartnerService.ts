@@ -64,9 +64,11 @@ async function getTenantToken(tenantId) {
   return response.data?.data?.token;
 }
 
-async function getEmbeddedSignupConfig(tenantToken) {
+async function getEmbeddedSignupConfig(tenantToken, options = {}) {
   const client = getTenantClient(tenantToken);
-  const response = await client.get('/whatsapp/settings/embedded/config');
+  const response = await client.get('/whatsapp/settings/embedded/config', {
+    params: options,
+  });
   return response.data?.data;
 }
 
@@ -140,6 +142,12 @@ async function sendTenantWhatsAppReadTyping(tenantToken, payload) {
 async function sendTenantWhatsAppTemplate(tenantToken, payload) {
   const client = getTenantClient(tenantToken);
   const response = await client.post('/whatsapp/messages/template', payload);
+  return response.data;
+}
+
+async function syncTenantWhatsAppBusinessAppData(tenantToken, payload) {
+  const client = getTenantClient(tenantToken);
+  const response = await client.post('/whatsapp/smb-app-data', payload);
   return response.data;
 }
 
@@ -244,6 +252,7 @@ module.exports = {
   sendTenantWhatsAppInteractive,
   sendTenantWhatsAppMedia,
   sendTenantWhatsAppTemplate,
+  syncTenantWhatsAppBusinessAppData,
   sendTenantInstagramMessage,
   sendTenantInstagramPrivateReply,
   sendTenantWhatsAppReadTyping,

@@ -29,7 +29,7 @@ async function getWhatsAppConnection(req, res, next) {
 
 async function createWhatsAppConnectSession(req, res, next) {
   try {
-    const data = await agencyService.createMarketingOsConnectSession(req.agency.id);
+    const data = await agencyService.createMarketingOsConnectSession(req.agency.id, req.body || {});
     res.json({ success: true, data, message: 'Marketing OS connect session created' });
   } catch (err) {
     next(err);
