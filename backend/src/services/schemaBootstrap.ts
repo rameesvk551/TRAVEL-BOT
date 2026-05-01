@@ -142,6 +142,12 @@ async function ensureLeadsSchema() {
     allowNull: false,
     defaultValue: [],
   });
+
+  await ensureColumn('leads', 'selected_items', {
+    type: Sequelize.JSONB,
+    allowNull: false,
+    defaultValue: [],
+  });
 }
 
 async function ensureCustomersSchema() {

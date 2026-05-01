@@ -40,13 +40,36 @@ function normalizeTags(tags = []) {
     .slice(0, 12);
 }
 
+function normalizeSelectedItems(items = []) {
+  if (!Array.isArray(items)) return [];
+  const seen = new Set();
+
+  return items
+    .map((item) => ({
+      itemType: String(item?.itemType || item?.type || '').trim().toUpperCase(),
+      itemId: String(item?.itemId || item?.id || '').trim(),
+    }))
+    .filter((item) => ['PACKAGE', 'PROPERTY'].includes(item.itemType) && item.itemId)
+    .filter((item) => {
+      const key = `${item.itemType}:${item.itemId}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, 50);
+}
+
 function calculateLeadScore(lead) {
   let score = 10;
   const status = String(lead?.status || '');
   const budget = Number(lead?.budgetPerPerson || 0);
   const travellers = Number(lead?.travellers || 1);
   const tags = normalizeTags(lead?.tags);
-  const selectedCount = Number(lead?.selectedCatalogItems?.length || 0);
+  const selectedCount = Number(
+    lead?.selectedCatalogItems?.length
+    || normalizeSelectedItems(lead?.selectedItems).length
+    || 0
+  );
   const hasPackageOrProperty = Boolean(lead?.packageId || lead?.propertyId || selectedCount > 0);
 
   if (lead?.assignedAgentId) score += 8;
@@ -68,6 +91,7 @@ function calculateLeadScore(lead) {
 function enrichLeadPayload(lead) {
   const payload = lead?.toJSON ? lead.toJSON() : { ...lead };
   payload.tags = normalizeTags(payload.tags);
+  payload.selectedItems = normalizeSelectedItems(payload.selectedItems);
   payload.leadScore = calculateLeadScore(payload);
   return payload;
 }
@@ -153,6 +177,11 @@ async function getLeadById(leadId, agencyId, requester = null) {
   const selectedPackageIds = new Set();
   const selectedPropertyIds = new Set();
   const campaignSections = Array.isArray(leadJson.campaign?.campaignSections) ? leadJson.campaign.campaignSections : [];
+
+  normalizeSelectedItems(leadJson.selectedItems).forEach((item) => {
+    if (item.itemType === 'PACKAGE') selectedPackageIds.add(item.itemId);
+    if (item.itemType === 'PROPERTY') selectedPropertyIds.add(item.itemId);
+  });
 
   if (campaignSections.length > 0) {
     campaignSections
@@ -301,6 +330,7 @@ async function createLead(data, agencyId) {
     campaignAction,
     lostReason,
     tags,
+    selectedItems,
     travelStart,
     travelEnd,
     status = 'NEW',
@@ -347,6 +377,7 @@ async function createLead(data, agencyId) {
     notes,
     lostReason,
     tags: normalizeTags(tags),
+    selectedItems: normalizeSelectedItems(selectedItems),
     travelStart,
     travelEnd,
     status,
@@ -392,7 +423,7 @@ async function updateLead(leadId, agencyId, updates, requester = null) {
     'status', 'assignedAgentId', 'destination', 'travelDates',
     'travellers', 'budgetPerPerson', 'packageId', 'propertyId', 'itemType',
     'campaignId', 'campaignName', 'campaignAction', 'notes', 'lostReason',
-    'travelStart', 'travelEnd', 'interest', 'source', 'tags',
+    'travelStart', 'travelEnd', 'interest', 'source', 'tags', 'selectedItems',
   ];
 
   const filtered = {};
@@ -400,6 +431,7 @@ async function updateLead(leadId, agencyId, updates, requester = null) {
     if (updates[key] !== undefined) filtered[key] = updates[key];
   }
   if (filtered.tags !== undefined) filtered.tags = normalizeTags(filtered.tags);
+  if (filtered.selectedItems !== undefined) filtered.selectedItems = normalizeSelectedItems(filtered.selectedItems);
   if (filtered.status === 'LOST' && !String(filtered.lostReason || lead.lostReason || '').trim()) {
     throw Object.assign(new Error('Lost reason is required when marking a lead lost'), {
       statusCode: 400,

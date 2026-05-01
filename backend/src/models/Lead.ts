@@ -135,6 +135,12 @@ module.exports = (sequelize) => {
       defaultValue: [],
       comment: 'Labels used by agents to segment and prioritize leads',
     },
+    selectedItems: {
+      type: DataTypes.JSONB,
+      allowNull: false,
+      defaultValue: [],
+      comment: 'All packages/properties selected by the lead during WhatsApp or campaign flows',
+    },
     adId: {
       type: DataTypes.STRING(255),
       allowNull: true,

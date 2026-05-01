@@ -44,6 +44,64 @@ function normalizeText(value = '') {
   return String(value || '').trim();
 }
 
+function uniqueIds(...values) {
+  const seen = new Set();
+  const ids = [];
+
+  const add = (value) => {
+    if (Array.isArray(value)) {
+      value.forEach(add);
+      return;
+    }
+    if (value && typeof value === 'object') {
+      add(value.id || value.itemId || value.value || value.packageId || value.propertyId);
+      return;
+    }
+    const id = normalizeText(value);
+    if (!id || seen.has(id)) return;
+    seen.add(id);
+    ids.push(id);
+  };
+
+  values.forEach(add);
+  return ids;
+}
+
+function normalizeSelectedItems(items = []) {
+  if (!Array.isArray(items)) return [];
+  const seen = new Set();
+
+  return items
+    .map((item) => ({
+      itemType: String(item?.itemType || item?.type || '').trim().toUpperCase(),
+      itemId: normalizeText(item?.itemId || item?.id || ''),
+    }))
+    .filter((item) => ['PACKAGE', 'PROPERTY'].includes(item.itemType) && item.itemId)
+    .filter((item) => {
+      const key = `${item.itemType}:${item.itemId}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
+function buildSelectedItems(profile = {}, extra = {}, existingItems = []) {
+  const items = normalizeSelectedItems(existingItems);
+  const push = (itemType, itemId) => {
+    const id = normalizeText(itemId);
+    if (!id) return;
+    items.push({ itemType, itemId: id });
+  };
+
+  uniqueIds(profile.selectedPackageIds, profile.selectedPackageId).forEach((id) => push('PACKAGE', id));
+  uniqueIds(profile.selectedPropertyIds, profile.selectedPropertyId).forEach((id) => push('PROPERTY', id));
+  normalizeSelectedItems(extra.selectedItems).forEach((item) => push(item.itemType, item.itemId));
+  push('PACKAGE', extra.packageId);
+  push('PROPERTY', extra.propertyId);
+
+  return normalizeSelectedItems(items);
+}
+
 function lower(value = '') {
   return normalizeText(value).toLowerCase();
 }
@@ -129,6 +187,8 @@ function getProfile(session) {
       : [],
     selectedPackageId: session.collectedData?.selectedPackageId || null,
     selectedPropertyId: session.collectedData?.selectedPropertyId || null,
+    selectedPackageIds: uniqueIds(session.collectedData?.selectedPackageIds, session.collectedData?.selectedPackageId),
+    selectedPropertyIds: uniqueIds(session.collectedData?.selectedPropertyIds, session.collectedData?.selectedPropertyId),
     campaignId: session.collectedData?.campaignId || null,
     campaignName: session.collectedData?.campaignName || null,
     activeLeadId: session.collectedData?.activeLeadId || null,
@@ -511,8 +571,13 @@ async function findActiveLead(session, customer, agency) {
 async function ensureLead(session, customer, agency, extra = {}) {
   let lead = await findActiveLead(session, customer, agency);
   const profile = getProfile(session);
-  const pkg = profile.selectedPackageId
-    ? await Package.findOne({ where: { id: profile.selectedPackageId, agencyId: agency.id } })
+  const selectedItems = buildSelectedItems(profile, extra, lead?.selectedItems);
+  const firstSelectedPackageId = selectedItems.find((item) => item.itemType === 'PACKAGE')?.itemId || null;
+  const firstSelectedPropertyId = selectedItems.find((item) => item.itemType === 'PROPERTY')?.itemId || null;
+  const primaryPackageId = extra.packageId || profile.selectedPackageId || firstSelectedPackageId || null;
+  const primaryPropertyId = extra.propertyId || profile.selectedPropertyId || firstSelectedPropertyId || null;
+  const pkg = primaryPackageId
+    ? await Package.findOne({ where: { id: primaryPackageId, agencyId: agency.id } })
     : null;
 
   const notes = [
@@ -523,9 +588,10 @@ async function ensureLead(session, customer, agency, extra = {}) {
   if (!lead) {
     lead = await leadService.createLead({
       customerId: customer.id,
-      packageId: extra.packageId || pkg?.id || null,
-      propertyId: extra.propertyId || null,
-      itemType: extra.itemType || (extra.propertyId ? 'PROPERTY' : (extra.packageId || pkg?.id) ? 'PACKAGE' : null),
+      packageId: primaryPackageId,
+      propertyId: primaryPropertyId,
+      selectedItems,
+      itemType: extra.itemType || (primaryPropertyId ? 'PROPERTY' : primaryPackageId ? 'PACKAGE' : null),
       campaignId: extra.campaignId || profile.campaignId || null,
       campaignName: extra.campaignName || null,
       campaignAction: extra.campaignAction || null,
@@ -543,9 +609,10 @@ async function ensureLead(session, customer, agency, extra = {}) {
       : (extra.status || lead.status || 'NEW');
 
     const updates = {
-      packageId: extra.packageId || pkg?.id || lead.packageId || null,
-      propertyId: extra.propertyId || lead.propertyId || null,
-      itemType: extra.itemType || lead.itemType || (extra.propertyId ? 'PROPERTY' : null),
+      packageId: primaryPackageId || lead.packageId || null,
+      propertyId: primaryPropertyId || lead.propertyId || null,
+      selectedItems,
+      itemType: extra.itemType || lead.itemType || (primaryPropertyId ? 'PROPERTY' : primaryPackageId ? 'PACKAGE' : null),
       campaignId: extra.campaignId || profile.campaignId || lead.campaignId || null,
       campaignName: extra.campaignName || lead.campaignName || null,
       campaignAction: extra.campaignAction || lead.campaignAction || null,
@@ -595,6 +662,8 @@ async function createFreshGreetingLead(session, customer) {
       packageCategory: null,
       packageResults: [],
       selectedPackageId: null,
+      selectedPackageIds: [],
+      selectedPropertyIds: [],
       enquiryDraft: {},
     },
   });
@@ -613,6 +682,8 @@ async function showMainMenu(session, customer, agency) {
     packageCategory: null,
     packageResults: [],
     selectedPackageId: null,
+    selectedPackageIds: [],
+    selectedPropertyIds: [],
     enquiryDraft: customer.name ? { name: customer.name } : {},
   });
 
@@ -673,6 +744,7 @@ async function openPackageFlow(session, customer, agency, category) {
     packageCategory: normalizedCategory,
     packageResults: packages.map(({ pkg }) => pkg.id),
     selectedPackageId: null,
+    selectedPackageIds: [],
   });
 
   if (packages.length === 0) {
@@ -812,6 +884,7 @@ async function showPackageDetail(session, customer, agency, packageId) {
 
   await transitionTo(session, STEPS.PACKAGE_DETAIL, {
     selectedPackageId: pkg.id,
+    selectedPackageIds: uniqueIds(profile.selectedPackageIds, pkg.id),
     selectedPackageName: pkg.name,
   });
 
@@ -909,35 +982,64 @@ async function handleFlowSubmission(session, incoming, customer, agency) {
       ? response.customTripForm
       : {};
 
-  const packageId = normalizeText(
-    response.packageId
-    || response.package_id
-    || response.selected_package
-    || response.selectedPackage
-    || formResponse.packageId
-    || formResponse.package_id
-    || formResponse.selected_package
-    || formResponse.selectedPackage
-    || enquiryFormResponse.packageId
-    || enquiryFormResponse.package_id
-    || enquiryFormResponse.selected_package
-    || enquiryFormResponse.selectedPackage
+  const packageIds = uniqueIds(
+    response.packageIds,
+    response.package_ids,
+    response.selected_packages,
+    response.selectedPackages,
+    response.packageId,
+    response.package_id,
+    response.selected_package,
+    response.selectedPackage,
+    formResponse.packageIds,
+    formResponse.package_ids,
+    formResponse.selected_packages,
+    formResponse.selectedPackages,
+    formResponse.packageId,
+    formResponse.package_id,
+    formResponse.selected_package,
+    formResponse.selectedPackage,
+    enquiryFormResponse.packageIds,
+    enquiryFormResponse.package_ids,
+    enquiryFormResponse.selected_packages,
+    enquiryFormResponse.selectedPackages,
+    enquiryFormResponse.packageId,
+    enquiryFormResponse.package_id,
+    enquiryFormResponse.selected_package,
+    enquiryFormResponse.selectedPackage
   );
 
-  const propertyId = normalizeText(
-    response.propertyId
-    || response.property_id
-    || response.selected_property
-    || response.selectedProperty
-    || propertyFormResponse.propertyId
-    || propertyFormResponse.property_id
-    || propertyFormResponse.selected_property
-    || propertyFormResponse.selectedProperty
-    || propertyEnquiryFormResponse.propertyId
-    || propertyEnquiryFormResponse.property_id
-    || propertyEnquiryFormResponse.selected_property
-    || propertyEnquiryFormResponse.selectedProperty
+  const propertyIds = uniqueIds(
+    response.propertyIds,
+    response.property_ids,
+    response.selected_properties,
+    response.selectedProperties,
+    response.propertyId,
+    response.property_id,
+    response.selected_property,
+    response.selectedProperty,
+    propertyFormResponse.propertyIds,
+    propertyFormResponse.property_ids,
+    propertyFormResponse.selected_properties,
+    propertyFormResponse.selectedProperties,
+    propertyFormResponse.propertyId,
+    propertyFormResponse.property_id,
+    propertyFormResponse.selected_property,
+    propertyFormResponse.selectedProperty,
+    propertyEnquiryFormResponse.propertyIds,
+    propertyEnquiryFormResponse.property_ids,
+    propertyEnquiryFormResponse.selected_properties,
+    propertyEnquiryFormResponse.selectedProperties,
+    propertyEnquiryFormResponse.propertyId,
+    propertyEnquiryFormResponse.property_id,
+    propertyEnquiryFormResponse.selected_property,
+    propertyEnquiryFormResponse.selectedProperty
   );
+
+  const packageId = packageIds[0] || '';
+  const propertyId = propertyIds[0] || '';
+  const mergedPackageIds = uniqueIds(profile.selectedPackageIds, packageIds);
+  const mergedPropertyIds = uniqueIds(profile.selectedPropertyIds, propertyIds);
 
   const enquiryPayload = {
     name: normalizeText(
@@ -1040,7 +1142,9 @@ async function handleFlowSubmission(session, incoming, customer, agency) {
   logFlowEvent('flow_submission_received', customer, agency, {
     step: session?.currentStep || null,
     selectedPackageId: packageId || null,
+    selectedPackageIds: mergedPackageIds,
     selectedPropertyId: propertyId || null,
+    selectedPropertyIds: mergedPropertyIds,
     flowName: normalizeText(incoming?.flowName || ''),
     hasFlowEnquiryFields,
   });
@@ -1072,6 +1176,8 @@ async function handleFlowSubmission(session, incoming, customer, agency) {
     await transitionTo(session, STEPS.COMPLETE, {
       selectedPackageId: packageId || profile.selectedPackageId || null,
       selectedPropertyId: propertyId || profile.selectedPropertyId || null,
+      selectedPackageIds: mergedPackageIds,
+      selectedPropertyIds: mergedPropertyIds,
       campaignId: profile.campaignId || null,
       campaignName: profile.campaignName || null,
       enquiryDraft: {
@@ -1103,6 +1209,12 @@ async function handleFlowSubmission(session, incoming, customer, agency) {
   }
 
   if (propertyId) {
+    await updateSession(session, {
+      collectedData: {
+        selectedPackageIds: mergedPackageIds,
+        selectedPropertyIds: mergedPropertyIds,
+      },
+    });
     const { showCampaignPropertyDetail } = require('./campaignActionHandler');
     if (profile.campaignId) {
       return showCampaignPropertyDetail(session, profile.campaignId, propertyId, customer, agency, 'PROPERTY_SELECTED');
@@ -1110,6 +1222,12 @@ async function handleFlowSubmission(session, incoming, customer, agency) {
     return reopenPackageContext(session, customer, agency, profile);
   }
 
+  await updateSession(session, {
+    collectedData: {
+      selectedPackageIds: mergedPackageIds,
+      selectedPropertyIds: mergedPropertyIds,
+    },
+  });
   return showPackageDetail(session, customer, agency, packageId);
 }
 
@@ -1377,6 +1495,7 @@ async function finalizePropertyFlowEnquiry(session, customer, agency, propertyId
     collectedData: {
       activeLeadId: lead.id,
       selectedPropertyId: property.id,
+      selectedPropertyIds: uniqueIds(profile.selectedPropertyIds, property.id),
       campaignId: profile.campaignId || null,
       campaignName: profile.campaignName || null,
     },

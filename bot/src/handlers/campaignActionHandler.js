@@ -373,6 +373,8 @@ async function showCampaignItems(session, campaign, section, items, customer, ag
       packageCategory: section?.filter?.category || null,
       selectedPackageId: null,
       selectedPropertyId: null,
+      selectedPackageIds: [],
+      selectedPropertyIds: [],
       enquiryDraft: customer.name ? { name: customer.name } : {},
     },
   });
@@ -523,6 +525,7 @@ async function showCampaignPackageDetail(session, campaignId, packageId, custome
     currentStep: 'PACKAGE_DETAIL',
     collectedData: {
       selectedPackageId: pkg.id,
+      selectedPackageIds: Array.from(new Set([...(session.collectedData?.selectedPackageIds || []), pkg.id].filter(Boolean))),
       selectedPackageName: pkg.name,
       packageResults: session.collectedData?.packageResults || [pkg.id],
       campaignId,
@@ -590,6 +593,7 @@ async function showCampaignPropertyDetail(session, campaignId, propertyId, custo
     currentStep: 'CAMPAIGN_PROPERTY_DETAIL',
     collectedData: {
       selectedPropertyId: property.id,
+      selectedPropertyIds: Array.from(new Set([...(session.collectedData?.selectedPropertyIds || []), property.id].filter(Boolean))),
       selectedPropertyName: property.name,
       campaignId,
       campaignName: campaign?.name || null,
@@ -657,7 +661,12 @@ async function startPropertyLead(session, campaignId, propertyId, customer, agen
 
   await updateSession(session, {
     currentStep: 'COMPLETE',
-    collectedData: { activeLeadId: lead.id, selectedPropertyId: property.id, campaignId },
+    collectedData: {
+      activeLeadId: lead.id,
+      selectedPropertyId: property.id,
+      selectedPropertyIds: Array.from(new Set([...(session.collectedData?.selectedPropertyIds || []), property.id].filter(Boolean))),
+      campaignId,
+    },
   });
 
   return whatsappService.sendTextMessage(
