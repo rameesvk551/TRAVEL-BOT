@@ -63,18 +63,18 @@ export default function PropertyCard({ property, onEdit, toggleActive, canManage
       </div>
 
       {/* Content */}
-      <div className="p-4 pb-5">
+      <div className="p-4 pb-4">
         <h3 className="text-[15px] font-bold text-neutral-900 leading-snug line-clamp-1">
           {property.name}
         </h3>
 
-        <div className="mt-1.5 flex items-center gap-1 text-neutral-500">
+        <div className="mt-1 flex items-center gap-1 text-neutral-500">
           <MapPinIcon className="h-3.5 w-3.5 text-neutral-400 flex-shrink-0" />
           <span className="text-xs font-medium truncate">{property.location || 'Unknown Location'}</span>
         </div>
 
         {/* Feature Tags Row */}
-        <div className="mt-3 flex items-center gap-2 text-[11px] text-neutral-500 font-medium">
+        <div className="mt-2.5 flex items-center gap-2 text-[11px] text-neutral-500 font-medium flex-wrap">
           {property.beds && (
             <span className="flex items-center gap-1 bg-neutral-50 border border-neutral-100 rounded-md px-2 py-1">
               {property.beds} Beds
@@ -103,7 +103,7 @@ export default function PropertyCard({ property, onEdit, toggleActive, canManage
         </div>
 
         {/* Price Row */}
-        <div className="mt-4 flex items-end justify-between">
+        <div className="mt-3 flex items-end justify-between">
           <span className="text-xl font-black text-neutral-900 tracking-tight">
             {property.pricePerNight ? formatCurrency(property.pricePerNight) : '—'}
           </span>
@@ -114,7 +114,7 @@ export default function PropertyCard({ property, onEdit, toggleActive, canManage
 
         {/* Management Actions */}
         {canManage && (
-          <div className="mt-3 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+          <div className="mt-2.5 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
             <button
               onClick={(e) => { e.stopPropagation(); onEdit(); }}
               className="flex-1 text-[11px] font-bold py-2 bg-neutral-900 text-white rounded-lg hover:bg-neutral-800 transition"

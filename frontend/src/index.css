@@ -299,7 +299,7 @@
   }
 
   .property-card-image-wrapper {
-    @apply relative aspect-[4/3] overflow-hidden bg-neutral-100;
+    @apply relative aspect-[4/2.6] overflow-hidden bg-neutral-100;
   }
 
   /* ── Listing Page: List View ── */

@@ -159,6 +159,7 @@ export default function Settings() {
   const [connectModalOpen, setConnectModalOpen] = useState(false);
   const [connectFlowStep, setConnectFlowStep] = useState('idle');
   const [connectFlowError, setConnectFlowError] = useState('');
+  const [connectMode, setConnectMode] = useState('coexistence');
 
   const updateMutation = useMutation({
     mutationFn: (data) => client.patch('/agencies/me', data),
@@ -294,7 +295,9 @@ export default function Settings() {
     setConnectFlowError('');
   };
 
-  const handleConnectWhatsApp = async () => {
+  const handleConnectWhatsApp = async (mode = connectMode) => {
+    const selectedMode = mode === 'standard' ? 'standard' : 'coexistence';
+    setConnectMode(selectedMode);
     setConnectModalOpen(true);
     setConnectFlowStep('handshake');
     setConnectFlowError('');
@@ -302,7 +305,7 @@ export default function Settings() {
     setSuccess('');
 
     try {
-      const response = await connectMutation.mutateAsync({ onboardingMode: 'coexistence' });
+      const response = await connectMutation.mutateAsync({ onboardingMode: selectedMode });
       const nextConnection = response.data.data;
 
       if (nextConnection?.embeddedSignup?.sessionToken) {
@@ -523,9 +526,13 @@ export default function Settings() {
             ) : null}
 
             <div className="mt-6 flex flex-wrap gap-3">
-              <button type="button" onClick={handleConnectWhatsApp} disabled={connectBusy} className="shell-button-primary">
+              <button type="button" onClick={() => handleConnectWhatsApp('coexistence')} disabled={connectBusy} className="shell-button-primary">
                 <LinkIcon className="h-4 w-4" />
-                {connectBusy ? 'Connecting...' : 'Connect WhatsApp Business App'}
+                {connectBusy && connectMode === 'coexistence' ? 'Connecting...' : 'Connect Business App'}
+              </button>
+              <button type="button" onClick={() => handleConnectWhatsApp('standard')} disabled={connectBusy} className="shell-button-secondary">
+                <LinkIcon className="h-4 w-4" />
+                {connectBusy && connectMode === 'standard' ? 'Connecting...' : 'Connect Cloud API'}
               </button>
               <button
                 type="button"
@@ -539,11 +546,11 @@ export default function Settings() {
             </div>
 
             <div className="mt-6 rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4 text-xs leading-6 text-slate-500">
-              1. Start the coexistence connection handshake.
+              Business App: use an existing WhatsApp Business app number with coexistence.
               <br />
-              2. Connect the existing WhatsApp Business app number in the Meta popup.
+              Cloud API: onboard a business phone number directly to the WhatsApp Cloud API.
               <br />
-              3. Keep the WhatsApp Business app open while TravelBot syncs contacts and chat history.
+              Personal WhatsApp app numbers must be moved to WhatsApp Business or Cloud API before Meta can connect them.
             </div>
           </article>
 
@@ -610,9 +617,13 @@ export default function Settings() {
             <div className="mb-6 flex items-start justify-between gap-4">
               <div>
                 <p className="eyebrow">Connect WhatsApp</p>
-                <h3 className="mt-2 text-3xl font-extrabold tracking-tight text-slate-950">Business app coexistence</h3>
+                <h3 className="mt-2 text-3xl font-extrabold tracking-tight text-slate-950">
+                  {connectMode === 'coexistence' ? 'Business app coexistence' : 'Cloud API onboarding'}
+                </h3>
                 <p className="mt-2 text-sm text-slate-500">
-                  We create the Marketing OS session, open the Meta popup, and sync the approved Business app number back into TravelBot.
+                  {connectMode === 'coexistence'
+                    ? 'Use this for an existing WhatsApp Business app number. We open the Meta popup and sync contacts and history after approval.'
+                    : 'Use this for a business number that should be managed directly by WhatsApp Cloud API through Marketing OS.'}
                 </p>
               </div>
               <button type="button" onClick={closeConnectModal} disabled={connectBusy} className="rounded-full p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 disabled:opacity-40">
@@ -630,13 +641,13 @@ export default function Settings() {
                 },
                 {
                   key: 'meta',
-                  title: 'Meta Business app connection',
+                  title: connectMode === 'coexistence' ? 'Meta Business app connection' : 'Meta Cloud API connection',
                   done: ['sync', 'connected'].includes(connectFlowStep),
                   active: connectFlowStep === 'meta',
                 },
                 {
                   key: 'sync',
-                  title: 'Sync contacts and history',
+                  title: connectMode === 'coexistence' ? 'Sync contacts and history' : 'Save phone configuration',
                   done: connectFlowStep === 'connected',
                   active: connectFlowStep === 'sync',
                 },
@@ -665,13 +676,17 @@ export default function Settings() {
 
             {connectFlowStep === 'meta' ? (
               <div className="mt-4 rounded-[22px] border border-[#d4d4d4] bg-[#f5f5f5] px-4 py-3 text-sm text-[#2d2d2d]">
-                Complete the Meta popup, then enter the verification code inside the WhatsApp Business app.
+                {connectMode === 'coexistence'
+                  ? 'Complete the Meta popup, then enter the verification code inside the WhatsApp Business app.'
+                  : 'Complete the Meta popup and select the business phone number for Cloud API onboarding.'}
               </div>
             ) : null}
 
             {connectFlowStep === 'connected' ? (
               <div className="mt-4 rounded-[22px] border border-[#d4d4d4] bg-[#f5f5f5] px-4 py-3 text-sm text-[#2d2d2d]">
-                WhatsApp Business app coexistence is active. Keep the app open while history finishes syncing.
+                {connectMode === 'coexistence'
+                  ? 'WhatsApp Business app coexistence is active. Keep the app open while history finishes syncing.'
+                  : 'WhatsApp Cloud API connection is active.'}
               </div>
             ) : null}
 
@@ -686,7 +701,7 @@ export default function Settings() {
                 {connectFlowStep === 'connected' ? 'Close' : 'Cancel'}
               </button>
               {connectFlowStep === 'error' ? (
-                <button type="button" onClick={handleConnectWhatsApp} className="shell-button-primary flex-1">
+                <button type="button" onClick={() => handleConnectWhatsApp(connectMode)} className="shell-button-primary flex-1">
                   Retry
                 </button>
               ) : null}
