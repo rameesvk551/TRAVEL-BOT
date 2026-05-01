@@ -847,6 +847,16 @@ function extractProviderTemplateId(result) {
   return result?.data?.id || result?.data?.data?.id || result?.id || result?.template?.id || null;
 }
 
+function extractExternalErrorMessage(err) {
+  const data = err?.response?.data;
+  return data?.error?.error_user_msg
+    || data?.error?.message
+    || data?.error
+    || data?.message
+    || err?.message
+    || 'Template submission failed';
+}
+
 /**
  * List prebuilt template library.
  */
@@ -1137,8 +1147,17 @@ async function submitForApproval(id, agencyId) {
     await whatsappService.submitTemplateToMeta(agencyId, template);
     return template.update({ status: 'PENDING', rejectionReason: null });
   } catch (err) {
-    console.error('[TemplateService] Meta submission failed:', err.message);
-    throw err;
+    const message = extractExternalErrorMessage(err);
+    console.error('[TemplateService] Meta submission failed:', {
+      message,
+      status: err?.response?.status || null,
+      data: err?.response?.data || null,
+    });
+    throw Object.assign(new Error(message), {
+      statusCode: err?.response?.status || 400,
+      code: 'META_TEMPLATE_SUBMISSION_FAILED',
+      details: err?.response?.data || null,
+    });
   }
 }
 
