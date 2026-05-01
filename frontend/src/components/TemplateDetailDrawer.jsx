@@ -133,6 +133,12 @@ export default function TemplateDetailDrawer({
       }
 
       try {
+         if (!initialIsPrebuilt && initialTemplate?.id && mode === 'edit') {
+            await updateMutation.mutateAsync({
+               id: initialTemplate.id,
+               data: formData
+            });
+         }
          await submitMutation.mutateAsync(initialTemplate.id);
          toast.success('Template submitted to Meta for approval');
          onClose();
