@@ -303,9 +303,121 @@ const DEFAULT_TEMPLATE_MEDIA = {
   video2: 'https://scontent.whatsapp.net/v/t61.29466-34/652732328_1620509109208391_6872574975304393197_n.jpg?ccb=1-7&_nc_sid=a80384&_nc_ohc=Qj36WJN_WtYQ7kNvwHmWOZB&_nc_oc=Adq2auO875xs1U6knH_otE9NAAQZ847GsLkvBuFU8zZJFgY-fD_yxeVskYEO5A32LrM&_nc_zt=3&_nc_ht=scontent.whatsapp.net&edm=AH51TzQEAAAA&_nc_gid=Vkdu6l0FXzkO-BvQUyZtSQ&oh=01_Q5Aa4QE_brt5Fjwe1855Nh2qDzt50wTSzELZhjbQeHcrFSLr2A&oe=6A1A6844',
 };
 
+const PREBUILT_TEMPLATE_NAMES = [
+  'review_collection_campaign',
+  'cta_image_actions',
+  'cta_video_actions',
+  'carousel_image_enquiry',
+  'carousel_video_enquiry',
+];
+
+function curatedPrebuiltTemplates() {
+  return [
+    {
+      name: 'review_collection_campaign',
+      displayName: 'Review Collection',
+      category: 'MARKETING',
+      headerType: 'NONE',
+      body: 'Hi {{1}}, welcome back from {{2}}!\n\nWe hope you had a fantastic trip. Could you take 2 minutes to share your experience with us? Reply with a rating from 1 to 5.',
+      variableCount: 2,
+      sampleVariables: ['Rohit', 'Switzerland'],
+      tags: ['review', 'collection', 'automated'],
+      icon: 'STAR',
+      buttons: [],
+      templateType: 'STANDARD',
+      carouselCards: [],
+    },
+    {
+      name: 'cta_image_actions',
+      displayName: 'CTA Image - Packages, Properties, Custom Trip',
+      category: 'MARKETING',
+      headerType: 'IMAGE',
+      headerContent: DEFAULT_TEMPLATE_MEDIA.image1,
+      body: 'Hi {{1}}, explore handpicked travel options from us. Tap below to view packages, view properties, or request a custom trip.',
+      footer: 'Travel options',
+      variableCount: 1,
+      sampleVariables: ['there'],
+      tags: ['cta', 'image', 'packages', 'properties', 'custom-trip'],
+      icon: 'IMAGE',
+      buttons: [
+        { type: 'QUICK_REPLY', text: 'View Properties' },
+        { type: 'QUICK_REPLY', text: 'View Packages' },
+        { type: 'QUICK_REPLY', text: 'Custom Trip' },
+      ],
+      templateType: 'STANDARD',
+      carouselCards: [],
+    },
+    {
+      name: 'cta_video_actions',
+      displayName: 'CTA Video - Packages, Properties, Custom Trip',
+      category: 'MARKETING',
+      headerType: 'VIDEO',
+      headerContent: DEFAULT_TEMPLATE_MEDIA.video1,
+      body: 'Hi {{1}}, watch this quick travel preview and choose what you want next: properties, packages, or a custom trip plan.',
+      footer: 'Travel options',
+      variableCount: 1,
+      sampleVariables: ['there'],
+      tags: ['cta', 'video', 'packages', 'properties', 'custom-trip'],
+      icon: 'VIDEO',
+      buttons: [
+        { type: 'QUICK_REPLY', text: 'View Properties' },
+        { type: 'QUICK_REPLY', text: 'View Packages' },
+        { type: 'QUICK_REPLY', text: 'Custom Trip' },
+      ],
+      templateType: 'STANDARD',
+      carouselCards: [],
+    },
+    {
+      name: 'carousel_image_enquiry',
+      displayName: 'Carousel Image - Enquiry & See Others',
+      category: 'MARKETING',
+      headerType: 'NONE',
+      body: 'Hi {{1}}, browse these featured travel options and choose Enquiry or See Others.',
+      variableCount: 1,
+      sampleVariables: ['there'],
+      tags: ['carousel', 'image', 'enquiry', 'see-others'],
+      icon: 'CAROUSEL',
+      buttons: [],
+      templateType: 'CAROUSEL',
+      carouselCards: [
+        { id: 'card_1', mediaType: 'IMAGE', mediaUrl: DEFAULT_TEMPLATE_MEDIA.image1, body: 'Featured package with curated stays and sightseeing. Tap Enquiry for details.', buttons: [{ type: 'QUICK_REPLY', text: 'Enquiry' }, { type: 'QUICK_REPLY', text: 'See Others' }] },
+        { id: 'card_2', mediaType: 'IMAGE', mediaUrl: DEFAULT_TEMPLATE_MEDIA.image2, body: 'Premium holiday option with flexible dates and custom support.', buttons: [{ type: 'QUICK_REPLY', text: 'Enquiry' }, { type: 'QUICK_REPLY', text: 'See Others' }] },
+        { id: 'card_3', mediaType: 'IMAGE', mediaUrl: DEFAULT_TEMPLATE_MEDIA.image3, body: 'Popular getaway plan selected by our travel experts.', buttons: [{ type: 'QUICK_REPLY', text: 'Enquiry' }, { type: 'QUICK_REPLY', text: 'See Others' }] },
+      ],
+    },
+    {
+      name: 'carousel_video_enquiry',
+      displayName: 'Carousel Video - Enquiry & See Others',
+      category: 'MARKETING',
+      headerType: 'NONE',
+      body: 'Hi {{1}}, watch these featured travel ideas and choose Enquiry or See Others.',
+      variableCount: 1,
+      sampleVariables: ['there'],
+      tags: ['carousel', 'video', 'enquiry', 'see-others'],
+      icon: 'CAROUSEL',
+      buttons: [],
+      templateType: 'CAROUSEL',
+      carouselCards: [
+        { id: 'card_1', mediaType: 'VIDEO', mediaUrl: DEFAULT_TEMPLATE_MEDIA.video1, body: 'Video preview of a featured package. Tap Enquiry for dates and pricing.', buttons: [{ type: 'QUICK_REPLY', text: 'Enquiry' }, { type: 'QUICK_REPLY', text: 'See Others' }] },
+        { id: 'card_2', mediaType: 'VIDEO', mediaUrl: DEFAULT_TEMPLATE_MEDIA.video2, body: 'Video preview of another travel option from our team.', buttons: [{ type: 'QUICK_REPLY', text: 'Enquiry' }, { type: 'QUICK_REPLY', text: 'See Others' }] },
+      ],
+    },
+  ];
+}
+
 function defaultApprovalTemplatesForAgency(agencyName = 'your travel team') {
   const brand = String(agencyName || 'your travel team').trim();
   const brandSlug = slugifyTemplateName(brand).slice(0, 24) || 'travel';
+
+  return curatedPrebuiltTemplates().map((template) => ({
+    ...template,
+    name: `${brandSlug}_${template.name}`,
+    displayName: `${brand} ${template.displayName}`,
+    footer: template.footer === 'Travel options' ? brand : template.footer,
+    body: String(template.body || '')
+      .replace('from us', `from ${brand}`)
+      .replace('our team', brand),
+  }));
 
   return [
     {
@@ -448,7 +560,16 @@ function defaultApprovalTemplatesForAgency(agencyName = 'your travel team') {
  * Ensures prebuilt templates exist in the database.
  */
 async function seedPrebuiltTemplates() {
-  for (const tpl of PREBUILT_TEMPLATES) {
+  await MessageTemplate.destroy({
+    where: {
+      isPrebuilt: true,
+      agencyId: null,
+      name: { [Op.notIn]: PREBUILT_TEMPLATE_NAMES },
+    },
+  });
+
+  const templates = curatedPrebuiltTemplates();
+  for (const tpl of templates) {
     const existing = await MessageTemplate.findOne({
       where: { name: tpl.name, isPrebuilt: true, agencyId: null },
     });
@@ -460,9 +581,16 @@ async function seedPrebuiltTemplates() {
         agencyId: null,
         status: 'APPROVED',
       });
+    } else {
+      await existing.update({
+        ...tpl,
+        isPrebuilt: true,
+        agencyId: null,
+        status: 'APPROVED',
+      });
     }
   }
-  console.log(`[TemplateService] Seeded ${PREBUILT_TEMPLATES.length} prebuilt templates.`);
+  console.log(`[TemplateService] Seeded ${templates.length} curated prebuilt templates.`);
 }
 
 function slugifyTemplateName(value) {
@@ -723,7 +851,7 @@ function extractProviderTemplateId(result) {
  * List prebuilt template library.
  */
 async function listPrebuiltTemplates({ category, tag, search } = {}) {
-  const where = { isPrebuilt: true, agencyId: null };
+  const where = { isPrebuilt: true, agencyId: null, name: { [Op.in]: PREBUILT_TEMPLATE_NAMES } };
   if (category) where.category = category;
   if (search) {
     where[Op.or] = [
