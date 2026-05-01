@@ -812,6 +812,7 @@ function LeadDrawer({ leadId, onClose, agents }) {
           )}
         </div>
 
+        <div className="flex-1 overflow-y-auto hide-scrollbar">
         {!isLoading && lead && (
           <div className="border-b border-neutral-100 px-6 py-4 text-sm">
             <div className="grid grid-cols-2 gap-x-6 gap-y-4">
@@ -1004,7 +1005,7 @@ function LeadDrawer({ leadId, onClose, agents }) {
           ))}
         </div>
 
-        <div className="flex-1 overflow-y-auto bg-neutral-50/50 px-6 py-6 hide-scrollbar">
+        <div className="bg-neutral-50/50 px-6 py-6">
           {!isLoading && lead && (
             <>
               {activeTab === 'Notes' && (
@@ -1037,6 +1038,7 @@ function LeadDrawer({ leadId, onClose, agents }) {
               )}
             </>
           )}
+        </div>
         </div>
       </aside>
     </div>
