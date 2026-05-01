@@ -3,7 +3,7 @@ import {
    X, Save, Copy, Eye, Edit3, MessageSquare, Image as ImageIcon,
    Trash2, Plus, GripVertical, Check, ExternalLink, Smartphone,
    Type, Hash, List, Info, AlertCircle, ArrowLeft, MoreVertical,
-   Phone, Video, Send, CheckCheck
+   Phone, Video, Send, CheckCheck, Upload
 } from 'lucide-react';
 import {
    useCreateTemplate,
@@ -12,6 +12,7 @@ import {
    useDeleteTemplate,
    useSubmitTemplate
 } from '../hooks/useTemplates';
+import { templatesApi } from '../api/templatesApi';
 import toast from 'react-hot-toast';
 
 export default function TemplateDetailDrawer({
@@ -34,6 +35,7 @@ export default function TemplateDetailDrawer({
    });
 
    const [mode, setMode] = useState('view'); // 'view' or 'edit'
+   const [uploadingMediaKey, setUploadingMediaKey] = useState(null);
    const [formData, setFormData] = useState({
       displayName: '',
       category: 'MARKETING',
@@ -140,7 +142,43 @@ export default function TemplateDetailDrawer({
       }
    };
 
-   const isPending = createMutation.isPending || updateMutation.isPending || usePrebuiltMutation.isPending || submitMutation.isPending;
+   const handleTemplateMediaUpload = async (file, target) => {
+      if (!file) return;
+      const isVideoTarget = target.type === 'header'
+         ? String(formData.headerType || '').toUpperCase() === 'VIDEO'
+         : String(formData.carouselCards[target.cardIndex]?.mediaType || '').toUpperCase() === 'VIDEO';
+
+      if (isVideoTarget && !file.type.startsWith('video/')) {
+         toast.error('Please upload a video file for this video template.');
+         return;
+      }
+      if (!isVideoTarget && !file.type.startsWith('image/')) {
+         toast.error('Please upload an image file for this image template.');
+         return;
+      }
+
+      const uploadKey = target.type === 'header' ? 'header' : `card-${target.cardIndex}`;
+      setUploadingMediaKey(uploadKey);
+      try {
+         const response = await templatesApi.uploadMedia(file);
+         const url = response?.data?.url;
+         if (!url) throw new Error('Upload did not return a media URL');
+
+         if (target.type === 'header') {
+            setFormData((current) => ({ ...current, headerContent: url }));
+         } else {
+            updateCarouselCard(target.cardIndex, { mediaUrl: url });
+         }
+         toast.success('Template media uploaded');
+      } catch (err) {
+         console.error('Failed to upload template media:', err);
+         toast.error(err.response?.data?.error || 'Failed to upload template media');
+      } finally {
+         setUploadingMediaKey(null);
+      }
+   };
+
+   const isPending = createMutation.isPending || updateMutation.isPending || usePrebuiltMutation.isPending || submitMutation.isPending || !!uploadingMediaKey;
    const isCarousel = String(formData.templateType || '').toUpperCase() === 'CAROUSEL';
    const isValidHttpUrl = (value) => {
       try {
@@ -297,9 +335,24 @@ export default function TemplateDetailDrawer({
                                     type="url"
                                     value={card.mediaUrl || ''}
                                     onChange={e => updateCarouselCard(idx, { mediaUrl: e.target.value })}
-                                    placeholder="Public image URL required by Meta"
+                                    placeholder="Public image/video URL required by Meta"
                                     className="w-full rounded border border-neutral-200 bg-white px-3 py-2 text-xs focus:outline-none"
                                  />
+                                 <label className="flex cursor-pointer items-center justify-center gap-2 rounded border border-dashed border-neutral-300 bg-white px-3 py-2 text-[11px] font-bold text-neutral-500 transition hover:border-neutral-500 hover:text-neutral-900">
+                                    <Upload className="h-3.5 w-3.5" />
+                                    {uploadingMediaKey === `card-${idx}` ? 'Uploading...' : `Upload ${String(card.mediaType || 'IMAGE').toLowerCase()} sample`}
+                                    <input
+                                       type="file"
+                                       accept={String(card.mediaType || '').toUpperCase() === 'VIDEO' ? 'video/*' : 'image/*'}
+                                       className="hidden"
+                                       disabled={!!uploadingMediaKey}
+                                       onChange={(event) => {
+                                          const file = event.target.files?.[0];
+                                          event.target.value = '';
+                                          handleTemplateMediaUpload(file, { type: 'card', cardIndex: idx });
+                                       }}
+                                    />
+                                 </label>
                                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                                     {(card.buttons || []).slice(0, 2).map((button, buttonIdx) => (
                                        <input
@@ -415,10 +468,27 @@ export default function TemplateDetailDrawer({
                               }
                               className="shell-input-rect bg-white"
                            />
+                           {['IMAGE', 'VIDEO'].includes(String(formData.headerType || '').toUpperCase()) && (
+                              <label className="mt-2 flex cursor-pointer items-center justify-center gap-2 rounded-[var(--radius-md)] border border-dashed border-neutral-300 bg-white px-3 py-2 text-xs font-bold text-neutral-500 transition hover:border-neutral-500 hover:text-neutral-900">
+                                 <Upload className="h-4 w-4" />
+                                 {uploadingMediaKey === 'header' ? 'Uploading...' : `Upload ${String(formData.headerType || '').toLowerCase()} sample`}
+                                 <input
+                                    type="file"
+                                    accept={String(formData.headerType || '').toUpperCase() === 'VIDEO' ? 'video/*' : 'image/*'}
+                                    className="hidden"
+                                    disabled={!!uploadingMediaKey}
+                                    onChange={(event) => {
+                                       const file = event.target.files?.[0];
+                                       event.target.value = '';
+                                       handleTemplateMediaUpload(file, { type: 'header' });
+                                    }}
+                                 />
+                              </label>
+                           )}
                            <p className="mt-1 text-[11px] text-neutral-400">
                               {formData.headerType === 'TEXT'
                                  ? 'Meta needs header text when you choose a text header.'
-                                 : 'Meta needs a public sample file URL for media headers during approval.'}
+                                 : 'Upload a tenant-specific sample file, or paste a public URL. We convert it to Meta media sample during approval.'}
                            </p>
                         </div>
                      )}

@@ -185,8 +185,50 @@ async function uploadPropertyImage(fileBuffer, agencyId) {
   });
 }
 
+async function uploadTemplateMedia(fileBuffer, agencyId, mimeType = 'image/jpeg', originalName = 'template-media') {
+  assertCloudinaryConfigured();
+
+  const rootFolder = process.env.CLOUDINARY_FOLDER || 'travel-bot/templates';
+  const folder = `${rootFolder}/${agencyId}`;
+  const resourceType = String(mimeType || '').startsWith('video/') ? 'video' : 'image';
+  const publicId = String(originalName || 'template-media')
+    .replace(/\.[^.]+$/, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80) || 'template-media';
+
+  return new Promise((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(
+      {
+        folder,
+        public_id: `${publicId}-${Date.now()}`,
+        resource_type: resourceType,
+      },
+      (err, result) => {
+        if (err) {
+          reject(Object.assign(new Error(err.message || 'Cloudinary template media upload failed'), {
+            statusCode: 502,
+            code: 'CLOUDINARY_UPLOAD_FAILED',
+          }));
+          return;
+        }
+
+        resolve({
+          secureUrl: result.secure_url,
+          publicId: result.public_id,
+          resourceType,
+        });
+      }
+    );
+
+    stream.end(fileBuffer);
+  });
+}
+
 module.exports = {
   uploadPackageImage,
   uploadPropertyImage,
   uploadPackageBrochure,
+  uploadTemplateMedia,
 };

@@ -1,6 +1,7 @@
 // FILE: /backend/src/controllers/templateController.ts
 
 const templateService = require('../services/templateService');
+const mediaService = require('../services/mediaService');
 
 exports.listPrebuilt = async (req, res, next) => {
   try {
@@ -85,6 +86,37 @@ exports.submit = async (req, res, next) => {
   try {
     const template = await templateService.submitForApproval(req.params.id, req.user.agencyId);
     res.json({ success: true, data: template });
+  } catch (err) {
+    next(err);
+  }
+};
+
+exports.uploadMedia = async (req, res, next) => {
+  try {
+    if (!req.file) {
+      throw Object.assign(new Error('Template image or video file is required'), {
+        statusCode: 400,
+        code: 'MISSING_FILE',
+      });
+    }
+
+    const uploaded = await mediaService.uploadTemplateMedia(
+      req.file.buffer,
+      req.user.agencyId,
+      req.file.mimetype,
+      req.file.originalname
+    );
+
+    res.status(201).json({
+      success: true,
+      data: {
+        url: uploaded.secureUrl,
+        publicId: uploaded.publicId,
+        resourceType: uploaded.resourceType,
+        mimeType: req.file.mimetype,
+      },
+      message: 'Template media uploaded',
+    });
   } catch (err) {
     next(err);
   }

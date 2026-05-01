@@ -9,6 +9,13 @@ export const templatesApi = {
   getById: (id) => client.get(`/templates/${id}`).then(r => r.data),
   create: (data) => client.post('/templates', data).then(r => r.data),
   update: (id, data) => client.patch(`/templates/${id}`, data).then(r => r.data),
+  uploadMedia: (file) => {
+    const formData = new FormData();
+    formData.append('media', file);
+    return client.post('/templates/upload-media', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }).then(r => r.data);
+  },
   delete: (id) => client.delete(`/templates/${id}`).then(r => r.data),
   duplicate: (id) => client.post(`/templates/${id}/duplicate`).then(r => r.data),
   submit: (id) => client.post(`/templates/${id}/submit`).then(r => r.data),
