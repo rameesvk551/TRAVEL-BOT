@@ -136,6 +136,12 @@ async function ensureLeadsSchema() {
     type: Sequelize.STRING(100),
     allowNull: true,
   });
+
+  await ensureColumn('leads', 'tags', {
+    type: Sequelize.JSONB,
+    allowNull: false,
+    defaultValue: [],
+  });
 }
 
 async function ensureCustomersSchema() {

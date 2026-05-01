@@ -15,7 +15,9 @@ const createLeadSchema = z.object({
   customerId: z.string().uuid().optional(),
   customerName: z.string().min(2).optional(),
   customerPhone: z.string().min(10).optional(),
+  customerEmail: z.string().email().optional(),
   customerSource: z.string().optional(),
+  source: z.string().optional(),
   destination: z.string().optional(),
   travelDates: z.string().optional(),
   travellers: z.number().int().min(1).max(50).optional(),
@@ -23,9 +25,11 @@ const createLeadSchema = z.object({
   interest: z.enum(['DOMESTIC', 'INTERNATIONAL']).nullable().optional(),
   assignedAgentId: z.string().uuid().nullable().optional(),
   packageId: z.string().uuid().nullable().optional(),
+  propertyId: z.string().uuid().nullable().optional(),
   status: z.enum(['JUST_CONTACTED', 'PACKAGE_SEARCHED', 'PACKAGE_INTERESTED', 'NEW', 'ENQUIRY', 'CONTACTED', 'QUOTED', 'NEGOTIATING', 'BOOKED', 'CONVERTED', 'LOST', 'CANCELLED', 'UNKNOWN']).optional(),
   lostReason: z.string().optional(),
   notes: z.string().optional(),
+  tags: z.array(z.string().min(1).max(40)).max(12).optional(),
   travelStart: z.string().datetime().optional(),
   travelEnd: z.string().datetime().optional(),
 }).refine((data) => data.customerId || data.customerPhone, {
@@ -34,6 +38,9 @@ const createLeadSchema = z.object({
 
 const updateLeadSchema = z.object({
   status: z.enum(['JUST_CONTACTED', 'PACKAGE_SEARCHED', 'PACKAGE_INTERESTED', 'NEW', 'ENQUIRY', 'CONTACTED', 'QUOTED', 'NEGOTIATING', 'BOOKED', 'CONVERTED', 'LOST', 'CANCELLED', 'UNKNOWN']).optional(),
+  customerName: z.string().min(2).optional(),
+  customerPhone: z.string().min(10).optional(),
+  customerEmail: z.string().email().optional(),
   assignedAgentId: z.string().uuid().nullable().optional(),
   destination: z.string().optional(),
   travelDates: z.string().optional(),
@@ -41,8 +48,11 @@ const updateLeadSchema = z.object({
   budgetPerPerson: z.number().int().min(0).optional(),
   interest: z.enum(['DOMESTIC', 'INTERNATIONAL']).nullable().optional(),
   packageId: z.string().uuid().nullable().optional(),
+  propertyId: z.string().uuid().nullable().optional(),
+  source: z.string().optional(),
   notes: z.string().optional(),
   lostReason: z.string().optional(),
+  tags: z.array(z.string().min(1).max(40)).max(12).optional(),
   travelStart: z.string().datetime().nullable().optional(),
   travelEnd: z.string().datetime().nullable().optional(),
 });

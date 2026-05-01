@@ -2,7 +2,7 @@
 // DEPS: sequelize
 
 const { Op } = require('sequelize');
-const { Lead, Customer, Agent, Package, Property, Message, Booking, FollowUp, LeadNote } = require('../models');
+const { Lead, Customer, Agent, Package, Property, Campaign, Message, Booking, FollowUp, LeadNote } = require('../models');
 const { normalizePhone, isValidIndianPhone } = require('../utils/phoneUtils');
 const whatsappService = require('./whatsappService');
 
@@ -22,6 +22,54 @@ function scopedLeadWhere(agencyId, requester, extra = {}) {
     where.assignedAgentId = requester?.id;
   }
   return where;
+}
+
+function normalizeTags(tags = []) {
+  if (!Array.isArray(tags)) return [];
+  const seen = new Set();
+  return tags
+    .map((tag) => String(tag || '').trim())
+    .filter(Boolean)
+    .map((tag) => tag.slice(0, 40))
+    .filter((tag) => {
+      const key = tag.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, 12);
+}
+
+function calculateLeadScore(lead) {
+  let score = 10;
+  const status = String(lead?.status || '');
+  const budget = Number(lead?.budgetPerPerson || 0);
+  const travellers = Number(lead?.travellers || 1);
+  const tags = normalizeTags(lead?.tags);
+  const selectedCount = Number(lead?.selectedCatalogItems?.length || 0);
+  const hasPackageOrProperty = Boolean(lead?.packageId || lead?.propertyId || selectedCount > 0);
+
+  if (lead?.assignedAgentId) score += 8;
+  if (hasPackageOrProperty) score += 15;
+  if (lead?.destination) score += 8;
+  if (budget > 0) score += Math.min(18, Math.round(budget / 500000));
+  if (travellers > 1) score += Math.min(10, travellers * 2);
+  if (lead?.travelStart || lead?.travelDates) score += 6;
+  if (tags.some((tag) => /urgent|hot|vip|high/i.test(tag))) score += 12;
+
+  if (['PACKAGE_INTERESTED', 'ENQUIRY', 'QUOTED'].includes(status)) score += 18;
+  if (['CONTACTED', 'NEGOTIATING'].includes(status)) score += 10;
+  if (status === 'CONVERTED' || status === 'BOOKED') score = 100;
+  if (status === 'LOST' || status === 'CANCELLED') score = Math.min(score, 15);
+
+  return Math.max(0, Math.min(100, score));
+}
+
+function enrichLeadPayload(lead) {
+  const payload = lead?.toJSON ? lead.toJSON() : { ...lead };
+  payload.tags = normalizeTags(payload.tags);
+  payload.leadScore = calculateLeadScore(payload);
+  return payload;
 }
 
 async function listLeads(agencyId, filters = {}, requester = null) {
@@ -70,7 +118,7 @@ async function listLeads(agencyId, filters = {}, requester = null) {
     offset,
   });
 
-  return { data: rows, total: count, page: parseInt(page), pageSize: parseInt(pageSize) };
+  return { data: rows.map(enrichLeadPayload), total: count, page: parseInt(page), pageSize: parseInt(pageSize) };
 }
 
 /**
@@ -87,6 +135,11 @@ async function getLeadById(leadId, agencyId, requester = null) {
       { model: Agent, as: 'assignedAgent', attributes: ['id', 'name', 'email', 'phone'] },
       { model: Package, as: 'package' },
       { model: Property, as: 'property' },
+      {
+        model: Campaign,
+        as: 'campaign',
+        attributes: ['id', 'name', 'linkedPackageIds', 'campaignSections'],
+      },
       { model: Booking, as: 'booking' },
     ],
   });
@@ -96,7 +149,34 @@ async function getLeadById(leadId, agencyId, requester = null) {
   }
 
   // Get followups and notes
-  const [followUps, notes, messages] = await Promise.all([
+  const leadJson = enrichLeadPayload(lead);
+  const selectedPackageIds = new Set();
+  const selectedPropertyIds = new Set();
+  const campaignSections = Array.isArray(leadJson.campaign?.campaignSections) ? leadJson.campaign.campaignSections : [];
+
+  if (campaignSections.length > 0) {
+    campaignSections
+      .filter((section) => section?.enabled !== false)
+      .forEach((section) => {
+        const selectedIds = Array.isArray(section?.selectedItemIds) ? section.selectedItemIds : [];
+        const itemType = String(section?.itemType || '').toUpperCase();
+        if (itemType === 'PROPERTY') {
+          selectedIds.forEach((id) => id && selectedPropertyIds.add(id));
+          return;
+        }
+        if (itemType === 'PACKAGE') {
+          selectedIds.forEach((id) => id && selectedPackageIds.add(id));
+        }
+      });
+  } else {
+    const linkedPackageIds = Array.isArray(leadJson.campaign?.linkedPackageIds) ? leadJson.campaign.linkedPackageIds : [];
+    linkedPackageIds.forEach((id) => id && selectedPackageIds.add(id));
+  }
+
+  if (leadJson.packageId) selectedPackageIds.add(leadJson.packageId);
+  if (leadJson.propertyId) selectedPropertyIds.add(leadJson.propertyId);
+
+  const [followUps, notes, messages, selectedPackages, selectedProperties] = await Promise.all([
     FollowUp.findAll({ where: { leadId, agencyId }, order: [['scheduledAt', 'ASC']] }),
     LeadNote.findAll({ 
       where: { leadId }, 
@@ -107,10 +187,47 @@ async function getLeadById(leadId, agencyId, requester = null) {
       where: { customerId: lead.customerId, agencyId },
       order: [['timestamp', 'DESC']],
       limit: 20,
-    })
+    }),
+    selectedPackageIds.size
+      ? Package.findAll({
+        where: { agencyId, id: { [Op.in]: [...selectedPackageIds] } },
+        attributes: ['id', 'name', 'category', 'duration', 'basePrice'],
+      })
+      : [],
+    selectedPropertyIds.size
+      ? Property.findAll({
+        where: { agencyId, id: { [Op.in]: [...selectedPropertyIds] } },
+        attributes: ['id', 'name', 'propertyType', 'location', 'pricePerNight'],
+      })
+      : [],
   ]);
 
-  return { ...lead.toJSON(), messages: messages.reverse(), followUps, notesList: notes };
+  const selectedCatalogItems = [
+    ...selectedPackages.map((pkg) => ({
+      id: pkg.id,
+      itemType: 'PACKAGE',
+      name: pkg.name,
+      subtitle: [pkg.category, pkg.duration].filter(Boolean).join(' | ') || null,
+      price: pkg.basePrice || null,
+    })),
+    ...selectedProperties.map((property) => ({
+      id: property.id,
+      itemType: 'PROPERTY',
+      name: property.name,
+      subtitle: [property.propertyType, property.location].filter(Boolean).join(' | ') || null,
+      price: property.pricePerNight || null,
+    })),
+  ];
+
+  return {
+    ...enrichLeadPayload({ ...leadJson, selectedCatalogItems }),
+    messages: messages.reverse(),
+    followUps,
+    notesList: notes,
+    selectedPackages,
+    selectedProperties,
+    selectedCatalogItems,
+  };
 }
 
 /**
@@ -139,6 +256,7 @@ async function resolveCustomer(data, agencyId) {
   }
 
   const customerName = String(data.customerName || '').trim() || null;
+  const customerEmail = String(data.customerEmail || '').trim() || null;
   const customerSource = String(data.customerSource || 'manual').trim() || 'manual';
 
   const [customer, created] = await Customer.findOrCreate({
@@ -147,6 +265,7 @@ async function resolveCustomer(data, agencyId) {
       agencyId,
       phone,
       name: customerName,
+      email: customerEmail,
       source: customerSource,
     },
   });
@@ -154,6 +273,7 @@ async function resolveCustomer(data, agencyId) {
   if (!created) {
     const customerUpdates = {};
     if (customerName && customer.name !== customerName) customerUpdates.name = customerName;
+    if (customerEmail && customer.email !== customerEmail) customerUpdates.email = customerEmail;
     if (!customer.source && customerSource) customerUpdates.source = customerSource;
 
     if (Object.keys(customerUpdates).length > 0) {
@@ -180,6 +300,7 @@ async function createLead(data, agencyId) {
     campaignName,
     campaignAction,
     lostReason,
+    tags,
     travelStart,
     travelEnd,
     status = 'NEW',
@@ -225,6 +346,7 @@ async function createLead(data, agencyId) {
     campaignAction: campaignAction || null,
     notes,
     lostReason,
+    tags: normalizeTags(tags),
     travelStart,
     travelEnd,
     status,
@@ -270,12 +392,19 @@ async function updateLead(leadId, agencyId, updates, requester = null) {
     'status', 'assignedAgentId', 'destination', 'travelDates',
     'travellers', 'budgetPerPerson', 'packageId', 'propertyId', 'itemType',
     'campaignId', 'campaignName', 'campaignAction', 'notes', 'lostReason',
-    'travelStart', 'travelEnd', 'interest', 'source',
+    'travelStart', 'travelEnd', 'interest', 'source', 'tags',
   ];
 
   const filtered = {};
   for (const key of allowedFields) {
     if (updates[key] !== undefined) filtered[key] = updates[key];
+  }
+  if (filtered.tags !== undefined) filtered.tags = normalizeTags(filtered.tags);
+  if (filtered.status === 'LOST' && !String(filtered.lostReason || lead.lostReason || '').trim()) {
+    throw Object.assign(new Error('Lost reason is required when marking a lead lost'), {
+      statusCode: 400,
+      code: 'LOST_REASON_REQUIRED',
+    });
   }
 
   // Handle Customer updates
@@ -313,7 +442,7 @@ async function updateLead(leadId, agencyId, updates, requester = null) {
     }
   }
 
-  return lead;
+  return getLeadById(lead.id, agencyId, { role: 'ADMIN' });
 }
 
 /**

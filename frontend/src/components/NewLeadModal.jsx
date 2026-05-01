@@ -11,6 +11,7 @@ export default function NewLeadModal({ isOpen, onClose, agents }) {
     source: 'manual',
     assignedAgentId: '',
     budgetPerPerson: '',
+    tagsText: '',
   });
 
   const createLead = useCreateLead();
@@ -24,6 +25,7 @@ export default function NewLeadModal({ isOpen, onClose, agents }) {
         ...formData,
         budgetPerPerson: formData.budgetPerPerson ? Number(formData.budgetPerPerson) * 100 : undefined,
         assignedAgentId: formData.assignedAgentId || undefined,
+        tags: formData.tagsText.split(',').map((tag) => tag.trim()).filter(Boolean),
       },
       {
         onSuccess: () => {
@@ -35,6 +37,7 @@ export default function NewLeadModal({ isOpen, onClose, agents }) {
             source: 'manual',
             assignedAgentId: '',
             budgetPerPerson: '',
+            tagsText: '',
           });
           onClose();
         },
@@ -74,6 +77,17 @@ export default function NewLeadModal({ isOpen, onClose, agents }) {
               placeholder="Customer Name"
               value={formData.customerName}
               onChange={(e) => setFormData({ ...formData, customerName: e.target.value })}
+            />
+          </div>
+
+          <div>
+            <label className="mb-1 block text-sm font-semibold text-neutral-700">Email</label>
+            <input
+              type="email"
+              className="shell-input-rect w-full h-11 bg-neutral-50 px-3"
+              placeholder="customer@example.com"
+              value={formData.customerEmail}
+              onChange={(e) => setFormData({ ...formData, customerEmail: e.target.value })}
             />
           </div>
 
@@ -118,6 +132,17 @@ export default function NewLeadModal({ isOpen, onClose, agents }) {
                 ))}
               </select>
             </div>
+          </div>
+
+          <div>
+            <label className="mb-1 block text-sm font-semibold text-neutral-700">Tags</label>
+            <input
+              type="text"
+              className="shell-input-rect w-full h-11 bg-neutral-50 px-3"
+              placeholder="urgent, honeymoon, high budget"
+              value={formData.tagsText}
+              onChange={(e) => setFormData({ ...formData, tagsText: e.target.value })}
+            />
           </div>
 
           <div className="mt-6 flex justify-end gap-3">

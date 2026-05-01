@@ -16,6 +16,7 @@ import {
   PencilIcon,
   PhoneIcon,
   PlusIcon,
+  TagIcon,
   TrophyIcon,
   UserPlusIcon,
   XCircleIcon,
@@ -42,12 +43,15 @@ import {
   formatStatus,
   getActivityLabel,
   getAttentionBadges,
+  getLeadScore,
+  getLeadScoreTone,
   getLeadValueLabel,
   getNextAction,
   getNextFollowUp,
   matchesAgent,
   matchesDateRange,
   matchesSource,
+  matchesTag,
   needsAttention,
   sortLeads,
 } from '../utils/leadInsights';
@@ -73,6 +77,7 @@ export default function Leads() {
   const [sortBy, setSortBy] = useState('overdue');
   const [dateRange, setDateRange] = useState('all');
   const [agentFilter, setAgentFilter] = useState('all');
+  const [tagFilter, setTagFilter] = useState('all');
   const [selectedLeadIds, setSelectedLeadIds] = useState(new Set());
 
   const currentAgent = useAuthStore((state) => state.agent);
@@ -86,6 +91,11 @@ export default function Leads() {
   const agents = agentsResponse?.data || [];
   const updateLead = useUpdateLead();
   const bulkAssign = useBulkAssignLeads();
+  const tagOptions = useMemo(() => {
+    const tags = new Set();
+    leads.forEach((lead) => (lead.tags || []).forEach((tag) => tags.add(tag)));
+    return [...tags].sort((a, b) => a.localeCompare(b));
+  }, [leads]);
 
   const toggleSelectLead = useCallback((leadId) => {
     setSelectedLeadIds((prev) => {
@@ -131,6 +141,7 @@ export default function Leads() {
         lead.destination,
         lead.source,
         lead.assignedAgent?.name,
+        ...(lead.tags || []),
       ]
         .filter(Boolean)
         .join(' ')
@@ -140,12 +151,13 @@ export default function Leads() {
         (!query || searchable.includes(query)) &&
         matchesSource(lead, sourceFilter) &&
         matchesAgent(lead, agentFilter, currentAgent?.id) &&
+        matchesTag(lead, tagFilter) &&
         matchesDateRange(lead, dateRange)
       );
     });
 
     return sortLeads(filtered, sortBy);
-  }, [activeTab, agentFilter, currentAgent?.id, dateRange, leads, search, sortBy, sourceFilter]);
+  }, [activeTab, agentFilter, currentAgent?.id, dateRange, leads, search, sortBy, sourceFilter, tagFilter]);
 
   const metrics = useMemo(() => {
     const attention = leads.filter(needsAttention);
@@ -163,6 +175,7 @@ export default function Leads() {
       overdue: overdue.length,
       won: leads.filter((lead) => lead.status === 'CONVERTED').length,
       lost: leads.filter((lead) => lead.status === 'LOST').length,
+      hot: leads.filter((lead) => getLeadScore(lead) >= 75 && !['CONVERTED', 'LOST', 'CANCELLED'].includes(lead.status)).length,
       pipelineValue,
     };
   }, [leads]);
@@ -181,10 +194,21 @@ export default function Leads() {
     setSortBy('newest');
     setDateRange('all');
     setAgentFilter('all');
+    setTagFilter('all');
   }
 
   function updateLeadField(leadId, data) {
     updateLead.mutate({ id: leadId, data });
+  }
+
+  function handleStatusChange(lead, status) {
+    if (status === 'LOST' && !lead.lostReason) {
+      const lostReason = window.prompt('Why was this lead lost?');
+      if (!lostReason?.trim()) return;
+      updateLeadField(lead.id, { status, lostReason: lostReason.trim() });
+      return;
+    }
+    updateLeadField(lead.id, { status });
   }
 
   return (
@@ -245,6 +269,19 @@ export default function Leads() {
           </select>
 
           <select
+            value={tagFilter}
+            onChange={(event) => setTagFilter(event.target.value)}
+            className="shell-input-rect h-11 w-40 bg-white py-2"
+          >
+            <option value="all">All Tags</option>
+            {tagOptions.map((tag) => (
+              <option key={tag} value={tag}>
+                {tag}
+              </option>
+            ))}
+          </select>
+
+          <select
             value={sortBy}
             onChange={(event) => setSortBy(event.target.value)}
             className="shell-input-rect h-11 w-44 bg-white py-2"
@@ -266,9 +303,10 @@ export default function Leads() {
         </div>
       </div>
 
-      <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
+      <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-6">
         <MetricCard icon={ExclamationTriangleIcon} tone="bg-amber-50 text-amber-600" value={metrics.attention} label="Needs Attention" />
         <MetricCard icon={ClockIcon} tone="bg-rose-50 text-rose-600" value={metrics.overdue} label="Overdue" />
+        <MetricCard icon={TrophyIcon} tone="bg-red-50 text-red-600" value={metrics.hot} label="Hot Leads" />
         <MetricCard icon={BriefcaseIcon} tone="bg-sky-50 text-sky-600" value={metrics.totalDeals} label="Total Leads" />
         <MetricCard icon={TrophyIcon} tone="bg-emerald-50 text-emerald-600" value={metrics.won} label="Converted" />
         <MetricCard icon={BanknotesIcon} tone="bg-indigo-50 text-indigo-600" value={formatCurrency(metrics.pipelineValue)} label="Pipeline Value" />
@@ -342,6 +380,7 @@ export default function Leads() {
           leads={filteredLeads}
           onLeadClick={(lead) => setSelectedLeadId(lead.id)}
           onRetry={() => leadsQuery.refetch()}
+          onStatusChange={handleStatusChange}
           onUpdateLead={updateLeadField}
           selectedLeadIds={selectedLeadIds}
           onToggleSelect={toggleSelectLead}
@@ -388,10 +427,10 @@ function MetricCard({ icon: Icon, tone, value, label }) {
   );
 }
 
-function LeadTable({ agents, clearFilters, isError, isLoading, leads, onLeadClick, onRetry, onUpdateLead, selectedLeadIds, onToggleSelect, onToggleSelectAll }) {
+function LeadTable({ agents, clearFilters, isError, isLoading, leads, onLeadClick, onRetry, onStatusChange, onUpdateLead, selectedLeadIds, onToggleSelect, onToggleSelectAll }) {
   const allSelected = leads.length > 0 && selectedLeadIds.size === leads.length;
   const someSelected = selectedLeadIds.size > 0 && selectedLeadIds.size < leads.length;
-  const colSpan = 10;
+  const colSpan = 11;
 
   return (
     <div className="data-table-wrapper">
@@ -416,6 +455,7 @@ function LeadTable({ agents, clearFilters, isError, isLoading, leads, onLeadClic
               </th>
               <th className="data-table-th w-16">SL NO</th>
               <th className="data-table-th">Lead</th>
+              <th className="data-table-th">Score</th>
               <th className="data-table-th">Attention</th>
               <th className="data-table-th">Contact</th>
               <th className="data-table-th">Trip</th>
@@ -478,6 +518,7 @@ function LeadTable({ agents, clearFilters, isError, isLoading, leads, onLeadClic
                   key={lead.id}
                   lead={lead}
                   onLeadClick={onLeadClick}
+                  onStatusChange={onStatusChange}
                   onToggleSelect={onToggleSelect}
                   onUpdateLead={onUpdateLead}
                 />
@@ -499,9 +540,10 @@ function LeadTableSkeleton({ colSpan = 10 }) {
   ));
 }
 
-function LeadTableRow({ agents, index, isSelected, lead, onLeadClick, onToggleSelect, onUpdateLead }) {
+function LeadTableRow({ agents, index, isSelected, lead, onLeadClick, onStatusChange, onToggleSelect, onUpdateLead }) {
   const attentionBadges = getAttentionBadges(lead);
   const nextFollowUp = getNextFollowUp(lead);
+  const score = getLeadScore(lead);
 
   return (
     <tr className={`data-table-row group ${isSelected ? 'bg-indigo-50/60' : ''}`} onClick={() => onLeadClick(lead)}>
@@ -528,6 +570,11 @@ function LeadTableRow({ agents, index, isSelected, lead, onLeadClick, onToggleSe
             <div className="mt-0.5 text-xs text-neutral-400">{formatSource(lead.source)}</div>
           </div>
         </div>
+      </td>
+      <td className="data-table-td">
+        <span className={`inline-flex min-w-12 justify-center rounded-full border px-2.5 py-1 text-xs font-bold ${getLeadScoreTone(score)}`}>
+          {score}
+        </span>
       </td>
       <td className="data-table-td">
         {attentionBadges.length > 0 ? (
@@ -584,7 +631,7 @@ function LeadTableRow({ agents, index, isSelected, lead, onLeadClick, onToggleSe
         <select
           className={`cursor-pointer appearance-none rounded-full border-0 px-3 py-1 text-[10px] font-bold focus:ring-0 ${getStatusTone(lead.status)}`}
           value={lead.status}
-          onChange={(event) => onUpdateLead(lead.id, { status: event.target.value })}
+          onChange={(event) => onStatusChange?.(lead, event.target.value)}
         >
           {LEAD_STATUS_OPTIONS.map((option) => (
             <option key={option} value={option}>
@@ -600,6 +647,7 @@ function LeadTableRow({ agents, index, isSelected, lead, onLeadClick, onToggleSe
 function LeadDrawer({ leadId, onClose, agents }) {
   const { data, isLoading } = useLead(leadId);
   const lead = data?.data;
+  const selectedCatalogItems = lead?.selectedCatalogItems || [];
 
   const [activeTab, setActiveTab] = useState('Notes');
   const [noteContent, setNoteContent] = useState('');
@@ -615,6 +663,7 @@ function LeadDrawer({ leadId, onClose, agents }) {
 
   const nextFollowUp = getNextFollowUp(lead);
   const attentionBadges = lead ? getAttentionBadges(lead) : [];
+  const leadScore = getLeadScore(lead);
   const tabItems = [
     { key: 'Notes', label: `Notes ${lead?.notesList?.length || 0}` },
     { key: 'Follow-ups', label: `Follow-ups ${lead?.followUps?.length || 0}` },
@@ -631,17 +680,30 @@ function LeadDrawer({ leadId, onClose, agents }) {
       budgetPerPerson: lead?.budgetPerPerson || 0,
       destination: lead?.destination || '',
       assignedAgentId: lead?.assignedAgentId || '',
+      tagsText: (lead?.tags || []).join(', '),
     });
     setIsEditing(true);
   };
 
+  const handleMarkLost = () => {
+    const lostReason = window.prompt('Why was this lead lost?', lead?.lostReason || '');
+    if (!lostReason?.trim()) return;
+    updateLead.mutate({ id: lead.id, data: { status: 'LOST', lostReason: lostReason.trim() } });
+  };
+
   const handleSave = () => {
+    const tags = String(editState.tagsText || '')
+      .split(',')
+      .map((tag) => tag.trim())
+      .filter(Boolean);
+
     updateLead.mutate(
       {
         id: leadId,
         data: {
           ...editState,
           assignedAgentId: editState.assignedAgentId || null,
+          tags,
         },
       },
       {
@@ -688,6 +750,9 @@ function LeadDrawer({ leadId, onClose, agents }) {
                   <div className="mt-1 flex flex-wrap items-center gap-2">
                     <span className={`badge ${getStatusTone(lead?.status)} px-2 py-0.5 text-[10px]`}>
                       {formatStatus(lead?.status)}
+                    </span>
+                    <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${getLeadScoreTone(leadScore)}`}>
+                      Score {leadScore}
                     </span>
                     {attentionBadges.slice(0, 2).map((badge) => (
                       <span
@@ -740,7 +805,7 @@ function LeadDrawer({ leadId, onClose, agents }) {
               <QuickAction icon={CalendarDaysIcon} label="Follow-up" onClick={() => setActiveTab('Follow-ups')} />
               <QuickAction icon={PaperAirplaneIcon} label="Quote" onClick={() => setActiveTab('Activity')} />
               <QuickAction icon={CheckCircleIcon} label="Convert" onClick={() => updateLead.mutate({ id: lead.id, data: { status: 'CONVERTED' } })} />
-              <QuickAction icon={XCircleIcon} label="Lost" onClick={() => updateLead.mutate({ id: lead.id, data: { status: 'LOST' } })} />
+              <QuickAction icon={XCircleIcon} label="Lost" onClick={handleMarkLost} />
               <QuickAction icon={UserPlusIcon} label="Assign" onClick={handleEditClick} />
               <QuickAction icon={PencilIcon} label="Note" onClick={() => setActiveTab('Notes')} />
             </div>
@@ -748,114 +813,180 @@ function LeadDrawer({ leadId, onClose, agents }) {
         </div>
 
         {!isLoading && lead && (
-          <div className="grid grid-cols-2 gap-x-6 gap-y-4 border-b border-neutral-100 px-6 py-4 text-sm">
-            <LeadField
-              isEditing={isEditing}
-              label="Destination"
-              value={lead.destination || EMPTY}
-              editControl={
+          <div className="border-b border-neutral-100 px-6 py-4 text-sm">
+            <div className="grid grid-cols-2 gap-x-6 gap-y-4">
+              <LeadField
+                isEditing={isEditing}
+                label="Destination"
+                value={lead.destination || EMPTY}
+                editControl={
+                  <input
+                    type="text"
+                    value={editState.destination}
+                    onChange={(event) => setEditState({ ...editState, destination: event.target.value })}
+                    className="w-full rounded-md border-neutral-200 bg-neutral-50 px-2 py-1 text-sm focus:ring-0"
+                  />
+                }
+              />
+              <LeadField
+                isEditing={isEditing}
+                label="Source"
+                value={formatSource(lead.source)}
+                editControl={
+                  <select
+                    value={editState.source}
+                    onChange={(event) => setEditState({ ...editState, source: event.target.value })}
+                    className="w-full rounded-md border-neutral-200 bg-neutral-50 px-2 py-1 text-sm focus:ring-0"
+                  >
+                    <option value="whatsapp_organic">WhatsApp Organic</option>
+                    <option value="instagram">Instagram DM</option>
+                    <option value="facebook_ad">Facebook Ad</option>
+                    <option value="instagram_ad">Instagram Ad</option>
+                    <option value="google_ad">Google Ad</option>
+                    <option value="referral">Referral</option>
+                    <option value="manual">Manual</option>
+                  </select>
+                }
+              />
+              <LeadField
+                isEditing={isEditing}
+                label="Contact Person"
+                value={lead.customer?.name || EMPTY}
+                editControl={
+                  <input
+                    type="text"
+                    value={editState.customerName}
+                    onChange={(event) => setEditState({ ...editState, customerName: event.target.value })}
+                    className="w-full rounded-md border-neutral-200 bg-neutral-50 px-2 py-1 text-sm focus:ring-0"
+                  />
+                }
+              />
+              <LeadField
+                isEditing={isEditing}
+                label="Phone"
+                value={formatPhone(lead.customer?.phone) || EMPTY}
+                editControl={
+                  <input
+                    type="text"
+                    value={editState.customerPhone}
+                    onChange={(event) => setEditState({ ...editState, customerPhone: event.target.value })}
+                    className="w-full rounded-md border-neutral-200 bg-neutral-50 px-2 py-1 text-sm focus:ring-0"
+                  />
+                }
+              />
+              <LeadField
+                isEditing={isEditing}
+                label="Email"
+                value={lead.customer?.email || EMPTY}
+                editControl={
+                  <input
+                    type="email"
+                    value={editState.customerEmail}
+                    onChange={(event) => setEditState({ ...editState, customerEmail: event.target.value })}
+                    className="w-full rounded-md border-neutral-200 bg-neutral-50 px-2 py-1 text-sm focus:ring-0"
+                  />
+                }
+              />
+              <LeadField
+                isEditing={isEditing}
+                label="Budget / Person"
+                value={lead.budgetPerPerson ? formatCurrency(lead.budgetPerPerson) : EMPTY}
+                editControl={
+                  <input
+                    type="number"
+                    value={editState.budgetPerPerson / 100}
+                    onChange={(event) => setEditState({ ...editState, budgetPerPerson: Number(event.target.value) * 100 })}
+                    className="w-full rounded-md border-neutral-200 bg-neutral-50 px-2 py-1 text-sm focus:ring-0"
+                  />
+                }
+              />
+              <LeadField label="Created" value={formatDate(lead.createdAt)} />
+              <LeadField label="Lead Score" value={`${leadScore}/100`} />
+              <LeadField label="Last Activity" value={getActivityLabel(lead)} />
+              <LeadField label="Next Contact" value={nextFollowUp ? formatDateTime(nextFollowUp.scheduledAt) : EMPTY} />
+              <LeadField
+                isEditing={isEditing}
+                label="Assigned To"
+                value={lead.assignedAgent?.name || 'Unassigned'}
+                editControl={
+                  <select
+                    className="w-full rounded-md border-neutral-200 bg-neutral-50 px-2 py-1 text-sm focus:ring-0"
+                    value={editState.assignedAgentId || ''}
+                    onChange={(event) => setEditState({ ...editState, assignedAgentId: event.target.value })}
+                  >
+                    <option value="">Unassigned</option>
+                    {agents.map((agent) => (
+                      <option key={agent.id} value={agent.id}>
+                        {agent.name}
+                      </option>
+                    ))}
+                  </select>
+                }
+              />
+            </div>
+
+            <div className="mt-5">
+              <div className="mb-2 flex items-center gap-2 text-xs font-medium text-neutral-400">
+                <TagIcon className="h-4 w-4" />
+                Tags
+              </div>
+              {isEditing ? (
                 <input
                   type="text"
-                  value={editState.destination}
-                  onChange={(event) => setEditState({ ...editState, destination: event.target.value })}
-                  className="w-full rounded-md border-neutral-200 bg-neutral-50 px-2 py-1 text-sm focus:ring-0"
+                  value={editState.tagsText || ''}
+                  onChange={(event) => setEditState({ ...editState, tagsText: event.target.value })}
+                  className="w-full rounded-md border-neutral-200 bg-neutral-50 px-3 py-2 text-sm focus:ring-0"
+                  placeholder="urgent, honeymoon, high budget"
                 />
-              }
-            />
-            <LeadField
-              isEditing={isEditing}
-              label="Source"
-              value={formatSource(lead.source)}
-              editControl={
-                <select
-                  value={editState.source}
-                  onChange={(event) => setEditState({ ...editState, source: event.target.value })}
-                  className="w-full rounded-md border-neutral-200 bg-neutral-50 px-2 py-1 text-sm focus:ring-0"
-                >
-                  <option value="whatsapp_organic">WhatsApp Organic</option>
-                  <option value="instagram">Instagram DM</option>
-                  <option value="facebook_ad">Facebook Ad</option>
-                  <option value="instagram_ad">Instagram Ad</option>
-                  <option value="google_ad">Google Ad</option>
-                  <option value="referral">Referral</option>
-                  <option value="manual">Manual</option>
-                </select>
-              }
-            />
-            <LeadField
-              isEditing={isEditing}
-              label="Contact Person"
-              value={lead.customer?.name || EMPTY}
-              editControl={
-                <input
-                  type="text"
-                  value={editState.customerName}
-                  onChange={(event) => setEditState({ ...editState, customerName: event.target.value })}
-                  className="w-full rounded-md border-neutral-200 bg-neutral-50 px-2 py-1 text-sm focus:ring-0"
-                />
-              }
-            />
-            <LeadField
-              isEditing={isEditing}
-              label="Phone"
-              value={formatPhone(lead.customer?.phone) || EMPTY}
-              editControl={
-                <input
-                  type="text"
-                  value={editState.customerPhone}
-                  onChange={(event) => setEditState({ ...editState, customerPhone: event.target.value })}
-                  className="w-full rounded-md border-neutral-200 bg-neutral-50 px-2 py-1 text-sm focus:ring-0"
-                />
-              }
-            />
-            <LeadField
-              isEditing={isEditing}
-              label="Email"
-              value={lead.customer?.email || EMPTY}
-              editControl={
-                <input
-                  type="email"
-                  value={editState.customerEmail}
-                  onChange={(event) => setEditState({ ...editState, customerEmail: event.target.value })}
-                  className="w-full rounded-md border-neutral-200 bg-neutral-50 px-2 py-1 text-sm focus:ring-0"
-                />
-              }
-            />
-            <LeadField
-              isEditing={isEditing}
-              label="Budget / Person"
-              value={lead.budgetPerPerson ? formatCurrency(lead.budgetPerPerson) : EMPTY}
-              editControl={
-                <input
-                  type="number"
-                  value={editState.budgetPerPerson / 100}
-                  onChange={(event) => setEditState({ ...editState, budgetPerPerson: Number(event.target.value) * 100 })}
-                  className="w-full rounded-md border-neutral-200 bg-neutral-50 px-2 py-1 text-sm focus:ring-0"
-                />
-              }
-            />
-            <LeadField label="Created" value={formatDate(lead.createdAt)} />
-            <LeadField label="Last Activity" value={getActivityLabel(lead)} />
-            <LeadField label="Next Contact" value={nextFollowUp ? formatDateTime(nextFollowUp.scheduledAt) : EMPTY} />
-            <LeadField
-              isEditing={isEditing}
-              label="Assigned To"
-              value={lead.assignedAgent?.name || 'Unassigned'}
-              editControl={
-                <select
-                  className="w-full rounded-md border-neutral-200 bg-neutral-50 px-2 py-1 text-sm focus:ring-0"
-                  value={editState.assignedAgentId || ''}
-                  onChange={(event) => setEditState({ ...editState, assignedAgentId: event.target.value })}
-                >
-                  <option value="">Unassigned</option>
-                  {agents.map((agent) => (
-                    <option key={agent.id} value={agent.id}>
-                      {agent.name}
-                    </option>
+              ) : (lead.tags || []).length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {lead.tags.map((tag) => (
+                    <span key={tag} className="rounded-full border border-neutral-200 bg-neutral-50 px-2.5 py-1 text-xs font-semibold text-neutral-600">
+                      {tag}
+                    </span>
                   ))}
-                </select>
-              }
-            />
+                </div>
+              ) : (
+                <p className="text-sm text-neutral-400">{EMPTY}</p>
+              )}
+            </div>
+
+            {selectedCatalogItems.length > 0 && (
+              <div className="mt-5 rounded-2xl border border-neutral-200 bg-neutral-50 p-4">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-neutral-400">Selected Items</p>
+                    <p className="mt-1 text-sm font-semibold text-neutral-900">
+                      {selectedCatalogItems.length} selected item{selectedCatalogItems.length === 1 ? '' : 's'}
+                    </p>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  {selectedCatalogItems.map((item) => (
+                    <div key={`${item.itemType}-${item.id}`} className="flex items-start justify-between gap-3 rounded-xl border border-white bg-white px-3 py-2 shadow-sm">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
+                            item.itemType === 'PROPERTY'
+                              ? 'bg-sky-50 text-sky-700'
+                              : 'bg-emerald-50 text-emerald-700'
+                          }`}>
+                            {item.itemType === 'PROPERTY' ? 'Property' : 'Package'}
+                          </span>
+                          <p className="truncate text-sm font-semibold text-neutral-900">{item.name || EMPTY}</p>
+                        </div>
+                        {item.subtitle && (
+                          <p className="mt-1 text-xs text-neutral-500">{item.subtitle}</p>
+                        )}
+                      </div>
+                      <div className="shrink-0 text-xs font-semibold text-neutral-600">
+                        {item.price ? formatCurrency(item.price) : EMPTY}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -1072,6 +1203,8 @@ function FollowUpsPanel({
 }
 
 function ActivityPanel({ lead }) {
+  const score = getLeadScore(lead);
+
   return (
     <div className="space-y-3">
       <div className="rounded-[var(--radius-md)] border border-neutral-200 bg-white p-4 shadow-sm">
@@ -1082,10 +1215,12 @@ function ActivityPanel({ lead }) {
         </p>
       </div>
       <div className="grid grid-cols-2 gap-3">
+        <ActivityStat label="Lead Score" value={`${score}/100`} />
         <ActivityStat label="Lead Value" value={getLeadValueLabel(lead)} />
         <ActivityStat label="Last Activity" value={getActivityLabel(lead)} />
         <ActivityStat label="Created" value={timeAgo(lead.createdAt)} />
         <ActivityStat label="Source" value={formatSource(lead.source)} />
+        {lead.status === 'LOST' && <ActivityStat label="Lost Reason" value={lead.lostReason || EMPTY} />}
       </div>
     </div>
   );

@@ -129,6 +129,12 @@ module.exports = (sequelize) => {
       defaultValue: 0,
       comment: 'Predicted conversion score 0-100',
     },
+    tags: {
+      type: DataTypes.JSONB,
+      allowNull: false,
+      defaultValue: [],
+      comment: 'Labels used by agents to segment and prioritize leads',
+    },
     adId: {
       type: DataTypes.STRING(255),
       allowNull: true,

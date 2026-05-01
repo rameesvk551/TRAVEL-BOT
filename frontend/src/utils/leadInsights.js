@@ -14,6 +14,7 @@ export const SOURCE_OPTIONS = [
 ];
 
 export const SORT_OPTIONS = [
+  { value: 'hot', label: 'Hot Leads' },
   { value: 'newest', label: 'Newest First' },
   { value: 'oldest', label: 'Oldest First' },
   { value: 'overdue', label: 'Overdue First' },
@@ -88,6 +89,7 @@ export function getAttentionBadges(lead) {
   const nextFollowUp = getNextFollowUp(lead);
   const latestInbound = getLatestCustomerMessage(lead);
   const isClosed = CLOSED_STATUSES.has(lead?.status);
+  const score = getLeadScore(lead);
 
   if (nextFollowUp && isPast(nextFollowUp.scheduledAt) && !isToday(nextFollowUp.scheduledAt)) {
     badges.push({ key: 'overdue', label: 'Overdue', className: 'bg-rose-50 text-rose-700 border-rose-100' });
@@ -101,6 +103,10 @@ export function getAttentionBadges(lead) {
 
   if (!nextFollowUp && !isClosed) {
     badges.push({ key: 'no-follow-up', label: 'No Follow-up', className: 'bg-orange-50 text-orange-700 border-orange-100' });
+  }
+
+  if (score >= 75 && !isClosed) {
+    badges.push({ key: 'hot', label: 'Hot', className: 'bg-red-50 text-red-700 border-red-100' });
   }
 
   if (latestInbound) {
@@ -120,6 +126,7 @@ export function needsAttention(lead) {
 export function getNextAction(lead) {
   const nextFollowUp = getNextFollowUp(lead);
   const latestInbound = getLatestCustomerMessage(lead);
+  const hasSelectedItems = (lead?.selectedCatalogItems || []).length > 0 || lead?.packageId || lead?.propertyId;
 
   if (latestInbound) {
     const ageMs = Date.now() - new Date(latestInbound.timestamp || latestInbound.createdAt).getTime();
@@ -129,6 +136,7 @@ export function getNextAction(lead) {
   if (nextFollowUp && isPast(nextFollowUp.scheduledAt)) return 'Follow up now';
   if (nextFollowUp && isToday(nextFollowUp.scheduledAt)) return `Follow up ${formatDateTime(nextFollowUp.scheduledAt)}`;
   if (!lead?.assignedAgentId && !CLOSED_STATUSES.has(lead?.status)) return 'Assign owner';
+  if (hasSelectedItems && ['PACKAGE_SEARCHED', 'PACKAGE_INTERESTED', 'ENQUIRY'].includes(lead?.status)) return 'Send quote';
   if (!nextFollowUp && !CLOSED_STATUSES.has(lead?.status)) return 'Schedule follow-up';
   if (lead?.status === 'PACKAGE_INTERESTED') return 'Send quote';
   if (lead?.status === 'CONVERTED') return 'Review booking';
@@ -148,6 +156,11 @@ export function matchesAgent(lead, agentFilter, currentAgentId) {
   if (agentFilter === 'mine') return currentAgentId ? lead?.assignedAgentId === currentAgentId : true;
   if (agentFilter === 'unassigned') return !lead?.assignedAgentId;
   return lead?.assignedAgentId === agentFilter;
+}
+
+export function matchesTag(lead, tagFilter) {
+  if (!tagFilter || tagFilter === 'all') return true;
+  return (lead?.tags || []).some((tag) => String(tag).toLowerCase() === String(tagFilter).toLowerCase());
 }
 
 export function matchesDateRange(lead, dateRange) {
@@ -173,6 +186,10 @@ export function sortLeads(leads, sortBy) {
 
   if (sortBy === 'oldest') {
     return sorted.sort((a, b) => dateValue(a.createdAt) - dateValue(b.createdAt));
+  }
+
+  if (sortBy === 'hot') {
+    return sorted.sort((a, b) => getLeadScore(b) - getLeadScore(a) || dateValue(b.createdAt) - dateValue(a.createdAt));
   }
 
   if (sortBy === 'overdue') {
@@ -201,6 +218,29 @@ export function sortLeads(leads, sortBy) {
   }
 
   return sorted.sort((a, b) => dateValue(b.createdAt) - dateValue(a.createdAt));
+}
+
+export function getLeadScore(lead) {
+  if (Number.isFinite(Number(lead?.leadScore))) return Number(lead.leadScore);
+  let score = 10;
+  if (lead?.assignedAgentId) score += 8;
+  if (lead?.destination) score += 8;
+  if (lead?.packageId || lead?.propertyId || (lead?.selectedCatalogItems || []).length) score += 15;
+  if (lead?.budgetPerPerson) score += Math.min(18, Math.round(Number(lead.budgetPerPerson) / 500000));
+  if (lead?.travellers > 1) score += Math.min(10, Number(lead.travellers) * 2);
+  if (lead?.travelStart || lead?.travelDates) score += 6;
+  if ((lead?.tags || []).some((tag) => /urgent|hot|vip|high/i.test(tag))) score += 12;
+  if (['PACKAGE_INTERESTED', 'ENQUIRY', 'QUOTED'].includes(lead?.status)) score += 18;
+  if (['CONTACTED', 'NEGOTIATING'].includes(lead?.status)) score += 10;
+  if (lead?.status === 'CONVERTED' || lead?.status === 'BOOKED') return 100;
+  if (lead?.status === 'LOST' || lead?.status === 'CANCELLED') return Math.min(score, 15);
+  return Math.max(0, Math.min(100, score));
+}
+
+export function getLeadScoreTone(score) {
+  if (score >= 75) return 'bg-red-50 text-red-700 border-red-100';
+  if (score >= 50) return 'bg-amber-50 text-amber-700 border-amber-100';
+  return 'bg-neutral-50 text-neutral-600 border-neutral-200';
 }
 
 export function getLeadValueLabel(lead) {
