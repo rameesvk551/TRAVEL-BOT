@@ -4,8 +4,6 @@ const { handleReview } = require('./handlers/reviewHandler');
 const { handleTravelFlow, createFreshGreetingLead } = require('./handlers/travelFlowHandler');
 const { isCampaignAction, handleCampaignAction, tryHandleCampaignTextAction } = require('./handlers/campaignActionHandler');
 const { updateSession } = require('./utils/sessionManager');
-const whatsappService = require('../../backend/src/services/whatsappService.ts');
-
 const GREETING_KEYWORDS = new Set([
   'hi',
   'gi',
@@ -27,14 +25,15 @@ function getMessageText(incoming) {
   return incoming?.text || '';
 }
 
-async function routeMessage(session, incoming, customer, agency) {
+async function routeMessage(session, incoming, customer, agency, options = {}) {
   const messageText = getMessageText(incoming);
   const normalizedText = String(messageText || '').trim().toLowerCase();
   const actionId = String(incoming?.actionId || '').trim();
+  const isFirstInboundMessage = options.isFirstInboundMessage === true;
 
-  // Explicit menu commands reset the flow. Casual greetings only open the menu
-  // for brand-new sessions, so returning users are not spammed with welcome cards.
-  if (RESET_TO_MENU_KEYWORDS.has(normalizedText) || (GREETING_KEYWORDS.has(normalizedText) && session.currentStep === 'NEW')) {
+  // Explicit menu commands reset the flow. Casual greetings only open the
+  // welcome menu for the customer's first inbound message.
+  if (RESET_TO_MENU_KEYWORDS.has(normalizedText) || (GREETING_KEYWORDS.has(normalizedText) && isFirstInboundMessage)) {
     await createFreshGreetingLead(session, customer, agency);
     await updateSession(session, {
       isHandedOff: false,
@@ -58,11 +57,14 @@ async function routeMessage(session, incoming, customer, agency) {
   }
 
   if (GREETING_KEYWORDS.has(normalizedText)) {
-    await whatsappService.sendTextMessage(
-      customer.phone,
-      'Hi again! We already have your chat open. Reply *menu* if you want to browse options again, or send your question and our team will help.',
-      { customerId: customer.id, agencyId: agency.id }
-    );
+    // Returning greetings are intentionally silent. Agents still see the
+    // inbound message in the lead/chat, but customers are not spammed.
+    return;
+  }
+
+  if (!isFirstInboundMessage && !actionId && ['NEW', 'MENU', 'COMPLETE'].includes(session.currentStep)) {
+    // Do not auto-open the welcome menu for every free-text message from an
+    // existing customer. Explicit menu commands above still work.
     return;
   }
 

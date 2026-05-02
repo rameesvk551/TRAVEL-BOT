@@ -510,6 +510,14 @@ async function processMessage(msg, metadata) {
 
   // Load or create session + customer
   const { session, customer } = await loadOrCreateSession(fromPhone, agency.id);
+  const previousInboundCount = await Message.count({
+    where: {
+      customerId: customer.id,
+      agencyId: agency.id,
+      direction: 'IN',
+    },
+  });
+  const isFirstInboundMessage = previousInboundCount === 0;
 
   const profileName = msg?.contacts?.[0]?.profile?.name || msg?.profile?.name || '';
   if (profileName && profileName !== customer.name) {
@@ -570,7 +578,7 @@ async function processMessage(msg, metadata) {
       { customerId: customer.id, agencyId: agency.id }
     );
     await whatsappService.waitForReplyPacing({ customerId: customer.id, agencyId: agency.id });
-    await routeMessage(session, incoming, customer, agency);
+    await routeMessage(session, incoming, customer, agency, { isFirstInboundMessage });
   } catch (err) {
     console.error('[Webhook] Bot processing error:', err.message);
     console.error('[Webhook] Error at:', err.stack?.split('\n')[1] || 'Unknown');
