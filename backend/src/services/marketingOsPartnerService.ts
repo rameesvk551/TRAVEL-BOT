@@ -207,9 +207,9 @@ async function updateTenantWhatsAppFlow(tenantToken, flowId, payload) {
   return response.data;
 }
 
-async function publishTenantWhatsAppFlow(tenantToken, flowId) {
+async function publishTenantWhatsAppFlow(tenantToken, flowId, payload = undefined) {
   const client = getTenantClient(tenantToken);
-  const response = await client.post(`/whatsapp/flows/${encodeURIComponent(flowId)}/publish`, undefined, { timeout: FLOW_TIMEOUT_MS });
+  const response = await client.post(`/whatsapp/flows/${encodeURIComponent(flowId)}/publish`, payload, { timeout: FLOW_TIMEOUT_MS });
   return response.data;
 }
 

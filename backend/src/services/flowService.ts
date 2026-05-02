@@ -2,6 +2,7 @@ const { Op } = require('sequelize');
 const { Agency, WhatsAppFlow } = require('../models');
 const marketingOsPartnerService = require('./marketingOsPartnerService');
 const { getDefaultFlowDefinitions } = require('./defaultFlowDefinitions');
+const { getWhatsappFlowPublicKeyPem } = require('../utils/flowEncryption');
 
 const DEFAULT_ENDPOINT_URI = process.env.WHATSAPP_FLOW_ENDPOINT_URL || 'https://travelbot.wayon.in/api/whatsapp/flow';
 
@@ -266,12 +267,20 @@ async function publishFlow(id, agencyId) {
   if (!flow) throw buildError('Flow not found', 404);
 
   const { tenantToken } = await getTenantTokenForAgency(agencyId);
+  let flowPublicKey = null;
+  try {
+    flowPublicKey = getWhatsappFlowPublicKeyPem();
+  } catch (error) {
+    throw normalizePartnerFlowError(error, 'creation');
+  }
+
   const payload = {
     name: flow.name,
     categories: flow.categories,
     endpointUri: flow.endpointUri || DEFAULT_ENDPOINT_URI,
     firstScreenId: flow.firstScreenId || null,
     jsonDefinition: flow.jsonDefinition || {},
+    flowPublicKey,
   };
 
   if (!flow.metaFlowId) {
@@ -314,7 +323,9 @@ async function publishFlow(id, agencyId) {
 
   let publishResult;
   try {
-    publishResult = await marketingOsPartnerService.publishTenantWhatsAppFlow(tenantToken, metaFlowId);
+    publishResult = await marketingOsPartnerService.publishTenantWhatsAppFlow(tenantToken, metaFlowId, {
+      flowPublicKey,
+    });
   } catch (error) {
     throw normalizePartnerFlowError(error, 'publish');
   }
