@@ -101,6 +101,10 @@ export default function Login() {
               Don't have an account? <Link to="/signup" className="font-bold text-neutral-900 hover:underline">Join the elite</Link>
             </p>
 
+            <p className="mt-3 text-center text-sm text-neutral-500">
+              Need a quick client walkthrough? <Link to="/brochure" className="font-bold text-neutral-900 hover:underline">Open brochure</Link>
+            </p>
+
             {/* Badge Integration */}
             <div className="mt-12 flex flex-col items-center justify-center gap-2 opacity-90 transition hover:opacity-100">
               <span className="text-[10px] font-bold uppercase tracking-widest text-[#0668E1] drop-shadow-sm">Meta Official Tech Provider</span>

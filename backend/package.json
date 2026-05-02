@@ -8,6 +8,7 @@
     "start": "tsx src/server.ts",
     "db:sync": "tsx -e \"const { sequelize } = require('./src/models'); sequelize.sync().then(() => { console.log('DB synced'); process.exit(0); }).catch((err) => { console.error(err); process.exit(1); });\"",
     "seed:real-estate": "tsx src/scripts/seedRealEstateData.ts",
+    "seed:travel-packages": "tsx src/scripts/seedTravelPackages.ts",
     "typecheck": "tsc --noEmit",
     "build:ts": "tsc -p tsconfig.json"
   },

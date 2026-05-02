@@ -33,6 +33,7 @@ import Agents from './pages/Agents';
 import Sidebar from './components/Sidebar';
 import AppTopbar from './components/AppTopbar';
 import Signup from './pages/Signup';
+import Brochure from './pages/Brochure';
 
 /**
  * Protected route wrapper — redirects to login if not authenticated.
@@ -80,6 +81,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <Routes>
+        <Route path="/brochure" element={<Brochure />} />
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<Signup />} />
         <Route

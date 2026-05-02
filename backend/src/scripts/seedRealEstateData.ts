@@ -2,7 +2,7 @@ const path = require('path');
 const { Op } = require('sequelize');
 require('dotenv').config({ path: path.resolve(__dirname, '../../../.env') });
 
-const { sequelize, Agency, Package } = require('../models');
+const { sequelize, Agency, Property } = require('../models');
 const { v2: cloudinary } = require('cloudinary');
 
 const TOTAL_RECORDS = 50;
@@ -24,49 +24,42 @@ function pick(arr, index) {
   return arr[index % arr.length];
 }
 
+function parseArgs() {
+  const args = process.argv.slice(2);
+  const parsed = {};
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === '--agency' && args[index + 1]) {
+      parsed.agencyName = args[index + 1];
+      index += 1;
+    }
+  }
+
+  return parsed;
+}
+
 function buildListing(seed) {
-  const cities = ['Bengaluru', 'Mumbai', 'Pune', 'Hyderabad', 'Chennai', 'Kochi', 'Noida', 'Gurugram'];
-  const localities = ['City Center', 'Tech Park Zone', 'Lakeview', 'Green Avenue', 'Downtown', 'Palm Residency'];
-  const propertyTypes = ['Studio', '1BHK', '2BHK', '3BHK', 'Villa', 'Penthouse'];
-  const furnishing = ['Unfurnished', 'Semi-furnished', 'Fully furnished'];
-  const amenities = ['Power Backup', 'Lift', 'Parking', 'Gym', 'Clubhouse', '24x7 Security', 'Garden', 'Pool'];
+  const cities = ['Goa', 'Munnar', 'Jaipur', 'Udaipur', 'Coorg', 'Ooty', 'Shimla', 'Manali', 'Srinagar', 'Wayanad'];
+  const localities = ['Beachfront', 'Lake View', 'City Center', 'Hillside', 'Riverfront', 'Tea Estate', 'Heritage Quarter', 'Forest Edge'];
+  const propertyTypes = ['Hotel', 'Resort', 'Villa', 'Homestay', 'Boutique Stay', 'Apartment'];
+  const amenities = ['Breakfast', 'Airport Transfer', 'Pool', 'Spa', 'Wi-Fi', 'Parking', 'Restaurant', 'Bonfire', 'Mountain View', 'Sea View'];
 
   const city = pick(cities, seed);
   const locality = pick(localities, seed + 2);
-  const type = pick(propertyTypes, seed + 1);
-  const furnish = pick(furnishing, seed + 3);
-
-  const bhk = type.includes('Studio') ? 1 : parseInt(type[0], 10) || 2;
-  const areaSqFt = 550 + (seed % 12) * 120 + bhk * 100;
-  const basePriceRupees = 3500000 + seed * 175000 + bhk * 250000;
+  const propertyType = pick(propertyTypes, seed + 1);
+  const pricePerNightRupees = 3200 + (seed % 15) * 850 + ((seed + 3) % 4) * 400;
+  const selectedAmenities = [0, 1, 2, 3].map((offset) => pick(amenities, seed + offset));
 
   return {
-    name: `RE Listing ${seed + 1} - ${type} in ${city}`,
-    duration: `${type} • ${areaSqFt} sq ft • ${furnish}`,
-    destinations: [city, locality],
-    inclusions: [
-      `Property Type: ${type}`,
-      `Carpet Area: ${areaSqFt} sq ft`,
-      `Bathrooms: ${bhk}`,
-      `Furnishing: ${furnish}`,
-      `RERA: Available`,
-      `Amenities: ${amenities.slice(seed % 3, (seed % 3) + 3).join(', ')}`,
-    ],
-    exclusions: [
-      'Registration charges',
-      'Legal verification charges',
-      'Maintenance deposit',
-    ],
-    basePrice: basePriceRupees * 100,
-    itinerary: [
-      { day: 1, title: 'Site Visit', description: `Visit ${locality}, ${city}` },
-      { day: 2, title: 'Documentation Review', description: 'Review title and agreement documents' },
-      { day: 3, title: 'Booking Discussion', description: 'Finalize offer and payment schedule' },
-    ],
-    isActive: true,
+    name: `Wayon Stay ${seed + 1} - ${propertyType} ${city}`,
+    propertyType,
+    location: `${locality}, ${city}`,
+    address: `${10 + seed}, ${locality} Road, ${city}, India`,
+    amenities: selectedAmenities,
+    description: `${propertyType} stay in ${city} with ${selectedAmenities.slice(0, 3).join(', ').toLowerCase()} and smooth access to local sightseeing.`,
+    pricePerNight: pricePerNightRupees * 100,
     city,
-    type,
-    areaSqFt,
   };
 }
 
@@ -84,10 +77,10 @@ function makeListingSvg(listing, index) {
   </defs>
   <rect width="100%" height="100%" fill="url(#bg)" />
   <rect x="80" y="80" width="1440" height="740" rx="24" fill="rgba(255,255,255,0.08)" stroke="rgba(255,255,255,0.25)" />
-  <text x="140" y="220" fill="#ffffff" font-size="68" font-family="Arial, sans-serif" font-weight="700">${listing.type} • ${listing.areaSqFt} sq ft</text>
-  <text x="140" y="320" fill="#e2e8f0" font-size="44" font-family="Arial, sans-serif">${listing.destinations[1]}, ${listing.city}</text>
-  <text x="140" y="420" fill="#f8fafc" font-size="54" font-family="Arial, sans-serif" font-weight="700">₹ ${(listing.basePrice / 100).toLocaleString('en-IN')}</text>
-  <text x="140" y="500" fill="#cbd5e1" font-size="34" font-family="Arial, sans-serif">Demo seeded property image</text>
+  <text x="140" y="220" fill="#ffffff" font-size="68" font-family="Arial, sans-serif" font-weight="700">${listing.propertyType} stay in ${listing.city}</text>
+  <text x="140" y="320" fill="#e2e8f0" font-size="44" font-family="Arial, sans-serif">${listing.location}</text>
+  <text x="140" y="420" fill="#f8fafc" font-size="54" font-family="Arial, sans-serif" font-weight="700">INR ${(listing.pricePerNight / 100).toLocaleString('en-IN')} / night</text>
+  <text x="140" y="500" fill="#cbd5e1" font-size="34" font-family="Arial, sans-serif">Seeded property image for Wayon Travels</text>
 </svg>`;
 
   return Buffer.from(svg).toString('base64');
@@ -95,12 +88,12 @@ function makeListingSvg(listing, index) {
 
 async function uploadListingImage(listing, index, agencyId) {
   const folderRoot = process.env.CLOUDINARY_FOLDER || 'travel-bot/packages';
-  const folder = `${folderRoot}/real-estate-seed/${agencyId}`;
+  const folder = `${folderRoot}/property-seed/${agencyId}`;
   const base64Svg = makeListingSvg(listing, index);
 
   const result = await cloudinary.uploader.upload(`data:image/svg+xml;base64,${base64Svg}`, {
     folder,
-    public_id: `re-listing-${String(index + 1).padStart(3, '0')}`,
+    public_id: `wayon-property-${String(index + 1).padStart(3, '0')}`,
     overwrite: true,
     resource_type: 'image',
   });
@@ -111,45 +104,49 @@ async function uploadListingImage(listing, index, agencyId) {
 async function seedRealEstateData() {
   ensureCloudinaryConfig();
 
+  const args = parseArgs();
+  const agencyName = args.agencyName || process.env.SEED_AGENCY_NAME || 'Wayon Travels';
+
   await sequelize.authenticate();
-  const agency = await Agency.findOne({ order: [['createdAt', 'ASC']] });
+  const agency = await Agency.findOne({ where: { name: agencyName } });
 
   if (!agency) {
-    throw new Error('No agency found. Create an agency/user first, then run seeding.');
+    throw new Error(`Agency "${agencyName}" not found. Create an agency/user first, then run seeding.`);
   }
 
   console.log(`Using agency: ${agency.name} (${agency.id})`);
 
-  await Package.destroy({
+  await Property.destroy({
     where: {
       agencyId: agency.id,
-      name: { [Op.like]: 'RE Listing %' },
+      name: { [Op.like]: 'Wayon Stay %' },
     },
   });
 
   const rows = [];
-  for (let i = 0; i < TOTAL_RECORDS; i += 1) {
-    const listing = buildListing(i);
-    const imageUrl = await uploadListingImage(listing, i, agency.id);
+  for (let index = 0; index < TOTAL_RECORDS; index += 1) {
+    const listing = buildListing(index);
+    const imageUrl = await uploadListingImage(listing, index, agency.id);
 
     rows.push({
       agencyId: agency.id,
       name: listing.name,
-      duration: listing.duration,
-      destinations: listing.destinations,
-      inclusions: listing.inclusions,
-      exclusions: listing.exclusions,
-      basePrice: listing.basePrice,
+      propertyType: listing.propertyType,
+      location: listing.location,
+      address: listing.address,
+      amenities: listing.amenities,
+      description: listing.description,
+      pricePerNight: listing.pricePerNight,
       imageUrl,
-      itinerary: listing.itinerary,
+      images: [imageUrl],
       isActive: true,
     });
 
-    console.log(`Uploaded ${i + 1}/${TOTAL_RECORDS}: ${listing.name}`);
+    console.log(`Uploaded ${index + 1}/${TOTAL_RECORDS}: ${listing.name}`);
   }
 
-  await Package.bulkCreate(rows);
-  console.log(`Seed complete: ${rows.length} real-estate dummy records created.`);
+  await Property.bulkCreate(rows);
+  console.log(`Seed complete: ${rows.length} property records created for ${agency.name}.`);
 }
 
 if (require.main === module) {
