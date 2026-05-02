@@ -1,5 +1,4 @@
 const path = require('path');
-const { Op } = require('sequelize');
 require('dotenv').config({ path: path.resolve(__dirname, '../../../.env') });
 
 const { sequelize, Agency, Property } = require('../models');
@@ -116,12 +115,7 @@ async function seedRealEstateData() {
 
   console.log(`Using agency: ${agency.name} (${agency.id})`);
 
-  await Property.destroy({
-    where: {
-      agencyId: agency.id,
-      name: { [Op.like]: 'Wayon Stay %' },
-    },
-  });
+  await Property.destroy({ where: { agencyId: agency.id } });
 
   const rows = [];
   for (let index = 0; index < TOTAL_RECORDS; index += 1) {

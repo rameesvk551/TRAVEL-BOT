@@ -222,15 +222,13 @@ async function seedTravelPackages() {
   const categorySeeds = requestedCategory ? allSeeds.filter((item) => item.category === requestedCategory) : allSeeds;
   const limit = Number.isInteger(args.limit) && args.limit > 0 ? args.limit : categorySeeds.length;
   const seeds = categorySeeds.slice(0, limit);
-  const packageNames = seeds.map((item) => item.name);
-
   console.log(`Using agency: ${agency.name} (${agency.id})`);
   console.log(`Preparing ${seeds.length} travel packages${requestedCategory ? ` in ${requestedCategory}` : ''}...`);
 
   await Package.destroy({
     where: {
       agencyId: agency.id,
-      name: { [Op.in]: packageNames },
+      category: requestedCategory || { [Op.in]: ['DOMESTIC', 'INTERNATIONAL'] },
     },
   });
 
