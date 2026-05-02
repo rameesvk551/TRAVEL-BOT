@@ -57,6 +57,51 @@ function loadFacebookSdk(appId) {
 
 function runEmbeddedSignup(embeddedSignup) {
   return loadFacebookSdk(embeddedSignup.appId).then((FB) => new Promise((resolve, reject) => {
+    let sessionInfo = null;
+    let settled = false;
+
+    const cleanup = () => {
+      window.removeEventListener('message', sessionInfoListener);
+    };
+
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve(value);
+    };
+
+    const fail = (error) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(error);
+    };
+
+    const sessionInfoListener = (event) => {
+      if (!['https://www.facebook.com', 'https://web.facebook.com'].includes(event.origin)) return;
+
+      let data = event.data;
+      if (typeof data === 'string') {
+        try {
+          data = JSON.parse(data);
+        } catch (_err) {
+          return;
+        }
+      }
+
+      if (data?.type !== 'WA_EMBEDDED_SIGNUP') return;
+      if (data.event === 'FINISH' || data.event === 'FINISH_ONLY_WABA') {
+        sessionInfo = data.data || null;
+      } else if (data.event === 'ERROR') {
+        fail(new Error(data.data?.error_message || 'Facebook embedded signup failed'));
+      } else if (data.event === 'CANCEL') {
+        fail(new Error('Facebook signup was cancelled before completion'));
+      }
+    };
+
+    window.addEventListener('message', sessionInfoListener);
+
     const extras = {
       feature: 'whatsapp_embedded_signup',
       sessionInfoVersion: embeddedSignup.sessionInfoVersion || '3',
@@ -82,11 +127,11 @@ function runEmbeddedSignup(embeddedSignup) {
     FB.login((response) => {
       const code = response?.authResponse?.code || response?.authResponse?.accessToken;
       if (!code) {
-        reject(new Error('Facebook signup was cancelled or no authorization code was returned'));
+        fail(new Error('Facebook signup was cancelled or no authorization code was returned'));
         return;
       }
 
-      resolve(code);
+      finish({ code, sessionInfo });
     }, loginOptions);
   }));
 }
@@ -197,7 +242,14 @@ export default function Settings() {
   });
 
   const completeMutation = useMutation({
-    mutationFn: ({ code, sessionToken }) => client.post('/agencies/me/whatsapp-connection/complete', { code, sessionToken }),
+    mutationFn: ({ code, sessionToken, sessionInfo }) => client.post('/agencies/me/whatsapp-connection/complete', {
+      code,
+      sessionToken,
+      sessionInfo,
+      phoneNumberId: sessionInfo?.phone_number_id,
+      wabaId: sessionInfo?.waba_id,
+      businessId: sessionInfo?.business_id,
+    }),
     onSuccess: ({ data: response }) => {
       const connection = response.data;
       updateAgency({
@@ -310,10 +362,11 @@ export default function Settings() {
 
       if (nextConnection?.embeddedSignup?.sessionToken) {
         setConnectFlowStep('meta');
-        const code = await runEmbeddedSignup(nextConnection.embeddedSignup);
+        const signupResult = await runEmbeddedSignup(nextConnection.embeddedSignup);
         setConnectFlowStep('sync');
         await completeMutation.mutateAsync({
-          code,
+          code: signupResult.code,
+          sessionInfo: signupResult.sessionInfo,
           sessionToken: nextConnection.embeddedSignup.sessionToken,
         });
         setConnectFlowStep('connected');

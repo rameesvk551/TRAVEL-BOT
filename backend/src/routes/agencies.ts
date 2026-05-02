@@ -42,6 +42,14 @@ const marketingOsCallbackSchema = z.object({
 const marketingOsCompleteSchema = z.object({
   code: z.string().min(1, 'Authorization code is required'),
   sessionToken: z.string().min(1, 'Session token is required'),
+  phoneNumberId: z.string().optional(),
+  wabaId: z.string().optional(),
+  businessId: z.string().optional(),
+  sessionInfo: z.object({
+    phone_number_id: z.string().optional(),
+    waba_id: z.string().optional(),
+    business_id: z.string().optional(),
+  }).passthrough().optional(),
 });
 
 const marketingOsConnectSchema = z.object({

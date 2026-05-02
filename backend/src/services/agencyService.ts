@@ -381,6 +381,10 @@ async function completeMarketingOsConnectSession(agencyId, payload) {
     state: session.state,
     featureType: session.featureType || undefined,
     sessionInfoVersion: '3',
+    phoneNumberId: payload.phoneNumberId || payload.sessionInfo?.phone_number_id,
+    wabaId: payload.wabaId || payload.sessionInfo?.waba_id,
+    businessId: payload.businessId || payload.sessionInfo?.business_id,
+    sessionInfo: payload.sessionInfo,
   });
 
   const providerConnection = result?.connection;
