@@ -2,6 +2,8 @@ const axios = require('axios');
 
 const PARTNER_API_BASE_URL = process.env.MARKETING_OS_PARTNER_API_BASE_URL || 'http://127.0.0.1:8000/api/v1';
 const PARTNER_API_KEY = process.env.MARKETING_OS_PARTNER_API_KEY || '';
+const DEFAULT_TIMEOUT_MS = Number(process.env.MARKETING_OS_TIMEOUT_MS || 20000);
+const FLOW_TIMEOUT_MS = Number(process.env.MARKETING_OS_FLOW_TIMEOUT_MS || 90000);
 
 function ensureConfigured() {
   if (!PARTNER_API_KEY) {
@@ -16,7 +18,7 @@ function getPartnerClient() {
   ensureConfigured();
   return axios.create({
     baseURL: PARTNER_API_BASE_URL,
-    timeout: 20000,
+    timeout: DEFAULT_TIMEOUT_MS,
     headers: {
       'Content-Type': 'application/json',
       'x-api-key': PARTNER_API_KEY,
@@ -28,7 +30,7 @@ function getTenantClient(tenantToken) {
   ensureConfigured();
   return axios.create({
     baseURL: PARTNER_API_BASE_URL,
-    timeout: 20000,
+    timeout: DEFAULT_TIMEOUT_MS,
     headers: {
       'Content-Type': 'application/json',
       'x-api-key': PARTNER_API_KEY,
@@ -189,37 +191,37 @@ async function syncTenantWhatsAppTemplates(tenantToken) {
 
 async function getTenantWhatsAppFlows(tenantToken) {
   const client = getTenantClient(tenantToken);
-  const response = await client.get('/whatsapp/flows');
+  const response = await client.get('/whatsapp/flows', { timeout: FLOW_TIMEOUT_MS });
   return response.data;
 }
 
 async function createTenantWhatsAppFlow(tenantToken, payload) {
   const client = getTenantClient(tenantToken);
-  const response = await client.post('/whatsapp/flows', payload);
+  const response = await client.post('/whatsapp/flows', payload, { timeout: FLOW_TIMEOUT_MS });
   return response.data;
 }
 
 async function updateTenantWhatsAppFlow(tenantToken, flowId, payload) {
   const client = getTenantClient(tenantToken);
-  const response = await client.put(`/whatsapp/flows/${encodeURIComponent(flowId)}`, payload);
+  const response = await client.put(`/whatsapp/flows/${encodeURIComponent(flowId)}`, payload, { timeout: FLOW_TIMEOUT_MS });
   return response.data;
 }
 
 async function publishTenantWhatsAppFlow(tenantToken, flowId) {
   const client = getTenantClient(tenantToken);
-  const response = await client.post(`/whatsapp/flows/${encodeURIComponent(flowId)}/publish`);
+  const response = await client.post(`/whatsapp/flows/${encodeURIComponent(flowId)}/publish`, undefined, { timeout: FLOW_TIMEOUT_MS });
   return response.data;
 }
 
 async function deleteTenantWhatsAppFlow(tenantToken, flowId) {
   const client = getTenantClient(tenantToken);
-  const response = await client.delete(`/whatsapp/flows/${encodeURIComponent(flowId)}`);
+  const response = await client.delete(`/whatsapp/flows/${encodeURIComponent(flowId)}`, { timeout: FLOW_TIMEOUT_MS });
   return response.data;
 }
 
 async function syncTenantWhatsAppFlows(tenantToken) {
   const client = getTenantClient(tenantToken);
-  const response = await client.post('/whatsapp/flows/sync');
+  const response = await client.post('/whatsapp/flows/sync', undefined, { timeout: FLOW_TIMEOUT_MS });
   return response.data;
 }
 

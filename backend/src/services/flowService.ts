@@ -148,6 +148,10 @@ function mapRemoteFlow(remote = {}) {
   };
 }
 
+function extractRemoteFlows(response) {
+  return response?.data?.flows || response?.data || response?.flows || [];
+}
+
 async function listFlows(agencyId, query = {}) {
   await ensureDefaultFlowsForAgency(agencyId);
 
@@ -217,7 +221,7 @@ async function syncFlows(agencyId) {
   } catch (error) {
     throw normalizePartnerFlowError(error, 'sync');
   }
-  const remoteFlows = response?.data?.flows || response?.data || response?.flows || [];
+  const remoteFlows = extractRemoteFlows(response);
 
   const existing = await WhatsAppFlow.findAll({ where: { agencyId } });
   const byMetaId = new Map(existing.filter((item) => item.metaFlowId).map((item) => [String(item.metaFlowId), item]));
@@ -269,6 +273,29 @@ async function publishFlow(id, agencyId) {
     firstScreenId: flow.firstScreenId || null,
     jsonDefinition: flow.jsonDefinition || {},
   };
+
+  if (!flow.metaFlowId) {
+    try {
+      const syncResponse = await marketingOsPartnerService.syncTenantWhatsAppFlows(tenantToken);
+      const remoteFlows = extractRemoteFlows(syncResponse);
+      const matchingRemote = remoteFlows.find((remoteFlow) =>
+        String(remoteFlow.name || '').trim().toLowerCase() === String(flow.name || '').trim().toLowerCase()
+      );
+      if (matchingRemote?.id) {
+        await flow.update({
+          metaFlowId: matchingRemote.id,
+          status: String(matchingRemote.status || flow.status || 'DRAFT').toUpperCase(),
+          endpointUri: matchingRemote.endpoint_uri || flow.endpointUri || DEFAULT_ENDPOINT_URI,
+          categories: matchingRemote.categories || flow.categories,
+          validationErrors: matchingRemote.validation_errors || [],
+          healthStatus: matchingRemote.health_status || null,
+          lastSyncedAt: new Date(),
+        });
+      }
+    } catch (_error) {
+      // Best-effort lookup prevents duplicate Meta drafts after a previous request timed out.
+    }
+  }
 
   let remote;
   try {
