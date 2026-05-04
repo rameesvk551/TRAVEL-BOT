@@ -3,7 +3,7 @@
 const { Queue, Worker } = require('bullmq');
 const IORedis = require('ioredis');
 const dripService = require('./dripService');
-const { Campaign, CampaignRecipient, Customer, MessageTemplate, BotSession, Agency, Package, Property } = require('../models');
+const { Campaign, CampaignRecipient, Customer, MessageTemplate, BotSession, Agency, Package, Property, WhatsAppFlow } = require('../models');
 const whatsappService = require('./whatsappService');
 const { Op } = require('sequelize');
 
@@ -68,12 +68,63 @@ function resolveTemplateBody(body, variables) {
   return resolved;
 }
 
-function buildTemplateVariables(template, customer) {
-  const count = template.variableCount || template.sampleVariables?.length || 0;
+function countTemplatePlaceholders(text = '') {
+  const matches = String(text || '').match(/\{\{\s*\d+\s*\}\}/g) || [];
+  return matches.reduce((max, token) => {
+    const index = parseInt(token.replace(/[^\d]/g, ''), 10);
+    return Number.isFinite(index) ? Math.max(max, index) : max;
+  }, 0);
+}
+
+function getTemplateVariableCount(template) {
+  const carouselVariableCount = Array.isArray(template?.carouselCards)
+    ? template.carouselCards.reduce((max, card) => Math.max(max, countTemplatePlaceholders(card?.body)), 0)
+    : 0;
+
+  return Math.max(
+    Number(template?.variableCount) || 0,
+    countTemplatePlaceholders(template?.body),
+    countTemplatePlaceholders(template?.headerContent),
+    carouselVariableCount
+  );
+}
+
+function cleanAgencyName(name) {
+  return String(name || '').trim() || 'our travel team';
+}
+
+function replacePlaceholderAgencyText(text, agencyName) {
+  if (!text) return text;
+  return String(text)
+    .replace(/ABC\s+Trours/gi, agencyName)
+    .replace(/ABC\s+Tours/gi, agencyName)
+    .replace(/abc\s+tours/gi, agencyName);
+}
+
+function sanitizeTemplateParameter(value) {
+  return String(value || '')
+    .replace(/[\r\n\t]+/g, ' - ')
+    .replace(/ {4,}/g, '   ')
+    .replace(/\s+-\s+-\s+/g, ' - ')
+    .trim();
+}
+
+function buildTemplateVariables(template, customer, context = {}) {
+  const agencyName = cleanAgencyName(context.agencyName);
+  const featuredItem = context.featuredItem || null;
+  const featuredRecord = featuredItem?.record || null;
+  const featuredDetails = context.featuredDetails || (featuredRecord
+    ? buildCampaignCarouselCaption(featuredItem.itemType, featuredRecord).replace(/\*/g, '')
+    : null);
+
+  const count = getTemplateVariableCount(template);
   const defaultVariables = ['there', 'travel', 'our offer', 'today'];
   const variables = Array.from({ length: count }, (_, index) => {
-    if (index === 0) return customer.name || 'there';
-    return template.sampleVariables?.[index] || defaultVariables[index] || defaultVariables[defaultVariables.length - 1];
+    if (index === 0) return sanitizeTemplateParameter(customer.name || 'there');
+    if (index === 1 && featuredDetails) return sanitizeTemplateParameter(featuredDetails);
+    if (index === 2 && featuredRecord?.name) return sanitizeTemplateParameter(featuredRecord.name);
+    if (index === 3) return sanitizeTemplateParameter(agencyName);
+    return sanitizeTemplateParameter(template.sampleVariables?.[index] || defaultVariables[index] || defaultVariables[defaultVariables.length - 1]);
   });
 
   return variables;
@@ -85,6 +136,36 @@ function hasInteractiveTemplateButtons(template) {
 
 async function sendReviewRatingPrompt(customer, agencyId) {
   const context = { customerId: customer.id, agencyId };
+  const reviewFlow = await WhatsAppFlow.findOne({
+    where: {
+      agencyId,
+      flowType: 'REVIEW',
+      status: 'PUBLISHED',
+    },
+    order: [['updatedAt', 'DESC']],
+  });
+
+  if (reviewFlow?.metaFlowId) {
+    const flowResponse = await whatsappService.sendFlowMessage(
+      customer.phone,
+      `Please rate your ${customer.destination || 'trip'} experience.`,
+      {
+        flowId: reviewFlow.metaFlowId,
+        firstScreenId: reviewFlow.firstScreenId || 'REVIEW_FORM',
+        flowCta: 'Write Review',
+        flowToken: `review|${agencyId}|${customer.id}|${Date.now()}`,
+      },
+      context,
+      {
+        headerText: 'Share Your Review',
+        footerText: 'If the form does not open, reply with a number from 1 to 5.',
+      }
+    );
+
+    if (String(flowResponse?.status || flowResponse?.get?.('status') || '').toUpperCase() !== 'FAILED') {
+      return flowResponse;
+    }
+  }
 
   return whatsappService.sendListMessage(
     customer.phone,
@@ -321,8 +402,13 @@ async function buildRuntimeCampaignTemplate(campaign, template, agencyId) {
   if (!template) return null;
 
   const runtimeTemplate = template.toJSON ? template.toJSON() : { ...template };
+  const agency = await Agency.findByPk(agencyId, { attributes: ['id', 'name'] });
+  const agencyName = cleanAgencyName(agency?.name);
   const templateType = String(runtimeTemplate.templateType || 'STANDARD').toUpperCase();
   const format = String(campaign.format || 'STANDARD').toUpperCase();
+
+  runtimeTemplate.body = replacePlaceholderAgencyText(runtimeTemplate.body, agencyName);
+  runtimeTemplate.footer = replacePlaceholderAgencyText(runtimeTemplate.footer, agencyName);
 
   if (format === 'ITEM_CAROUSEL' || templateType === 'CAROUSEL') {
     const items = await resolveCampaignCarouselItems(campaign, agencyId);
@@ -348,7 +434,7 @@ async function buildRuntimeCampaignTemplate(campaign, template, agencyId) {
       });
       runtimeTemplate.carouselCards = baseCards.map((card, index) => ({
         ...card,
-        body: String(card.body || `Featured trip ${index + 1}`).replace(/ABC Trours|ABC Tours/gi, 'Wayon Travels').slice(0, 1024),
+        body: replacePlaceholderAgencyText(card.body || `Featured trip ${index + 1}`, agencyName).slice(0, 1024),
       }));
       return runtimeTemplate;
     }
@@ -362,7 +448,7 @@ async function buildRuntimeCampaignTemplate(campaign, template, agencyId) {
         itemType: item.itemType,
         itemId: item.record.id,
         title: item.record.name || baseCard.title || `Card ${index + 1}`,
-        body: String(baseCard.body || buildCampaignCarouselCaption(item.itemType, item.record)).slice(0, 1024),
+        body: replacePlaceholderAgencyText(baseCard.body || buildCampaignCarouselCaption(item.itemType, item.record), agencyName).slice(0, 1024),
         mediaType: String(baseCard.mediaType || runtimeTemplate.mediaType || campaign.mediaType || 'IMAGE').toUpperCase() === 'VIDEO'
           ? 'VIDEO'
           : 'IMAGE',
@@ -381,8 +467,22 @@ async function buildRuntimeCampaignTemplate(campaign, template, agencyId) {
       throw new Error('CTA campaigns require at least one selected package or property with an image');
     }
     runtimeTemplate.headerContent = mediaUrl;
+    runtimeTemplate.featuredItem = {
+      itemType: featuredItem.itemType,
+      itemId: featuredItem.record.id,
+      name: featuredItem.record.name,
+      details: buildCampaignCarouselCaption(featuredItem.itemType, featuredItem.record).replace(/\*/g, ''),
+    };
+    runtimeTemplate.sampleVariables = Array.isArray(runtimeTemplate.sampleVariables)
+      ? [...runtimeTemplate.sampleVariables]
+      : [];
+    runtimeTemplate.sampleVariables[1] = runtimeTemplate.featuredItem.details;
+    runtimeTemplate.sampleVariables[2] = runtimeTemplate.featuredItem.name;
+    runtimeTemplate.sampleVariables[3] = agencyName;
+    runtimeTemplate.variableCount = Math.max(getTemplateVariableCount(runtimeTemplate), runtimeTemplate.variableCount || 0);
   }
 
+  runtimeTemplate.agencyName = agencyName;
   return runtimeTemplate;
 }
 
@@ -393,8 +493,8 @@ async function sendCampaignCarouselEntry(customer, campaign, agencyId) {
 
   for (const item of items) {
     const buttons = [
-      { id: `campaign_carousel_enquire:${campaign.id}:${item.itemType}:${item.record.id}`, title: 'Enquiry' },
-      { id: `campaign_carousel_others:${campaign.id}:${item.itemType}`, title: 'See Others' },
+      { id: `campaign_carousel_enquire:${campaign.id}:${item.itemType}:${item.record.id}`, title: 'View Details' },
+      { id: `campaign_carousel_others:${campaign.id}:${item.itemType}`, title: 'View Others' },
     ];
 
     await whatsappService.sendMediaButtonsMessage(
@@ -403,7 +503,7 @@ async function sendCampaignCarouselEntry(customer, campaign, agencyId) {
       item.record.imageUrl,
       buttons,
       context,
-      { footerText: 'Tap Enquiry to know more.' }
+      { footerText: 'Tap View Details to know more.' }
     );
   }
 
@@ -432,7 +532,17 @@ async function sendToRecipient(recipient, campaign, template, agencyId) {
 
     if (template) {
       const runtimeTemplate = await buildRuntimeCampaignTemplate(campaign, template, agencyId);
-      const variables = buildTemplateVariables(runtimeTemplate, customer);
+      const variables = buildTemplateVariables(runtimeTemplate, customer, {
+        agencyName: runtimeTemplate.agencyName,
+        featuredItem: runtimeTemplate.featuredItem ? {
+          itemType: runtimeTemplate.featuredItem.itemType,
+          record: {
+            id: runtimeTemplate.featuredItem.itemId,
+            name: runtimeTemplate.featuredItem.name,
+          },
+        } : null,
+        featuredDetails: runtimeTemplate.featuredItem?.details,
+      });
 
       // Campaigns should send the actual approved template so Meta renders
       // carousel cards / media headers instead of falling back to plain text.

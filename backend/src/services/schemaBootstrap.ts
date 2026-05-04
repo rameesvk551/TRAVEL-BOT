@@ -453,7 +453,7 @@ async function ensureWhatsAppFlowsSchema() {
         allowNull: false,
       },
       flow_type: {
-        type: Sequelize.ENUM('PACKAGE', 'PROPERTY', 'CUSTOM_TRIP', 'GENERIC'),
+        type: Sequelize.ENUM('PACKAGE', 'PROPERTY', 'CUSTOM_TRIP', 'REVIEW', 'GENERIC'),
         allowNull: false,
         defaultValue: 'GENERIC',
       },
@@ -514,6 +514,8 @@ async function ensureWhatsAppFlowsSchema() {
     await queryInterface.addIndex('whatsapp_flows', ['meta_flow_id']);
     await queryInterface.addIndex('whatsapp_flows', ['agency_id', 'name'], { unique: true });
     console.log('[SchemaBootstrap] Created whatsapp_flows table');
+  } else {
+    await ensureEnumValues('enum_whatsapp_flows_flow_type', ['PACKAGE', 'PROPERTY', 'CUSTOM_TRIP', 'REVIEW', 'GENERIC']);
   }
 }
 

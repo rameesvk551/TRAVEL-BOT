@@ -12,11 +12,11 @@ export default function PackageCard({ pkg, onEdit, onDelete, canManage, onClick 
 
   return (
     <div
-      className="property-listing-card group"
+      className="package-listing-card group"
       onClick={onClick}
     >
       {/* Image Container */}
-      <div className="property-card-image-wrapper">
+      <div className="package-card-image-wrapper">
         {pkg.imageUrl ? (
           <img
             src={pkg.imageUrl}
@@ -30,73 +30,73 @@ export default function PackageCard({ pkg, onEdit, onDelete, canManage, onClick 
         )}
 
         {/* Status Badge */}
-        <div className="absolute top-3 left-3">
-          <span className={`${statusColor} text-[10px] font-bold px-3 py-1.5 rounded-md shadow-sm`}>
+        <div className="absolute left-2.5 top-2.5">
+          <span className={`${statusColor} rounded-md px-2 py-0.5 text-[9px] font-bold shadow-sm`}>
             {statusLabel}
           </span>
         </div>
 
         {/* Arrow Button */}
-        <div className="absolute top-3 right-3">
-          <button className="h-8 w-8 flex items-center justify-center rounded-full bg-white/80 backdrop-blur-sm text-neutral-700 shadow-sm border border-white/50 transition-all hover:bg-white hover:scale-110 hover:shadow-md">
-            <ArrowUpRightIcon className="h-3.5 w-3.5" />
+        <div className="absolute right-2.5 top-2.5">
+          <button className="flex h-7 w-7 items-center justify-center rounded-full border border-white/50 bg-white/80 text-neutral-700 shadow-sm backdrop-blur-sm transition-all hover:scale-110 hover:bg-white hover:shadow-md">
+            <ArrowUpRightIcon className="h-3 w-3" />
           </button>
         </div>
       </div>
 
       {/* Content */}
-      <div className="p-4 pb-4">
-        <h3 className="text-[15px] font-bold text-neutral-900 leading-snug line-clamp-1">
+      <div className="p-3">
+        <h3 className="line-clamp-1 text-[13px] font-bold leading-snug text-neutral-900">
           {pkg.name}
         </h3>
 
         <div className="mt-1 flex items-center gap-1 text-neutral-500">
           <MapPinIcon className="h-3.5 w-3.5 text-neutral-400 flex-shrink-0" />
-          <span className="text-xs font-medium truncate">{pkg.destinations?.join(', ') || 'Various Locations'}</span>
+          <span className="truncate text-[11px] font-medium">{pkg.destinations?.join(', ') || 'Various Locations'}</span>
         </div>
 
         {/* Feature Tags Row */}
-        <div className="mt-2.5 flex items-center gap-2 text-[11px] text-neutral-500 font-medium flex-wrap">
+        <div className="mt-2 flex items-center gap-1.5 overflow-hidden text-[10px] font-medium text-neutral-500">
           {pkg.duration && (
-            <span className="flex items-center gap-1 bg-neutral-50 border border-neutral-100 rounded-md px-2 py-1">
+            <span className="flex shrink-0 items-center gap-1 rounded-md border border-neutral-100 bg-neutral-50 px-1.5 py-0.5">
               <ClockIcon className="h-3 w-3" />
               {pkg.duration}
             </span>
           )}
           {pkg.category && (
-            <span className="flex items-center gap-1 bg-neutral-50 border border-neutral-100 rounded-md px-2 py-1">
+            <span className="flex shrink-0 items-center gap-1 rounded-md border border-neutral-100 bg-neutral-50 px-1.5 py-0.5">
               {pkg.category}
             </span>
           )}
           {pkg.inclusions?.slice(0, 1).map((inc, idx) => (
-            <span key={idx} className="flex items-center gap-1 bg-neutral-50 border border-neutral-100 rounded-md px-2 py-1">
+            <span key={idx} className="truncate rounded-md border border-neutral-100 bg-neutral-50 px-1.5 py-0.5">
               {inc}
             </span>
           ))}
         </div>
 
         {/* Price Row */}
-        <div className="mt-3 flex items-end justify-between">
-          <span className="text-xl font-black text-neutral-900 tracking-tight">
+        <div className="mt-2.5 flex items-end justify-between">
+          <span className="text-[17px] font-black tracking-tight text-neutral-900">
             {formatCurrency(pkg.basePrice)}
           </span>
-          <span className="text-[10px] font-semibold text-neutral-400 tracking-wide">
+          <span className="text-[9px] font-semibold tracking-wide text-neutral-400">
             {categoryLabel}
           </span>
         </div>
 
         {/* Management Actions */}
         {canManage && (
-          <div className="mt-2.5 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+          <div className="absolute inset-x-2.5 bottom-2.5 hidden gap-2 rounded-lg bg-white/95 p-1.5 shadow-lg ring-1 ring-neutral-100 backdrop-blur-sm group-hover:flex">
             <button
               onClick={(e) => { e.stopPropagation(); onEdit(pkg); }}
-              className="flex-1 text-[11px] font-bold py-2 bg-neutral-900 text-white rounded-lg hover:bg-neutral-800 transition"
+              className="flex-1 rounded-md bg-neutral-900 py-1.5 text-[11px] font-bold text-white transition hover:bg-neutral-800"
             >
               Edit
             </button>
             <button
               onClick={(e) => { e.stopPropagation(); onDelete(pkg.id); }}
-              className="flex-1 text-[11px] font-bold py-2 bg-neutral-100 text-neutral-600 rounded-lg hover:bg-neutral-200 transition"
+              className="flex-1 rounded-md bg-neutral-100 py-1.5 text-[11px] font-bold text-neutral-600 transition hover:bg-neutral-200"
             >
               {isActive ? 'Hide' : 'Show'}
             </button>

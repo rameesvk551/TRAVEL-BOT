@@ -81,6 +81,10 @@ function normalizeCtaConfig(data = {}) {
 function validateCampaignPayload(payload = {}) {
   const format = String(payload.format || 'STANDARD').toUpperCase();
 
+  if (String(payload.type || '').toUpperCase() === 'REVIEW_COLLECTION') {
+    return payload;
+  }
+
   if (format === 'SECTION_CTA') {
     const sections = normalizeArray(payload.campaignSections).filter((section) => section.enabled !== false);
     if (sections.length === 0) {
@@ -109,7 +113,10 @@ function validateCampaignPayload(payload = {}) {
 }
 
 function normalizeCampaignPayload(data = {}) {
-  const format = CAMPAIGN_FORMATS.has(String(data.format || '').toUpperCase())
+  const campaignType = String(data.type || '').toUpperCase();
+  const format = campaignType === 'REVIEW_COLLECTION'
+    ? 'STANDARD'
+    : CAMPAIGN_FORMATS.has(String(data.format || '').toUpperCase())
     ? String(data.format).toUpperCase()
     : 'STANDARD';
 

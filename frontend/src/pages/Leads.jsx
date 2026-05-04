@@ -221,85 +221,89 @@ export default function Leads() {
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center rounded-[var(--radius-md)] border border-neutral-200 bg-neutral-100/80 p-1 shadow-inner">
+        <div className="flex w-full flex-col gap-3 xl:w-auto xl:items-end">
+          <div className="flex w-full flex-wrap items-center justify-between gap-3 xl:w-auto xl:justify-end">
+            <div className="flex items-center rounded-[var(--radius-md)] border border-neutral-200 bg-neutral-100/80 p-1 shadow-inner">
+              <button
+                onClick={() => setView('list')}
+                className={`px-4 py-2 text-sm font-bold rounded-[var(--radius-sm)] transition-all ${
+                  view === 'list' ? 'bg-white shadow-sm text-neutral-900' : 'text-neutral-500 hover:text-neutral-900'
+                }`}
+              >
+                Table
+              </button>
+              <button
+                onClick={() => setView('kanban')}
+                className={`px-4 py-2 text-sm font-bold rounded-[var(--radius-sm)] transition-all ${
+                  view === 'kanban' ? 'bg-white shadow-sm text-neutral-900' : 'text-neutral-500 hover:text-neutral-900'
+                }`}
+              >
+                Kanban
+              </button>
+            </div>
+
             <button
-              onClick={() => setView('list')}
-              className={`px-4 py-2 text-sm font-bold rounded-[var(--radius-sm)] transition-all ${
-                view === 'list' ? 'bg-white shadow-sm text-neutral-900' : 'text-neutral-500 hover:text-neutral-900'
-              }`}
+              onClick={() => setIsNewLeadModalOpen(true)}
+              className="shell-button-primary h-11 px-5 bg-neutral-900 hover:bg-black"
             >
-              Table
-            </button>
-            <button
-              onClick={() => setView('kanban')}
-              className={`px-4 py-2 text-sm font-bold rounded-[var(--radius-sm)] transition-all ${
-                view === 'kanban' ? 'bg-white shadow-sm text-neutral-900' : 'text-neutral-500 hover:text-neutral-900'
-              }`}
-            >
-              Kanban
+              <PlusIcon className="h-5 w-5" />
+              New Lead
             </button>
           </div>
 
-          <select
-            value={sourceFilter}
-            onChange={(event) => setSourceFilter(event.target.value)}
-            className="shell-input-rect h-11 w-40 bg-white py-2"
-          >
-            {SOURCE_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
+          <div className="flex w-full flex-wrap items-center gap-3 xl:w-auto xl:justify-end">
+            <select
+              value={sourceFilter}
+              onChange={(event) => setSourceFilter(event.target.value)}
+              className="shell-input-rect h-11 w-40 bg-white py-2"
+            >
+              {SOURCE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
 
-          <select
-            value={agentFilter}
-            onChange={(event) => setAgentFilter(event.target.value)}
-            className="shell-input-rect h-11 w-44 bg-white py-2"
-          >
-            <option value="all">All Agents</option>
-            {currentAgent?.id && <option value="mine">Assigned To Me</option>}
-            <option value="unassigned">Unassigned</option>
-            {agents.map((agent) => (
-              <option key={agent.id} value={agent.id}>
-                {agent.name}
-              </option>
-            ))}
-          </select>
+            <select
+              value={agentFilter}
+              onChange={(event) => setAgentFilter(event.target.value)}
+              className="shell-input-rect h-11 w-44 bg-white py-2"
+            >
+              <option value="all">All Agents</option>
+              {currentAgent?.id && <option value="mine">Assigned To Me</option>}
+              <option value="unassigned">Unassigned</option>
+              {agents.map((agent) => (
+                <option key={agent.id} value={agent.id}>
+                  {agent.name}
+                </option>
+              ))}
+            </select>
 
-          <select
-            value={tagFilter}
-            onChange={(event) => setTagFilter(event.target.value)}
-            className="shell-input-rect h-11 w-40 bg-white py-2"
-          >
-            <option value="all">All Tags</option>
-            {tagOptions.map((tag) => (
-              <option key={tag} value={tag}>
-                {tag}
-              </option>
-            ))}
-          </select>
+            <select
+              value={tagFilter}
+              onChange={(event) => setTagFilter(event.target.value)}
+              className="shell-input-rect h-11 w-40 bg-white py-2"
+            >
+              <option value="all">All Tags</option>
+              {tagOptions.map((tag) => (
+                <option key={tag} value={tag}>
+                  {tag}
+                </option>
+              ))}
+            </select>
 
-          <select
-            value={sortBy}
-            onChange={(event) => setSortBy(event.target.value)}
-            className="shell-input-rect h-11 w-44 bg-white py-2"
-          >
-            {SORT_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-
-          <button
-            onClick={() => setIsNewLeadModalOpen(true)}
-            className="shell-button-primary h-11 px-5 bg-neutral-900 hover:bg-black"
-          >
-            <PlusIcon className="h-5 w-5" />
-            New Lead
-          </button>
+            <select
+              value={sortBy}
+              onChange={(event) => setSortBy(event.target.value)}
+              className="shell-input-rect h-11 w-44 bg-white py-2"
+            >
+              {SORT_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
       </div>
 

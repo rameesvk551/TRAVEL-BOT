@@ -19,6 +19,7 @@ import { propertiesApi } from '../api/propertiesApi';
 const CAMPAIGN_TYPES = [
   { value: 'BROADCAST', label: 'Broadcast', icon: Megaphone, desc: 'General announcement to all or filtered audiences', gradient: 'from-blue-500 to-indigo-600' },
   { value: 'PROMOTIONAL', label: 'Promotional', icon: Gift, desc: 'Special offers, discounts, and deals', gradient: 'from-[#f5f5f5]0 to-[#404040]' },
+  { value: 'REVIEW_COLLECTION', label: 'Review Collection', icon: Star, desc: 'Request trip reviews from past travelers', gradient: 'from-rose-500 to-pink-600' },
 ];
 
 const AUDIENCE_MODES = [
@@ -810,6 +811,7 @@ export default function CreateCampaign() {
     setSending(true);
     try {
       const finalFilter = buildFilterFromMode();
+      const isReviewCollection = formData.type === 'REVIEW_COLLECTION';
       const payload = {
         name: formData.name,
         type: formData.type,
@@ -817,14 +819,14 @@ export default function CreateCampaign() {
         messageBody: formData.messageBody || null,
         audienceFilter: finalFilter,
         linkedPackageIds: formData.linkedPackageIds || [],
-        format: formData.format || 'SECTION_CTA',
-        mediaType: formData.mediaType || 'IMAGE',
-        mediaUrl: formData.mediaUrl || null,
-        campaignSections: formData.format === 'SECTION_CTA'
+        format: isReviewCollection ? 'STANDARD' : (formData.format || 'SECTION_CTA'),
+        mediaType: isReviewCollection ? 'NONE' : (formData.mediaType || 'IMAGE'),
+        mediaUrl: isReviewCollection ? null : (formData.mediaUrl || null),
+        campaignSections: !isReviewCollection && formData.format === 'SECTION_CTA'
           ? (formData.campaignSections || []).filter((section) => section.enabled)
           : [],
-        carouselConfig: formData.carouselConfig || { contentType: 'MIXED', items: [] },
-        ctaConfig: formData.ctaConfig || {},
+        carouselConfig: isReviewCollection ? { contentType: 'MIXED', items: [] } : (formData.carouselConfig || { contentType: 'MIXED', items: [] }),
+        ctaConfig: isReviewCollection ? {} : (formData.ctaConfig || {}),
         scheduledAt: formData.scheduleMode === 'scheduled' ? formData.scheduledAt : null,
         status: formData.scheduleMode === 'scheduled' ? 'SCHEDULED' : 'DRAFT',
       };

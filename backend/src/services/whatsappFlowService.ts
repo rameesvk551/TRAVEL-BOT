@@ -2,7 +2,10 @@ const {
   decryptFlowRequest,
   encryptFlowResponse,
 } = require('../utils/flowEncryption');
-const { Agency, Package } = require('../models');
+const { Agency, Package, Property } = require('../models');
+
+const PACKAGE_BROWSE_LIMIT = Math.max(1, parseInt(process.env.WHATSAPP_PACKAGE_BROWSE_LIMIT || '20', 10) || 20);
+const PROPERTY_BROWSE_LIMIT = Math.max(1, parseInt(process.env.WHATSAPP_PROPERTY_BROWSE_LIMIT || '20', 10) || 20);
 
 function normalizeCategory(value = '') {
   const normalized = String(value || '').trim().toLowerCase();
@@ -18,18 +21,49 @@ function categoryLabel(value = '') {
 function parseFlowToken(token = '') {
   const parts = String(token || '').split('|');
 
-  if (parts[0] !== 'pkg') {
+  if (parts[0] === 'pkg') {
     return {
-      agencyId: null,
+      type: 'PACKAGE',
+      agencyId: parts[1] || null,
+      category: normalizeCategory(parts[2]) || null,
+      customerId: parts[3] || null,
+    };
+  }
+
+  if (parts[0] === 'prop') {
+    return {
+      type: 'PROPERTY',
+      agencyId: parts[1] || null,
       category: null,
-      customerId: null,
+      customerId: parts[2] || null,
+    };
+  }
+
+  if (parts[0] === 'campaign-prop') {
+    return {
+      type: 'PROPERTY',
+      agencyId: parts[1] || null,
+      category: null,
+      campaignId: parts[2] || null,
+      customerId: parts[3] || null,
+    };
+  }
+
+  if (parts[0] === 'review') {
+    return {
+      type: 'REVIEW',
+      agencyId: parts[1] || null,
+      category: null,
+      customerId: parts[2] || null,
+      bookingId: parts[3] || null,
     };
   }
 
   return {
-    agencyId: parts[1] || null,
-    category: normalizeCategory(parts[2]) || null,
-    customerId: parts[3] || null,
+    type: null,
+    agencyId: null,
+    category: null,
+    customerId: null,
   };
 }
 
@@ -70,7 +104,7 @@ function packageMatchesCategory(pkg, category) {
   return inferPackageCategory(pkg) === normalized;
 }
 
-async function buildPackageOptions(agencyId, category, limit = 5) {
+async function buildPackageOptions(agencyId, category, limit = PACKAGE_BROWSE_LIMIT) {
   if (!agencyId) return [];
 
   const packages = await Package.findAll({
@@ -91,6 +125,27 @@ async function buildPackageOptions(agencyId, category, limit = 5) {
       metadata: escapeMarkdown(categoryLabel(inferPackageCategory(pkg))).slice(0, 20),
       image: pkg.imageUrl || '',
     }));
+}
+
+async function buildPropertyOptions(agencyId, limit = PROPERTY_BROWSE_LIMIT) {
+  if (!agencyId) return [];
+
+  const properties = await Property.findAll({
+    where: {
+      agencyId,
+      isActive: true,
+    },
+    order: [['createdAt', 'DESC']],
+    limit,
+  });
+
+  return properties.map((property) => ({
+    id: property.id,
+    title: escapeMarkdown(property.name).slice(0, 30) || 'Property',
+    description: `${property.pricePerNight ? `${formatCurrency(property.pricePerNight)}/night` : 'Price on request'} - ${escapeMarkdown(property.location || 'Selected destination')}\n${escapeMarkdown(property.description || `${property.propertyType || 'Property'} stay with curated support`)}`.slice(0, 300),
+    metadata: escapeMarkdown([property.propertyType || 'Property', property.location || ''].filter(Boolean).join(' - ')).slice(0, 20),
+    image: property.imageUrl || '',
+  }));
 }
 
 function getNestedFlowBody(payload = {}) {
@@ -123,6 +178,9 @@ function buildEncryptedResponse(decryptedBody = {}) {
       category_label: responseData.category_label || categoryLabel(tokenInfo.category),
       package_options: Array.isArray(responseData.package_options) && responseData.package_options.length > 0
         ? responseData.package_options
+        : [],
+      property_options: Array.isArray(responseData.property_options) && responseData.property_options.length > 0
+        ? responseData.property_options
         : [],
       screen: decryptedBody?.screen || 'PACKAGE_SELECTOR',
       version: '3.0',
@@ -161,17 +219,27 @@ async function handleFlowRequest(payload = {}) {
   const agencyId = decryptedBody?.agency_id || decryptedBody?.agencyId || tokenInfo.agencyId;
 
   if (agencyId) {
-    const [agency, packageOptions] = await Promise.all([
+    const [agency, packageOptions, propertyOptions] = await Promise.all([
       Agency.findOne({ where: { id: agencyId } }),
-      buildPackageOptions(agencyId, tokenInfo.category, 5),
+      buildPackageOptions(agencyId, tokenInfo.category, PACKAGE_BROWSE_LIMIT),
+      buildPropertyOptions(agencyId, PROPERTY_BROWSE_LIMIT),
     ]);
 
     if (agency) {
       const category = tokenInfo.category || normalizeCategory(decryptedBody?.data?.category || decryptedBody?.screen || '') || 'DOMESTIC';
+      const isPropertyFlow = tokenInfo.type === 'PROPERTY'
+        || String(decryptedBody?.screen || '').toUpperCase().includes('PROPERTY')
+        || Array.isArray(decryptedBody?.data?.property_options);
       const responsePayload = {
         data: {
-          category_label: categoryLabel(category),
-          package_options: packageOptions,
+          ...(isPropertyFlow
+            ? {
+                property_options: propertyOptions,
+              }
+            : {
+                category_label: categoryLabel(category),
+                package_options: packageOptions,
+              }),
         },
       };
 

@@ -1,7 +1,7 @@
 const { Queue, Worker } = require('bullmq');
 const { Op } = require('sequelize');
 const IORedis = require('ioredis');
-const { Booking, Customer, Agency, ScheduledJob, BotSession, Package, Agent, FollowUp, Lead } = require('../models');
+const { Booking, Customer, Agency, ScheduledJob, BotSession, Package, Agent, FollowUp, Lead, WhatsAppFlow } = require('../models');
 const whatsappService = require('./whatsappService');
 const { setISTTime, addDays, delayUntil, formatDateShort } = require('../utils/dateUtils');
 
@@ -177,6 +177,37 @@ function composeReviewRequestText(customerName, tripName) {
   return `Welcome back, ${customerName}!\n\nHow was your ${tripName} trip? We'd love to hear about it!\n\nRate your experience from 1-5 and share a quick review.\n\nYour feedback helps us serve you better!`;
 }
 
+async function sendReviewFlowRequest(booking, context, customerName, tripName) {
+  const reviewFlow = await WhatsAppFlow.findOne({
+    where: {
+      agencyId: booking.agencyId,
+      flowType: 'REVIEW',
+      status: 'PUBLISHED',
+    },
+    order: [['updatedAt', 'DESC']],
+  });
+
+  if (!reviewFlow?.metaFlowId) return null;
+
+  const response = await whatsappService.sendFlowMessage(
+    booking.customer.phone,
+    `Welcome back, ${customerName}! How was your ${tripName} trip?`,
+    {
+      flowId: reviewFlow.metaFlowId,
+      firstScreenId: reviewFlow.firstScreenId || 'REVIEW_FORM',
+      flowCta: 'Write Review',
+      flowToken: `review|${booking.agencyId}|${booking.customerId}|${booking.id}|${Date.now()}`,
+    },
+    context,
+    {
+      headerText: 'Share Your Review',
+      footerText: 'If the form does not open, reply with a number from 1 to 5.',
+    }
+  );
+
+  return response?.status === 'FAILED' ? null : response;
+}
+
 async function startReminderWorker() {
   if (!connection) return null;
   const worker = new Worker(
@@ -225,17 +256,24 @@ async function startReminderWorker() {
             );
             break;
           case 'REVIEW_REQUEST':
-            await whatsappService.sendTemplateOrTextIn24hWindow(
-              booking.customer.phone,
-              {
-                templateName: 'review_request',
-                variables: [customerName, booking.notes || 'recent'],
-                text: composeReviewRequestText(customerName, booking.notes || 'recent'),
-                context,
+            {
+              const tripName = booking.notes || 'recent';
+              const flowMessage = await sendReviewFlowRequest(booking, context, customerName, tripName);
+
+              if (!flowMessage) {
+                await whatsappService.sendTemplateOrTextIn24hWindow(
+                  booking.customer.phone,
+                  {
+                    templateName: 'review_request',
+                    variables: [customerName, tripName],
+                    text: composeReviewRequestText(customerName, tripName),
+                    context,
+                  }
+                );
               }
-            );
+            }
             await BotSession.update(
-              { currentStep: 'REVIEW' },
+              { currentStep: 'REVIEW', collectedData: { reviewBookingId: booking.id } },
               { where: { customerId: booking.customerId, agencyId: booking.agencyId } }
             );
             break;

@@ -31,9 +31,8 @@ async function routeMessage(session, incoming, customer, agency, options = {}) {
   const actionId = String(incoming?.actionId || '').trim();
   const isFirstInboundMessage = options.isFirstInboundMessage === true;
 
-  // Explicit menu commands reset the flow. Casual greetings only open the
-  // welcome menu for the customer's first inbound message.
-  if (RESET_TO_MENU_KEYWORDS.has(normalizedText) || (GREETING_KEYWORDS.has(normalizedText) && isFirstInboundMessage)) {
+  // Explicit menu commands and greetings reset the flow to the welcome menu.
+  if (RESET_TO_MENU_KEYWORDS.has(normalizedText) || GREETING_KEYWORDS.has(normalizedText)) {
     await createFreshGreetingLead(session, customer, agency);
     await updateSession(session, {
       isHandedOff: false,
@@ -53,12 +52,6 @@ async function routeMessage(session, incoming, customer, agency, options = {}) {
         forwardToAgent,
       }
     );
-    return;
-  }
-
-  if (GREETING_KEYWORDS.has(normalizedText)) {
-    // Returning greetings are intentionally silent. Agents still see the
-    // inbound message in the lead/chat, but customers are not spammed.
     return;
   }
 
@@ -89,7 +82,7 @@ async function routeMessage(session, incoming, customer, agency, options = {}) {
   }
 
   if (session.currentStep === 'REVIEW' || session.currentStep === 'REVIEW_TESTIMONIAL') {
-    await handleReview(session, messageText, customer, agency);
+    await handleReview(session, incoming, customer, agency);
     return;
   }
 

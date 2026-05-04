@@ -1131,6 +1131,40 @@ function buildTemplateComponents(template) {
     const trimmed = String(mediaUrl || '').trim();
     return trimmed ? { header_handle: [trimmed] } : undefined;
   };
+  const buildTemplateButton = (button = {}) => {
+    const type = String(button.type || 'QUICK_REPLY').toUpperCase();
+    const base = {
+      type,
+      text: String(button.text || button.title || 'Continue').slice(0, 25),
+    };
+
+    if (type === 'URL') {
+      return {
+        ...base,
+        url: button.url || undefined,
+      };
+    }
+
+    if (type === 'PHONE_NUMBER') {
+      return {
+        ...base,
+        phone_number: button.phoneNumber || button.phone_number || undefined,
+      };
+    }
+
+    if (type === 'FLOW') {
+      return {
+        ...base,
+        flow_id: button.flowId || button.flow_id || undefined,
+        flow_name: button.flowName || button.flow_name || undefined,
+        flow_json: button.flowJson || button.flow_json || undefined,
+        flow_action: button.flowAction || button.flow_action || 'navigate',
+        navigate_screen: button.navigateScreen || button.navigate_screen || undefined,
+      };
+    }
+
+    return base;
+  };
 
   if (templateType !== 'CAROUSEL' && headerType !== 'NONE') {
     const header = { type: 'HEADER', format: headerType };
@@ -1162,12 +1196,7 @@ function buildTemplateComponents(template) {
   if (templateType !== 'CAROUSEL' && Array.isArray(template.buttons) && template.buttons.length > 0) {
     components.push({
       type: 'BUTTONS',
-      buttons: template.buttons.map((button) => ({
-        type: button.type,
-        text: button.text,
-        url: button.url || undefined,
-        phone_number: button.phoneNumber || undefined,
-      })),
+      buttons: template.buttons.map(buildTemplateButton),
     });
   }
 
@@ -1198,12 +1227,7 @@ function buildTemplateComponents(template) {
             buttons: (Array.isArray(card.buttons) && card.buttons.length ? card.buttons : [
               { type: 'QUICK_REPLY', text: 'Enquiry' },
               { type: 'QUICK_REPLY', text: 'See Others' },
-            ]).slice(0, 2).map((button) => ({
-              type: String(button.type || 'QUICK_REPLY').toUpperCase(),
-              text: String(button.text || button.title || 'Select').slice(0, 25),
-              url: button.url || undefined,
-              phone_number: button.phoneNumber || button.phone_number || undefined,
-            })),
+            ]).slice(0, 2).map(buildTemplateButton),
           },
         ],
       })),
@@ -1281,6 +1305,26 @@ function buildStandardTemplateSendComponents(template, variableMap) {
     components.push({
       type: 'body',
       parameters: bodyParameters,
+    });
+  }
+
+  const flowButtonIndex = Array.isArray(template.buttons)
+    ? template.buttons.findIndex((button) => String(button.type || '').toUpperCase() === 'FLOW')
+    : -1;
+
+  if (flowButtonIndex > -1) {
+    const flowButton = template.buttons[flowButtonIndex] || {};
+    components.push({
+      type: 'button',
+      sub_type: 'flow',
+      index: String(flowButtonIndex),
+      parameters: [{
+        type: 'action',
+        action: {
+          flow_token: flowButton.flowToken || flowButton.flow_token || `review-template-${Date.now()}`,
+          flow_action_data: flowButton.flowActionData || flowButton.flow_action_data || {},
+        },
+      }],
     });
   }
 

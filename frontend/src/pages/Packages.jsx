@@ -227,15 +227,15 @@ export default function Packages() {
 
       {/* ── Grid View ── */}
       {viewMode === 'grid' && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 2xl:grid-cols-6">
           {isLoading ? (
             Array.from({ length: 8 }).map((_, i) => (
-              <div key={i} className="property-listing-card animate-pulse">
-                <div className="property-card-image-wrapper bg-neutral-100" />
-                <div className="p-4 space-y-3">
+              <div key={i} className="package-listing-card animate-pulse">
+                <div className="package-card-image-wrapper bg-neutral-100" />
+                <div className="p-3 space-y-2">
                   <div className="h-4 w-3/4 rounded bg-neutral-100" />
                   <div className="h-3 w-1/2 rounded bg-neutral-100" />
-                  <div className="h-6 w-1/3 rounded bg-neutral-100 mt-4" />
+                  <div className="h-5 w-1/3 rounded bg-neutral-100 mt-3" />
                 </div>
               </div>
             ))

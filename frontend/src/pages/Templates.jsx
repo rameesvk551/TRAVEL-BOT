@@ -17,8 +17,8 @@ const TEMPLATE_STARTERS = [
       category: 'MARKETING',
       templateType: 'STANDARD',
       headerType: 'IMAGE',
-      body: 'Hello {{1}}, explore our latest offers and tap an action below to continue your trip planning.',
-      footer: 'WayOn Travel',
+      body: 'Hello {{1}}, explore our latest featured trip.\n\n{{2}}\n\nTap an action below to continue your trip planning.',
+      footer: 'Your travel company',
       buttons: [
         { type: 'URL', text: 'View Offers', url: 'https://travelbot.wayon.in/properties' },
         { type: 'PHONE_NUMBER', text: 'Call Now', phoneNumber: '+91 9876543210' },

@@ -787,7 +787,7 @@ async function handleCampaignAction(session, actionId, customer, agency) {
 
   if (actionId.startsWith('campaign_carousel_enquire:')) {
     const [, campaignId, itemType, itemId] = parts;
-    if (itemType === 'PROPERTY') return startPropertyLead(session, campaignId, itemId, customer, agency);
+    if (itemType === 'PROPERTY') return showCampaignPropertyDetail(session, campaignId, itemId, customer, agency, 'CAROUSEL_DETAILS');
     return showCampaignPackageDetail(session, campaignId, itemId, customer, agency, 'CAROUSEL_ENQUIRY');
   }
 

@@ -19,7 +19,9 @@ const { updateSession } = require('../utils/sessionManager');
 const STEPS = {
   MENU: 'MENU',
   CATEGORY_PACKAGES: 'CATEGORY_PACKAGES',
+  PROPERTY_LIST: 'PROPERTY_LIST',
   PACKAGE_DETAIL: 'PACKAGE_DETAIL',
+  PROPERTY_DETAIL: 'PROPERTY_DETAIL',
   ENQUIRY_NAME: 'ENQUIRY_NAME',
   ENQUIRY_PLACE: 'ENQUIRY_PLACE',
   ENQUIRY_ADDRESS: 'ENQUIRY_ADDRESS',
@@ -38,6 +40,9 @@ const PROPERTY_FLOW_FIRST_SCREEN_ID = process.env.WHATSAPP_PROPERTY_FLOW_FIRST_S
 const CUSTOM_TRIP_FLOW_FIRST_SCREEN_ID = process.env.WHATSAPP_CUSTOM_TRIP_FLOW_FIRST_SCREEN_ID || 'CUSTOM_TRIP_FORM';
 const FLOW_PLACEHOLDER_IMAGE = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+yh8cAAAAASUVORK5CYII=';
 const FLOW_IMAGE_TRANSFORM = 'w_400,h_300,c_fill,f_jpg,q_auto';
+const PACKAGE_BROWSE_LIMIT = Math.max(1, parseInt(process.env.WHATSAPP_PACKAGE_BROWSE_LIMIT || '20', 10) || 20);
+const PROPERTY_BROWSE_LIMIT = Math.max(1, parseInt(process.env.WHATSAPP_PROPERTY_BROWSE_LIMIT || '20', 10) || 20);
+const FALLBACK_LIST_LIMIT = 10;
 const imageCache = new Map();
 
 function normalizeText(value = '') {
@@ -242,6 +247,10 @@ async function reopenPackageContext(session, customer, agency, profile = getProf
   return openPackageFlow(session, customer, agency, profile.packageCategory || 'DOMESTIC');
 }
 
+async function reopenPropertyContext(session, customer, agency) {
+  return openPropertyFlow(session, customer, agency);
+}
+
 function firstName(customer) {
   const name = normalizeText(customer?.name);
   if (!name) return 'there';
@@ -356,6 +365,26 @@ async function getPackageFlowConfig(agency) {
   return {
     flowId: packageFlow?.metaFlowId || legacyFlowId,
     firstScreenId: packageFlow?.firstScreenId || FLOW_FIRST_SCREEN_ID,
+  };
+}
+
+async function getPropertyFlowConfig(agency) {
+  const propertyFlow = await getPublishedFlowByType(agency.id, 'PROPERTY');
+  if (!propertyFlow?.metaFlowId) return null;
+
+  return {
+    flowId: propertyFlow.metaFlowId,
+    firstScreenId: propertyFlow.firstScreenId || PROPERTY_FLOW_FIRST_SCREEN_ID,
+  };
+}
+
+async function getCustomTripFlowConfig(agency) {
+  const customTripFlow = await getPublishedFlowByType(agency.id, 'CUSTOM_TRIP');
+  if (!customTripFlow?.metaFlowId) return null;
+
+  return {
+    flowId: customTripFlow.metaFlowId,
+    firstScreenId: customTripFlow.firstScreenId || CUSTOM_TRIP_FLOW_FIRST_SCREEN_ID,
   };
 }
 
@@ -488,14 +517,13 @@ async function getFlowBase64Image(imageUrl) {
   }
 }
 
-async function findPackagesForCategory(agencyId, category, limit = 5) {
+async function findPackagesForCategory(agencyId, category, limit = PACKAGE_BROWSE_LIMIT) {
   const packages = await Package.findAll({
     where: {
       agencyId,
       isActive: true,
     },
     order: [['createdAt', 'DESC']],
-    limit: 20,
   });
 
   const filtered = packages.filter((pkg) => packageMatchesCategory(pkg, category));
@@ -518,6 +546,34 @@ async function findPackagesForCategory(agencyId, category, limit = 5) {
       return new Date(b.pkg.createdAt) - new Date(a.pkg.createdAt);
     })
     .slice(0, limit);
+}
+
+async function findActiveProperties(agencyId, limit = PROPERTY_BROWSE_LIMIT) {
+  return Property.findAll({
+    where: {
+      agencyId,
+      isActive: true,
+    },
+    order: [['createdAt', 'DESC']],
+    limit,
+  });
+}
+
+async function getPackageCategoryCounts(agencyId) {
+  const packages = await Package.findAll({
+    where: {
+      agencyId,
+      isActive: true,
+    },
+    attributes: ['category', 'name', 'summary', 'destinations', 'inclusions'],
+  });
+
+  return packages.reduce((counts, pkg) => {
+    const category = inferPackageCategory(pkg);
+    if (category === 'INTERNATIONAL') counts.international += 1;
+    else counts.domestic += 1;
+    return counts;
+  }, { domestic: 0, international: 0 });
 }
 
 async function buildFlowPackageOptions(packages) {
@@ -661,7 +717,9 @@ async function createFreshGreetingLead(session, customer) {
     collectedData: {
       packageCategory: null,
       packageResults: [],
+      propertyResults: [],
       selectedPackageId: null,
+      selectedPropertyId: null,
       selectedPackageIds: [],
       selectedPropertyIds: [],
       enquiryDraft: {},
@@ -678,10 +736,19 @@ async function createFreshGreetingLead(session, customer) {
 }
 
 async function showMainMenu(session, customer, agency) {
+  const [packageCounts, propertyCount] = await Promise.all([
+    getPackageCategoryCounts(agency.id),
+    Property.count({ where: { agencyId: agency.id, isActive: true } }),
+  ]);
+  const hasPackages = packageCounts.domestic > 0 || packageCounts.international > 0;
+  const hasProperties = propertyCount > 0;
+
   await transitionTo(session, STEPS.MENU, {
     packageCategory: null,
     packageResults: [],
+    propertyResults: [],
     selectedPackageId: null,
+    selectedPropertyId: null,
     selectedPackageIds: [],
     selectedPropertyIds: [],
     enquiryDraft: customer.name ? { name: customer.name } : {},
@@ -690,15 +757,15 @@ async function showMainMenu(session, customer, agency) {
   const greeting = [
     `Hi ${firstName(customer)} 👋`,
     `Welcome to ${agency.name} ✈️`,
-    'We offer Honeymoon 💕 & Family Tour Packages.',
+    'Tell us what you want to explore today.',
     '',
     'How can I help you today?',
   ].join('\n');
 
-  const buttons = [
-    { id: 'menu_domestic', title: 'Domestic' },
-    { id: 'menu_international', title: 'International' },
-  ];
+  const buttons = [];
+  if (hasPackages) buttons.push({ id: 'menu_packages', title: 'View Packages' });
+  if (hasProperties) buttons.push({ id: 'menu_properties', title: 'View Properties' });
+  buttons.push({ id: 'menu_custom_trip', title: 'Plan Custom Trip' });
 
   return whatsappService.sendButtonsMessage(
     customer.phone,
@@ -706,6 +773,53 @@ async function showMainMenu(session, customer, agency) {
     buttons,
     getContext(customer, agency),
     {
+      footerText: 'Reply Hi anytime to restart.',
+    }
+  );
+}
+
+async function showPackageCategoryMenu(session, customer, agency) {
+  const counts = await getPackageCategoryCounts(agency.id);
+  const hasDomestic = counts.domestic > 0;
+  const hasInternational = counts.international > 0;
+
+  if (hasDomestic && !hasInternational) {
+    return openPackageFlow(session, customer, agency, 'DOMESTIC');
+  }
+
+  if (!hasDomestic && hasInternational) {
+    return openPackageFlow(session, customer, agency, 'INTERNATIONAL');
+  }
+
+  if (!hasDomestic && !hasInternational) {
+    return whatsappService.sendTextMessage(
+      customer.phone,
+      'We do not have active packages right now. You can still plan a custom trip and our expert will help.',
+      getContext(customer, agency)
+    );
+  }
+
+  await transitionTo(session, STEPS.MENU, {
+    packageCategory: null,
+    packageResults: [],
+    propertyResults: [],
+    selectedPackageId: null,
+    selectedPropertyId: null,
+    selectedPackageIds: [],
+    selectedPropertyIds: [],
+    enquiryDraft: customer.name ? { name: customer.name } : {},
+  });
+
+  return whatsappService.sendButtonsMessage(
+    customer.phone,
+    'Choose the package category you want to browse.',
+    [
+      { id: 'menu_domestic', title: 'Domestic Trips' },
+      { id: 'menu_international', title: 'International Trips' },
+    ],
+    getContext(customer, agency),
+    {
+      headerText: 'View Packages',
       footerText: 'Reply Hi anytime to restart.',
     }
   );
@@ -722,7 +836,7 @@ async function showPackageListFallback(session, customer, agency, category, pack
     customer.phone,
     'Tap a package below to view details.',
     'Select Package',
-    buildPackageListSections(category, packages),
+    buildPackageListSections(category, packages.slice(0, FALLBACK_LIST_LIMIT)),
     getContext(customer, agency),
     {
       headerText: `${categoryLabel(category)} Packages`,
@@ -731,9 +845,29 @@ async function showPackageListFallback(session, customer, agency, category, pack
   );
 }
 
+async function showPropertyListFallback(session, customer, agency, properties) {
+  await whatsappService.sendTextMessage(
+    customer.phone,
+    'Browse our available properties below.',
+    getContext(customer, agency)
+  );
+
+  await whatsappService.sendListMessage(
+    customer.phone,
+    'Tap a property below to view details.',
+    'Select Property',
+    buildPropertyListSections(properties),
+    getContext(customer, agency),
+    {
+      headerText: 'Properties',
+      footerText: 'Tap a property to continue.',
+    }
+  );
+}
+
 async function openPackageFlow(session, customer, agency, category) {
   const normalizedCategory = normalizeCategory(category);
-  const packages = await findPackagesForCategory(agency.id, normalizedCategory, 5);
+  const packages = await findPackagesForCategory(agency.id, normalizedCategory, PACKAGE_BROWSE_LIMIT);
 
   await ensureLead(session, customer, agency, {
     interest: normalizedCategory,
@@ -793,6 +927,125 @@ async function openPackageFlow(session, customer, agency, category) {
   }
 
   return flowResponse;
+}
+
+async function openPropertyFlow(session, customer, agency) {
+  const properties = await findActiveProperties(agency.id, PROPERTY_BROWSE_LIMIT);
+
+  await ensureLead(session, customer, agency, {
+    interest: 'PROPERTY',
+    itemType: 'PROPERTY',
+    notes: 'Properties viewed from WhatsApp menu',
+  });
+
+  await transitionTo(session, STEPS.PROPERTY_LIST, {
+    propertyResults: properties.map((property) => property.id),
+    selectedPropertyId: null,
+    selectedPropertyIds: [],
+    selectedPackageId: null,
+    selectedPackageIds: [],
+  });
+
+  if (properties.length === 0) {
+    return whatsappService.sendTextMessage(
+      customer.phone,
+      'We do not have active properties listed right now. Our expert can still help you with stays.',
+      getContext(customer, agency)
+    );
+  }
+
+  const propertyFlowConfig = await getPropertyFlowConfig(agency);
+  if (!propertyFlowConfig?.flowId) {
+    console.error('[TravelFlow] property_flow_missing', { agencyId: agency.id, agencyName: agency.name });
+    return showPropertyListFallback(session, customer, agency, properties);
+  }
+
+  const propertyOptions = await buildFlowPropertyOptions(properties);
+  const flowResponse = await whatsappService.sendFlowMessage(
+    customer.phone,
+    'Browse available properties below.',
+    {
+      flowId: propertyFlowConfig.flowId,
+      firstScreenId: propertyFlowConfig.firstScreenId || PROPERTY_FLOW_FIRST_SCREEN_ID,
+      flowCta: 'View Properties',
+      flowToken: `prop|${agency.id}|${customer.id}|${Date.now()}`,
+      data: {
+        property_options: propertyOptions,
+      },
+    },
+    getContext(customer, agency),
+    {
+      headerText: 'Properties',
+      footerText: 'Reply LIST if the flow does not open.',
+    }
+  );
+
+  if (flowResponse?.status === 'FAILED') {
+    console.error('[TravelFlow] property_flow_send_failed', {
+      agencyId: agency.id,
+      flowId: propertyFlowConfig.flowId,
+      firstScreenId: propertyFlowConfig.firstScreenId || PROPERTY_FLOW_FIRST_SCREEN_ID,
+    });
+  }
+
+  return flowResponse;
+}
+
+async function openCustomTripFlow(session, customer, agency) {
+  const lead = await ensureLead(session, customer, agency, {
+    itemType: 'CUSTOM_TRIP',
+    interest: 'CUSTOM_TRIP',
+    status: 'ENQUIRY',
+    notes: 'Custom trip requested from WhatsApp menu',
+  });
+
+  const customTripFlow = await getCustomTripFlowConfig(agency);
+  if (customTripFlow?.flowId) {
+    await updateSession(session, {
+      currentStep: STEPS.COMPLETE,
+      collectedData: {
+        activeLeadId: lead.id,
+        enquiryDraft: customer.name ? { name: customer.name } : {},
+      },
+    });
+
+    const flowResponse = await whatsappService.sendFlowMessage(
+      customer.phone,
+      'Share your custom trip preferences below.',
+      {
+        flowId: customTripFlow.flowId,
+        firstScreenId: customTripFlow.firstScreenId || CUSTOM_TRIP_FLOW_FIRST_SCREEN_ID,
+        flowCta: 'Plan Trip',
+        flowToken: `custom|${agency.id}|${customer.id}|${Date.now()}`,
+        data: {
+          customer_name: String(customer.name || '').trim(),
+        },
+      },
+      getContext(customer, agency),
+      {
+        headerText: 'Plan Custom Trip',
+        footerText: 'Submit your trip preferences in the flow.',
+      }
+    );
+
+    if (flowResponse?.status !== 'FAILED') {
+      return flowResponse;
+    }
+  }
+
+  await updateSession(session, {
+    currentStep: STEPS.COMPLETE,
+    collectedData: {
+      activeLeadId: lead.id,
+      enquiryDraft: customer.name ? { name: customer.name } : {},
+    },
+  });
+
+  return whatsappService.sendTextMessage(
+    customer.phone,
+    'Your custom trip request is created. Our travel expert will contact you shortly.',
+    getContext(customer, agency)
+  );
 }
 
 async function sendPackageActions(customer, agency, pkg) {
@@ -936,6 +1189,74 @@ async function showPackageDetail(session, customer, agency, packageId) {
     buttons,
     context,
     options
+  );
+}
+
+async function showPropertyDetail(session, customer, agency, propertyId) {
+  const profile = getProfile(session);
+  const normalizedPropertyId = normalizeText(propertyId);
+  const offeredPropertyIds = Array.isArray(profile.propertyResults)
+    ? profile.propertyResults.map((id) => normalizeText(id)).filter(Boolean)
+    : [];
+  const isKnownProperty = offeredPropertyIds.length === 0 || offeredPropertyIds.includes(normalizedPropertyId);
+
+  if (!normalizedPropertyId || !isKnownProperty) {
+    logFlowEvent('property_detail_invalid_selection', customer, agency, {
+      step: session?.currentStep || null,
+      selectedPropertyId: normalizedPropertyId || null,
+      offeredPropertyIds,
+    });
+    return sendInvalidChoice(session, customer, agency, () => reopenPropertyContext(session, customer, agency));
+  }
+
+  const property = await Property.findOne({
+    where: { id: normalizedPropertyId, agencyId: agency.id, isActive: true },
+  });
+
+  if (!property) {
+    return sendInvalidChoice(session, customer, agency, () => reopenPropertyContext(session, customer, agency));
+  }
+
+  await ensureLead(session, customer, agency, {
+    propertyId: property.id,
+    itemType: 'PROPERTY',
+    destination: property.location || null,
+    interest: 'PROPERTY',
+    notes: `Property selected: ${property.name}`,
+  });
+
+  await transitionTo(session, STEPS.PROPERTY_DETAIL, {
+    propertyResults: offeredPropertyIds,
+    selectedPropertyId: property.id,
+    selectedPropertyIds: uniqueIds(profile.selectedPropertyIds, property.id),
+  });
+
+  const buttons = [
+    { id: 'action_property_enquire', title: 'Enquiry' },
+    { id: 'action_property_call_now', title: 'Call Now' },
+    { id: 'action_back_properties', title: 'Back' },
+  ];
+  const detailMessage = buildPropertyCaption(property);
+  const context = getContext(customer, agency);
+
+  if (property.imageUrl) {
+    const mediaResult = await whatsappService.sendMediaButtonsMessage(
+      customer.phone,
+      detailMessage,
+      property.imageUrl,
+      buttons,
+      context,
+      { footerText: 'Tap Enquiry for this property.' }
+    );
+    if (mediaResult?.status !== 'FAILED') return mediaResult;
+  }
+
+  return whatsappService.sendButtonsMessage(
+    customer.phone,
+    detailMessage,
+    buttons,
+    context,
+    { footerText: 'Tap Enquiry for this property.' }
   );
 }
 
@@ -1219,7 +1540,7 @@ async function handleFlowSubmission(session, incoming, customer, agency) {
     if (profile.campaignId) {
       return showCampaignPropertyDetail(session, profile.campaignId, propertyId, customer, agency, 'PROPERTY_SELECTED');
     }
-    return reopenPackageContext(session, customer, agency, profile);
+    return showPropertyDetail(session, customer, agency, propertyId);
   }
 
   await updateSession(session, {
@@ -1229,6 +1550,38 @@ async function handleFlowSubmission(session, incoming, customer, agency) {
     },
   });
   return showPackageDetail(session, customer, agency, packageId);
+}
+
+function buildPropertyCaption(property) {
+  return [
+    `Stay: ${escapeMarkdown(property.name)}`,
+    '',
+    property.pricePerNight ? `Price: ${formatCurrency(property.pricePerNight)}/night` : 'Price: On request',
+    property.location ? `Location: ${escapeMarkdown(property.location)}` : null,
+    property.propertyType ? `Type: ${escapeMarkdown(property.propertyType)}` : null,
+    '',
+    escapeMarkdown(property.description || 'Share your dates and our team will help with availability.'),
+  ].filter(Boolean).join('\n');
+}
+
+function buildPropertyListSections(properties) {
+  return [
+    {
+      title: 'Properties',
+      rows: properties.slice(0, FALLBACK_LIST_LIMIT).map((property) => ({
+        id: `property_pick:${property.id}`,
+        title: escapeMarkdown(property.name).slice(0, 24) || 'Property',
+        description: `${property.pricePerNight ? `${formatCurrency(property.pricePerNight)}/night` : 'Price on request'} - ${escapeMarkdown(property.location || property.propertyType || 'Stay')}`.slice(0, 72),
+      })),
+    },
+    {
+      title: 'Navigation',
+      rows: [
+        { id: 'global_go_back', title: 'Go Back', description: 'Return to previous step' },
+        { id: 'global_main_menu', title: 'Main Menu', description: 'Start over anytime' },
+      ],
+    },
+  ];
 }
 
 async function openEnquiryFlow(session, customer, agency) {
@@ -1564,6 +1917,41 @@ async function finalizeCustomTripFlowEnquiry(session, customer, agency) {
   );
 }
 
+async function startPropertyEnquiry(session, customer, agency) {
+  const profile = getProfile(session);
+  const property = profile.selectedPropertyId
+    ? await Property.findOne({ where: { id: profile.selectedPropertyId, agencyId: agency.id, isActive: true } })
+    : null;
+
+  if (!property) {
+    return sendInvalidChoice(session, customer, agency, () => reopenPropertyContext(session, customer, agency));
+  }
+
+  const lead = await ensureLead(session, customer, agency, {
+    propertyId: property.id,
+    itemType: 'PROPERTY',
+    destination: property.location || null,
+    interest: 'PROPERTY',
+    status: 'ENQUIRY',
+    notes: `Property enquiry from WhatsApp menu: ${property.name}`,
+  });
+
+  await updateSession(session, {
+    currentStep: STEPS.COMPLETE,
+    collectedData: {
+      activeLeadId: lead.id,
+      selectedPropertyId: property.id,
+      selectedPropertyIds: uniqueIds(profile.selectedPropertyIds, property.id),
+    },
+  });
+
+  return whatsappService.sendTextMessage(
+    customer.phone,
+    `Thanks. Your enquiry for ${escapeMarkdown(property.name)} is created. Our travel expert will contact you shortly. You can reply with stay dates, guests, rooms, or budget to add more details.`,
+    getContext(customer, agency)
+  );
+}
+
 async function handleEnquiryStep(session, incoming, customer, agency) {
   const text = normalizeText(incoming?.text);
   const profile = getProfile(session);
@@ -1678,12 +2066,17 @@ async function sendCallNow(session, customer, agency) {
   const pkg = profile.selectedPackageId
     ? await Package.findOne({ where: { id: profile.selectedPackageId, agencyId: agency.id } })
     : null;
+  const property = profile.selectedPropertyId
+    ? await Property.findOne({ where: { id: profile.selectedPropertyId, agencyId: agency.id } })
+    : null;
 
   const lead = await ensureLead(session, customer, agency, {
     status: 'ENQUIRY',
     packageId: pkg?.id || null,
-    destination: pkg?.destinations?.[0] || null,
-    notes: `Call Now clicked for ${pkg?.name || 'selected package'}`,
+    propertyId: property?.id || null,
+    itemType: property ? 'PROPERTY' : pkg ? 'PACKAGE' : null,
+    destination: property?.location || pkg?.destinations?.[0] || null,
+    notes: `Call Now clicked for ${property?.name || pkg?.name || 'selected item'}`,
   });
 
   await whatsappService.sendTextMessage(
@@ -1706,12 +2099,13 @@ async function sendCallNow(session, customer, agency) {
         `Name: ${customer.name || firstName(customer)}`,
         `Phone: ${customer.phone}`,
         `Package: ${pkg?.name || 'Not selected'}`,
+        property?.name ? `Property: ${property.name}` : null,
         `Date: ${profile.enquiryDraft.travelDate || 'Not shared yet'}`,
         `People: ${profile.enquiryDraft.travellers || 'Not shared yet'}`,
         `Budget: ${budgetText}`,
         '',
         'Reply NOTE: <text> to add a note.',
-      ].join('\n');
+      ].filter(Boolean).join('\n');
 
       await whatsappService.sendButtonsMessage(
         assignedAgent.phone,
@@ -1766,8 +2160,12 @@ async function renderCurrentStep(session, customer, agency) {
       return showMainMenu(session, customer, agency);
     case STEPS.CATEGORY_PACKAGES:
       return reopenPackageContext(session, customer, agency, getProfile(session));
+    case STEPS.PROPERTY_LIST:
+      return reopenPropertyContext(session, customer, agency);
     case STEPS.PACKAGE_DETAIL:
       return showPackageDetail(session, customer, agency, getProfile(session).selectedPackageId);
+    case STEPS.PROPERTY_DETAIL:
+      return showPropertyDetail(session, customer, agency, getProfile(session).selectedPropertyId);
     case STEPS.ENQUIRY_NAME:
       return whatsappService.sendTextMessage(customer.phone, 'Please share your full name.', getContext(customer, agency));
     case STEPS.ENQUIRY_PLACE:
@@ -1789,8 +2187,10 @@ function isCategoryAction(actionId, text) {
   return actionId === 'menu_domestic'
     || actionId === 'menu_international'
     || text === 'domestic'
+    || text === 'domestic trips'
     || text === 'domestic packages'
     || text === 'international'
+    || text === 'international trips'
     || text === 'international packages';
 }
 
@@ -1855,8 +2255,20 @@ async function handleTravelFlow(session, incoming, customer, agency) {
     return showMainMenu(session, customer, agency);
   }
 
+  if (actionId === 'menu_packages' || text === 'view packages' || text === 'packages' || text === 'show packages') {
+    return showPackageCategoryMenu(session, customer, agency);
+  }
+
+  if (actionId === 'menu_custom_trip' || text === 'plan custom trip' || text === 'custom trip' || text === 'plan trip') {
+    return openCustomTripFlow(session, customer, agency);
+  }
+
   if (isCategoryAction(actionId, text)) {
     return openPackageFlow(session, customer, agency, resolveCategory(actionId, text));
+  }
+
+  if (actionId === 'menu_properties' || text === 'view properties' || text === 'properties' || text === 'show properties') {
+    return openPropertyFlow(session, customer, agency);
   }
 
   if (actionId === 'menu_catalog' || text === 'catalog' || text === 'shop') {
@@ -1877,8 +2289,13 @@ async function handleTravelFlow(session, incoming, customer, agency) {
       return reopenPackageContext(session, customer, agency, profile);
     }
 
-    const packages = await findPackagesForCategory(agency.id, profile.packageCategory || 'DOMESTIC', 5);
+    const packages = await findPackagesForCategory(agency.id, profile.packageCategory || 'DOMESTIC', PACKAGE_BROWSE_LIMIT);
     return showPackageListFallback(session, customer, agency, profile.packageCategory || 'DOMESTIC', packages);
+  }
+
+  if (session.currentStep === STEPS.PROPERTY_LIST && ['list', 'show list', 'property list', 'properties list'].includes(text)) {
+    const properties = await findActiveProperties(agency.id, PROPERTY_BROWSE_LIMIT);
+    return showPropertyListFallback(session, customer, agency, properties);
   }
 
   if (actionId === 'action_back_packages' || text === 'back to packages' || text === 'view packages') {
@@ -1893,6 +2310,16 @@ async function handleTravelFlow(session, incoming, customer, agency) {
       selectedPackageId: selectedPackageId || null,
     });
     return showPackageDetail(session, customer, agency, selectedPackageId);
+  }
+
+  if (actionId.startsWith('property_pick:')) {
+    const selectedPropertyId = normalizeText(actionId.split(':')[1]);
+    logFlowEvent('list_property_selected', customer, agency, {
+      step: session?.currentStep || null,
+      actionId,
+      selectedPropertyId: selectedPropertyId || null,
+    });
+    return showPropertyDetail(session, customer, agency, selectedPropertyId);
   }
 
   // Campaign broadcast package selection — reuse the same package detail view
@@ -1910,8 +2337,25 @@ async function handleTravelFlow(session, incoming, customer, agency) {
     return handleCategoryPackageReply(session, customer, agency, text);
   }
 
+  if (session.currentStep === STEPS.PROPERTY_LIST) {
+    return sendInvalidChoice(session, customer, agency, () => reopenPropertyContext(session, customer, agency));
+  }
+
   if (session.currentStep === STEPS.PACKAGE_DETAIL) {
     return handlePackageDetailReply(session, customer, agency, actionId, text);
+  }
+
+  if (session.currentStep === STEPS.PROPERTY_DETAIL) {
+    if (actionId === 'action_property_enquire' || text === 'enquiry' || text === 'enquire') {
+      return startPropertyEnquiry(session, customer, agency);
+    }
+    if (actionId === 'action_property_call_now' || text === 'call now') {
+      return sendCallNow(session, customer, agency);
+    }
+    if (actionId === 'action_back_properties' || text === 'back' || text === 'back to properties') {
+      return reopenPropertyContext(session, customer, agency);
+    }
+    return sendInvalidChoice(session, customer, agency, () => showPropertyDetail(session, customer, agency, profile.selectedPropertyId));
   }
 
   if ([

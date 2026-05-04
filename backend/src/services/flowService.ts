@@ -26,7 +26,7 @@ function normalizeFlowPayload(data = {}) {
 
   return {
     name: String(data.name || data.displayName || '').trim(),
-    flowType: ['PACKAGE', 'PROPERTY', 'CUSTOM_TRIP', 'GENERIC'].includes(String(data.flowType || '').toUpperCase())
+    flowType: ['PACKAGE', 'PROPERTY', 'CUSTOM_TRIP', 'REVIEW', 'GENERIC'].includes(String(data.flowType || '').toUpperCase())
       ? String(data.flowType).toUpperCase()
       : 'GENERIC',
     status: ['DRAFT', 'PUBLISHED', 'FAILED', 'ARCHIVED'].includes(String(data.status || '').toUpperCase())
@@ -231,7 +231,9 @@ async function syncFlows(agencyId) {
   for (const remoteFlow of remoteFlows) {
     const mapped = mapRemoteFlow(remoteFlow);
     const remoteName = String(remoteFlow.name || '').toLowerCase();
-    const inferredType = remoteName.includes('property')
+    const inferredType = remoteName.includes('review') || remoteName.includes('feedback')
+      ? 'REVIEW'
+      : remoteName.includes('property')
       ? 'PROPERTY'
       : remoteName.includes('custom')
         ? 'CUSTOM_TRIP'

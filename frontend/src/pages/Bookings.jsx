@@ -26,6 +26,10 @@ function getListPayload(response) {
   return [];
 }
 
+function getSinglePayload(response) {
+  return response?.data?.data || response?.data || response || null;
+}
+
 function Field({ label, children }) {
   return (
     <label className="block">
@@ -35,9 +39,21 @@ function Field({ label, children }) {
   );
 }
 
+function DetailItem({ label, value, children }) {
+  return (
+    <div className="min-w-0 rounded-[12px] border border-slate-100 bg-slate-50/70 p-3">
+      <p className="text-xs font-bold uppercase tracking-[0.16em] text-slate-400">{label}</p>
+      <div className="mt-1 break-words text-sm font-semibold text-slate-900">
+        {children || value || <span className="font-normal text-slate-400">-</span>}
+      </div>
+    </div>
+  );
+}
+
 export default function Bookings() {
   const queryClient = useQueryClient();
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [selectedBookingId, setSelectedBookingId] = useState(null);
   const [form, setForm] = useState(EMPTY_BOOKING_FORM);
 
   const { data: bookingsData, isLoading } = useQuery({
@@ -45,6 +61,13 @@ export default function Bookings() {
     queryFn: () => bookingsApi.list({}),
   });
   const bookings = getListPayload(bookingsData);
+
+  const { data: bookingDetailsResponse, isLoading: isDetailsLoading } = useQuery({
+    queryKey: ['booking', selectedBookingId],
+    queryFn: () => bookingsApi.getById(selectedBookingId),
+    enabled: Boolean(selectedBookingId),
+  });
+  const selectedBooking = getSinglePayload(bookingDetailsResponse);
 
   const { data: customersResponse } = useQuery({
     queryKey: ['customers'],
@@ -127,11 +150,12 @@ export default function Bookings() {
               title={booking.bookingRef}
               subtitle={booking.customer?.name || 'Traveler'}
               badge={<span className={`badge ${getStatusTone(booking.status)}`}>{booking.status}</span>}
+              onClick={() => setSelectedBookingId(booking.id)}
             >
               <MobileField label="Trip" value={booking.package?.name || 'Custom'} />
               <MobileField label="Travel" value={formatDate(booking.travelDate)} />
               <MobileField label="Total" value={formatCurrency(booking.totalAmount)} />
-              <MobileField label="Advance" value={formatCurrency(booking.advanceAmount)} />
+              <MobileField label="Advance" value={formatCurrency(booking.advancePaid)} />
             </MobileRecordCard>
           ))
         )}
@@ -162,7 +186,19 @@ export default function Bookings() {
                 <tr><td colSpan={5} className="px-4 py-8 text-sm text-neutral-400">No bookings found.</td></tr>
               ) : (
                 bookings.map((booking) => (
-                  <tr key={booking.id} className="data-table-row">
+                  <tr
+                    key={booking.id}
+                    className="data-table-row cursor-pointer"
+                    tabIndex={0}
+                    role="button"
+                    onClick={() => setSelectedBookingId(booking.id)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        setSelectedBookingId(booking.id);
+                      }
+                    }}
+                  >
                     <td className="data-table-td font-semibold text-neutral-900">{booking.bookingRef}</td>
                     <td className="data-table-td text-neutral-700">{booking.customer?.name}</td>
                     <td className="data-table-td text-neutral-500">{booking.package?.name || 'Custom'}</td>
@@ -239,6 +275,84 @@ export default function Bookings() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {selectedBookingId && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+          <div className="max-h-[92dvh] w-full overflow-y-auto rounded-t-[18px] border border-slate-200 bg-white p-4 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.35)] sm:max-w-3xl sm:rounded-[18px] sm:p-6">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.22em] text-slate-400">Booking Details</p>
+                <h2 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">
+                  {selectedBooking?.bookingRef || 'Loading booking'}
+                </h2>
+              </div>
+              <button onClick={() => setSelectedBookingId(null)} className="rounded-[10px] p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
+                <XMarkIcon className="h-5 w-5" />
+              </button>
+            </div>
+
+            {isDetailsLoading ? (
+              <div className="mt-6 grid gap-3 sm:grid-cols-2">
+                {Array.from({ length: 8 }).map((_, index) => (
+                  <div key={index} className="h-20 animate-pulse rounded-[12px] bg-slate-100" />
+                ))}
+              </div>
+            ) : selectedBooking ? (
+              <div className="mt-6 space-y-5">
+                <div className="flex flex-wrap items-center gap-3">
+                  <span className={`badge ${getStatusTone(selectedBooking.status)}`}>{selectedBooking.status}</span>
+                  <span className="text-sm text-slate-500">{selectedBooking.package?.name || 'Custom itinerary'}</span>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  <DetailItem label="Customer" value={selectedBooking.customer?.name} />
+                  <DetailItem label="Phone" value={selectedBooking.customer?.phone} />
+                  <DetailItem label="Travellers" value={selectedBooking.travellers} />
+                  <DetailItem label="Travel Date" value={formatDate(selectedBooking.travelDate)} />
+                  <DetailItem label="Return Date" value={formatDate(selectedBooking.returnDate)} />
+                  <DetailItem label="Total Amount" value={formatCurrency(selectedBooking.totalAmount)} />
+                  <DetailItem label="Advance Paid" value={formatCurrency(selectedBooking.advancePaid)} />
+                  <DetailItem label="Balance Due" value={formatCurrency(selectedBooking.balanceDue ?? (selectedBooking.totalAmount - selectedBooking.advancePaid))} />
+                  <DetailItem label="Lead Status" value={selectedBooking.lead?.status} />
+                </div>
+
+                <div className="grid gap-4 lg:grid-cols-2">
+                  <section className="rounded-[14px] border border-slate-200 p-4">
+                    <h3 className="text-sm font-bold text-slate-950">Payments</h3>
+                    <div className="mt-3 space-y-3">
+                      {(selectedBooking.payments || []).length === 0 ? (
+                        <p className="text-sm text-slate-400">No payments recorded.</p>
+                      ) : (
+                        selectedBooking.payments.map((payment) => (
+                          <div key={payment.id} className="flex items-center justify-between gap-3 rounded-[10px] bg-slate-50 p-3">
+                            <div>
+                              <p className="text-sm font-semibold text-slate-900">{payment.type || 'Payment'}</p>
+                              <p className="text-xs text-slate-400">{formatDate(payment.paidAt || payment.createdAt)}</p>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-sm font-bold text-slate-950">{formatCurrency(payment.amount)}</p>
+                              <p className="text-xs font-semibold uppercase text-slate-400">{payment.status}</p>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </section>
+
+                  <section className="rounded-[14px] border border-slate-200 p-4">
+                    <h3 className="text-sm font-bold text-slate-950">Notes</h3>
+                    <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-slate-600">
+                      {selectedBooking.notes || 'No notes added.'}
+                    </p>
+                  </section>
+                </div>
+              </div>
+            ) : (
+              <p className="mt-6 text-sm text-slate-400">Booking details could not be loaded.</p>
+            )}
           </div>
         </div>
       )}

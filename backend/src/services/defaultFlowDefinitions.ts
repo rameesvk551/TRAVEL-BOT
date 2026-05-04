@@ -60,7 +60,7 @@ function packageFlowDefinition() {
               type: 'Form',
               name: 'package_selector_form',
               children: [
-                { type: 'TextHeading', text: '${data.category_label} Packages' },
+                { type: 'TextHeading', text: 'Available Packages' },
                 { type: 'TextBody', text: 'Choose one package to view details or start enquiry.' },
                 {
                   type: 'RadioButtonsGroup',
@@ -256,6 +256,79 @@ function customTripFlowDefinition() {
   };
 }
 
+function reviewFlowDefinition() {
+  return {
+    version: '7.2',
+    data_api_version: '3.0',
+    routing_model: {
+      REVIEW_FORM: [],
+    },
+    screens: [
+      {
+        id: 'REVIEW_FORM',
+        title: 'Trip Review',
+        terminal: true,
+        layout: {
+          type: 'SingleColumnLayout',
+          children: [
+            {
+              type: 'Form',
+              name: 'review_form',
+              children: [
+                { type: 'TextHeading', text: 'Share Your Trip Review' },
+                {
+                  type: 'TextBody',
+                  text: 'Tell us how your trip went. Your feedback helps us improve every itinerary.',
+                },
+                {
+                  type: 'RadioButtonsGroup',
+                  name: 'rating',
+                  label: 'Overall Rating',
+                  required: true,
+                  'data-source': [
+                    { id: '5', title: '5 Stars', description: 'Amazing experience' },
+                    { id: '4', title: '4 Stars', description: 'Good experience' },
+                    { id: '3', title: '3 Stars', description: 'Average experience' },
+                    { id: '2', title: '2 Stars', description: 'Could be better' },
+                    { id: '1', title: '1 Star', description: 'Poor experience' },
+                  ],
+                },
+                {
+                  type: 'TextInput',
+                  name: 'testimonial',
+                  label: 'Your Review',
+                  required: false,
+                  'input-type': 'text',
+                  'helper-text': 'A short sentence is enough.',
+                },
+                {
+                  type: 'TextInput',
+                  name: 'improvement',
+                  label: 'What could be better?',
+                  required: false,
+                  'input-type': 'text',
+                },
+                {
+                  type: 'Footer',
+                  label: 'Submit Review',
+                  'on-click-action': {
+                    name: 'complete',
+                    payload: {
+                      rating: '${form.rating}',
+                      testimonial: '${form.testimonial}',
+                      improvement: '${form.improvement}',
+                    },
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      },
+    ],
+  };
+}
+
 function getDefaultFlowDefinitions(agency) {
   const prefix = agencyPrefix(agency);
 
@@ -286,6 +359,15 @@ function getDefaultFlowDefinitions(agency) {
       firstScreenId: 'CUSTOM_TRIP_FORM',
       categories: ['OTHER'],
       jsonDefinition: customTripFlowDefinition(),
+    },
+    {
+      name: `${prefix} Review Flow`,
+      flowType: 'REVIEW',
+      status: 'DRAFT',
+      endpointUri: DEFAULT_ENDPOINT_URI,
+      firstScreenId: 'REVIEW_FORM',
+      categories: ['OTHER'],
+      jsonDefinition: reviewFlowDefinition(),
     },
   ];
 }

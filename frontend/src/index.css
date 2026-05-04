@@ -298,17 +298,25 @@
     @apply bg-white rounded-2xl overflow-hidden border border-neutral-100 shadow-[0_1px_4px_rgba(0,0,0,0.04)] transition-all duration-300 hover:shadow-[0_12px_32px_-8px_rgba(0,0,0,0.10)] hover:-translate-y-0.5 cursor-pointer;
   }
 
+  .package-listing-card {
+    @apply relative bg-white rounded-xl overflow-hidden border border-neutral-100 shadow-[0_1px_4px_rgba(0,0,0,0.04)] transition-all duration-300 hover:shadow-[0_10px_26px_-10px_rgba(0,0,0,0.14)] hover:-translate-y-0.5 cursor-pointer;
+  }
+
   .property-card-image-wrapper {
-    @apply relative aspect-[4/2.6] overflow-hidden bg-neutral-100;
+    @apply relative aspect-[4/2.1] overflow-hidden bg-neutral-100;
+  }
+
+  .package-card-image-wrapper {
+    @apply relative h-32 overflow-hidden bg-neutral-100;
   }
 
   /* ── Listing Page: List View ── */
   .listing-list-card {
-    @apply flex bg-white rounded-2xl overflow-hidden border border-neutral-100 shadow-[0_1px_4px_rgba(0,0,0,0.04)] transition-all duration-300 hover:shadow-[0_12px_32px_-8px_rgba(0,0,0,0.10)] cursor-pointer;
+    @apply flex min-h-[128px] bg-white rounded-2xl overflow-hidden border border-neutral-100 shadow-[0_1px_4px_rgba(0,0,0,0.04)] transition-all duration-300 hover:shadow-[0_12px_32px_-8px_rgba(0,0,0,0.10)] cursor-pointer;
   }
 
   .listing-list-card-image {
-    @apply relative w-[260px] flex-shrink-0 overflow-hidden bg-neutral-100;
+    @apply relative w-[220px] flex-shrink-0 overflow-hidden bg-neutral-100;
   }
 
   /* ── Listing Page: Filter Tabs ── */

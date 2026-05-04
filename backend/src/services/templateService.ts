@@ -333,10 +333,10 @@ function curatedPrebuiltTemplates() {
       category: 'MARKETING',
       headerType: 'IMAGE',
       headerContent: DEFAULT_TEMPLATE_MEDIA.image1,
-      body: 'Hi {{1}}, explore handpicked travel options from us. Tap below to view packages, view properties, or request a custom trip.',
+      body: 'Hi {{1}}, explore handpicked travel options from us.\n\n{{2}}\n\nTap below to view packages, view properties, or request a custom trip.',
       footer: 'Travel options',
-      variableCount: 1,
-      sampleVariables: ['there'],
+      variableCount: 2,
+      sampleVariables: ['there', 'Featured trip details'],
       tags: ['cta', 'image', 'packages', 'properties', 'custom-trip'],
       icon: 'IMAGE',
       buttons: [
@@ -489,7 +489,7 @@ function defaultApprovalTemplatesForAgency(agencyName = 'your travel team') {
       language: 'en',
       headerType: 'IMAGE',
       headerContent: DEFAULT_TEMPLATE_MEDIA.image1,
-      body: `Hi {{1}}, explore handpicked holiday packages from ${brand}. Featured today: {{2}}. Tap below and our team will help you with pricing, dates, and a custom plan.`,
+      body: `Hi {{1}}, explore handpicked holiday packages from ${brand}.\n\n{{2}}\n\nTap below and our team will help you with pricing, dates, and a custom plan.`,
       footer: brand,
       buttons: [
         { type: 'QUICK_REPLY', text: 'View Packages' },

@@ -22,6 +22,12 @@ const STARTER_JSON = {
     routing_model: { CUSTOM_TRIP_FORM: [] },
     screens: [{ id: 'CUSTOM_TRIP_FORM', title: 'Custom Trip', terminal: true, data: {}, layout: { type: 'SingleColumnLayout', children: [] } }],
   },
+  REVIEW: {
+    version: '7.2',
+    data_api_version: '3.0',
+    routing_model: { REVIEW_FORM: [] },
+    screens: [{ id: 'REVIEW_FORM', title: 'Trip Review', terminal: true, data: {}, layout: { type: 'SingleColumnLayout', children: [] } }],
+  },
   GENERIC: {
     version: '7.2',
     data_api_version: '3.0',
@@ -157,6 +163,7 @@ export default function FlowDetailDrawer({ isOpen, onClose, flow }) {
                   <option value="PACKAGE">Package</option>
                   <option value="PROPERTY">Property</option>
                   <option value="CUSTOM_TRIP">Custom Trip</option>
+                  <option value="REVIEW">Review</option>
                   <option value="GENERIC">Generic</option>
                 </select>
               </label>
