@@ -113,7 +113,8 @@ function buildTemplateVariables(template, customer, context = {}) {
   const agencyName = cleanAgencyName(context.agencyName);
   const featuredItem = context.featuredItem || null;
   const featuredRecord = featuredItem?.record || null;
-  const featuredDetails = context.featuredDetails || (featuredRecord
+  const campaignDescription = sanitizeTemplateParameter(context.campaignDescription || '');
+  const featuredDetails = campaignDescription || context.featuredDetails || (featuredRecord
     ? buildCampaignCarouselCaption(featuredItem.itemType, featuredRecord).replace(/\*/g, '')
     : null);
 
@@ -151,7 +152,7 @@ async function sendReviewRatingPrompt(customer, agencyId) {
       `Please rate your ${customer.destination || 'trip'} experience.`,
       {
         flowId: reviewFlow.metaFlowId,
-        firstScreenId: reviewFlow.firstScreenId || 'REVIEW_FORM',
+        firstScreenId: reviewFlow.firstScreenId || 'RECOMMEND',
         flowCta: 'Write Review',
         flowToken: `review|${agencyId}|${customer.id}|${Date.now()}`,
       },
@@ -404,6 +405,9 @@ async function buildRuntimeCampaignTemplate(campaign, template, agencyId) {
   const runtimeTemplate = template.toJSON ? template.toJSON() : { ...template };
   const agency = await Agency.findByPk(agencyId, { attributes: ['id', 'name'] });
   const agencyName = cleanAgencyName(agency?.name);
+  const campaignDescription = sanitizeTemplateParameter(
+    campaign?.ctaConfig?.description || campaign?.ctaConfig?.campaignDescription || ''
+  );
   const templateType = String(runtimeTemplate.templateType || 'STANDARD').toUpperCase();
   const format = String(campaign.format || 'STANDARD').toUpperCase();
 
@@ -460,29 +464,35 @@ async function buildRuntimeCampaignTemplate(campaign, template, agencyId) {
     return runtimeTemplate;
   }
 
-  if (format === 'SECTION_CTA' && String(runtimeTemplate.headerType || '').toUpperCase() === 'IMAGE') {
+  if (format === 'SECTION_CTA') {
     const featuredItem = await resolveCampaignFeaturedCatalogItem(campaign, agencyId);
     const mediaUrl = getCatalogRecordMediaUrl(featuredItem?.record);
-    if (!mediaUrl) {
+    const headerType = String(runtimeTemplate.headerType || '').toUpperCase();
+    if (headerType === 'IMAGE' && !mediaUrl) {
       throw new Error('CTA campaigns require at least one selected package or property with an image');
     }
-    runtimeTemplate.headerContent = mediaUrl;
-    runtimeTemplate.featuredItem = {
-      itemType: featuredItem.itemType,
-      itemId: featuredItem.record.id,
-      name: featuredItem.record.name,
-      details: buildCampaignCarouselCaption(featuredItem.itemType, featuredItem.record).replace(/\*/g, ''),
-    };
-    runtimeTemplate.sampleVariables = Array.isArray(runtimeTemplate.sampleVariables)
-      ? [...runtimeTemplate.sampleVariables]
-      : [];
-    runtimeTemplate.sampleVariables[1] = runtimeTemplate.featuredItem.details;
-    runtimeTemplate.sampleVariables[2] = runtimeTemplate.featuredItem.name;
-    runtimeTemplate.sampleVariables[3] = agencyName;
-    runtimeTemplate.variableCount = Math.max(getTemplateVariableCount(runtimeTemplate), runtimeTemplate.variableCount || 0);
+    if (headerType === 'IMAGE') {
+      runtimeTemplate.headerContent = mediaUrl;
+    }
+    if (featuredItem?.record) {
+      runtimeTemplate.featuredItem = {
+        itemType: featuredItem.itemType,
+        itemId: featuredItem.record.id,
+        name: featuredItem.record.name,
+        details: campaignDescription || buildCampaignCarouselCaption(featuredItem.itemType, featuredItem.record).replace(/\*/g, ''),
+      };
+      runtimeTemplate.sampleVariables = Array.isArray(runtimeTemplate.sampleVariables)
+        ? [...runtimeTemplate.sampleVariables]
+        : [];
+      runtimeTemplate.sampleVariables[1] = runtimeTemplate.featuredItem.details;
+      runtimeTemplate.sampleVariables[2] = runtimeTemplate.featuredItem.name;
+      runtimeTemplate.sampleVariables[3] = agencyName;
+      runtimeTemplate.variableCount = Math.max(getTemplateVariableCount(runtimeTemplate), runtimeTemplate.variableCount || 0);
+    }
   }
 
   runtimeTemplate.agencyName = agencyName;
+  runtimeTemplate.campaignDescription = campaignDescription;
   return runtimeTemplate;
 }
 
@@ -542,6 +552,7 @@ async function sendToRecipient(recipient, campaign, template, agencyId) {
           },
         } : null,
         featuredDetails: runtimeTemplate.featuredItem?.details,
+        campaignDescription: runtimeTemplate.campaignDescription,
       });
 
       // Campaigns should send the actual approved template so Meta renders

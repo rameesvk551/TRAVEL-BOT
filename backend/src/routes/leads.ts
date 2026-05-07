@@ -16,6 +16,8 @@ const selectedItemSchema = z.object({
   itemId: z.string().uuid(),
 });
 
+const customTripDetailsSchema = z.record(z.any()).optional();
+
 const createLeadSchema = z.object({
   customerId: z.string().uuid().optional(),
   customerName: z.string().min(2).optional(),
@@ -36,6 +38,7 @@ const createLeadSchema = z.object({
   notes: z.string().optional(),
   tags: z.array(z.string().min(1).max(40)).max(12).optional(),
   selectedItems: z.array(selectedItemSchema).max(50).optional(),
+  customTripDetails: customTripDetailsSchema,
   travelStart: z.string().datetime().optional(),
   travelEnd: z.string().datetime().optional(),
 }).refine((data) => data.customerId || data.customerPhone, {
@@ -60,6 +63,7 @@ const updateLeadSchema = z.object({
   lostReason: z.string().optional(),
   tags: z.array(z.string().min(1).max(40)).max(12).optional(),
   selectedItems: z.array(selectedItemSchema).max(50).optional(),
+  customTripDetails: customTripDetailsSchema,
   travelStart: z.string().datetime().nullable().optional(),
   travelEnd: z.string().datetime().nullable().optional(),
 });

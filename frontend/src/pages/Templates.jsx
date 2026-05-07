@@ -1,110 +1,10 @@
 import React, { useState } from 'react';
-import { Plus, Search, MessageSquare, Image as ImageIcon, FileText, CheckCircle, Clock, AlertCircle, RefreshCw, Layers, Video, ArrowRight, Send } from 'lucide-react';
+import { Plus, Search, MessageSquare, Image as ImageIcon, FileText, CheckCircle, Clock, AlertCircle, RefreshCw, Layers } from 'lucide-react';
 import { usePrebuiltTemplates, useAgencyTemplates, useSyncTemplates } from '../hooks/useTemplates';
 import TemplateDetailDrawer from '../components/TemplateDetailDrawer';
 import toast from 'react-hot-toast';
 
-const TEMPLATE_STARTERS = [
-  {
-    id: 'cta-template',
-    label: 'CTA Template',
-    typeLabel: 'Standard with buttons',
-    description: 'Create a publish-ready WhatsApp template with message text and CTA buttons like website, call, or enquiry.',
-    icon: Send,
-    accent: 'bg-sky-50 text-sky-700',
-    seed: {
-      displayName: 'Travel CTA Template',
-      category: 'MARKETING',
-      templateType: 'STANDARD',
-      headerType: 'IMAGE',
-      body: 'Hello {{1}}, explore our latest featured trip.\n\n{{2}}\n\nTap an action below to continue your trip planning.',
-      footer: 'Your travel company',
-      buttons: [
-        { type: 'URL', text: 'View Offers', url: 'https://travelbot.wayon.in/properties' },
-        { type: 'PHONE_NUMBER', text: 'Call Now', phoneNumber: '+91 9876543210' },
-      ],
-      tags: ['cta', 'marketing'],
-    },
-  },
-  {
-    id: 'image-carousel',
-    label: 'Image Carousel',
-    typeLabel: 'Carousel with images',
-    description: 'Publish a card-based template for properties, domestic packages, international packages, or custom trips.',
-    icon: ImageIcon,
-    accent: 'bg-emerald-50 text-emerald-700',
-    seed: {
-      displayName: 'Travel Image Carousel',
-      category: 'MARKETING',
-      templateType: 'CAROUSEL',
-      headerType: 'IMAGE',
-      body: 'Hello {{1}}, browse our featured options below and reply with the one you want details for.',
-      footer: 'WayOn Travel',
-      carouselCards: [
-        {
-          title: 'Featured Property',
-          body: 'Add a hotel, villa, or resort highlight with a public image URL.',
-          mediaType: 'IMAGE',
-          mediaUrl: '',
-          buttons: [
-            { type: 'QUICK_REPLY', text: 'Show Property' },
-            { type: 'QUICK_REPLY', text: 'Enquiry' },
-          ],
-        },
-        {
-          title: 'Featured Package',
-          body: 'Add package highlights, duration, inclusions, or offer hooks for the next card.',
-          mediaType: 'IMAGE',
-          mediaUrl: '',
-          buttons: [
-            { type: 'QUICK_REPLY', text: 'Show Package' },
-            { type: 'QUICK_REPLY', text: 'Custom Trip' },
-          ],
-        },
-      ],
-      tags: ['carousel', 'image'],
-    },
-  },
-  {
-    id: 'video-carousel',
-    label: 'Video Carousel',
-    typeLabel: 'Carousel with videos',
-    description: 'Start a Meta approval draft for video-led property showcases, destination reels, or package teasers.',
-    icon: Video,
-    accent: 'bg-violet-50 text-violet-700',
-    seed: {
-      displayName: 'Travel Video Carousel',
-      category: 'MARKETING',
-      templateType: 'CAROUSEL',
-      headerType: 'IMAGE',
-      body: 'Hello {{1}}, watch the featured trip highlights below and pick the experience you want next.',
-      footer: 'WayOn Travel',
-      carouselCards: [
-        {
-          title: 'Destination Video',
-          body: 'Paste a public Meta-accessible video URL for the first card preview.',
-          mediaType: 'VIDEO',
-          mediaUrl: '',
-          buttons: [
-            { type: 'QUICK_REPLY', text: 'International' },
-            { type: 'QUICK_REPLY', text: 'Custom Trip' },
-          ],
-        },
-        {
-          title: 'Package Teaser',
-          body: 'Use another video card to show itinerary mood, hotel walkthrough, or offer clip.',
-          mediaType: 'VIDEO',
-          mediaUrl: '',
-          buttons: [
-            { type: 'QUICK_REPLY', text: 'Domestic' },
-            { type: 'QUICK_REPLY', text: 'Enquiry' },
-          ],
-        },
-      ],
-      tags: ['carousel', 'video'],
-    },
-  },
-];
+
 
 export default function Templates() {
   const [activeTab, setActiveTab] = useState('All');
@@ -191,45 +91,6 @@ export default function Templates() {
           </button>
         </div>
 
-        <div className="rounded-[var(--radius-lg)] border border-neutral-200 bg-white p-5 shadow-sm">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-            <div>
-              <p className="eyebrow">Publish Starters</p>
-              <h2 className="mt-1 text-xl font-bold text-neutral-900">Choose what you want to publish</h2>
-              <p className="mt-1 text-sm text-neutral-500">Start with the right Meta template shape, preview it immediately, then submit it for approval from the drawer.</p>
-            </div>
-            <p className="text-xs font-medium text-neutral-400">CTA, image carousel, and video carousel</p>
-          </div>
-
-          <div className="mt-5 grid grid-cols-1 gap-4 xl:grid-cols-3">
-            {TEMPLATE_STARTERS.map((starter) => {
-              const Icon = starter.icon;
-              return (
-                <button
-                  key={starter.id}
-                  type="button"
-                  onClick={() => handleNewTemplate(starter.seed)}
-                  className="group rounded-xl border border-neutral-200 bg-neutral-50/70 p-4 text-left transition hover:border-neutral-300 hover:bg-white hover:shadow-sm"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className={`flex h-11 w-11 items-center justify-center rounded-xl ${starter.accent}`}>
-                      <Icon className="h-5 w-5" />
-                    </div>
-                    <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-bold text-neutral-500 ring-1 ring-neutral-200">
-                      {starter.typeLabel}
-                    </span>
-                  </div>
-                  <h3 className="mt-4 text-base font-bold text-neutral-900">{starter.label}</h3>
-                  <p className="mt-2 text-sm leading-relaxed text-neutral-500">{starter.description}</p>
-                  <div className="mt-4 flex items-center gap-2 text-sm font-bold text-neutral-900">
-                    Create and preview
-                    <ArrowRight className="h-4 w-4 transition group-hover:translate-x-0.5" />
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        </div>
 
         <div className="flex flex-col gap-2 rounded-[var(--radius-md)] border border-neutral-200 bg-white p-2 shadow-sm sm:flex-row sm:items-center sm:gap-4">
           <div className="flex-1 relative">

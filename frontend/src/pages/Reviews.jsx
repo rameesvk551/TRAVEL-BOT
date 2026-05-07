@@ -16,7 +16,7 @@ export default function Reviews() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         {/* Left Panel - Avg Rating */}
         <div className="lg:col-span-2 section-card p-6">
-           <div className="grid grid-cols-2 gap-8 items-center h-full">
+           <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 sm:gap-8 items-center h-full">
               <div>
                  <p className="eyebrow mb-2">Average Rating</p>
                  <h1 className="text-[4rem] font-extrabold text-neutral-900 leading-none mb-2 tracking-tighter">
@@ -88,19 +88,19 @@ export default function Reviews() {
         </div>
       </div>
 
-      <div className="flex items-center justify-between pt-2">
-        <div className="flex bg-neutral-100 p-1 rounded-[var(--radius-md)] gap-1 border border-neutral-200">
+      <div className="flex items-center justify-between pt-2 gap-3">
+        <div className="flex bg-neutral-100 p-1 rounded-[var(--radius-md)] gap-1 border border-neutral-200 overflow-x-auto hide-scrollbar min-w-0">
           {['All Reviews', '5 Stars', '4 Stars', '3 Stars', 'Negative'].map(f => (
             <button 
               key={f}
               onClick={() => setFilter(f)}
-              className={`px-5 py-2 rounded-[var(--radius-sm)] text-xs font-bold transition-all tracking-wide ${filter === f ? 'bg-neutral-900 text-white shadow-sm' : 'text-neutral-500 hover:text-neutral-800 hover:bg-white'}`}
+              className={`px-4 sm:px-5 py-2 rounded-[var(--radius-sm)] text-xs font-bold transition-all tracking-wide whitespace-nowrap ${filter === f ? 'bg-neutral-900 text-white shadow-sm' : 'text-neutral-500 hover:text-neutral-800 hover:bg-white'}`}
             >
               {f}
             </button>
           ))}
         </div>
-        <button className="shell-button-ghost text-xs font-bold tracking-widest uppercase">
+        <button className="shell-button-ghost text-xs font-bold tracking-widest uppercase hidden sm:flex">
           <Filter className="w-4 h-4" /> Advanced Filters
         </button>
       </div>
@@ -130,9 +130,9 @@ export default function Reviews() {
                const ratingColor = r.rating >= 4 ? 'fill-amber-400 text-amber-400' : r.rating >= 3 ? 'fill-amber-300 text-amber-300' : 'fill-rose-400 text-rose-400';
 
                return (
-                  <div key={r.id} className="section-card p-6 flex gap-8 hover:shadow-lg hover:shadow-black/[0.04] transition-all group cursor-pointer">
+                  <div key={r.id} className="section-card p-5 sm:p-6 flex flex-col sm:flex-row gap-4 sm:gap-8 hover:shadow-lg hover:shadow-black/[0.04] transition-all group cursor-pointer">
                      {/* Author info (Left) */}
-                     <div className="w-48 flex-shrink-0 flex gap-4">
+                     <div className="sm:w-48 flex-shrink-0 flex gap-4">
                         <div className="w-10 h-10 bg-neutral-100 text-neutral-600 rounded-full flex items-center justify-center font-bold text-xs tracking-wider ring-1 ring-neutral-200">
                            {initials}
                         </div>

@@ -71,11 +71,13 @@ async function createOutboundMessage(context, payload) {
 
 async function markMessageSent(message, response) {
   const waMessageId = response?.data?.messages?.[0]?.id
+    || response?.data?.providerMessageId
+    || response?.data?.provider_message_id
+    || response?.data?.data?.providerMessageId
+    || response?.data?.data?.provider_message_id
     || response?.data?.id
     || response?.data?.data?.messageId
-    || response?.data?.data?.providerMessageId
     || response?.data?.messageId
-    || response?.data?.providerMessageId
     || null;
   if (waMessageId) {
     await message.update({ waMessageId });
@@ -980,12 +982,24 @@ async function sendCatalogMessage(phone, body, catalogId, productIds, context, o
   }
 }
 
-async function updateMessageStatus(waMessageId, newStatus) {
+function getStatusErrorMessage(statusEvent = {}) {
+  const errors = Array.isArray(statusEvent.errors) ? statusEvent.errors : [];
+  if (!errors.length) return null;
+
+  return errors.map((error) => {
+    const code = error.code ? `${error.code}: ` : '';
+    const message = error.message || error.title || error.error_data?.details || 'Webhook reported failure';
+    return `${code}${message}`;
+  }).join('; ').slice(0, 500);
+}
+
+async function updateMessageStatus(waMessageId, newStatus, statusEvent = {}) {
   if (!waMessageId) return;
 
   const statusMap = {
     delivered: 'DELIVERED',
     read: 'READ',
+    played: 'READ',
     failed: 'FAILED',
     sent: 'SENT',
   };
@@ -1006,6 +1020,7 @@ async function updateMessageStatus(waMessageId, newStatus) {
     recipientUpdates.readAt = new Date();
   } else if (status === 'FAILED') {
     recipientUpdates.status = 'FAILED';
+    recipientUpdates.errorMessage = getStatusErrorMessage(statusEvent) || 'Webhook reported failure';
   }
 
   if (Object.keys(recipientUpdates).length) {
@@ -1020,16 +1035,29 @@ async function updateMessageStatus(waMessageId, newStatus) {
 async function refreshCampaignStats(campaignId) {
   if (!campaignId) return;
 
-  const [sent, delivered, read, replied, failed] = await Promise.all([
+  const [sent, delivered, read, replied, failed, total] = await Promise.all([
     CampaignRecipient.count({ where: { campaignId, status: 'SENT' } }),
     CampaignRecipient.count({ where: { campaignId, status: 'DELIVERED' } }),
     CampaignRecipient.count({ where: { campaignId, status: 'READ' } }),
     CampaignRecipient.count({ where: { campaignId, status: 'REPLIED' } }),
     CampaignRecipient.count({ where: { campaignId, status: 'FAILED' } }),
+    CampaignRecipient.count({ where: { campaignId } }),
   ]);
 
+  const campaignUpdates = { sent, delivered, read, replied, failed };
+  const campaign = await Campaign.findByPk(campaignId);
+
+  if (campaign && !['DRAFT', 'SCHEDULED', 'CANCELLED'].includes(campaign.status)) {
+    const activeCount = sent + delivered + read + replied;
+    if (total > 0 && failed >= total) {
+      campaignUpdates.status = 'FAILED';
+    } else if (activeCount > 0 && campaign.status === 'FAILED') {
+      campaignUpdates.status = 'SENT';
+    }
+  }
+
   await Campaign.update(
-    { sent, delivered, read, replied, failed },
+    campaignUpdates,
     { where: { id: campaignId } }
   );
 }
@@ -1237,6 +1265,25 @@ function buildTemplateComponents(template) {
   return components;
 }
 
+function stripTemplateButtonRouting(button = {}) {
+  const { route, action, routing, ...metaButton } = button || {};
+  return metaButton;
+}
+
+function stripTemplateRouting(template) {
+  const source = template?.get ? template.get({ plain: true }) : template;
+  return {
+    ...source,
+    buttons: Array.isArray(source.buttons) ? source.buttons.map(stripTemplateButtonRouting) : [],
+    carouselCards: Array.isArray(source.carouselCards)
+      ? source.carouselCards.map((card) => ({
+          ...card,
+          buttons: Array.isArray(card.buttons) ? card.buttons.map(stripTemplateButtonRouting) : [],
+        }))
+      : [],
+  };
+}
+
 function countTemplateVariables(text = '') {
   return new Set(String(text).match(/{{\s*\d+\s*}}/g) || []).size;
 }
@@ -1400,36 +1447,37 @@ async function upsertTemplateWithMeta(agencyId, template, { mode = 'upsert' } = 
 
   if (canUseMarketingOs(channel)) {
     const tenantToken = await marketingOsPartnerService.getTenantToken(channel.marketingOsTenantId);
-    const components = buildTemplateComponents(template);
+    const providerTemplate = stripTemplateRouting(template);
+    const components = buildTemplateComponents(providerTemplate);
     const payload = {
-      id: template.id,
-      name: template.name,
-      templateName: template.name,
-      template_name: template.name,
-      category: template.category,
+      id: providerTemplate.id,
+      name: providerTemplate.name,
+      templateName: providerTemplate.name,
+      template_name: providerTemplate.name,
+      category: providerTemplate.category,
       useCase: 'CUSTOM',
       use_case: 'CUSTOM',
-      language: template.language || 'en',
-      status: template.status || 'DRAFT',
-      headerType: template.headerType || 'NONE',
-      header_type: template.headerType || 'NONE',
-      headerContent: template.headerContent || null,
-      header_content: template.headerContent || null,
-      body: template.body,
-      bodyContent: template.body,
-      body_content: template.body,
-      footer: template.footer || null,
-      footerContent: template.footer || null,
-      footer_content: template.footer || null,
-      buttons: template.buttons || [],
-      templateType: template.templateType || 'STANDARD',
-      template_type: template.templateType || 'STANDARD',
-      carouselCards: template.carouselCards || [],
-      carousel_cards: template.carouselCards || [],
+      language: providerTemplate.language || 'en',
+      status: providerTemplate.status || 'DRAFT',
+      headerType: providerTemplate.headerType || 'NONE',
+      header_type: providerTemplate.headerType || 'NONE',
+      headerContent: providerTemplate.headerContent || null,
+      header_content: providerTemplate.headerContent || null,
+      body: providerTemplate.body,
+      bodyContent: providerTemplate.body,
+      body_content: providerTemplate.body,
+      footer: providerTemplate.footer || null,
+      footerContent: providerTemplate.footer || null,
+      footer_content: providerTemplate.footer || null,
+      buttons: providerTemplate.buttons || [],
+      templateType: providerTemplate.templateType || 'STANDARD',
+      template_type: providerTemplate.templateType || 'STANDARD',
+      carouselCards: providerTemplate.carouselCards || [],
+      carousel_cards: providerTemplate.carouselCards || [],
       components,
-      variables: template.sampleVariables || [],
-      triggerEvents: template.tags || [],
-      trigger_events: template.tags || [],
+      variables: providerTemplate.sampleVariables || [],
+      triggerEvents: providerTemplate.tags || [],
+      trigger_events: providerTemplate.tags || [],
     };
 
     if (mode === 'create') {

@@ -46,6 +46,7 @@ const Property = require('./Property')(sequelize);
 const InstagramAutomation = require('./InstagramAutomation')(sequelize);
 const InstagramAutomationLog = require('./InstagramAutomationLog')(sequelize);
 const WhatsAppFlow = require('./WhatsAppFlow')(sequelize);
+const ServiceRoutingRule = require('./ServiceRoutingRule')(sequelize);
 
 // Marketing models
 const MessageTemplate = require('./MessageTemplate')(sequelize);
@@ -79,6 +80,7 @@ Agency.hasMany(Property, { foreignKey: 'agencyId', as: 'properties' });
 Agency.hasMany(InstagramAutomation, { foreignKey: 'agencyId', as: 'instagramAutomations' });
 Agency.hasMany(InstagramAutomationLog, { foreignKey: 'agencyId', as: 'instagramAutomationLogs' });
 Agency.hasMany(WhatsAppFlow, { foreignKey: 'agencyId', as: 'whatsappFlows' });
+Agency.hasMany(ServiceRoutingRule, { foreignKey: 'agencyId', as: 'serviceRoutingRules' });
 
 // Property belongs to Agency
 Property.belongsTo(Agency, { foreignKey: 'agencyId', as: 'agency' });
@@ -90,6 +92,7 @@ Agent.hasMany(Lead, { foreignKey: 'assignedAgentId', as: 'assignedLeads' });
 Agent.hasMany(Message, { foreignKey: 'agentId', as: 'sentMessages' });
 Agent.hasMany(FollowUp, { foreignKey: 'agentId', as: 'followUps' });
 Agent.hasMany(LeadNote, { foreignKey: 'agentId', as: 'leadNotes' });
+Agent.hasMany(ServiceRoutingRule, { foreignKey: 'agentId', as: 'serviceRoutingRules' });
 
 // RefreshToken belongs to Agent
 RefreshToken.belongsTo(Agent, { foreignKey: 'agentId', as: 'agent' });
@@ -167,6 +170,8 @@ ScheduledJob.belongsTo(Agency, { foreignKey: 'agencyId', as: 'agency' });
 // MessageTemplate
 MessageTemplate.belongsTo(Agency, { foreignKey: 'agencyId', as: 'agency' });
 WhatsAppFlow.belongsTo(Agency, { foreignKey: 'agencyId', as: 'agency' });
+ServiceRoutingRule.belongsTo(Agency, { foreignKey: 'agencyId', as: 'agency' });
+ServiceRoutingRule.belongsTo(Agent, { foreignKey: 'agentId', as: 'agent' });
 
 // Campaign
 Campaign.belongsTo(Agency, { foreignKey: 'agencyId', as: 'agency' });
@@ -242,4 +247,5 @@ module.exports = {
   InstagramAutomation,
   InstagramAutomationLog,
   WhatsAppFlow,
+  ServiceRoutingRule,
 };

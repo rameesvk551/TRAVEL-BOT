@@ -12,6 +12,16 @@ const CALLBACK_SECRET = process.env.MARKETING_OS_WEBHOOK_SECRET || '';
 const WEBHOOK_APP_SECRET = process.env.WEBHOOK_APP_SECRET || '';
 const SESSION_SECRET = process.env.MARKETING_OS_SESSION_SECRET || process.env.JWT_SECRET || 'travelbot_marketing_os_session_secret';
 const INTERNAL_BOT_WEBHOOK_URL = process.env.INTERNAL_BOT_WEBHOOK_URL || `http://127.0.0.1:${process.env.BOT_PORT || 3001}/webhook`;
+const DEFAULT_WHATSAPP_MENU_LABELS = {
+  visaTicketing: 'Visa & Ticketing',
+  planTrip: 'Plan a Trip',
+  staycations: 'Staycations',
+  flight: 'Flight',
+  rail: 'Rail',
+  domestic: 'Domestic',
+  international: 'International',
+  customTrip: 'Custom Trip',
+};
 
 const marketingOsCallbackSchema = z.object({
   agencyId: z.string().uuid(),
@@ -81,6 +91,18 @@ function serializeWhatsAppConnection(agency) {
       lastSyncedAt: agency.whatsappTripFlowLastSyncedAt || null,
     },
   };
+}
+
+function normalizeWhatsAppMenuLabels(labels = {}) {
+  if (!labels || typeof labels !== 'object' || Array.isArray(labels)) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.keys(DEFAULT_WHATSAPP_MENU_LABELS)
+      .map((key) => [key, String(labels[key] || '').trim().slice(0, 20)])
+      .filter(([, value]) => value.length > 0)
+  );
 }
 
 function mapMarketingOsStatus(status) {
@@ -255,6 +277,14 @@ async function updateCurrentAgency(agencyId, updates) {
   const payload = { ...updates };
   if (payload.razorpayKeySecret) {
     payload.razorpayKeySecret = encrypt(payload.razorpayKeySecret);
+  }
+
+  if (Object.prototype.hasOwnProperty.call(payload, 'welcomeMessage')) {
+    payload.welcomeMessage = String(payload.welcomeMessage || '').trim() || null;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(payload, 'whatsappMenuLabels')) {
+    payload.whatsappMenuLabels = normalizeWhatsAppMenuLabels(payload.whatsappMenuLabels);
   }
 
   if (

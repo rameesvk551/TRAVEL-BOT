@@ -130,14 +130,20 @@ async function buildPackageOptions(agencyId, category, limit = PACKAGE_BROWSE_LI
 async function buildPropertyOptions(agencyId, limit = PROPERTY_BROWSE_LIMIT) {
   if (!agencyId) return [];
 
-  const properties = await Property.findAll({
-    where: {
-      agencyId,
-      isActive: true,
-    },
-    order: [['createdAt', 'DESC']],
-    limit,
-  });
+  const properties = await findPropertyRecords(agencyId, {}, limit);
+  return mapPropertyOptions(properties);
+}
+
+function mapPropertyOptions(properties) {
+  if (!properties.length) {
+    return [{
+      id: '__no_results',
+      title: 'No matching stays',
+      description: 'Try another location or contact our team for more options.',
+      metadata: 'No results',
+      image: '',
+    }];
+  }
 
   return properties.map((property) => ({
     id: property.id,
@@ -146,6 +152,58 @@ async function buildPropertyOptions(agencyId, limit = PROPERTY_BROWSE_LIMIT) {
     metadata: escapeMarkdown([property.propertyType || 'Property', property.location || ''].filter(Boolean).join(' - ')).slice(0, 20),
     image: property.imageUrl || '',
   }));
+}
+
+async function findPropertyRecords(agencyId, filters = {}, limit = PROPERTY_BROWSE_LIMIT) {
+  if (!agencyId) return [];
+
+  const properties = await Property.findAll({
+    where: {
+      agencyId,
+      isActive: true,
+    },
+    order: [['createdAt', 'DESC']],
+  });
+
+  const locationFilter = String(filters.propertyLocation || filters.location || '').trim().toLowerCase();
+  return properties
+    .filter((property) => {
+      if (!locationFilter || locationFilter === 'all') return true;
+      return String(property.location || '').trim().toLowerCase() === locationFilter;
+    })
+    .slice(0, limit);
+}
+
+async function buildPropertyLocationOptions(agencyId) {
+  if (!agencyId) return [{ id: 'ALL', title: 'All locations' }];
+
+  const properties = await Property.findAll({
+    where: {
+      agencyId,
+      isActive: true,
+    },
+    attributes: ['location'],
+    order: [['location', 'ASC']],
+  });
+
+  const seen = new Set();
+  const locations = [];
+  for (const property of properties) {
+    const location = escapeMarkdown(property.location || '').trim();
+    if (!location) continue;
+    const key = location.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    locations.push({
+      id: location,
+      title: location.slice(0, 30),
+    });
+  }
+
+  return [
+    { id: 'ALL', title: 'All locations' },
+    ...locations,
+  ];
 }
 
 function getNestedFlowBody(payload = {}) {
@@ -182,6 +240,9 @@ function buildEncryptedResponse(decryptedBody = {}) {
       property_options: Array.isArray(responseData.property_options) && responseData.property_options.length > 0
         ? responseData.property_options
         : [],
+      property_locations: Array.isArray(responseData.property_locations) && responseData.property_locations.length > 0
+        ? responseData.property_locations
+        : [{ id: 'ALL', title: 'All locations' }],
       screen: decryptedBody?.screen || 'PACKAGE_SELECTOR',
       version: '3.0',
     },
@@ -219,13 +280,39 @@ async function handleFlowRequest(payload = {}) {
   const agencyId = decryptedBody?.agency_id || decryptedBody?.agencyId || tokenInfo.agencyId;
 
   if (agencyId) {
-    const [agency, packageOptions, propertyOptions] = await Promise.all([
+    const [agency, packageOptions, propertyOptions, propertyLocations] = await Promise.all([
       Agency.findOne({ where: { id: agencyId } }),
       buildPackageOptions(agencyId, tokenInfo.category, PACKAGE_BROWSE_LIMIT),
       buildPropertyOptions(agencyId, PROPERTY_BROWSE_LIMIT),
+      buildPropertyLocationOptions(agencyId),
     ]);
 
     if (agency) {
+      const action = String(decryptedBody?.action || '').toUpperCase();
+      const screen = String(decryptedBody?.screen || '').toUpperCase();
+      const data = decryptedBody?.data && typeof decryptedBody.data === 'object' ? decryptedBody.data : {};
+
+      if (tokenInfo.type === 'PROPERTY' && action === 'DATA_EXCHANGE' && screen === 'PROPERTY_FILTER') {
+        const filteredProperties = await findPropertyRecords(agencyId, data, PROPERTY_BROWSE_LIMIT);
+        const propertyLocation = String(data.propertyLocation || data.location || 'ALL').trim() || 'ALL';
+        const responsePayload = {
+          screen: 'PROPERTY_SELECTOR',
+          data: {
+            propertyLocation: propertyLocation.toLowerCase() === 'all' ? 'All locations' : propertyLocation,
+            checkInDate: String(data.checkInDate || data.check_in_date || '').trim(),
+            checkOutDate: String(data.checkOutDate || data.check_out_date || '').trim(),
+            guests: String(data.guests || data.travellers || '').trim(),
+            property_options: mapPropertyOptions(filteredProperties),
+          },
+        };
+
+        return {
+          statusCode: 200,
+          isEncrypted: true,
+          body: encryptFlowResponse(responsePayload, aesKeyBuffer, initialVectorBuffer),
+        };
+      }
+
       const category = tokenInfo.category || normalizeCategory(decryptedBody?.data?.category || decryptedBody?.screen || '') || 'DOMESTIC';
       const isPropertyFlow = tokenInfo.type === 'PROPERTY'
         || String(decryptedBody?.screen || '').toUpperCase().includes('PROPERTY')
@@ -234,6 +321,7 @@ async function handleFlowRequest(payload = {}) {
         data: {
           ...(isPropertyFlow
             ? {
+                property_locations: propertyLocations,
                 property_options: propertyOptions,
               }
             : {

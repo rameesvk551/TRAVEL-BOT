@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
    X, Save, Copy, Eye, Edit3, MessageSquare, Image as ImageIcon,
    Trash2, Plus, GripVertical, Check, ExternalLink, Smartphone,
@@ -14,6 +14,22 @@ import {
 } from '../hooks/useTemplates';
 import { templatesApi } from '../api/templatesApi';
 import toast from 'react-hot-toast';
+
+const BUTTON_ROUTE_OPTIONS = [
+   { value: '', label: 'No route' },
+   { value: 'VIEW_PACKAGES', label: 'View Packages' },
+   { value: 'VIEW_PROPERTIES', label: 'View Properties' },
+   { value: 'CUSTOM_TRIP', label: 'Custom Trip' },
+];
+
+const VARIABLE_PRESETS = [
+   { position: 1, label: 'Name', token: '{{1}}', sample: 'Rahul' },
+   { position: 2, label: 'Trip Description', token: '{{2}}', sample: 'Kashmir 4N 5D - hotels, transfers, sightseeing, from Rs 39,999/person' },
+   { position: 3, label: 'Trip Name', token: '{{3}}', sample: 'Kashmir Family Escape' },
+   { position: 4, label: 'Agency Name', token: '{{4}}', sample: 'Wayon Travels' },
+];
+
+const normalizeSampleVariables = (value) => (Array.isArray(value) ? [...value] : []);
 
 export default function TemplateDetailDrawer({
    template: initialTemplate,
@@ -46,6 +62,7 @@ export default function TemplateDetailDrawer({
       footer: '',
       buttons: [],
       carouselCards: [],
+      sampleVariables: [],
       icon: '💬',
       tags: []
    });
@@ -55,6 +72,7 @@ export default function TemplateDetailDrawer({
    const usePrebuiltMutation = useUsePrebuiltTemplate();
    const deleteMutation = useDeleteTemplate();
    const submitMutation = useSubmitTemplate();
+   const bodyTextareaRef = useRef(null);
 
    useEffect(() => {
       if (initialTemplate) {
@@ -68,6 +86,7 @@ export default function TemplateDetailDrawer({
             footer: initialTemplate.footer || '',
             buttons: initialTemplate.buttons || [],
             carouselCards: initialTemplate.carouselCards || [],
+            sampleVariables: normalizeSampleVariables(initialTemplate.sampleVariables),
             icon: initialTemplate.icon || '????',
             tags: initialTemplate.tags || []
          });
@@ -83,6 +102,7 @@ export default function TemplateDetailDrawer({
             footer: draftSeed?.footer || '',
             buttons: draftSeed?.buttons || [],
             carouselCards: draftSeed?.carouselCards || [],
+            sampleVariables: normalizeSampleVariables(draftSeed?.sampleVariables),
             icon: draftSeed?.icon || '????',
             tags: draftSeed?.tags || []
          });
@@ -186,6 +206,35 @@ export default function TemplateDetailDrawer({
 
    const isPending = createMutation.isPending || updateMutation.isPending || usePrebuiltMutation.isPending || submitMutation.isPending || !!uploadingMediaKey;
    const isCarousel = String(formData.templateType || '').toUpperCase() === 'CAROUSEL';
+   const setSampleVariable = (position, sample) => {
+      setFormData((current) => {
+         const sampleVariables = normalizeSampleVariables(current.sampleVariables);
+         sampleVariables[position - 1] = sample;
+         return { ...current, sampleVariables };
+      });
+   };
+   const insertBodyVariable = (preset) => {
+      let nextCursor = 0;
+      setFormData((current) => {
+         const body = String(current.body || '');
+         const textarea = bodyTextareaRef.current;
+         const start = textarea?.selectionStart ?? body.length;
+         const end = textarea?.selectionEnd ?? start;
+         const nextBody = `${body.slice(0, start)}${preset.token}${body.slice(end)}`;
+         const sampleVariables = normalizeSampleVariables(current.sampleVariables);
+         sampleVariables[preset.position - 1] = sampleVariables[preset.position - 1] || preset.sample;
+         nextCursor = start + preset.token.length;
+         return { ...current, body: nextBody, sampleVariables };
+      });
+      window.setTimeout(() => {
+         bodyTextareaRef.current?.focus();
+         bodyTextareaRef.current?.setSelectionRange(nextCursor, nextCursor);
+      }, 0);
+   };
+   const renderPreviewText = (text) => String(text || '').replace(/{{\s*(\d+)\s*}}/g, (_match, position) => {
+      const index = Number(position) - 1;
+      return formData.sampleVariables?.[index] || VARIABLE_PRESETS[index]?.sample || `Sample ${position}`;
+   });
    const isValidHttpUrl = (value) => {
       try {
          const parsed = new URL(String(value || '').trim());
@@ -509,15 +558,46 @@ export default function TemplateDetailDrawer({
                      <div>
                         <label className="block text-xs font-bold text-neutral-500 mb-1 flex items-center justify-between">
                            <span>Body Message</span>
-                           <span className="text-[10px] text-neutral-400 font-normal italic">Use {'{{1}}'}, {'{{2}}'} for variables</span>
+                           <span className="text-[10px] text-neutral-400 font-normal italic">Meta variables use numbered tokens</span>
                         </label>
+                        <div className="mb-2 flex flex-wrap gap-2">
+                           {VARIABLE_PRESETS.map((preset) => (
+                              <button
+                                 key={preset.token}
+                                 type="button"
+                                 onClick={() => insertBodyVariable(preset)}
+                                 className="inline-flex items-center gap-1.5 rounded border border-neutral-200 bg-white px-2.5 py-1.5 text-[11px] font-bold text-neutral-600 transition-colors hover:border-neutral-400 hover:text-neutral-900"
+                                 title={`Insert ${preset.label}`}
+                              >
+                                 <Hash className="h-3 w-3" />
+                                 {preset.token} {preset.label}
+                              </button>
+                           ))}
+                        </div>
                         <textarea
+                           ref={bodyTextareaRef}
                            rows={6}
                            value={formData.body}
                            onChange={e => setFormData({ ...formData, body: e.target.value })}
                            placeholder="Type your message here..."
                            className="shell-input-rect bg-white py-3 resize-none font-sans leading-relaxed"
                         />
+                        <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                           {VARIABLE_PRESETS.slice(0, 2).map((preset) => (
+                              <label key={preset.token} className="block">
+                                 <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-neutral-400">
+                                    Sample for {preset.token} {preset.label}
+                                 </span>
+                                 <input
+                                    type="text"
+                                    value={formData.sampleVariables?.[preset.position - 1] || ''}
+                                    onChange={(event) => setSampleVariable(preset.position, event.target.value)}
+                                    placeholder={preset.sample}
+                                    className="w-full rounded border border-neutral-200 bg-white px-3 py-2 text-xs focus:outline-none"
+                                 />
+                              </label>
+                           ))}
+                        </div>
                      </div>
 
                      <div>
@@ -539,7 +619,7 @@ export default function TemplateDetailDrawer({
                            <h3 className="text-sm font-bold text-neutral-700 uppercase tracking-wider">Buttons</h3>
                         </div>
                         <button
-                           onClick={() => setFormData({ ...formData, buttons: [...formData.buttons, { type: 'QUICK_REPLY', text: '' }] })}
+                           onClick={() => setFormData({ ...formData, buttons: [...formData.buttons, { type: 'QUICK_REPLY', text: '', route: '' }] })}
                            className="p-1 px-2 text-[10px] bg-neutral-900 text-white rounded font-bold hover:bg-neutral-800 transition-colors"
                         >
                            + Add Button
@@ -559,6 +639,7 @@ export default function TemplateDetailDrawer({
                                     newBtns[idx].type = e.target.value;
                                     if (e.target.value !== 'URL') newBtns[idx].url = '';
                                     if (e.target.value !== 'PHONE_NUMBER') newBtns[idx].phoneNumber = '';
+                                    if (e.target.value !== 'QUICK_REPLY') newBtns[idx].route = '';
                                     setFormData({ ...formData, buttons: newBtns });
                                  }}
                                  className="w-full rounded border border-neutral-200 bg-white px-2 py-1.5 text-xs focus:outline-none focus:ring-0 sm:w-32"
@@ -578,6 +659,21 @@ export default function TemplateDetailDrawer({
                                  placeholder="Button Text"
                                  className="flex-1 bg-white border border-neutral-200 rounded px-3 py-1.5 text-xs focus:ring-0 focus:outline-none"
                               />
+                              {btn.type === 'QUICK_REPLY' && (
+                                 <select
+                                    value={btn.route || ''}
+                                    onChange={e => {
+                                       const newBtns = [...formData.buttons];
+                                       newBtns[idx].route = e.target.value;
+                                       setFormData({ ...formData, buttons: newBtns });
+                                    }}
+                                    className="w-full rounded border border-neutral-200 bg-white px-2 py-1.5 text-xs focus:outline-none focus:ring-0 sm:w-40"
+                                 >
+                                    {BUTTON_ROUTE_OPTIONS.map((option) => (
+                                       <option key={option.value || 'none'} value={option.value}>{option.label}</option>
+                                    ))}
+                                 </select>
+                              )}
                               {btn.type === 'URL' && (
                                  <input
                                     type="url"
@@ -727,11 +823,11 @@ export default function TemplateDetailDrawer({
                                           {formData.body.split('\n').map((line, i) => (
                                              <React.Fragment key={i}>
                                                 {line.split(/(\*.*?\*|_.*?_|~.*?~|`.*?`)/).map((part, j) => {
-                                                   if (part.startsWith('*') && part.endsWith('*')) return <strong key={j}>{part.slice(1, -1)}</strong>;
-                                                   if (part.startsWith('_') && part.endsWith('_')) return <em key={j}>{part.slice(1, -1)}</em>;
-                                                   if (part.startsWith('~') && part.endsWith('~')) return <del key={j}>{part.slice(1, -1)}</del>;
-                                                   if (part.startsWith('`') && part.endsWith('`')) return <code key={j} className="bg-black/5 px-1 rounded">{part.slice(1, -1)}</code>;
-                                                   return part.replace(/{{[1-9]}}/g, '___');
+                                                   if (part.startsWith('*') && part.endsWith('*')) return <strong key={j}>{renderPreviewText(part.slice(1, -1))}</strong>;
+                                                   if (part.startsWith('_') && part.endsWith('_')) return <em key={j}>{renderPreviewText(part.slice(1, -1))}</em>;
+                                                   if (part.startsWith('~') && part.endsWith('~')) return <del key={j}>{renderPreviewText(part.slice(1, -1))}</del>;
+                                                   if (part.startsWith('`') && part.endsWith('`')) return <code key={j} className="bg-black/5 px-1 rounded">{renderPreviewText(part.slice(1, -1))}</code>;
+                                                   return renderPreviewText(part);
                                                 })}
                                                 {i < formData.body.split('\n').length - 1 && <br />}
                                              </React.Fragment>

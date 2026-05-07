@@ -110,67 +110,56 @@ export default function Packages() {
   return (
     <div className="w-full space-y-6 page-enter">
       {/* ── Top Header Bar ── */}
-      <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-neutral-900 tracking-tight">Packages</h1>
-          <p className="text-sm text-neutral-500 mt-0.5">Browse and manage all your travel packages</p>
+          <h1 className="text-xl font-bold text-neutral-900 tracking-tight md:text-2xl">Packages</h1>
+          <p className="text-xs text-neutral-500 mt-0.5 md:text-sm">Browse and manage all your travel packages</p>
         </div>
 
-        <div className="flex items-center gap-3 flex-wrap">
-          {/* Search Bar */}
-          <div className="relative flex items-center">
+        <div className="flex flex-col gap-2 w-full md:w-auto md:flex-row md:items-center md:gap-3">
+          <div className="relative flex items-center w-full md:w-auto">
             <MagnifyingGlassIcon className="absolute left-3.5 h-4 w-4 text-neutral-400" />
             <input
               value={search}
               onChange={(e) => { setSearch(e.target.value); setCurrentPage(1); }}
               placeholder="Search by package, destination, or category"
-              className="w-[300px] rounded-xl border border-neutral-200 bg-white py-2.5 pl-10 pr-4 text-sm text-neutral-700 outline-none transition placeholder:text-neutral-400 focus:border-emerald-300 focus:ring-2 focus:ring-emerald-50"
+              className="w-full rounded-xl border border-neutral-200 bg-white py-2.5 pl-10 pr-4 text-sm text-neutral-700 outline-none transition placeholder:text-neutral-400 focus:border-emerald-300 focus:ring-2 focus:ring-emerald-50 md:w-[300px]"
             />
           </div>
-
-          {/* Add Package Button */}
           {canManagePackages && (
-            <button
-              type="button"
-              onClick={() => navigate('/packages/new')}
-              className="listing-add-button"
-            >
-              <PlusIcon className="h-4 w-4" />
-              New Package
+            <button type="button" onClick={() => navigate('/packages/new')} className="listing-add-button w-full justify-center md:w-auto">
+              <PlusIcon className="h-4 w-4" /> New Package
             </button>
           )}
         </div>
       </div>
 
       {/* ── Filter Tabs + Sort Bar ── */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-2 flex-wrap">
+      <div className="flex flex-col gap-3">
+        <div className="flex items-center gap-2 overflow-x-auto hide-scrollbar">
           {FILTER_TABS.map((tab) => (
             <button
               key={tab.key}
               type="button"
               onClick={() => handleFilterChange(setActiveTab)(tab.key)}
-              className={`listing-filter-tab ${activeTab === tab.key ? 'listing-filter-tab-active' : ''}`}
+              className={`listing-filter-tab shrink-0 ${activeTab === tab.key ? 'listing-filter-tab-active' : ''}`}
             >
               {tab.label}
             </button>
           ))}
-
-          {/* More Filters */}
           <button
             type="button"
             onClick={() => setShowMoreFilters((prev) => !prev)}
-            className="listing-filter-tab flex items-center gap-1.5"
+            className="listing-filter-tab flex items-center gap-1.5 shrink-0"
           >
             <AdjustmentsHorizontalIcon className="h-3.5 w-3.5" />
             More Filters
           </button>
         </div>
 
-        <div className="flex items-center gap-3">
-          {/* Sort */}
+        <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2">
-            <span className="text-xs font-medium text-neutral-400">Short by</span>
+            <span className="text-xs font-medium text-neutral-400">Sort by</span>
             <select
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value)}
@@ -182,20 +171,11 @@ export default function Packages() {
             </select>
           </div>
 
-          {/* View Toggle */}
           <div className="hidden md:flex items-center gap-0.5 rounded-xl border border-neutral-200 p-0.5 bg-white">
-            <button
-              type="button"
-              onClick={() => setViewMode('grid')}
-              className={`listing-view-toggle ${viewMode === 'grid' ? 'listing-view-toggle-active' : ''}`}
-            >
+            <button type="button" onClick={() => setViewMode('grid')} className={`listing-view-toggle ${viewMode === 'grid' ? 'listing-view-toggle-active' : ''}`}>
               <Squares2X2Icon className="h-4 w-4" />
             </button>
-            <button
-              type="button"
-              onClick={() => setViewMode('list')}
-              className={`listing-view-toggle ${viewMode === 'list' ? 'listing-view-toggle-active' : ''}`}
-            >
+            <button type="button" onClick={() => setViewMode('list')} className={`listing-view-toggle ${viewMode === 'list' ? 'listing-view-toggle-active' : ''}`}>
               <ListBulletIcon className="h-4 w-4" />
             </button>
           </div>
@@ -227,7 +207,7 @@ export default function Packages() {
 
       {/* ── Grid View ── */}
       {viewMode === 'grid' && (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 2xl:grid-cols-6">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {isLoading ? (
             Array.from({ length: 8 }).map((_, i) => (
               <div key={i} className="package-listing-card animate-pulse">

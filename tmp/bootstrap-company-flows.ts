@@ -1,11 +1,13 @@
 const fs = require('fs');
 const path = require('path');
 
-const flowService = require('./backend/src/services/flowService');
-const { Agency, WhatsAppFlow, sequelize } = require('./backend/src/models');
+const repoRoot = path.resolve(__dirname, '..');
+
+const flowService = require(path.join(repoRoot, 'backend/src/services/flowService'));
+const { Agency, WhatsAppFlow, sequelize } = require(path.join(repoRoot, 'backend/src/models'));
 
 function readJson(relativePath) {
-  const absolutePath = path.resolve(__dirname, relativePath);
+  const absolutePath = path.resolve(repoRoot, relativePath);
   return JSON.parse(fs.readFileSync(absolutePath, 'utf8'));
 }
 
@@ -23,6 +25,19 @@ async function ensureFlowRecord(agencyId, payload) {
   return flowService.createFlow(agencyId, payload);
 }
 
+async function removeExistingFlowRecords(agencyId, flowType) {
+  const existingFlows = await WhatsAppFlow.findAll({
+    where: { agencyId, flowType },
+    order: [['updatedAt', 'DESC']],
+  });
+
+  for (const flow of existingFlows) {
+    await flowService.deleteFlow(flow.id, agencyId);
+  }
+
+  return existingFlows.length;
+}
+
 async function main() {
   const agency = await Agency.findOne({
     where: { name: 'ABC Trours' },
@@ -36,6 +51,7 @@ async function main() {
   const packageJson = readJson('./docs/whatsapp/trip-planner-flow.json');
   const propertyJson = readJson('./docs/whatsapp/property-selector-flow.json');
   const customTripJson = readJson('./docs/whatsapp/custom-trip-flow.json');
+  const reviewJson = readJson('./docs/whatsapp/review-collection-flow.json');
 
   const packageFlow = await ensureFlowRecord(agency.id, {
     name: `${agency.name} Package Flow`,
@@ -65,11 +81,22 @@ async function main() {
     jsonDefinition: customTripJson,
   });
 
+  const removedReviewFlows = await removeExistingFlowRecords(agency.id, 'REVIEW');
+  const reviewFlow = await flowService.createFlow(agency.id, {
+    name: `${agency.name} Review Collection Flow`,
+    flowType: 'REVIEW',
+    status: 'DRAFT',
+    firstScreenId: 'RECOMMEND',
+    categories: ['OTHER'],
+    jsonDefinition: reviewJson,
+  });
+
   const publishResults = {};
 
   publishResults.package = await flowService.publishFlow(packageFlow.id, agency.id);
   publishResults.property = await flowService.publishFlow(propertyFlow.id, agency.id);
   publishResults.customTrip = await flowService.publishFlow(customTripFlow.id, agency.id);
+  publishResults.review = await flowService.publishFlow(reviewFlow.id, agency.id);
 
   const flows = await WhatsAppFlow.findAll({
     where: { agencyId: agency.id },
@@ -80,6 +107,7 @@ async function main() {
 
   console.log(JSON.stringify({
     agency: agency.toJSON(),
+    removedReviewFlows,
     publishResults,
     flows,
   }, null, 2));
@@ -92,6 +120,9 @@ main()
   })
   .catch(async (err) => {
     console.error(err?.stack || err?.message || err);
+    if (err?.original) {
+      console.error('Original error:', err.original?.stack || err.original?.message || err.original);
+    }
     try {
       await sequelize.close();
     } catch (_) {}

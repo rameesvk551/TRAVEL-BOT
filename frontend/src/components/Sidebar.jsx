@@ -64,7 +64,8 @@ export default function Sidebar() {
   const logoutMutation = useLogout();
   const location = useLocation();
 
-  const collapsed = sidebarCollapsed && !sidebarHovered; // desktop collapsed state unless hovered
+  const isDesktop = typeof window !== 'undefined' && window.innerWidth >= 1024;
+  const collapsed = isDesktop ? (sidebarCollapsed && !sidebarHovered) : false; // only collapse on desktop
 
   const renderNavItem = ({ to, icon: Icon, label }, exactEnd = false) => {
     const active = exactEnd
@@ -113,19 +114,19 @@ export default function Sidebar() {
           {!collapsed && (
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-neutral-900 shadow-xl overflow-hidden p-1.5 shrink-0">
-                <img src="/favicon.png" alt="Logo" className="h-full w-full object-contain brightness-0 invert" />
+                <img src="/wayon-logo.svg" alt="Logo" className="h-full w-full object-contain" />
               </div>
               <div>
                 <p className="text-[15px] font-bold tracking-tight text-neutral-900 leading-tight">
-                  {agency?.name || 'Travel CRM'}
+                  {agency?.name || 'WAYON'}
                 </p>
-                <p className="text-[10px] font-medium text-neutral-400 uppercase tracking-wider">Concierge</p>
+                <p className="text-[10px] font-medium text-neutral-400 uppercase tracking-wider">Platform</p>
               </div>
             </div>
           )}
           {collapsed && (
             <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-neutral-900 shadow-lg overflow-hidden p-1.5">
-              <img src="/favicon.png" alt="Logo" className="h-full w-full object-contain brightness-0 invert" />
+              <img src="/wayon-logo.svg" alt="Logo" className="h-full w-full object-contain" />
             </div>
           )}
           {!collapsed && (
@@ -195,9 +196,9 @@ export default function Sidebar() {
             {!collapsed && <span className="text-[9px] font-bold uppercase tracking-[0.2em] text-neutral-400">Powered By</span>}
             <div className={`flex items-center justify-center ${collapsed ? 'flex-col gap-1' : 'gap-2.5'}`}>
               <div className={`flex items-center justify-center rounded-lg bg-neutral-900 shadow-sm overflow-hidden ${collapsed ? 'h-8 w-8 p-1.5' : 'h-7 w-7 p-1.5'}`}>
-                <img src="/favicon.png" alt="Wayon Logo" className="h-full w-full object-contain brightness-0 invert opacity-90" />
+                <img src="/wayon-logo.svg" alt="WAYON Logo" className="h-full w-full object-contain" />
               </div>
-              {!collapsed && <span className="text-[14px] font-bold tracking-tight text-neutral-900 italic">WayOn</span>}
+              {!collapsed && <span className="text-[14px] font-bold tracking-tight text-neutral-900 italic">WAYON</span>}
             </div>
           </div>
 

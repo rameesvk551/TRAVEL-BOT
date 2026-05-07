@@ -4,14 +4,68 @@
 
 const crypto = require('crypto');
 const path = require('path');
-const { Agency, Agent, Customer, Message } = require(path.resolve(__dirname, '../../backend/src/models/index.ts'));
+const { Agency, Agent, Customer, Lead, Message } = require(path.resolve(__dirname, '../../backend/src/models/index.ts'));
 const whatsappService = require(path.resolve(__dirname, '../../backend/src/services/whatsappService.ts'));
 const schedulerService = require(path.resolve(__dirname, '../../backend/src/services/schedulerService.ts'));
-const { loadOrCreateSession } = require('./utils/sessionManager');
+const { loadOrCreateSession, updateSession } = require('./utils/sessionManager');
 const { routeMessage } = require('./botRouter');
 const { handleAgentLeadAction } = require('./handlers/agentLeadHandler');
 const { ensureLead } = require('./handlers/travelFlowHandler');
 const { normalizePhone } = require(path.resolve(__dirname, '../../backend/src/utils/phoneUtils.ts'));
+
+const ACTIVE_LEAD_STATUSES = [
+  'JUST_CONTACTED',
+  'PACKAGE_SEARCHED',
+  'PACKAGE_INTERESTED',
+  'NEW',
+  'ENQUIRY',
+  'CONTACTED',
+  'QUOTED',
+  'NEGOTIATING',
+];
+
+async function applyWhatsAppProfileName({ profileName, customer, agency, session }) {
+  const name = String(profileName || '').trim();
+  if (!name || !customer || !agency) return;
+
+  if (name !== customer.name) {
+    await customer.update({ name });
+    customer.name = name;
+  }
+
+  const draftName = String(session?.collectedData?.enquiryDraft?.name || '').trim();
+  if (!draftName && session) {
+    await updateSession(session, {
+      collectedData: {
+        enquiryDraft: {
+          ...(session.collectedData?.enquiryDraft || {}),
+          name,
+        },
+      },
+    });
+  }
+
+  const activeLead = await Lead.findOne({
+    where: {
+      customerId: customer.id,
+      agencyId: agency.id,
+      status: ACTIVE_LEAD_STATUSES,
+    },
+    order: [['updatedAt', 'DESC']],
+  });
+
+  if (!activeLead) return;
+
+  const customTripDetails = activeLead.customTripDetails || {};
+  if (String(customTripDetails.name || '').trim()) return;
+
+  await activeLead.update({
+    customTripDetails: {
+      ...customTripDetails,
+      name,
+    },
+  });
+}
 
 /**
  * GET /webhook — Meta verification challenge.
@@ -143,7 +197,7 @@ async function handleIncoming(req, res) {
         // Handle message status updates (delivered, read)
         if (value.statuses) {
           for (const status of value.statuses) {
-            await whatsappService.updateMessageStatus(status.id, status.status);
+            await whatsappService.updateMessageStatus(status.id, status.status, status);
           }
         }
 
@@ -466,6 +520,19 @@ async function processMessage(msg, metadata) {
   const messageText = incoming.text || '';
   const waMessageId = msg.id;
   const timestamp = msg.timestamp ? new Date(parseInt(msg.timestamp) * 1000) : new Date();
+  const isInteractiveReply = ['BUTTON', 'BUTTON_REPLY', 'LIST_REPLY', 'FLOW_REPLY'].includes(incoming.type)
+    || ['view deals', 'view other services', 'view packages', 'view properties', 'custom trip'].includes(String(messageText || '').trim().toLowerCase());
+
+  if (isInteractiveReply) {
+    console.log('[Webhook] Incoming interaction', {
+      from: fromPhone,
+      to: toPhone,
+      type: incoming.type,
+      text: messageText,
+      actionId: incoming.actionId || '',
+      waMessageId,
+    });
+  }
 
   // Find agency by WhatsApp number
   const agency = await Agency.findOne({
@@ -486,6 +553,8 @@ async function processMessage(msg, metadata) {
       'whatsappTripFlowName',
       'whatsappTripFlowStatus',
       'whatsappCatalogId',
+      'welcomeMessage',
+      'whatsappMenuLabels',
       'marketingOsTenantId',
       'isActive',
     ],
@@ -520,21 +589,7 @@ async function processMessage(msg, metadata) {
   const isFirstInboundMessage = previousInboundCount === 0;
 
   const profileName = msg?.contacts?.[0]?.profile?.name || msg?.profile?.name || '';
-  if (profileName && profileName !== customer.name) {
-    await customer.update({ name: profileName });
-  }
-
-  await ensureLead(session, customer, agency, {
-    status: 'JUST_CONTACTED',
-    notes: 'First WhatsApp message received',
-    preserveExistingStatus: true,
-  });
-
-  try {
-    await schedulerService.cancelChatFollowUps(customer.id, agency.id);
-  } catch (err) {
-    console.warn('[Webhook] Could not cancel pending follow-ups:', err.message);
-  }
+  await applyWhatsAppProfileName({ profileName, customer, agency, session });
 
   // Save incoming message to DB (BEFORE processing — never lose a message)
   await Message.create({
@@ -547,6 +602,20 @@ async function processMessage(msg, metadata) {
     status: 'DELIVERED',
     timestamp,
   });
+
+  await ensureLead(session, customer, agency, {
+    status: 'JUST_CONTACTED',
+    notes: 'First WhatsApp message received',
+    preserveExistingStatus: true,
+  }).catch((err) => {
+    console.warn('[Webhook] Could not ensure lead before routing:', err.message);
+  });
+
+  try {
+    await schedulerService.cancelChatFollowUps(customer.id, agency.id);
+  } catch (err) {
+    console.warn('[Webhook] Could not cancel pending follow-ups:', err.message);
+  }
 
   await whatsappService.markLatestCampaignReply(customer.id, agency.id).catch((err) => {
     console.warn('[Webhook] Could not mark campaign reply:', err.message);

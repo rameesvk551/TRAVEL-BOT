@@ -183,6 +183,17 @@ module.exports = (sequelize) => {
       allowNull: true,
       comment: 'Meta Commerce Catalog ID for Native WhatsApp E-Commerce',
     },
+    welcomeMessage: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+      comment: 'Custom WhatsApp welcome message shown before the fixed service menu',
+    },
+    whatsappMenuLabels: {
+      type: DataTypes.JSONB,
+      allowNull: false,
+      defaultValue: {},
+      comment: 'Tenant-controlled labels for fixed WhatsApp welcome menu actions',
+    },
     isActive: {
       type: DataTypes.BOOLEAN,
       defaultValue: true,

@@ -141,6 +141,12 @@ module.exports = (sequelize) => {
       defaultValue: [],
       comment: 'All packages/properties selected by the lead during WhatsApp or campaign flows',
     },
+    customTripDetails: {
+      type: DataTypes.JSONB,
+      allowNull: false,
+      defaultValue: {},
+      comment: 'Structured custom trip preferences captured from WhatsApp flows',
+    },
     adId: {
       type: DataTypes.STRING(255),
       allowNull: true,

@@ -6,7 +6,6 @@ import {
   ArrowTopRightOnSquareIcon,
   BuildingOfficeIcon,
   CheckCircleIcon,
-  KeyIcon,
   LinkIcon,
   PhoneIcon,
   XMarkIcon,
@@ -172,6 +171,60 @@ function statusTone(status) {
   return 'bg-neutral-100 text-neutral-600';
 }
 
+const DEFAULT_WELCOME_MESSAGE = [
+  'Hi {customerName}',
+  'Welcome to {agencyName}',
+  'Tell us what you want to explore today.',
+  '',
+  'How can I help you today?',
+].join('\n');
+
+const DEFAULT_WHATSAPP_MENU_LABELS = {
+  visaTicketing: 'Visa & Ticketing',
+  planTrip: 'Plan a Trip',
+  staycations: 'Staycations',
+  flight: 'Flight',
+  rail: 'Rail',
+  domestic: 'Domestic',
+  international: 'International',
+  customTrip: 'Custom Trip',
+};
+
+const MENU_LABEL_FIELDS = [
+  ['visaTicketing', 'Welcome: Visa & Ticketing'],
+  ['planTrip', 'Welcome: Plan a Trip'],
+  ['staycations', 'Welcome: Staycations'],
+  ['flight', 'Visa submenu: Flight'],
+  ['rail', 'Visa submenu: Rail'],
+  ['international', 'Trip submenu: International'],
+  ['domestic', 'Trip submenu: Domestic'],
+  ['customTrip', 'Trip submenu: Custom Trip'],
+];
+
+function getMenuLabels(overrides = {}) {
+  return Object.fromEntries(
+    Object.entries(DEFAULT_WHATSAPP_MENU_LABELS).map(([key, fallback]) => [
+      key,
+      String(overrides?.[key] || fallback).slice(0, 20),
+    ])
+  );
+}
+
+function getMenuLabelPayload(labels = {}) {
+  return Object.fromEntries(
+    Object.entries(DEFAULT_WHATSAPP_MENU_LABELS)
+      .map(([key, fallback]) => [key, String(labels?.[key] || '').trim().slice(0, 20), fallback])
+      .filter(([, value, fallback]) => value && value !== fallback)
+      .map(([key, value]) => [key, value])
+  );
+}
+
+function renderWelcomePreview(message, agencyName) {
+  return String(message || DEFAULT_WELCOME_MESSAGE)
+    .replace(/\{customerName\}/g, 'Ravi')
+    .replace(/\{agencyName\}/g, agencyName || 'Your Agency');
+}
+
 function Field({ label, hint, children }) {
   return (
     <label className="block">
@@ -195,6 +248,8 @@ export default function Settings() {
     followUpReminderEnabled: agency?.followUpReminderEnabled !== false,
     followUpReminderMinutes: agency?.followUpReminderMinutes ?? 30,
     whatsappCatalogId: agency?.whatsappCatalogId || '',
+    welcomeMessage: agency?.welcomeMessage || '',
+    whatsappMenuLabels: getMenuLabels(agency?.whatsappMenuLabels || {}),
     razorpayKeyId: '',
     razorpayKeySecret: '',
     webhookSecret: '',
@@ -323,6 +378,11 @@ export default function Settings() {
     if (form.followUpReminderEnabled !== (agency?.followUpReminderEnabled !== false)) data.followUpReminderEnabled = form.followUpReminderEnabled;
     if (parseInt(form.followUpReminderMinutes, 10) !== (agency?.followUpReminderMinutes ?? 30)) data.followUpReminderMinutes = parseInt(form.followUpReminderMinutes, 10);
     if (form.whatsappCatalogId !== agency?.whatsappCatalogId) data.whatsappCatalogId = form.whatsappCatalogId;
+    const welcomeMessage = form.welcomeMessage.trim();
+    if (welcomeMessage !== (agency?.welcomeMessage || '')) data.welcomeMessage = welcomeMessage || null;
+    const menuLabelPayload = getMenuLabelPayload(form.whatsappMenuLabels);
+    const currentMenuLabelPayload = getMenuLabelPayload(getMenuLabels(agency?.whatsappMenuLabels || {}));
+    if (JSON.stringify(menuLabelPayload) !== JSON.stringify(currentMenuLabelPayload)) data.whatsappMenuLabels = menuLabelPayload;
     if (form.razorpayKeyId) data.razorpayKeyId = form.razorpayKeyId;
     if (form.razorpayKeySecret) data.razorpayKeySecret = form.razorpayKeySecret;
     if (form.webhookSecret) data.webhookSecret = form.webhookSecret;
@@ -336,9 +396,19 @@ export default function Settings() {
   };
 
   const update = (field, value) => setForm((current) => ({ ...current, [field]: value }));
+  const updateMenuLabel = (field, value) => setForm((current) => ({
+    ...current,
+    whatsappMenuLabels: {
+      ...current.whatsappMenuLabels,
+      [field]: value.slice(0, 20),
+    },
+  }));
+  const resetWelcomeMessage = () => update('welcomeMessage', '');
+  const resetMenuLabels = () => update('whatsappMenuLabels', getMenuLabels({}));
   const connection = whatsappConnectionQuery.data;
   const whatsappNumber = connection?.displayPhoneNumber || agency?.whatsappNumber || '';
   const connectBusy = connectMutation.isPending || completeMutation.isPending;
+  const welcomePreview = renderWelcomePreview(form.welcomeMessage, form.name || agency?.name);
 
   const closeConnectModal = () => {
     if (connectBusy) return;
@@ -424,6 +494,65 @@ export default function Settings() {
               </Field>
 
               <div className="col-span-1 md:col-span-2 rounded-[20px] bg-slate-50 border border-slate-100 p-5 mt-2">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-800">WhatsApp Welcome Menu</h3>
+                    <p className="text-xs text-slate-500 mt-1 max-w-xl">Customize the greeting and button names. The actions stay fixed so each button still opens the correct bot flow.</p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button type="button" onClick={resetWelcomeMessage} className="shell-button-secondary px-3 py-2 text-xs">Reset message</button>
+                    <button type="button" onClick={resetMenuLabels} className="shell-button-secondary px-3 py-2 text-xs">Reset labels</button>
+                  </div>
+                </div>
+
+                <div className="mt-5 grid gap-5 lg:grid-cols-[1.1fr_0.9fr]">
+                  <div className="space-y-4">
+                    <Field label="Welcome message" hint="Use {customerName} and {agencyName}. Leave blank to use the default message.">
+                      <textarea
+                        value={form.welcomeMessage}
+                        onChange={(event) => update('welcomeMessage', event.target.value)}
+                        rows={6}
+                        maxLength={900}
+                        placeholder={DEFAULT_WELCOME_MESSAGE}
+                        className="shell-input-rect min-h-[150px] resize-y"
+                      />
+                    </Field>
+
+                    <div className="grid gap-3 md:grid-cols-2">
+                      {MENU_LABEL_FIELDS.map(([key, label]) => (
+                        <Field key={key} label={label}>
+                          <input
+                            value={form.whatsappMenuLabels[key] || ''}
+                            onChange={(event) => updateMenuLabel(key, event.target.value)}
+                            maxLength={20}
+                            className="shell-input-rect"
+                          />
+                        </Field>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="rounded-[20px] border border-slate-200 bg-white p-4">
+                    <p className="eyebrow">Preview</p>
+                    <div className="mt-3 whitespace-pre-line rounded-[18px] bg-slate-100 px-4 py-3 text-sm leading-6 text-slate-800">
+                      {welcomePreview}
+                    </div>
+                    <div className="mt-4 grid gap-2">
+                      {[
+                        form.whatsappMenuLabels.visaTicketing,
+                        form.whatsappMenuLabels.planTrip,
+                        form.whatsappMenuLabels.staycations,
+                      ].map((label) => (
+                        <div key={label} className="rounded-[14px] border border-slate-200 bg-slate-50 px-3 py-2 text-center text-sm font-semibold text-slate-700">
+                          {label}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="col-span-1 md:col-span-2 rounded-[20px] bg-slate-50 border border-slate-100 p-5 mt-2">
                 <div className="flex items-center justify-between">
                   <div>
                     <h3 className="text-sm font-semibold text-slate-800">Auto Review Collection</h3>
@@ -503,27 +632,6 @@ export default function Settings() {
             </div>
           </article>
 
-          <article className="shell-panel p-6">
-            <div className="flex items-center gap-3">
-              <KeyIcon className="h-5 w-5 text-[#2d2d2d]" />
-              <h2 className="text-xl font-extrabold text-slate-950">Razorpay Integration</h2>
-            </div>
-            <p className="mt-3 text-sm text-slate-500">Enter your payment credentials to collect deposits directly inside WhatsApp.</p>
-
-            <div className="mt-6 space-y-4">
-              <Field label="Razorpay Key ID">
-                <input value={form.razorpayKeyId} onChange={(event) => update('razorpayKeyId', event.target.value)} className="shell-input-rect" placeholder="rzp_test_..." />
-              </Field>
-
-              <Field label="Razorpay Key Secret" hint="Encrypted at rest. Leave blank to keep the existing secret.">
-                <input value={form.razorpayKeySecret} onChange={(event) => update('razorpayKeySecret', event.target.value)} type="password" className="shell-input-rect" placeholder="••••••••" />
-              </Field>
-
-              <Field label="Webhook Secret">
-                <input value={form.webhookSecret} onChange={(event) => update('webhookSecret', event.target.value)} type="password" className="shell-input-rect" placeholder="••••••••" />
-              </Field>
-            </div>
-          </article>
         </div>
 
         <div className="space-y-6">

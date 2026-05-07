@@ -8,13 +8,14 @@ import {
   Clock, Filter, Eye, AlertTriangle, Upload, UserPlus,
   Package, Globe, Plane, ShieldCheck, FileSpreadsheet,
   Inbox, UserCheck, Star, ArrowLeft, Zap, Target,
-  Home, Layers, Image, Video, Plus, X,
+  Home, Layers, Image, Video, Plus, X, ChevronDown, Type,
 } from 'lucide-react';
 import { useCreateCampaign, useUpdateCampaign, usePreviewAudience, useCampaign } from '../hooks/useCampaigns';
 import { useAgencyTemplates, useCreateTemplate, useSubmitTemplate } from '../hooks/useTemplates';
 import { packagesApi } from '../api/packagesApi';
 import { campaignsApi } from '../api/campaignsApi';
 import { propertiesApi } from '../api/propertiesApi';
+import { TemplatePickerDrawer, ConfigDrawer } from '../components/CampaignStep2Drawers';
 
 const CAMPAIGN_TYPES = [
   { value: 'BROADCAST', label: 'Broadcast', icon: Megaphone, desc: 'General announcement to all or filtered audiences', gradient: 'from-blue-500 to-indigo-600' },
@@ -99,7 +100,7 @@ const TOP_LEVEL_MODES = [
   {
     id: 'cta',
     label: 'CTA message',
-    description: 'Send image or video message with description and action buttons.',
+    description: 'Send text, image, or video message with description and action buttons.',
     icon: Send,
     gradient: 'from-teal-500 to-cyan-600',
   },
@@ -278,15 +279,24 @@ const normalizeTemplateType = (template) => String(template?.templateType || '')
 const normalizeHeaderType = (template) => String(template?.headerType || '').toUpperCase();
 
 const getTemplateMediaMode = (template) => {
-  if (!template) return 'IMAGE';
+  if (!template) return 'NONE';
 
   if (normalizeTemplateType(template) === 'CAROUSEL') {
     const firstCard = Array.isArray(template.carouselCards) ? template.carouselCards[0] : null;
     return String(firstCard?.mediaType || 'IMAGE').toUpperCase() === 'VIDEO' ? 'VIDEO' : 'IMAGE';
   }
 
-  return normalizeHeaderType(template) === 'VIDEO' ? 'VIDEO' : 'IMAGE';
+  const headerType = normalizeHeaderType(template);
+  if (headerType === 'IMAGE') return 'IMAGE';
+  if (headerType === 'VIDEO') return 'VIDEO';
+  return 'NONE';
 };
+
+const getMediaModeLabel = (mediaMode) => (
+  String(mediaMode || 'NONE').toUpperCase() === 'NONE'
+    ? 'TEXT'
+    : String(mediaMode || 'NONE').toUpperCase()
+);
 
 const getCatalogItemMediaUrl = (item) => String(item?.imageUrl || item?.coverImageUrl || item?.mediaUrl || '').trim();
 
@@ -295,6 +305,13 @@ const getCatalogItemSubtitle = (item) => (
     ? (item?.destinations || []).join(', ') || item?.category || 'Package'
     : item?.location || item?.propertyType || 'Property'
 );
+
+const renderTemplatePreviewText = (text, campaignDescription = '') => String(text || '')
+  .replace(/{{\s*1\s*}}/g, 'Rahul')
+  .replace(/{{\s*2\s*}}/g, campaignDescription || 'Add campaign description')
+  .replace(/{{\s*3\s*}}/g, 'Featured trip')
+  .replace(/{{\s*4\s*}}/g, 'Wayon Travels')
+  .replace(/{{name}}/gi, 'Rahul');
 
 const buildCarouselPreviewCards = (selectedItems = [], templateCards = [], mediaType = 'IMAGE') => {
   if (!selectedItems.length) {
@@ -327,13 +344,12 @@ const isApprovedTemplateCompatible = (template, builderMode) => {
   if (!template || template.status !== 'APPROVED') return false;
 
   const templateType = normalizeTemplateType(template);
-  const buttons = Array.isArray(template.buttons) ? template.buttons : [];
 
   if (builderMode === 'carousel') {
     return templateType === 'CAROUSEL' && Array.isArray(template.carouselCards) && template.carouselCards.length >= 2;
   }
 
-  return templateType !== 'CAROUSEL' && buttons.length > 0;
+  return templateType !== 'CAROUSEL';
 };
 
 const isTemplateMediaCompatible = (template, builderMode, mediaType) => {
@@ -362,7 +378,7 @@ export default function CreateCampaign() {
     scheduleMode: 'now',
     linkedPackageIds: [],
     format: 'SECTION_CTA',
-    mediaType: 'IMAGE',
+    mediaType: 'NONE',
     mediaUrl: '',
     campaignSections: createDefaultCampaignSections(),
     carouselConfig: { contentType: 'MIXED', items: [] },
@@ -389,6 +405,8 @@ export default function CreateCampaign() {
   const [prebuiltPreviewId, setPrebuiltPreviewId] = useState('show_properties');
   const [showMediaModal, setShowMediaModal] = useState(false);
   const [mediaSearch, setMediaSearch] = useState('');
+  const [showTemplateDrawer, setShowTemplateDrawer] = useState(false);
+  const [showConfigDrawer, setShowConfigDrawer] = useState(false);
   const fileInputRef = useRef(null);
 
   // Load edit data when available
@@ -404,7 +422,7 @@ export default function CreateCampaign() {
         scheduleMode: editCampaign.scheduledAt ? 'scheduled' : 'now',
         linkedPackageIds: editCampaign.linkedPackageIds || [],
         format: editCampaign.format === 'ITEM_CAROUSEL' ? 'ITEM_CAROUSEL' : 'SECTION_CTA',
-        mediaType: editCampaign.mediaType === 'VIDEO' ? 'VIDEO' : 'IMAGE',
+        mediaType: editCampaign.mediaType === 'VIDEO' ? 'VIDEO' : editCampaign.mediaType === 'IMAGE' ? 'IMAGE' : 'NONE',
         mediaUrl: editCampaign.mediaUrl || '',
         campaignSections: normalizeCampaignSections(editCampaign.campaignSections),
         carouselConfig: {
@@ -597,7 +615,7 @@ export default function CreateCampaign() {
       return {
         ...prev,
         format: experience.format,
-        mediaType: experience.mediaMode === 'VIDEO' ? 'VIDEO' : 'IMAGE',
+        mediaType: experience.mediaMode || 'NONE',
         carouselConfig: {
           ...(prev.carouselConfig || {}),
           mediaMode: experience.mediaMode,
@@ -687,6 +705,9 @@ export default function CreateCampaign() {
   const filteredCompatibleTemplates = compatibleApprovedTemplates.filter((template) =>
     (template.displayName || template.name || '').toLowerCase().includes(templateSearch.toLowerCase())
   );
+  const campaignDescription = String(formData.ctaConfig?.description || '').trim();
+  const templateNeedsCampaignDescription = builderMode === 'cta'
+    && /\{\{\s*2\s*\}\}/.test(formData.messageBody || selectedTemplate?.body || '');
 
   const applyApprovedTemplateSelection = useCallback((template) => {
     if (!template) {
@@ -762,6 +783,7 @@ export default function CreateCampaign() {
     if (step === 0) return formData.name.trim().length > 0;
     if (step === 1) {
       if (!(formData.templateId || formData.messageBody.trim().length > 0)) return false;
+      if (templateNeedsCampaignDescription && !campaignDescription) return false;
       if (formData.format === 'SECTION_CTA') {
         if (activeSections.length === 0) return false;
         const catalogSections = activeSections.filter((section) => section.itemType === 'PACKAGE' || section.itemType === 'PROPERTY');
@@ -820,13 +842,16 @@ export default function CreateCampaign() {
         audienceFilter: finalFilter,
         linkedPackageIds: formData.linkedPackageIds || [],
         format: isReviewCollection ? 'STANDARD' : (formData.format || 'SECTION_CTA'),
-        mediaType: isReviewCollection ? 'NONE' : (formData.mediaType || 'IMAGE'),
-        mediaUrl: isReviewCollection ? null : (formData.mediaUrl || null),
+        mediaType: isReviewCollection ? 'NONE' : (formData.mediaType || 'NONE'),
+        mediaUrl: isReviewCollection || formData.mediaType === 'NONE' ? null : (formData.mediaUrl || null),
         campaignSections: !isReviewCollection && formData.format === 'SECTION_CTA'
           ? (formData.campaignSections || []).filter((section) => section.enabled)
           : [],
         carouselConfig: isReviewCollection ? { contentType: 'MIXED', items: [] } : (formData.carouselConfig || { contentType: 'MIXED', items: [] }),
-        ctaConfig: isReviewCollection ? {} : (formData.ctaConfig || {}),
+        ctaConfig: isReviewCollection ? {} : {
+          ...(formData.ctaConfig || {}),
+          description: campaignDescription,
+        },
         scheduledAt: formData.scheduleMode === 'scheduled' ? formData.scheduledAt : null,
         status: formData.scheduleMode === 'scheduled' ? 'SCHEDULED' : 'DRAFT',
       };
@@ -1006,641 +1031,142 @@ export default function CreateCampaign() {
             </div>
           )}
 
-          {/* ───── Step 2: Template ───── */}
+          {/* ───── Step 2: Template (Drawer UX) ───── */}
           {step === 1 && (
-            <div className="w-full space-y-6 animate-fade-in">
-              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-                <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_390px]">
-                  <div className="space-y-4">
+            <div className="max-w-2xl mx-auto w-full space-y-4 animate-fade-in">
+
+              {/* ── 1. Campaign Mode ── */}
+              <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-3">Campaign Mode</p>
+                <div className="flex gap-2">
+                  {TOP_LEVEL_MODES.map((mode) => {
+                    const Icon = mode.icon;
+                    const isActive = builderMode === mode.id;
+                    return (
+                      <button key={mode.id} type="button"
+                        onClick={() => { if (mode.id === 'carousel') { selectMessageExperience(MESSAGE_EXPERIENCES.find((e) => e.id === 'IMAGE_CAROUSEL')); } else { setFormData((prev) => ({ ...prev, format: 'SECTION_CTA' })); } }}
+                        className={`flex-1 flex items-center justify-center gap-2 rounded-xl py-3 text-sm font-bold transition-all duration-200 ${isActive ? 'bg-slate-900 text-white shadow-md' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
+                        <Icon className="h-4 w-4" />{mode.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* ── 2. Template Selection Card ── */}
+              <button type="button" onClick={() => setShowTemplateDrawer(true)}
+                className="w-full rounded-2xl border border-slate-200 bg-white p-4 shadow-sm text-left transition hover:border-slate-300 hover:shadow-md group">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${selectedTemplate ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-400'}`}>
+                      <Send className="h-4 w-4" />
+                    </div>
+                    <div>
+                      <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Template</p>
+                      <p className="text-sm font-bold text-slate-900 mt-0.5">
+                        {selectedTemplate ? (selectedTemplate.displayName || selectedTemplate.name) : 'Tap to choose a template'}
+                      </p>
+                    </div>
+                  </div>
+                  <ChevronRight className="h-5 w-5 text-slate-300 group-hover:text-slate-500 transition" />
+                </div>
+                {selectedTemplate && (
+                  <p className="mt-2 text-xs text-slate-500 line-clamp-2 pl-[52px]">
+                    {renderTemplatePreviewText(selectedTemplate.body || '', campaignDescription)}
+                  </p>
+                )}
+              </button>
+
+              {/* ── 3. Configure Content Card ── */}
+              <button type="button" onClick={() => setShowConfigDrawer(true)}
+                className="w-full rounded-2xl border border-slate-200 bg-white p-4 shadow-sm text-left transition hover:border-slate-300 hover:shadow-md group">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${activeSections.length > 0 || selectedCarouselRecords.length > 0 ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-400'}`}>
+                      <Layers className="h-4 w-4" />
+                    </div>
+                    <div>
+                      <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Content & Actions</p>
+                      <p className="text-sm font-bold text-slate-900 mt-0.5">
+                        {builderMode === 'carousel'
+                          ? `${selectedCarouselRecords.length} carousel items`
+                          : activeSections.length > 0
+                            ? activeSections.map(s => s.label).join(', ')
+                            : 'Tap to configure'}
+                      </p>
+                    </div>
+                  </div>
+                  <ChevronRight className="h-5 w-5 text-slate-300 group-hover:text-slate-500 transition" />
+                </div>
+                {(activeSections.length > 0 || selectedCarouselRecords.length > 0) && (
+                  <div className="mt-2 flex flex-wrap gap-1.5 pl-[52px]">
                     {builderMode === 'cta' && (
-                      <div className="space-y-4">
-                        <div className="rounded-2xl border border-slate-200 bg-white p-5">
-                          <div className="mb-4 flex items-start justify-between gap-3">
-                            <div>
-                              <p className="text-sm font-bold text-slate-900">CTA actions</p>
-                              <p className="mt-1 text-xs text-slate-500">Packages and properties use manual selection. Custom Trip is toggle-only.</p>
-                            </div>
-                            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-600">{activeSections.length} enabled</span>
-                          </div>
+                      <>
+                        <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[10px] font-bold text-slate-600">{getMediaModeLabel(formData.mediaType)}</span>
+                        {featuredCtaRecord && <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[10px] font-bold text-slate-600">📷 {featuredCtaRecord.name}</span>}
+                        {selectedPackageRecords.length > 0 && <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[10px] font-bold text-slate-600">{selectedPackageRecords.length} pkg</span>}
+                        {selectedPropertyRecords.length > 0 && <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[10px] font-bold text-slate-600">{selectedPropertyRecords.length} prop</span>}
+                      </>
+                    )}
+                    {builderMode === 'carousel' && <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[10px] font-bold text-slate-600">{selectedCarouselRecords.length}/10 items</span>}
+                  </div>
+                )}
+              </button>
 
-                          <div className="grid gap-3 md:grid-cols-3">
-                            {(formData.campaignSections || []).map((section) => {
-                              const Icon = section.itemType === 'PROPERTY' ? Home : section.itemType === 'CUSTOM_TRIP' ? UserPlus : Package;
-                              const selectedCount = section.itemType === 'PACKAGE'
-                                ? selectedPackageRecords.length
-                                : section.itemType === 'PROPERTY'
-                                  ? selectedPropertyRecords.length
-                                  : 0;
-                              return (
-                                <button
-                                  key={section.key}
-                                  type="button"
-                                  onClick={() => updateSection(section.key, {
-                                    enabled: !section.enabled,
-                                    selectionMode: 'MANUAL',
-                                    selectedItemIds: section.itemType === 'CUSTOM_TRIP' ? [] : section.selectedItemIds || [],
-                                  })}
-                                  className={`rounded-2xl border p-4 text-left transition ${
-                                    section.enabled ? 'border-slate-900 bg-slate-900 text-white shadow-lg shadow-slate-900/10' : 'border-slate-200 bg-white hover:border-slate-300'
-                                  }`}
-                                >
-                                  <div className="mb-3 flex items-center justify-between gap-3">
-                                    <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${section.enabled ? 'bg-white/15 text-white' : 'bg-slate-100 text-slate-500'}`}>
-                                      <Icon className="h-5 w-5" />
-                                    </div>
-                                    {section.enabled && <Check className="h-4 w-4" strokeWidth={3} />}
-                                  </div>
-                                  <p className={`text-sm font-bold ${section.enabled ? 'text-white' : 'text-slate-900'}`}>{section.label}</p>
-                                  <p className={`mt-1 text-xs ${section.enabled ? 'text-slate-200' : 'text-slate-500'}`}>
-                                    {section.itemType === 'CUSTOM_TRIP'
-                                      ? 'Starts the existing custom-trip flow.'
-                                      : `${selectedCount} item${selectedCount === 1 ? '' : 's'} selected`}
-                                  </p>
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-
-                        {packageSection.enabled && (
-                          <div className="rounded-2xl border border-slate-200 bg-white p-5">
-                            <div className="mb-4 flex items-start justify-between gap-3">
-                              <div>
-                                <p className="text-sm font-bold text-slate-900">View Packages selection</p>
-                                <p className="mt-1 text-xs text-slate-500">Choose the exact packages shown after the CTA is tapped.</p>
-                              </div>
-                              <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-600">{selectedPackageRecords.length} selected</span>
-                            </div>
-                            <div className="grid gap-3 md:grid-cols-2">
-                              {activePackages.map((pkg) => {
-                                const isSelected = (packageSection.selectedItemIds || []).includes(pkg.id);
-                                return (
-                                  <button
-                                    key={pkg.id}
-                                    type="button"
-                                    onClick={() => toggleSectionItem('packages', pkg.id)}
-                                    className={`flex items-center gap-3 rounded-2xl border p-3 text-left transition ${isSelected ? 'border-slate-900 bg-slate-50 shadow-sm' : 'border-slate-200 bg-white hover:border-slate-300'}`}
-                                  >
-                                    {pkg.imageUrl ? <img src={pkg.imageUrl} alt="" className="h-14 w-14 rounded-xl object-cover" /> : <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-slate-100 text-slate-400"><Package className="h-6 w-6" /></div>}
-                                    <div className="min-w-0 flex-1">
-                                      <p className="truncate text-sm font-bold text-slate-900">{pkg.name}</p>
-                                      <p className="mt-1 text-xs text-slate-500">{(pkg.destinations || []).join(', ') || pkg.category || 'Package'}</p>
-                                    </div>
-                                    <div className={`flex h-6 w-6 items-center justify-center rounded-full border ${isSelected ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-300 text-transparent'}`}>
-                                      <Check className="h-3.5 w-3.5" strokeWidth={3} />
-                                    </div>
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        )}
-
-                        {propertySection.enabled && (
-                          <div className="rounded-2xl border border-slate-200 bg-white p-5">
-                            <div className="mb-4 flex items-start justify-between gap-3">
-                              <div>
-                                <p className="text-sm font-bold text-slate-900">View Properties selection</p>
-                                <p className="mt-1 text-xs text-slate-500">Choose the exact properties shown after the CTA is tapped.</p>
-                              </div>
-                              <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-600">{selectedPropertyRecords.length} selected</span>
-                            </div>
-                            <div className="grid gap-3 md:grid-cols-2">
-                              {activeProperties.map((property) => {
-                                const isSelected = (propertySection.selectedItemIds || []).includes(property.id);
-                                return (
-                                  <button
-                                    key={property.id}
-                                    type="button"
-                                    onClick={() => toggleSectionItem('properties', property.id)}
-                                    className={`flex items-center gap-3 rounded-2xl border p-3 text-left transition ${isSelected ? 'border-slate-900 bg-slate-50 shadow-sm' : 'border-slate-200 bg-white hover:border-slate-300'}`}
-                                  >
-                                    {property.imageUrl ? <img src={property.imageUrl} alt="" className="h-14 w-14 rounded-xl object-cover" /> : <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-slate-100 text-slate-400"><Home className="h-6 w-6" /></div>}
-                                    <div className="min-w-0 flex-1">
-                                      <p className="truncate text-sm font-bold text-slate-900">{property.name}</p>
-                                      <p className="mt-1 text-xs text-slate-500">{property.location || property.propertyType || 'Property'}</p>
-                                    </div>
-                                    <div className={`flex h-6 w-6 items-center justify-center rounded-full border ${isSelected ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-300 text-transparent'}`}>
-                                      <Check className="h-3.5 w-3.5" strokeWidth={3} />
-                                    </div>
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        )}
-
-                        {customTripSection.enabled && (
-                          <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4">
-                            <p className="text-sm font-bold text-emerald-900">Custom Trip enabled</p>
-                            <p className="mt-1 text-xs text-emerald-700">No item selection is needed. Customers go directly into the existing custom-trip lead flow.</p>
-                          </div>
-                        )}
+              {/* ── 4. Inline WhatsApp Preview ── */}
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 shadow-sm">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-3">Live Preview</p>
+                <div className="rounded-xl bg-[#efeae2] p-3 ring-1 ring-slate-200">
+                  <div className="ml-auto max-w-[92%] rounded-[12px] rounded-tr-sm bg-[#dcf8c6] p-3 text-xs text-slate-800 shadow-sm">
+                    {builderMode === 'cta' && ctaNeedsFeaturedMedia && featuredCtaRecord && (
+                      <div className="mb-3 overflow-hidden rounded-lg border border-black/10 bg-white">
+                        <div className="aspect-[4/3] bg-slate-100"><img src={getCatalogItemMediaUrl(featuredCtaRecord)} alt="" className="h-full w-full object-cover" /></div>
+                        <div className="border-t border-black/10 px-2 py-1 text-[10px] font-bold text-slate-600">{featuredCtaRecord.name}</div>
                       </div>
                     )}
-
-                    {builderMode === 'carousel' && (
-                      <div className="space-y-4">
-                        <div className="rounded-2xl border border-slate-200 bg-white p-5">
-                          <div className="mb-4 flex items-start justify-between gap-3">
-                            <div>
-                              <p className="text-sm font-bold text-slate-900">Carousel selection</p>
-                              <p className="mt-1 text-xs text-slate-500">Pick 2 to 10 packages, properties, or a mix. Selection order is preserved.</p>
+                    <p className="whitespace-pre-line leading-relaxed">
+                      {renderTemplatePreviewText(formData.messageBody || 'Your campaign message will appear here.', campaignDescription)}
+                    </p>
+                    {templateNeedsCampaignDescription && !campaignDescription && (
+                      <p className="mt-2 rounded-md bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-700">
+                        This template uses {'{{2}}'}, so add a campaign description before continuing.
+                      </p>
+                    )}
+                    {builderMode === 'cta' && (
+                      <div className="mt-3 space-y-1.5 border-t border-black/10 pt-2">
+                        {selectedTemplate && normalizeTemplateType(selectedTemplate) !== 'CAROUSEL'
+                          ? previewButtons.length > 0 ? previewButtons.map((button, index) => (
+                            <div key={`${button.type || 'button'}-${index}`} className="rounded-md bg-white px-3 py-2 text-center text-[11px] font-bold text-sky-700">{button.text || `Button ${index + 1}`}</div>
+                          )) : (<div className="rounded-md bg-white px-3 py-2 text-center text-[11px] font-bold text-slate-400">No previewable buttons</div>)
+                          : activeSections.length > 0 ? activeSections.map((section) => (
+                            <div key={section.key} className="rounded-md bg-white px-3 py-2 text-center text-[11px] font-bold text-sky-700">{section.label}</div>
+                          )) : (<div className="rounded-md bg-white px-3 py-2 text-center text-[11px] font-bold text-slate-400">Enable at least one CTA action</div>)}
+                      </div>
+                    )}
+                    {builderMode === 'carousel' && previewCarouselCards.length > 0 && (
+                      <div className="mt-3 border-t border-black/10 pt-2 overflow-x-auto pb-2">
+                        <div className="flex gap-2 min-w-max">
+                          {previewCarouselCards.map((card, index) => (
+                            <div key={`${card.itemType || 'T'}-${card.id || index}`} className="w-36 flex-shrink-0 overflow-hidden rounded-lg border border-black/10 bg-white">
+                              <div className="flex aspect-[4/3] items-center justify-center bg-slate-100">{getCatalogItemMediaUrl(card) ? <img src={getCatalogItemMediaUrl(card)} alt="" className="h-full w-full object-cover" /> : <Image className="h-6 w-6 text-slate-400" />}</div>
+                              <div className="p-2">
+                                <p className="truncate text-[11px] font-bold text-slate-900">{card.title || card.name || `Card ${index + 1}`}</p>
+                                <div className="mt-1.5 rounded border border-sky-100 px-2 py-0.5 text-center text-[9px] font-bold text-sky-700">{card.buttons?.[0]?.text || 'Enquiry'}</div>
+                              </div>
                             </div>
-                            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-600">{selectedCarouselRecords.length} selected</span>
-                          </div>
-                          <div className="grid gap-3 lg:grid-cols-2">
-                            <div className="space-y-2">
-                              <p className="text-xs font-bold uppercase tracking-[0.15em] text-slate-500">Packages</p>
-                              {activePackages.map((pkg) => {
-                                const isSelected = carouselItems.some((item) => item.itemType === 'PACKAGE' && item.itemId === pkg.id);
-                                return (
-                                  <button
-                                    key={pkg.id}
-                                    type="button"
-                                    onClick={() => toggleCarouselItem('PACKAGE', pkg.id)}
-                                    className={`flex w-full items-center gap-3 rounded-2xl border p-3 text-left transition ${isSelected ? 'border-slate-900 bg-slate-50 shadow-sm' : 'border-slate-200 bg-white hover:border-slate-300'}`}
-                                  >
-                                    {pkg.imageUrl ? <img src={pkg.imageUrl} alt="" className="h-14 w-14 rounded-xl object-cover" /> : <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-slate-100 text-slate-400"><Package className="h-6 w-6" /></div>}
-                                    <div className="min-w-0 flex-1">
-                                      <p className="truncate text-sm font-bold text-slate-900">{pkg.name}</p>
-                                      <p className="mt-1 text-xs text-slate-500">{(pkg.destinations || []).join(', ') || pkg.category || 'Package'}</p>
-                                    </div>
-                                    <div className={`flex h-6 w-6 items-center justify-center rounded-full border ${isSelected ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-300 text-transparent'}`}>
-                                      <Check className="h-3.5 w-3.5" strokeWidth={3} />
-                                    </div>
-                                  </button>
-                                );
-                              })}
-                            </div>
-                            <div className="space-y-2">
-                              <p className="text-xs font-bold uppercase tracking-[0.15em] text-slate-500">Properties</p>
-                              {activeProperties.map((property) => {
-                                const isSelected = carouselItems.some((item) => item.itemType === 'PROPERTY' && item.itemId === property.id);
-                                return (
-                                  <button
-                                    key={property.id}
-                                    type="button"
-                                    onClick={() => toggleCarouselItem('PROPERTY', property.id)}
-                                    className={`flex w-full items-center gap-3 rounded-2xl border p-3 text-left transition ${isSelected ? 'border-slate-900 bg-slate-50 shadow-sm' : 'border-slate-200 bg-white hover:border-slate-300'}`}
-                                  >
-                                    {property.imageUrl ? <img src={property.imageUrl} alt="" className="h-14 w-14 rounded-xl object-cover" /> : <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-slate-100 text-slate-400"><Home className="h-6 w-6" /></div>}
-                                    <div className="min-w-0 flex-1">
-                                      <p className="truncate text-sm font-bold text-slate-900">{property.name}</p>
-                                      <p className="mt-1 text-xs text-slate-500">{property.location || property.propertyType || 'Property'}</p>
-                                    </div>
-                                    <div className={`flex h-6 w-6 items-center justify-center rounded-full border ${isSelected ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-300 text-transparent'}`}>
-                                      <Check className="h-3.5 w-3.5" strokeWidth={3} />
-                                    </div>
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </div>
+                          ))}
                         </div>
                       </div>
                     )}
-                  </div>
-
-                  <div className="space-y-4 xl:sticky xl:top-6 xl:self-start">
-                    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
-                      <p className="text-sm font-bold text-slate-900">Builder mode</p>
-                      <div className="grid grid-cols-1 gap-3">
-                        {TOP_LEVEL_MODES.map((mode) => {
-                          const Icon = mode.icon;
-                          const isActive = builderMode === mode.id;
-                          return (
-                            <button
-                              key={mode.id}
-                              type="button"
-                              onClick={() => {
-                                if (mode.id === 'carousel') {
-                                  selectMessageExperience(MESSAGE_EXPERIENCES.find((e) => e.id === 'IMAGE_CAROUSEL'));
-                                } else {
-                                  setFormData((prev) => ({ ...prev, format: 'SECTION_CTA' }));
-                                }
-                              }}
-                              className={`group relative flex items-center gap-3 overflow-hidden rounded-xl border-2 p-3.5 text-left transition-all duration-300 ${
-                                isActive
-                                  ? 'border-slate-900 bg-gradient-to-br from-slate-950 to-slate-800 text-white shadow-md shadow-slate-900/10'
-                                  : 'border-slate-200/80 bg-white hover:border-slate-300 hover:shadow-sm'
-                              }`}
-                            >
-                              <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition-all duration-300 ${
-                                isActive
-                                  ? `bg-gradient-to-br ${mode.gradient} text-white shadow-sm`
-                                  : 'bg-slate-100 text-slate-500 group-hover:bg-slate-200'
-                              }`}>
-                                <Icon className="w-5 h-5" />
-                              </div>
-                              <div className="min-w-0 flex-1">
-                                <p className={`text-sm font-bold ${isActive ? 'text-white' : 'text-slate-900'}`}>{mode.label}</p>
-                              </div>
-                              {isActive && (
-                                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-white text-slate-900 animate-scale-in">
-                                  <Check className="h-3 w-3" strokeWidth={3} />
-                                </span>
-                              )}
-                            </button>
-                          );
-                        })}
-                      </div>
-
-                      {/* ── Sub-options ── */}
-                      {builderMode === 'carousel' && (
-                        <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">
-                          <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-slate-500 mb-2">Media Type</p>
-                          <div className="flex gap-2">
-                            {MESSAGE_EXPERIENCES.filter((e) => e.group === 'carousel').map((experience) => {
-                              const Icon = experience.icon;
-                              const selected = currentExperience.id === experience.id;
-                              return (
-                                <button
-                                  key={experience.id}
-                                  type="button"
-                                  onClick={() => selectMessageExperience(experience)}
-                                  className={`flex-1 flex items-center justify-center gap-1.5 rounded-lg py-2 text-xs font-bold transition-all duration-200 ${
-                                    selected
-                                      ? 'bg-slate-900 text-white shadow-sm'
-                                      : 'bg-white text-slate-600 ring-1 ring-slate-200 hover:ring-slate-300 hover:bg-white'
-                                  }`}
-                                >
-                                  <Icon className="h-3.5 w-3.5" />
-                                  {experience.mediaMode}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      )}
-
-                      {builderMode === 'cta' && (
-                        <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">
-                          <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-slate-500 mb-2">Media Type</p>
-                          <div className="flex gap-2">
-                            {[
-                              { value: 'IMAGE', label: 'Image', icon: Image },
-                              { value: 'VIDEO', label: 'Video', icon: Video },
-                            ].map((opt) => {
-                              const Icon = opt.icon;
-                              const selected = formData.mediaType === opt.value && formData.format === 'SECTION_CTA';
-                              return (
-                                <button
-                                  key={opt.value}
-                                  type="button"
-                                  onClick={() => {
-                                    setFormData((prev) => ({ ...prev, format: 'SECTION_CTA', mediaType: opt.value }));
-                                  }}
-                                  className={`flex-1 flex items-center justify-center gap-1.5 rounded-lg py-2 text-xs font-bold transition-all duration-200 ${
-                                    selected
-                                      ? 'bg-slate-900 text-white shadow-sm'
-                                      : 'bg-white text-slate-600 ring-1 ring-slate-200 hover:ring-slate-300 hover:bg-white'
-                                  }`}
-                                >
-                                  <Icon className="h-3.5 w-3.5" />
-                                  {opt.label}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-
-                  <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-                    <div className="mb-4 flex items-start justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-bold text-slate-900">
-                          {builderMode === 'carousel' ? 'Approved Meta carousel templates' : 'Approved Meta CTA templates'}
-                        </p>
-                        <p className="mt-1 text-xs text-slate-500">
-                          {builderMode === 'carousel'
-                            ? 'Select an approved carousel template to drive the message and preview.'
-                            : 'Select an approved CTA template to drive the message and preview.'}
-                        </p>
-                      </div>
-                      <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-600">
-                        {filteredCompatibleTemplates.length} available
-                      </span>
-                    </div>
-
-                    <div className="mb-3">
-                      <input
-                        type="text"
-                        value={templateSearch}
-                        onChange={(e) => setTemplateSearch(e.target.value)}
-                        placeholder={`Search ${builderMode === 'carousel' ? 'carousel' : 'CTA'} templates...`}
-                        className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-slate-400"
-                      />
-                    </div>
-
-                    <div className="space-y-3">
-                      {filteredCompatibleTemplates.length > 0 ? filteredCompatibleTemplates.map((template) => {
-                        const isActive = formData.templateId === template.id;
-                        const templateMediaMode = getTemplateMediaMode(template);
-                        return (
-                          <button
-                            key={template.id}
-                            type="button"
-                            onClick={() => applyApprovedTemplateSelection(template)}
-                            className={`w-full rounded-2xl border p-4 text-left transition ${
-                              isActive ? 'border-slate-900 bg-slate-900 text-white shadow-md shadow-slate-900/10' : 'border-slate-200 bg-white hover:border-slate-300'
-                            }`}
-                          >
-                            <div className="flex items-start justify-between gap-3">
-                              <div className="min-w-0 flex-1">
-                                <p className={`truncate text-sm font-bold ${isActive ? 'text-white' : 'text-slate-900'}`}>
-                                  {template.displayName || template.name}
-                                </p>
-                                <p className={`mt-1 text-xs ${isActive ? 'text-slate-200' : 'text-slate-500'}`}>
-                                  {normalizeTemplateType(template) === 'CAROUSEL'
-                                    ? `${(template.carouselCards || []).length} cards • ${templateMediaMode}`
-                                    : `${Array.isArray(template.buttons) ? template.buttons.length : 0} buttons • ${templateMediaMode}`}
-                                </p>
-                                <p className={`mt-2 line-clamp-2 text-xs ${isActive ? 'text-slate-100' : 'text-slate-600'}`}>
-                                  {String(template.body || '').replace(/{{\d+}}/g, '{{name}}')}
-                                </p>
-                              </div>
-                              {isActive && (
-                                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-white text-slate-900">
-                                  <Check className="h-3.5 w-3.5" strokeWidth={3} />
-                                </span>
-                              )}
-                            </div>
-                          </button>
-                        );
-                      }) : (
-                        <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-5 text-center text-sm text-slate-500">
-                          No approved {builderMode === 'carousel' ? 'carousel' : 'CTA'} templates found. Open Template Messages and approve one first.
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                    <div className="mb-3 flex items-center justify-between gap-3">
-                      <div>
-                        <p className="text-xs font-bold uppercase tracking-[0.16em] text-slate-500">Live Preview</p>
-                        <p className="mt-1 text-sm font-bold text-slate-900">{builderMode === 'cta' ? 'CTA message' : 'Carousel'}</p>
-                      </div>
-                      <span className="rounded-full bg-white px-3 py-1 text-[11px] font-bold text-slate-600 ring-1 ring-slate-200">
-                        {formData.mediaType}
-                      </span>
-                    </div>
-                    <div className="rounded-xl bg-[#efeae2] p-3 shadow-sm ring-1 ring-slate-200">
-                      <div className="ml-auto max-w-[92%] rounded-[12px] rounded-tr-sm bg-[#dcf8c6] p-3 text-xs text-slate-800 shadow-sm">
-                        {builderMode === 'cta' && ctaNeedsFeaturedMedia && (
-                          <div className="mb-3 overflow-hidden rounded-lg border border-black/10 bg-white group relative">
-                            {featuredCtaRecord ? (
-                              <>
-                                <div className="aspect-[4/3] bg-slate-100 relative">
-                                  <img src={getCatalogItemMediaUrl(featuredCtaRecord)} alt="" className="h-full w-full object-cover" />
-                                </div>
-                                <div className="border-t border-black/10 px-2 py-1 text-[10px] font-bold text-slate-600 flex items-center justify-between">
-                                  <span>{featuredCtaRecord.name}</span>
-                                </div>
-                                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center z-10">
-                                  <button onClick={() => setShowMediaModal(true)} className="px-4 py-2 bg-white rounded-lg text-xs font-bold text-slate-900 shadow-lg flex items-center gap-2 hover:scale-105 transition-transform">
-                                    <Plus className="w-4 h-4"/> Change Media
-                                  </button>
-                                </div>
-                              </>
-                            ) : (
-                              <button onClick={() => setShowMediaModal(true)} className="flex w-full flex-col aspect-[4/3] items-center justify-center bg-slate-100 text-slate-500 hover:bg-slate-200 transition">
-                                <div className="w-10 h-10 rounded-full bg-white shadow-sm flex items-center justify-center mb-2">
-                                  <Plus className="h-5 w-5 text-slate-700" />
-                                </div>
-                                <span className="text-xs font-bold text-slate-600">Add Package / Property</span>
-                                <span className="text-[10px] text-slate-400 mt-1">Select header media</span>
-                              </button>
-                            )}
-                          </div>
-                        )}
-
-                        <p className="whitespace-pre-line leading-relaxed">
-                          {(formData.messageBody || 'Your campaign message will appear here.').replace('{{name}}', 'Rahul')}
-                        </p>
-
-                        {builderMode === 'cta' && (
-                          <div className="mt-3 space-y-1.5 border-t border-black/10 pt-2">
-                            {selectedTemplate && normalizeTemplateType(selectedTemplate) !== 'CAROUSEL'
-                              ? previewButtons.length > 0 ? previewButtons.map((button, index) => (
-                                <div key={`${button.type || 'button'}-${index}`} className="rounded-md bg-white px-3 py-2 text-center text-[11px] font-bold text-sky-700">
-                                  {button.text || `Button ${index + 1}`}
-                                </div>
-                              )) : (
-                                <div className="rounded-md bg-white px-3 py-2 text-center text-[11px] font-bold text-slate-400">
-                                  Selected template has no previewable buttons
-                                </div>
-                              )
-                              : activeSections.length > 0 ? activeSections.map((section) => (
-                                <div key={section.key} className="rounded-md bg-white px-3 py-2 text-center text-[11px] font-bold text-sky-700">
-                                  {section.label}
-                                </div>
-                              )) : (
-                              <div className="rounded-md bg-white px-3 py-2 text-center text-[11px] font-bold text-slate-400">
-                                Enable at least one CTA action
-                              </div>
-                              )}
-                          </div>
-                        )}
-
-                        {builderMode === 'carousel' && (
-                          <div className="mt-3 border-t border-black/10 pt-2">
-                            {previewCarouselCards.length > 0 ? (
-                              <div className="overflow-x-auto pb-2">
-                                <div className="flex gap-2 min-w-max">
-                                  {previewCarouselCards.map((card, index) => {
-                              const mediaType = String(card.mediaType || formData.mediaType || 'IMAGE').toUpperCase();
-                              return (
-                                <div key={`${card.itemType || 'TEMPLATE'}-${card.id || index}`} className="w-40 flex-shrink-0 overflow-hidden rounded-lg border border-black/10 bg-white">
-                                  <div className="flex aspect-[4/3] items-center justify-center bg-slate-100 text-slate-500">
-                                    {getCatalogItemMediaUrl(card) ? (
-                                      <img src={getCatalogItemMediaUrl(card)} alt="" className="h-full w-full object-cover" />
-                                    ) : mediaType === 'VIDEO' ? (
-                                      <Video className="h-7 w-7" />
-                                    ) : (
-                                      <Image className="h-7 w-7" />
-                                    )}
-                                  </div>
-                                  <div className="p-2">
-                                    <p className="truncate text-[11px] font-bold text-slate-900">{card.title || card.name || `Card ${index + 1}`}</p>
-                                    <p className="mt-1 line-clamp-2 text-[10px] text-slate-500">
-                                      {card.body || getCatalogItemSubtitle(card)}
-                                    </p>
-                                    <div className="mt-2 rounded border border-sky-100 px-2 py-1 text-center text-[9px] font-bold text-sky-700">
-                                      {card.buttons?.[0]?.text || 'Enquiry'}
-                                    </div>
-                                  </div>
-                                </div>
-                              );
-                                  })}
-                                </div>
-                              </div>
-                            ) : (
-                              <div className="rounded-md bg-white px-3 py-3 text-center text-[11px] font-bold text-slate-400">
-                                Select 2 to 10 items to preview the carousel
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    </div>
                   </div>
                 </div>
               </div>
 
-
-              {/* ── Format specific configurations ── */}
-              {false && <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-5">
-
-                {formData.format === 'SECTION_CTA' && (
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-5">
-                    <div className="mb-4 flex items-start justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-bold text-slate-900">Customer Choice Menu</p>
-                        <p className="mt-1 text-xs text-slate-500">
-                          Enable the choices customers should see after your campaign message.
-                        </p>
-                      </div>
-                      <span className="rounded-full bg-white px-3 py-1 text-xs font-bold text-slate-600 ring-1 ring-slate-200">
-                        {activeSections.length} active
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-                      {(formData.campaignSections || DEFAULT_CAMPAIGN_SECTIONS).map((section) => {
-                        const Icon = section.itemType === 'PROPERTY' ? Home : section.itemType === 'CUSTOM_TRIP' ? UserPlus : Package;
-                        const availableCount = section.itemType === 'PROPERTY'
-                          ? activeProperties.length
-                          : section.itemType === 'PACKAGE'
-                            ? activePackages.filter((pkg) => {
-                              if (section.filter?.category === 'INTERNATIONAL') return pkg.category === 'INTERNATIONAL';
-                              if (section.filter?.category === 'DOMESTIC') return pkg.category === 'DOMESTIC';
-                              return true;
-                            }).length
-                            : null;
-
-                        return (
-                          <div key={section.key} className={`rounded-xl border p-3 transition ${section.enabled ? 'border-slate-300 bg-white shadow-sm' : 'border-slate-200 bg-white/70'}`}>
-                            <div className="flex items-start gap-3">
-                              <button
-                                type="button"
-                                onClick={() => updateSection(section.key, { enabled: !section.enabled })}
-                                className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border-2 transition-all ${
-                                  section.enabled
-                                    ? 'border-slate-900 bg-slate-900 text-white'
-                                    : 'border-slate-200 bg-white text-slate-300 hover:text-slate-500'
-                                }`}
-                              >
-                                {section.enabled ? <Check className="h-4 w-4" strokeWidth={3} /> : <Icon className="h-4 w-4" />}
-                              </button>
-                              <div className="flex-1 min-w-0">
-                                <input
-                                  type="text"
-                                  value={section.label}
-                                  onChange={(e) => updateSection(section.key, { label: e.target.value })}
-                                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-900 outline-none transition focus:border-slate-400"
-                                />
-                                <p className="mt-1 text-xs text-slate-500">
-                                  {section.itemType === 'CUSTOM_TRIP'
-                                    ? 'Starts a lead form for name, destination, travellers, budget, and dates.'
-                                    : `${section.itemType === 'PROPERTY' ? 'Property' : 'Package'} flow${availableCount !== null ? `, ${availableCount} available` : ''}.`}
-                                </p>
-                              </div>
-                              {section.itemType === 'PACKAGE' && (
-                                <select
-                                  value={section.filter?.category || 'ALL'}
-                                  onChange={(e) => updateSection(section.key, { filter: { ...(section.filter || {}), category: e.target.value } })}
-                                  className="mt-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 outline-none focus:border-slate-400"
-                                >
-                                  <option value="ALL">All packages</option>
-                                  <option value="INTERNATIONAL">International</option>
-                                  <option value="DOMESTIC">Domestic</option>
-                                </select>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
-
-
-              </div>}
-
-              {/* ── Link Packages (for Seasonal / Promotional) ── */}
-              {false && ['SEASONAL', 'PROMOTIONAL'].includes(formData.type) && packages.length > 0 && (
-                <div className="border-t border-slate-100 pt-5">
-                  <div className="flex items-center justify-between mb-3">
-                    <div>
-                      <label className="block text-sm font-semibold text-slate-700 flex items-center gap-2">
-                        <Package className="w-4 h-4 text-violet-500" />
-                        Link Packages to Campaign
-                      </label>
-                      <p className="text-xs text-slate-400 mt-0.5">
-                        Customers will see a "View Packages" button and can browse these packages directly.
-                      </p>
-                    </div>
-                    {formData.linkedPackageIds.length > 0 && (
-                      <span className="text-xs font-bold px-3 py-1 rounded-full bg-violet-50 text-violet-600 animate-scale-in">
-                        {formData.linkedPackageIds.length} linked
-                      </span>
-                    )}
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[240px] overflow-y-auto pr-1 hide-scrollbar">
-                    {packages.filter((p) => p.isActive !== false).map((pkg) => {
-                      const isLinked = formData.linkedPackageIds.includes(pkg.id);
-                      return (
-                        <button
-                          key={pkg.id}
-                          onClick={() => {
-                            setFormData((prev) => ({
-                              ...prev,
-                              linkedPackageIds: isLinked
-                                ? prev.linkedPackageIds.filter((id) => id !== pkg.id)
-                                : [...prev.linkedPackageIds, pkg.id],
-                            }));
-                          }}
-                          className={`group relative flex items-center gap-3 rounded-xl border-2 p-3 text-left transition-all duration-300 ${
-                            isLinked
-                              ? 'border-violet-400 bg-violet-50/60 shadow-md shadow-violet-100/60'
-                              : 'border-slate-200/80 hover:border-slate-300 hover:bg-slate-50/50'
-                          }`}
-                        >
-                          {/* Checkbox indicator */}
-                          <div className={`flex h-6 w-6 items-center justify-center rounded-lg border-2 shrink-0 transition-all duration-300 ${
-                            isLinked
-                              ? 'border-violet-500 bg-violet-500 text-white'
-                              : 'border-slate-300 group-hover:border-slate-400'
-                          }`}>
-                            {isLinked && <Check className="w-3.5 h-3.5" strokeWidth={3} />}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-semibold text-slate-900 truncate">{pkg.name}</p>
-                            <p className="text-[11px] text-slate-500 truncate">
-                              {pkg.duration || 'Custom'} • ₹{Math.round((pkg.basePrice || 0) / 100).toLocaleString('en-IN')}/person
-                            </p>
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                  {formData.linkedPackageIds.length > 0 && (
-                    <div className="mt-3 flex items-start gap-2.5 rounded-xl bg-gradient-to-r from-violet-50 to-purple-50/50 border border-violet-200/60 p-3">
-                      <Sparkles className="w-4 h-4 text-violet-500 mt-0.5 shrink-0" />
-                      <p className="text-xs text-violet-700 leading-relaxed">
-                        <span className="font-bold">Interactive Broadcast:</span> After receiving your message, customers will see a <span className="font-bold">"🏖️ View Packages"</span> button. Tapping it shows these {formData.linkedPackageIds.length} package{formData.linkedPackageIds.length > 1 ? 's' : ''} with full details, images, and enquiry actions.
-                      </p>
-                    </div>
-                  )}
-                </div>
-              )}
+              {/* ── Bottom Drawers ── */}
+              <TemplatePickerDrawer open={showTemplateDrawer} onClose={() => setShowTemplateDrawer(false)} templates={filteredCompatibleTemplates} templateSearch={templateSearch} setTemplateSearch={setTemplateSearch} selectedId={formData.templateId} onSelect={applyApprovedTemplateSelection} builderMode={builderMode} />
+              <ConfigDrawer open={showConfigDrawer} onClose={() => setShowConfigDrawer(false)} builderMode={builderMode} formData={formData} setFormData={setFormData} selectedTemplate={selectedTemplate} activeSections={activeSections} packageSection={packageSection} propertySection={propertySection} customTripSection={customTripSection} activePackages={activePackages} activeProperties={activeProperties} selectedPackageRecords={selectedPackageRecords} selectedPropertyRecords={selectedPropertyRecords} updateSection={updateSection} toggleSectionItem={toggleSectionItem} ctaNeedsFeaturedMedia={ctaNeedsFeaturedMedia} featuredCtaRecord={featuredCtaRecord} getCatalogItemMediaUrl={getCatalogItemMediaUrl} setShowMediaModal={setShowMediaModal} selectMessageExperience={selectMessageExperience} MESSAGE_EXPERIENCES={MESSAGE_EXPERIENCES} currentExperience={currentExperience} carouselItems={carouselItems} toggleCarouselItem={toggleCarouselItem} selectedCarouselRecords={selectedCarouselRecords} />
             </div>
-          </div>
-        )}
+          )}
 
           {/* ───── Step 3: Audience ───── */}
           {step === 2 && (

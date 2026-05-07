@@ -13,10 +13,12 @@ import {
   getNextAction,
   getNextFollowUp,
 } from '../utils/leadInsights';
+import { mergeAssignedAgentOption } from '../utils/agentOptions';
 
 export default function LeadCard({ lead, onClick, onAssignAgent, agents = [] }) {
   const customer = lead.customer || {};
   const agent = lead.assignedAgent;
+  const agentOptions = mergeAssignedAgentOption(agents, lead);
   const accentColor = getStatusAccent(lead.status);
   const attentionBadges = getAttentionBadges(lead);
   const nextFollowUp = getNextFollowUp(lead);
@@ -118,7 +120,7 @@ export default function LeadCard({ lead, onClick, onAssignAgent, agents = [] }) 
             className="max-w-[88px] cursor-pointer bg-transparent text-[11px] text-neutral-400 outline-none hover:text-neutral-600"
           >
             <option value="">Assign</option>
-            {agents.map((agentOption) => (
+            {agentOptions.map((agentOption) => (
               <option key={agentOption.id} value={agentOption.id}>
                 {agentOption.name}
               </option>

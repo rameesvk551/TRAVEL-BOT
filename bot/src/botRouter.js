@@ -55,7 +55,19 @@ async function routeMessage(session, incoming, customer, agency, options = {}) {
     return;
   }
 
-  if (!isFirstInboundMessage && !actionId && ['NEW', 'MENU', 'COMPLETE'].includes(session.currentStep)) {
+  const menuContext = String(session.collectedData?.menuContext || '').trim();
+  const isMenuFallbackReply = session.currentStep === 'MENU'
+    && menuContext
+    && (
+      /^[1-3]$/.test(normalizedText)
+      || ['visa', 'ticketing', 'visa & ticketing', 'plan a trip', 'packages', 'staycations', 'properties', 'flight', 'rail', 'train'].includes(normalizedText)
+    );
+
+  if (!actionId && await tryHandleCampaignTextAction(session, messageText, customer, agency)) {
+    return;
+  }
+
+  if (!isFirstInboundMessage && !actionId && ['NEW', 'MENU', 'COMPLETE'].includes(session.currentStep) && !isMenuFallbackReply) {
     // Do not auto-open the welcome menu for every free-text message from an
     // existing customer. Explicit menu commands above still work.
     return;
@@ -109,7 +121,7 @@ async function routeMessage(session, incoming, customer, agency, options = {}) {
     return;
   }
 
-  if (await tryHandleCampaignTextAction(session, messageText, customer, agency)) {
+  if (actionId && await tryHandleCampaignTextAction(session, messageText, customer, agency)) {
     return;
   }
 

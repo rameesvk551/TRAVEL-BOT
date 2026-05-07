@@ -12,7 +12,7 @@ import {
 } from '@heroicons/react/24/outline';
 import { useRegister } from '../hooks/useAuth';
 import { registerSchema } from '../utils/validators';
-import logo from '../assets/logo.png';
+
 import metaBadge from '../assets/meta_tech_provider_badge.png';
 
 export default function Signup() {
@@ -29,12 +29,7 @@ export default function Signup() {
         <section className="bg-[#f8fafc] flex w-full flex-col justify-start px-6 py-6 lg:w-[45%] lg:justify-center lg:px-16 lg:py-4 xl:w-[40%] xl:px-24 xl:py-5">
           <div className="mx-auto w-full max-w-md animate-wizard-in">
             <div className="mb-4 flex flex-col items-center justify-center gap-2 text-center">
-              <img
-                src={logo}
-                alt="Wayon Logo"
-                className="h-20 w-40 object-contain transition-transform duration-500 hover:scale-105"
-              />
-              <span className="text-2xl font-black tracking-tighter text-neutral-900 uppercase">WayOn</span>
+              <span className="text-3xl font-black tracking-tighter text-neutral-900 uppercase">WayOn</span>
             </div>
 
             <div className="mb-4 text-center text-balance">

@@ -1,0 +1,10 @@
+<svg width="120" height="40" viewBox="0 0 120 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background circle -->
+  <circle cx="20" cy="20" r="18" fill="#00A884" opacity="0.1"/>
+  
+  <!-- Main shape - stylized W -->
+  <text x="20" y="28" font-size="24" font-weight="bold" fill="#00A884" font-family="Arial, sans-serif" text-anchor="middle">W</text>
+  
+  <!-- WAYON text -->
+  <text x="45" y="26" font-size="18" font-weight="700" fill="#111827" font-family="Arial, sans-serif">WAYON</text>
+</svg>

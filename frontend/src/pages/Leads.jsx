@@ -1,4 +1,5 @@
 import { useMemo, useState, useCallback } from 'react';
+import LeadCard from '../components/LeadCard';
 import { useQuery } from '@tanstack/react-query';
 import {
   ArrowPathIcon,
@@ -34,6 +35,7 @@ import {
 } from '../hooks/useLeads';
 import { useAuthStore } from '../store/authStore';
 import { formatCurrency, formatDate, formatDateTime, formatPhone, timeAgo } from '../utils/formatters';
+import { mergeAssignedAgentOption } from '../utils/agentOptions';
 import { LEAD_STATUS_OPTIONS, LEAD_PIPELINE_COLUMNS } from '../utils/leadStatuses';
 import {
   DATE_RANGE_OPTIONS,
@@ -66,6 +68,50 @@ const TABS = [
 ];
 
 const EMPTY = '-';
+
+function formatServiceLabel(value = '') {
+  const normalized = String(value || '').trim().toUpperCase();
+  if (normalized === 'FLIGHT') return 'Flight';
+  if (normalized === 'RAIL') return 'Rail';
+  if (normalized === 'VISA_TICKETING') return 'Visa & Ticketing';
+  if (normalized === 'VIEWED') return 'Viewed';
+  return String(value || '').replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase()) || EMPTY;
+}
+
+function getLeadRequestSummaries(lead, details = {}) {
+  if (!lead) return [];
+  const notes = String(lead.notes || '').toLowerCase();
+  const summaries = [];
+
+  if (details.serviceCategory || details.service || String(lead.interest || '').includes('TICKETING')) {
+    summaries.push({
+      key: 'ticketing',
+      title: 'Visa & Ticketing',
+      tone: 'border-sky-200 bg-sky-50 text-sky-700',
+      meta: [formatServiceLabel(details.service || lead.interest?.replace('_TICKETING', '')), details.serviceDetails || 'Awaiting route/date/passenger details'].filter(Boolean).join(' - '),
+    });
+  }
+
+  if (details.staycationInterest || notes.includes('properties viewed from whatsapp menu') || lead.propertyId) {
+    summaries.push({
+      key: 'staycations',
+      title: 'Staycations',
+      tone: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+      meta: lead.property?.name ? `Selected ${lead.property.name}` : 'Opened stay/property flow',
+    });
+  }
+
+  if (details.destination || details.travelDate || details.travellers || details.budgetPerPerson || notes.includes('custom trip requested')) {
+    summaries.push({
+      key: 'custom-trip',
+      title: 'Custom Trip',
+      tone: 'border-amber-200 bg-amber-50 text-amber-700',
+      meta: [details.destination, details.travelDate, details.travellersText || (details.travellers ? `${details.travellers} travellers` : '')].filter(Boolean).join(' - ') || 'Custom trip flow opened',
+    });
+  }
+
+  return summaries;
+}
 
 export default function Leads() {
   const [activeTab, setActiveTab] = useState('Needs Attention');
@@ -213,128 +259,94 @@ export default function Leads() {
 
   return (
     <div className="w-full pb-10">
-      <div className="mb-8 flex flex-col gap-5 animate-fade-in xl:flex-row xl:items-start xl:justify-between">
+      {/* ── Header ── */}
+      <div className="mb-5 flex flex-col gap-4 md:mb-8 md:flex-row md:items-start md:justify-between">
         <div>
-          <h1 className="text-3xl font-extrabold tracking-tight text-neutral-900">Lead Management</h1>
-          <p className="mt-1.5 max-w-2xl text-sm font-medium text-neutral-500">
-            Prioritize urgent enquiries, assign owners, and keep follow-ups moving from one workspace.
+          <h1 className="text-xl font-extrabold tracking-tight text-neutral-900 md:text-3xl">Leads</h1>
+          <p className="mt-0.5 hidden text-sm font-medium text-neutral-500 md:block">
+            Prioritize urgent enquiries, assign owners, and keep follow-ups moving.
           </p>
         </div>
 
-        <div className="flex w-full flex-col gap-3 xl:w-auto xl:items-end">
-          <div className="flex w-full flex-wrap items-center justify-between gap-3 xl:w-auto xl:justify-end">
-            <div className="flex items-center rounded-[var(--radius-md)] border border-neutral-200 bg-neutral-100/80 p-1 shadow-inner">
-              <button
-                onClick={() => setView('list')}
-                className={`px-4 py-2 text-sm font-bold rounded-[var(--radius-sm)] transition-all ${
-                  view === 'list' ? 'bg-white shadow-sm text-neutral-900' : 'text-neutral-500 hover:text-neutral-900'
-                }`}
-              >
-                Table
-              </button>
-              <button
-                onClick={() => setView('kanban')}
-                className={`px-4 py-2 text-sm font-bold rounded-[var(--radius-sm)] transition-all ${
-                  view === 'kanban' ? 'bg-white shadow-sm text-neutral-900' : 'text-neutral-500 hover:text-neutral-900'
-                }`}
-              >
-                Kanban
-              </button>
-            </div>
-
+        <div className="flex items-center gap-2">
+          <div className="flex items-center rounded-[var(--radius-md)] border border-neutral-200 bg-neutral-100/80 p-0.5 shadow-inner">
             <button
-              onClick={() => setIsNewLeadModalOpen(true)}
-              className="shell-button-primary h-11 px-5 bg-neutral-900 hover:bg-black"
+              onClick={() => setView('list')}
+              className={`px-3 py-1.5 text-xs font-bold rounded-[var(--radius-sm)] transition-all md:px-4 md:py-2 md:text-sm ${
+                view === 'list' ? 'bg-white shadow-sm text-neutral-900' : 'text-neutral-500'
+              }`}
             >
-              <PlusIcon className="h-5 w-5" />
-              New Lead
+              Table
+            </button>
+            <button
+              onClick={() => setView('kanban')}
+              className={`px-3 py-1.5 text-xs font-bold rounded-[var(--radius-sm)] transition-all md:px-4 md:py-2 md:text-sm ${
+                view === 'kanban' ? 'bg-white shadow-sm text-neutral-900' : 'text-neutral-500'
+              }`}
+            >
+              Kanban
             </button>
           </div>
-
-          <div className="flex w-full flex-wrap items-center gap-3 xl:w-auto xl:justify-end">
-            <select
-              value={sourceFilter}
-              onChange={(event) => setSourceFilter(event.target.value)}
-              className="shell-input-rect h-11 w-40 bg-white py-2"
-            >
-              {SOURCE_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-
-            <select
-              value={agentFilter}
-              onChange={(event) => setAgentFilter(event.target.value)}
-              className="shell-input-rect h-11 w-44 bg-white py-2"
-            >
-              <option value="all">All Agents</option>
-              {currentAgent?.id && <option value="mine">Assigned To Me</option>}
-              <option value="unassigned">Unassigned</option>
-              {agents.map((agent) => (
-                <option key={agent.id} value={agent.id}>
-                  {agent.name}
-                </option>
-              ))}
-            </select>
-
-            <select
-              value={tagFilter}
-              onChange={(event) => setTagFilter(event.target.value)}
-              className="shell-input-rect h-11 w-40 bg-white py-2"
-            >
-              <option value="all">All Tags</option>
-              {tagOptions.map((tag) => (
-                <option key={tag} value={tag}>
-                  {tag}
-                </option>
-              ))}
-            </select>
-
-            <select
-              value={sortBy}
-              onChange={(event) => setSortBy(event.target.value)}
-              className="shell-input-rect h-11 w-44 bg-white py-2"
-            >
-              {SORT_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </div>
+          <button
+            onClick={() => setIsNewLeadModalOpen(true)}
+            className="shell-button-primary h-9 px-3 text-xs bg-neutral-900 hover:bg-black md:h-11 md:px-5 md:text-sm"
+          >
+            <PlusIcon className="h-4 w-4 md:h-5 md:w-5" />
+            <span className="hidden sm:inline">New Lead</span>
+            <span className="sm:hidden">Add</span>
+          </button>
         </div>
       </div>
 
-      <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-6">
-        <MetricCard icon={ExclamationTriangleIcon} tone="bg-amber-50 text-amber-600" value={metrics.attention} label="Needs Attention" />
-        <MetricCard icon={ClockIcon} tone="bg-rose-50 text-rose-600" value={metrics.overdue} label="Overdue" />
-        <MetricCard icon={TrophyIcon} tone="bg-red-50 text-red-600" value={metrics.hot} label="Hot Leads" />
-        <MetricCard icon={BriefcaseIcon} tone="bg-sky-50 text-sky-600" value={metrics.totalDeals} label="Total Leads" />
-        <MetricCard icon={TrophyIcon} tone="bg-emerald-50 text-emerald-600" value={metrics.won} label="Converted" />
-        <MetricCard icon={BanknotesIcon} tone="bg-indigo-50 text-indigo-600" value={formatCurrency(metrics.pipelineValue)} label="Pipeline Value" />
+      {/* ── Filters (collapsible on mobile) ── */}
+      <div className="mb-4 flex flex-col gap-2 md:mb-6 md:flex-row md:flex-wrap md:items-center md:gap-3">
+        <select value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value)} className="shell-input-rect h-10 flex-1 min-w-0 bg-white py-2 text-xs md:h-11 md:w-40 md:flex-none md:text-sm">
+          {SOURCE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
+        <select value={agentFilter} onChange={(e) => setAgentFilter(e.target.value)} className="shell-input-rect h-10 flex-1 min-w-0 bg-white py-2 text-xs md:h-11 md:w-44 md:flex-none md:text-sm">
+          <option value="all">All Agents</option>
+          {currentAgent?.id && <option value="mine">Assigned To Me</option>}
+          <option value="unassigned">Unassigned</option>
+          {agents.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+        </select>
+        <select value={tagFilter} onChange={(e) => setTagFilter(e.target.value)} className="shell-input-rect h-10 flex-1 min-w-0 bg-white py-2 text-xs md:h-11 md:w-40 md:flex-none md:text-sm">
+          <option value="all">All Tags</option>
+          {tagOptions.map((t) => <option key={t} value={t}>{t}</option>)}
+        </select>
+        <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="shell-input-rect h-10 flex-1 min-w-0 bg-white py-2 text-xs md:h-11 md:w-44 md:flex-none md:text-sm">
+          {SORT_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
       </div>
 
-      <div className="mb-6 flex flex-col gap-4">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div className="relative w-full max-w-md group">
-            <MagnifyingGlassIcon className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-neutral-400 transition-colors group-focus-within:text-neutral-600" />
+      {/* ── Metrics — horizontal scroll on mobile ── */}
+      <div className="mb-5 -mx-1 flex gap-3 overflow-x-auto pb-1 hide-scrollbar md:mx-0 md:mb-6 md:grid md:grid-cols-3 xl:grid-cols-6">
+        <MetricCard icon={ExclamationTriangleIcon} tone="bg-amber-50 text-amber-600" value={metrics.attention} label="Attention" />
+        <MetricCard icon={ClockIcon} tone="bg-rose-50 text-rose-600" value={metrics.overdue} label="Overdue" />
+        <MetricCard icon={TrophyIcon} tone="bg-red-50 text-red-600" value={metrics.hot} label="Hot" />
+        <MetricCard icon={BriefcaseIcon} tone="bg-sky-50 text-sky-600" value={metrics.totalDeals} label="Total" />
+        <MetricCard icon={TrophyIcon} tone="bg-emerald-50 text-emerald-600" value={metrics.won} label="Won" />
+        <MetricCard icon={BanknotesIcon} tone="bg-indigo-50 text-indigo-600" value={formatCurrency(metrics.pipelineValue)} label="Pipeline" />
+      </div>
+
+      {/* ── Search + Date Range + Tabs ── */}
+      <div className="mb-4 flex flex-col gap-3 md:mb-6">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div className="relative w-full group md:max-w-md">
+            <MagnifyingGlassIcon className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
             <input
               type="text"
-              placeholder="Search name, phone, email, destination..."
+              placeholder="Search name, phone, destination..."
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              className="shell-input-rect h-12 rounded-xl border-neutral-200 bg-white pl-11 shadow-sm focus:border-neutral-400 focus:ring-0"
+              className="shell-input-rect h-10 rounded-xl border-neutral-200 bg-white pl-10 text-sm shadow-sm focus:border-neutral-400 focus:ring-0 md:h-12 md:pl-11"
             />
           </div>
-
-          <div className="flex items-center gap-2 overflow-x-auto hide-scrollbar">
+          <div className="flex items-center gap-1.5 overflow-x-auto hide-scrollbar">
             {DATE_RANGE_OPTIONS.map((option) => (
               <button
                 key={option.value}
                 onClick={() => setDateRange(option.value)}
-                className={`shrink-0 rounded-[var(--radius-sm)] px-3 py-2 text-xs font-bold transition-all ${
+                className={`shrink-0 rounded-[var(--radius-sm)] px-2.5 py-1.5 text-[11px] font-bold transition-all md:px-3 md:py-2 md:text-xs ${
                   dateRange === option.value
                     ? 'bg-neutral-900 text-white shadow-sm'
                     : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'
@@ -343,29 +355,25 @@ export default function Leads() {
                 {option.label}
               </button>
             ))}
-            <button
-              onClick={clearFilters}
-              className="shell-button-secondary h-9 shrink-0 px-3 py-1.5 text-xs"
-            >
-              <FunnelIcon className="h-4 w-4" />
-              Reset
+            <button onClick={clearFilters} className="shell-button-secondary h-7 shrink-0 px-2 py-1 text-[11px] md:h-9 md:px-3 md:text-xs">
+              <FunnelIcon className="h-3.5 w-3.5" /> Reset
             </button>
           </div>
         </div>
 
-        <div className="flex gap-1 overflow-x-auto hide-scrollbar">
+        <div className="flex gap-0.5 overflow-x-auto hide-scrollbar border-b border-neutral-100">
           {TABS.map((tab) => (
             <button
               key={tab.key}
               onClick={() => setActiveTab(tab.key)}
-              className={`flex shrink-0 items-center gap-2 border-b-2 px-4 py-2 text-sm font-semibold whitespace-nowrap transition-colors ${
+              className={`flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 text-xs font-semibold whitespace-nowrap transition-colors md:px-4 md:text-sm ${
                 activeTab === tab.key
                   ? 'border-neutral-900 text-neutral-900'
-                  : 'border-transparent text-neutral-400 hover:border-neutral-300 hover:text-neutral-600'
+                  : 'border-transparent text-neutral-400 hover:text-neutral-600'
               }`}
             >
               {tab.label}
-              <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] font-bold text-neutral-500">
+              <span className="rounded-full bg-neutral-100 px-1.5 py-0.5 text-[9px] font-bold text-neutral-500 md:text-[10px] md:px-2">
                 {tabCounts[tab.key] || 0}
               </span>
             </button>
@@ -376,20 +384,66 @@ export default function Leads() {
       {view === 'kanban' ? (
         <LeadPipeline leads={filteredLeads} onLeadClick={(lead) => setSelectedLeadId(lead.id)} />
       ) : (
-        <LeadTable
-          agents={agents}
-          clearFilters={clearFilters}
-          isError={leadsQuery.isError}
-          isLoading={leadsQuery.isLoading}
-          leads={filteredLeads}
-          onLeadClick={(lead) => setSelectedLeadId(lead.id)}
-          onRetry={() => leadsQuery.refetch()}
-          onStatusChange={handleStatusChange}
-          onUpdateLead={updateLeadField}
-          selectedLeadIds={selectedLeadIds}
-          onToggleSelect={toggleSelectLead}
-          onToggleSelectAll={toggleSelectAll}
-        />
+        <>
+          {/* Mobile card list */}
+          <div className="md:hidden">
+            {leadsQuery.isLoading ? (
+              <div className="space-y-3">
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <div key={i} className="rounded-[var(--radius-md)] border border-neutral-200 bg-white p-4 animate-pulse">
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="h-8 w-8 rounded-full bg-neutral-100" />
+                      <div className="flex-1 space-y-1.5"><div className="h-3.5 w-2/3 rounded bg-neutral-100" /><div className="h-2.5 w-1/3 rounded bg-neutral-100" /></div>
+                    </div>
+                    <div className="space-y-2"><div className="h-3 w-full rounded bg-neutral-100" /><div className="h-3 w-1/2 rounded bg-neutral-100" /></div>
+                  </div>
+                ))}
+              </div>
+            ) : leadsQuery.isError ? (
+              <div className="flex flex-col items-center justify-center py-16 rounded-2xl border border-dashed border-neutral-200 bg-white">
+                <XCircleIcon className="h-10 w-10 text-rose-400 mb-3" />
+                <p className="text-sm font-semibold text-neutral-700">Could not load leads</p>
+                <button onClick={() => leadsQuery.refetch()} className="shell-button-secondary mt-4 text-xs"><ArrowPathIcon className="h-4 w-4" /> Retry</button>
+              </div>
+            ) : filteredLeads.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-16 rounded-2xl border border-dashed border-neutral-200 bg-white">
+                <BriefcaseIcon className="h-10 w-10 text-neutral-300 mb-3" />
+                <p className="text-sm font-semibold text-neutral-700">No leads found</p>
+                <button onClick={clearFilters} className="mt-3 text-xs font-bold text-neutral-600 underline">Clear filters</button>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {filteredLeads.map((lead) => (
+                  <LeadCard
+                    key={lead.id}
+                    lead={lead}
+                    agents={agents}
+                    onClick={(l) => setSelectedLeadId(l.id)}
+                    onAssignAgent={(leadId, agentId) => updateLeadField(leadId, { assignedAgentId: agentId || null })}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Desktop table */}
+          <div className="hidden md:block">
+            <LeadTable
+              agents={agents}
+              clearFilters={clearFilters}
+              isError={leadsQuery.isError}
+              isLoading={leadsQuery.isLoading}
+              leads={filteredLeads}
+              onLeadClick={(lead) => setSelectedLeadId(lead.id)}
+              onRetry={() => leadsQuery.refetch()}
+              onStatusChange={handleStatusChange}
+              onUpdateLead={updateLeadField}
+              selectedLeadIds={selectedLeadIds}
+              onToggleSelect={toggleSelectLead}
+              onToggleSelectAll={toggleSelectAll}
+            />
+          </div>
+        </>
       )}
 
       <BulkActionBar
@@ -417,14 +471,14 @@ export default function Leads() {
 
 function MetricCard({ icon: Icon, tone, value, label }) {
   return (
-    <div className="kpi-card">
-      <div className="flex items-center gap-4">
-        <div className={`kpi-icon ${tone}`}>
-          <Icon className="h-5 w-5" />
+    <div className="kpi-card min-w-[120px] shrink-0 md:min-w-0">
+      <div className="flex items-center gap-3 md:gap-4">
+        <div className={`kpi-icon !h-9 !w-9 md:!h-11 md:!w-11 ${tone}`}>
+          <Icon className="h-4 w-4 md:h-5 md:w-5" />
         </div>
         <div className="min-w-0">
-          <div className="truncate text-2xl font-bold leading-none text-neutral-900">{value}</div>
-          <div className="mt-1 text-[11px] font-semibold uppercase tracking-wider text-neutral-400">{label}</div>
+          <div className="truncate text-lg font-bold leading-none text-neutral-900 md:text-2xl">{value}</div>
+          <div className="mt-0.5 text-[10px] font-semibold uppercase tracking-wider text-neutral-400 md:mt-1 md:text-[11px]">{label}</div>
         </div>
       </div>
     </div>
@@ -548,6 +602,7 @@ function LeadTableRow({ agents, index, isSelected, lead, onLeadClick, onStatusCh
   const attentionBadges = getAttentionBadges(lead);
   const nextFollowUp = getNextFollowUp(lead);
   const score = getLeadScore(lead);
+  const agentOptions = mergeAssignedAgentOption(agents, lead);
 
   return (
     <tr className={`data-table-row group ${isSelected ? 'bg-indigo-50/60' : ''}`} onClick={() => onLeadClick(lead)}>
@@ -624,7 +679,7 @@ function LeadTableRow({ agents, index, isSelected, lead, onLeadClick, onStatusCh
           onChange={(event) => onUpdateLead(lead.id, { assignedAgentId: event.target.value || null })}
         >
           <option value="">Unassigned</option>
-          {agents.map((agent) => (
+          {agentOptions.map((agent) => (
             <option key={agent.id} value={agent.id}>
               {agent.name}
             </option>
@@ -652,6 +707,10 @@ function LeadDrawer({ leadId, onClose, agents }) {
   const { data, isLoading } = useLead(leadId);
   const lead = data?.data;
   const selectedCatalogItems = lead?.selectedCatalogItems || [];
+  const customTripDetails = lead?.customTripDetails && Object.keys(lead.customTripDetails).length
+    ? lead.customTripDetails
+    : null;
+  const requestSummaries = getLeadRequestSummaries(lead, customTripDetails || {});
 
   const [activeTab, setActiveTab] = useState('Notes');
   const [noteContent, setNoteContent] = useState('');
@@ -726,6 +785,8 @@ function LeadDrawer({ leadId, onClose, agents }) {
   };
 
   if (!leadId) return null;
+
+  const agentOptions = mergeAssignedAgentOption(agents, lead);
 
   return (
     <div className="fixed inset-0 z-50 pointer-events-auto">
@@ -920,7 +981,7 @@ function LeadDrawer({ leadId, onClose, agents }) {
                     onChange={(event) => setEditState({ ...editState, assignedAgentId: event.target.value })}
                   >
                     <option value="">Unassigned</option>
-                    {agents.map((agent) => (
+                    {agentOptions.map((agent) => (
                       <option key={agent.id} value={agent.id}>
                         {agent.name}
                       </option>
@@ -956,6 +1017,25 @@ function LeadDrawer({ leadId, onClose, agents }) {
               )}
             </div>
 
+            {requestSummaries.length > 0 && (
+              <div className="mt-5 rounded-2xl border border-neutral-200 bg-white p-4">
+                <div className="mb-3">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-neutral-400">Requested Services</p>
+                  <p className="mt-1 text-sm font-semibold text-neutral-900">
+                    {requestSummaries.length} request{requestSummaries.length === 1 ? '' : 's'} captured from WhatsApp
+                  </p>
+                </div>
+                <div className="grid gap-2">
+                  {requestSummaries.map((item) => (
+                    <div key={item.key} className={`rounded-xl border px-3 py-2 ${item.tone}`}>
+                      <p className="text-sm font-bold text-neutral-900">{item.title}</p>
+                      <p className="mt-1 text-xs font-semibold text-neutral-600">{item.meta || EMPTY}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {selectedCatalogItems.length > 0 && (
               <div className="mt-5 rounded-2xl border border-neutral-200 bg-neutral-50 p-4">
                 <div className="mb-3 flex items-center justify-between gap-3">
@@ -990,6 +1070,44 @@ function LeadDrawer({ leadId, onClose, agents }) {
                     </div>
                   ))}
                 </div>
+              </div>
+            )}
+
+            {customTripDetails && (
+              <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50/70 p-4">
+                <div className="mb-3">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-600">Custom Trip Details</p>
+                  <p className="mt-1 text-sm font-semibold text-neutral-900">Preferences submitted from WhatsApp</p>
+                </div>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+                  {(customTripDetails.serviceCategory || customTripDetails.service) && (
+                    <>
+                      <DetailValue label="Service" value={formatServiceLabel(customTripDetails.serviceCategory)} />
+                      <DetailValue label="Ticketing Type" value={formatServiceLabel(customTripDetails.service)} />
+                    </>
+                  )}
+                  <DetailValue label="Destination" value={customTripDetails.destination || lead.destination || EMPTY} />
+                  <DetailValue label="Travel Date" value={customTripDetails.travelDate || lead.travelDates || EMPTY} />
+                  <DetailValue label="Travellers" value={customTripDetails.travellersText || customTripDetails.travellers || lead.travellers || EMPTY} />
+                  <DetailValue
+                    label="Budget / Person"
+                    value={customTripDetails.budgetText || (customTripDetails.budgetPerPerson ? formatCurrency(customTripDetails.budgetPerPerson) : lead.budgetPerPerson ? formatCurrency(lead.budgetPerPerson) : EMPTY)}
+                  />
+                  {customTripDetails.campaignName && <DetailValue label="Campaign" value={customTripDetails.campaignName} />}
+                  {customTripDetails.submittedAt && <DetailValue label="Submitted" value={formatDateTime(customTripDetails.submittedAt)} />}
+                </div>
+                {customTripDetails.serviceDetails && (
+                  <div className="mt-3 rounded-xl border border-sky-100 bg-white/70 p-3">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-sky-600">Ticketing Details</p>
+                    <p className="mt-1 whitespace-pre-wrap text-sm font-medium text-neutral-800">{customTripDetails.serviceDetails}</p>
+                  </div>
+                )}
+                {customTripDetails.notes && (
+                  <div className="mt-3 rounded-xl border border-amber-100 bg-white/70 p-3">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-amber-600">Trip Notes</p>
+                    <p className="mt-1 whitespace-pre-wrap text-sm font-medium text-neutral-800">{customTripDetails.notes}</p>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -1071,6 +1189,15 @@ function LeadField({ editControl, isEditing = false, label, value }) {
       ) : (
         <div className="truncate font-medium text-neutral-900">{value}</div>
       )}
+    </div>
+  );
+}
+
+function DetailValue({ label, value }) {
+  return (
+    <div className="min-w-0">
+      <div className="mb-1 text-xs font-medium text-amber-700/70">{label}</div>
+      <div className="break-words font-semibold text-neutral-900">{value || EMPTY}</div>
     </div>
   );
 }

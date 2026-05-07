@@ -72,6 +72,17 @@ async function ensureAgenciesSchema() {
     allowNull: false,
     defaultValue: 30,
   });
+
+  await ensureColumn('agencies', 'welcome_message', {
+    type: Sequelize.TEXT,
+    allowNull: true,
+  });
+
+  await ensureColumn('agencies', 'whatsapp_menu_labels', {
+    type: Sequelize.JSONB,
+    allowNull: false,
+    defaultValue: {},
+  });
 }
 
 async function ensureLeadsSchema() {
@@ -147,6 +158,12 @@ async function ensureLeadsSchema() {
     type: Sequelize.JSONB,
     allowNull: false,
     defaultValue: [],
+  });
+
+  await ensureColumn('leads', 'custom_trip_details', {
+    type: Sequelize.JSONB,
+    allowNull: false,
+    defaultValue: {},
   });
 }
 
@@ -519,6 +536,82 @@ async function ensureWhatsAppFlowsSchema() {
   }
 }
 
+async function ensureServiceRoutingRulesTable() {
+  const queryInterface = sequelize.getQueryInterface();
+
+  if (!(await tableExists('service_routing_rules'))) {
+    await queryInterface.createTable('service_routing_rules', {
+      id: {
+        type: Sequelize.UUID,
+        defaultValue: Sequelize.UUIDV4,
+        primaryKey: true,
+        allowNull: false,
+      },
+      agency_id: {
+        type: Sequelize.UUID,
+        allowNull: false,
+      },
+      intent_key: {
+        type: Sequelize.STRING(80),
+        allowNull: false,
+      },
+      agent_id: {
+        type: Sequelize.UUID,
+        allowNull: false,
+      },
+      priority: {
+        type: Sequelize.INTEGER,
+        allowNull: false,
+        defaultValue: 100,
+      },
+      is_active: {
+        type: Sequelize.BOOLEAN,
+        allowNull: false,
+        defaultValue: true,
+      },
+      created_at: {
+        type: Sequelize.DATE,
+        allowNull: false,
+        defaultValue: Sequelize.literal('CURRENT_TIMESTAMP'),
+      },
+      updated_at: {
+        type: Sequelize.DATE,
+        allowNull: false,
+        defaultValue: Sequelize.literal('CURRENT_TIMESTAMP'),
+      },
+    });
+
+    await queryInterface.addIndex('service_routing_rules', ['agency_id']);
+    await queryInterface.addIndex('service_routing_rules', ['agency_id', 'intent_key']);
+    await queryInterface.addIndex('service_routing_rules', ['agency_id', 'intent_key', 'agent_id'], { unique: true });
+    console.log('[SchemaBootstrap] Created service_routing_rules table');
+    return;
+  }
+
+  await ensureColumn('service_routing_rules', 'agency_id', {
+    type: Sequelize.UUID,
+    allowNull: false,
+  });
+  await ensureColumn('service_routing_rules', 'intent_key', {
+    type: Sequelize.STRING(80),
+    allowNull: false,
+  });
+  await ensureColumn('service_routing_rules', 'agent_id', {
+    type: Sequelize.UUID,
+    allowNull: false,
+  });
+  await ensureColumn('service_routing_rules', 'priority', {
+    type: Sequelize.INTEGER,
+    allowNull: false,
+    defaultValue: 100,
+  });
+  await ensureColumn('service_routing_rules', 'is_active', {
+    type: Sequelize.BOOLEAN,
+    allowNull: false,
+    defaultValue: true,
+  });
+}
+
 async function ensureFollowUpsTable() {
   const queryInterface = sequelize.getQueryInterface();
 
@@ -725,6 +818,7 @@ async function ensureProductionSchema() {
   await ensureItinerariesSchema();
   await ensureCampaignsSchema();
   await ensureWhatsAppFlowsSchema();
+  await ensureServiceRoutingRulesTable();
   await ensureFollowUpsTable();
   await ensureLeadNotesTable();
   await ensureInstagramAutomationTables();

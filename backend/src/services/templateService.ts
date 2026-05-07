@@ -644,15 +644,24 @@ function normalizeHeaderType(headerType) {
   return ['NONE', 'TEXT', 'IMAGE', 'DOCUMENT', 'VIDEO'].includes(normalized) ? normalized : 'NONE';
 }
 
+function normalizeButtonRoute(route) {
+  const normalized = String(route || '').toUpperCase();
+  return ['VIEW_PACKAGES', 'VIEW_PROPERTIES', 'CUSTOM_TRIP'].includes(normalized) ? normalized : null;
+}
+
 function normalizeButtons(buttons) {
   if (!Array.isArray(buttons)) return [];
   return buttons
-    .map((button) => ({
-      type: String(button.type || 'QUICK_REPLY').toUpperCase(),
-      text: String(button.text || button.title || '').trim(),
-      url: button.url || null,
-      phoneNumber: button.phoneNumber || button.phone_number || null,
-    }))
+    .map((button) => {
+      const type = String(button.type || 'QUICK_REPLY').toUpperCase();
+      return {
+        type,
+        text: String(button.text || button.title || '').trim(),
+        url: button.url || null,
+        phoneNumber: button.phoneNumber || button.phone_number || null,
+        route: type === 'QUICK_REPLY' ? normalizeButtonRoute(button.route || button.action || button.routing) : null,
+      };
+    })
     .filter((button) => button.text);
 }
 

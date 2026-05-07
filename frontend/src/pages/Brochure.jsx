@@ -146,11 +146,11 @@ export default function Brochure() {
               <header className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
                 <div className="flex items-center gap-4">
                   <div className="flex h-16 w-16 items-center justify-center rounded-[22px] bg-[#16211d] p-2.5 shadow-lg">
-                    <img src={logo} alt="WayOn logo" className="h-full w-full object-contain brightness-0 invert" />
+                    <img src={logo} alt="WAYON logo" className="h-full w-full object-contain brightness-0 invert" />
                   </div>
                   <div>
                     <p className="text-[11px] font-black uppercase tracking-[0.28em] text-[#0c766e]">Client Pitch Brochure</p>
-                    <h1 className="mt-1 text-2xl font-black tracking-[-0.04em] text-[#1d1a17] sm:text-3xl">WayOn Travel CRM</h1>
+                    <h1 className="mt-1 text-2xl font-black tracking-[-0.04em] text-[#1d1a17] sm:text-3xl">WAYON Platform</h1>
                   </div>
                 </div>
 

@@ -194,7 +194,7 @@ async function sendReviewFlowRequest(booking, context, customerName, tripName) {
     `Welcome back, ${customerName}! How was your ${tripName} trip?`,
     {
       flowId: reviewFlow.metaFlowId,
-      firstScreenId: reviewFlow.firstScreenId || 'REVIEW_FORM',
+      firstScreenId: reviewFlow.firstScreenId || 'RECOMMEND',
       flowCta: 'Write Review',
       flowToken: `review|${booking.agencyId}|${booking.customerId}|${booking.id}|${Date.now()}`,
     },

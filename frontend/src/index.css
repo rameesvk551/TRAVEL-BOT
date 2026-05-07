@@ -464,3 +464,11 @@
 .wizard-section-header {
   margin-bottom: 0.25rem;
 }
+
+@keyframes drawerUp {
+  0% { transform: translateY(100%); }
+  100% { transform: translateY(0); }
+}
+.animate-drawer-up {
+  animation: drawerUp 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+}

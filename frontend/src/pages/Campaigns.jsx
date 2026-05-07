@@ -124,12 +124,12 @@ export default function Campaigns() {
       <div className="rounded-[14px] border border-slate-200 bg-white overflow-hidden">
         <div className="p-4 border-b border-slate-100 flex flex-col sm:flex-row items-start sm:items-center gap-3 bg-slate-50/50">
           {/* Status Filter Tabs */}
-          <div className="flex gap-1 overflow-x-auto hide-scrollbar">
+          <div className="flex gap-1 overflow-x-auto hide-scrollbar w-full sm:w-auto min-w-0 -mx-1 px-1 pb-1 sm:pb-0 sm:mx-0 sm:px-0">
             {STATUS_FILTERS.map((f) => (
               <button
                 key={f.key}
                 onClick={() => setStatusFilter(f.key)}
-                className={`whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+                className={`whitespace-nowrap flex-shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
                   statusFilter === f.key
                     ? 'bg-[#2d2d2d] text-white shadow-sm'
                     : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700'

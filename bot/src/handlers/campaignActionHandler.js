@@ -6,6 +6,7 @@ const { Op } = require('sequelize');
 const {
   Campaign,
   CampaignRecipient,
+  MessageTemplate,
   Package,
   Property,
   WhatsAppFlow,
@@ -17,6 +18,7 @@ const {
   getFlowBase64Image,
   buildFlowPackageOptions,
   buildFlowPropertyOptions,
+  buildFlowPropertyLocationOptions,
   getAgencyTripFlowId,
   isMetaTripFlowConfigured,
   PROPERTY_FLOW_FIRST_SCREEN_ID,
@@ -84,10 +86,34 @@ async function getLatestCampaignRecipient(customer, agency) {
       model: Campaign,
       as: 'campaign',
       where: { agencyId: agency.id },
+      include: [{ model: MessageTemplate, as: 'template', attributes: ['id', 'buttons'] }],
       required: true,
     }],
     order: [['sentAt', 'DESC'], ['createdAt', 'DESC']],
   });
+}
+
+function getRouteForSection(section) {
+  const itemType = String(section?.itemType || '').toUpperCase();
+  if (itemType === 'PACKAGE') return 'VIEW_PACKAGES';
+  if (itemType === 'PROPERTY') return 'VIEW_PROPERTIES';
+  if (itemType === 'CUSTOM_TRIP') return 'CUSTOM_TRIP';
+  return null;
+}
+
+function getTemplateButtonRoute(campaign, text, sections = []) {
+  const normalizedText = normalizeLooseText(text);
+  if (!normalizedText) return null;
+
+  const buttons = Array.isArray(campaign?.template?.buttons) ? campaign.template.buttons : [];
+  const matchingIndex = buttons.findIndex((button) => normalizeLooseText(button.text || button.title) === normalizedText);
+  if (matchingIndex < 0) return null;
+
+  const matchingButton = buttons[matchingIndex];
+  const route = String(matchingButton?.route || '').toUpperCase();
+  if (['VIEW_PACKAGES', 'VIEW_PROPERTIES', 'CUSTOM_TRIP'].includes(route)) return route;
+
+  return getRouteForSection(sections[matchingIndex]);
 }
 
 function getSections(campaign) {
@@ -329,6 +355,7 @@ async function openCampaignPropertyFlow(campaign, section, items, customer, agen
   if (!propertyFlow?.flowId) return null;
 
   const propertyOptions = await buildFlowPropertyOptions(items);
+  const propertyLocationOptions = buildFlowPropertyLocationOptions(items);
   const propSectionLabel = escapeMarkdown(section?.label || 'View Properties');
   return whatsappService.sendFlowMessage(
     customer.phone,
@@ -340,6 +367,7 @@ async function openCampaignPropertyFlow(campaign, section, items, customer, agen
       flowToken: `campaign-prop|${agency.id}|${campaign.id}|${customer.id}|${Date.now()}`,
       data: {
         property_category_label: escapeMarkdown(section?.label || 'Featured').slice(0, 20),
+        property_locations: propertyLocationOptions,
         property_options: propertyOptions,
       },
     },
@@ -815,13 +843,22 @@ async function tryHandleCampaignTextAction(session, text, customer, agency) {
   if (!campaign) return false;
 
   const sections = getSections(campaign);
+  const buttonRoute = getTemplateButtonRoute(campaign, text, sections);
   const wantsPackages = textIncludesAny(normalized, ['view packages', 'packages', 'show packages', 'see others']);
   const wantsProperties = textIncludesAny(normalized, ['view properties', 'properties', 'show properties']);
 
+  if (buttonRoute === 'CUSTOM_TRIP') {
+    const customTripSection = sections.find((section) => String(section.itemType || '').toUpperCase() === 'CUSTOM_TRIP');
+    if (!customTripSection && sections.length) return false;
+    await trackCampaignClick(campaign.id, customer, agency, { clickedAction: 'CUSTOM_TRIP', selectedItemType: 'CUSTOM_TRIP' });
+    await startCustomTripLead(session, campaign, customer, agency);
+    return true;
+  }
+
   if (!sections.length) {
-    if (wantsPackages || wantsProperties) {
+    if (wantsPackages || wantsProperties || buttonRoute === 'VIEW_PACKAGES' || buttonRoute === 'VIEW_PROPERTIES') {
       const groups = await resolveAllCampaignItems(campaign, agency);
-      const desiredType = wantsProperties ? 'PROPERTY' : 'PACKAGE';
+      const desiredType = wantsProperties || buttonRoute === 'VIEW_PROPERTIES' ? 'PROPERTY' : 'PACKAGE';
       const matchingGroup = groups.find(({ section }) => String(section?.itemType || '').toUpperCase() === desiredType)
         || groups[0];
       if (!matchingGroup) return false;
@@ -833,7 +870,7 @@ async function tryHandleCampaignTextAction(session, text, customer, agency) {
     return false;
   }
 
-  if (wantsPackages) {
+  if (wantsPackages || buttonRoute === 'VIEW_PACKAGES') {
     const packageSection = sections.find((section) => String(section.itemType || '').toUpperCase() === 'PACKAGE')
       || sections[0];
     if (!packageSection) return false;
@@ -841,7 +878,7 @@ async function tryHandleCampaignTextAction(session, text, customer, agency) {
     return true;
   }
 
-  if (wantsProperties) {
+  if (wantsProperties || buttonRoute === 'VIEW_PROPERTIES') {
     const propertySection = sections.find((section) => String(section.itemType || '').toUpperCase() === 'PROPERTY');
     if (!propertySection) return false;
     await showCampaignSection(session, campaign.id, propertySection.key, customer, agency);

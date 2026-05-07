@@ -6,7 +6,14 @@ const whatsappService = require(path.resolve(__dirname, '../../../backend/src/se
 const { WhatsAppFlow } = require(path.resolve(__dirname, '../../../backend/src/models'));
 const { updateSession } = require('../utils/sessionManager');
 
-const REVIEW_FLOW_FIRST_SCREEN_ID = 'REVIEW_FORM';
+const REVIEW_COLLECTION_FLOW_FIRST_SCREEN_ID = 'RECOMMEND';
+const REVIEW_RATING_OPTIONS = {
+  '0_EXCELLENT': 5,
+  '1_GOOD': 4,
+  '2_AVERAGE': 3,
+  '3_POOR': 2,
+  '4_VERY_POOR': 1,
+};
 
 function parseFlowResponse(rawResponse = {}) {
   if (typeof rawResponse === 'string') {
@@ -21,8 +28,80 @@ function parseFlowResponse(rawResponse = {}) {
 }
 
 function normalizeRating(value) {
-  const rating = parseInt(String(value || '').match(/[1-5]/)?.[0] || '', 10);
+  const normalized = String(value || '').trim().toUpperCase();
+  if (REVIEW_RATING_OPTIONS[normalized]) return REVIEW_RATING_OPTIONS[normalized];
+
+  const fraction = normalized.match(/([1-5])\s*\/\s*5/);
+  if (fraction) return parseInt(fraction[1], 10);
+
+  const rating = parseInt(normalized.match(/[1-5]/)?.[0] || '', 10);
   return Number.isFinite(rating) ? rating : null;
+}
+
+function normalizeRecommendation(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (!normalized) return '';
+  if (normalized.includes('yes')) return 'Yes';
+  if (normalized.includes('no')) return 'No';
+  return String(value || '').trim();
+}
+
+function averageRatings(values = []) {
+  const ratings = values.map(normalizeRating).filter((rating) => Number.isFinite(rating));
+  if (!ratings.length) return null;
+  return Math.round(ratings.reduce((sum, rating) => sum + rating, 0) / ratings.length);
+}
+
+function compactText(parts = []) {
+  return parts
+    .map((part) => String(part || '').trim())
+    .filter(Boolean)
+    .join('\n');
+}
+
+function parseReviewCollectionResponse(response = {}, reviewForm = {}) {
+  const purchaseRating = normalizeRating(
+    response.screen_1_Purchase_0 || response.Purchase_experience || reviewForm.Purchase_experience
+  );
+  const deliveryRating = normalizeRating(
+    response.screen_1_Delivery_and_1 || response.Delivery_and_setup || reviewForm.Delivery_and_setup
+  );
+  const customerServiceRating = normalizeRating(
+    response.screen_1_Customer_2 || response.Customer_service || reviewForm.Customer_service
+  );
+
+  const rating = normalizeRating(response.rating || response.reviewRating || reviewForm.rating || reviewForm.reviewRating)
+    || averageRatings([purchaseRating, deliveryRating, customerServiceRating]);
+  const recommendation = normalizeRecommendation(
+    response.screen_0_Choose_0 || response.Choose_one || reviewForm.Choose_one
+  );
+  const comment = response.screen_0_Leave_a_1
+    || response.Leave_a_comment
+    || response.testimonial
+    || response.review
+    || response.comments
+    || response.improvement
+    || reviewForm.Leave_a_comment
+    || reviewForm.testimonial
+    || reviewForm.review
+    || reviewForm.comments
+    || reviewForm.improvement
+    || '';
+
+  const detailLines = [
+    purchaseRating ? `Booking experience: ${purchaseRating}/5` : '',
+    deliveryRating ? `Trip arrangements: ${deliveryRating}/5` : '',
+    customerServiceRating ? `Travel support: ${customerServiceRating}/5` : '',
+  ];
+
+  return {
+    rating,
+    testimonial: compactText([
+      comment,
+      recommendation ? `Would recommend: ${recommendation}` : '',
+      ...detailLines,
+    ]),
+  };
 }
 
 async function getReviewFlowConfig(agency) {
@@ -41,7 +120,7 @@ async function getReviewFlowConfig(agency) {
 
   return {
     flowId: flow.metaFlowId,
-    firstScreenId: flow.firstScreenId || REVIEW_FLOW_FIRST_SCREEN_ID,
+    firstScreenId: flow.firstScreenId || REVIEW_COLLECTION_FLOW_FIRST_SCREEN_ID,
   };
 }
 
@@ -132,16 +211,7 @@ async function handleReview(session, messageText, customer, agency) {
       : response.reviewForm && typeof response.reviewForm === 'object'
         ? response.reviewForm
         : {};
-    const rating = normalizeRating(response.rating || response.reviewRating || reviewForm.rating || reviewForm.reviewRating);
-    const testimonial = response.testimonial
-      || response.review
-      || response.comments
-      || response.improvement
-      || reviewForm.testimonial
-      || reviewForm.review
-      || reviewForm.comments
-      || reviewForm.improvement
-      || '';
+    const { rating, testimonial } = parseReviewCollectionResponse(response, reviewForm);
 
     if (rating) {
       await saveReviewAndThankCustomer(session, customer, agency, rating, testimonial);

@@ -11,6 +11,17 @@ const { PERMISSIONS } = require('../constants/permissions');
 
 const router = Router();
 
+const menuLabelSchema = z.object({
+  visaTicketing: z.string().trim().max(20).optional(),
+  planTrip: z.string().trim().max(20).optional(),
+  staycations: z.string().trim().max(20).optional(),
+  flight: z.string().trim().max(20).optional(),
+  rail: z.string().trim().max(20).optional(),
+  domestic: z.string().trim().max(20).optional(),
+  international: z.string().trim().max(20).optional(),
+  customTrip: z.string().trim().max(20).optional(),
+}).partial();
+
 const updateAgencySchema = z.object({
   name: z.string().min(2).optional(),
   phone: z.string().optional(),
@@ -26,6 +37,8 @@ const updateAgencySchema = z.object({
   whatsappTripFlowStatus: z.string().optional(),
   whatsappTripFlowError: z.string().nullable().optional(),
   whatsappCatalogId: z.string().optional(),
+  welcomeMessage: z.string().trim().max(900).nullable().optional(),
+  whatsappMenuLabels: menuLabelSchema.optional(),
 });
 
 const marketingOsCallbackSchema = z.object({

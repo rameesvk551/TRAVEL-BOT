@@ -59,6 +59,47 @@ function normalizeSelectedItems(items = []) {
     .slice(0, 50);
 }
 
+function normalizeCustomTripDetails(details = {}) {
+  if (!details || typeof details !== 'object' || Array.isArray(details)) return {};
+
+  const normalized = {};
+  const stringFields = [
+    'name',
+    'destination',
+    'travelDate',
+    'travellersText',
+    'budgetText',
+    'notes',
+    'campaignName',
+    'source',
+    'service',
+    'serviceCategory',
+    'serviceDetails',
+    'staycationInterest',
+    'staycationViewedAt',
+  ];
+
+  for (const field of stringFields) {
+    const value = details[field];
+    if (value === undefined || value === null) continue;
+    const text = String(value).trim();
+    if (text) normalized[field] = text.slice(0, 1000);
+  }
+
+  const travellers = Number.parseInt(String(details.travellers || ''), 10);
+  if (Number.isFinite(travellers) && travellers > 0) normalized.travellers = travellers;
+
+  const budgetPerPerson = Number.parseInt(String(details.budgetPerPerson || ''), 10);
+  if (Number.isFinite(budgetPerPerson) && budgetPerPerson >= 0) normalized.budgetPerPerson = budgetPerPerson;
+
+  if (details.submittedAt) {
+    const submittedAt = new Date(details.submittedAt);
+    if (!Number.isNaN(submittedAt.getTime())) normalized.submittedAt = submittedAt.toISOString();
+  }
+
+  return normalized;
+}
+
 function calculateLeadScore(lead) {
   let score = 10;
   const status = String(lead?.status || '');
@@ -92,6 +133,7 @@ function enrichLeadPayload(lead) {
   const payload = lead?.toJSON ? lead.toJSON() : { ...lead };
   payload.tags = normalizeTags(payload.tags);
   payload.selectedItems = normalizeSelectedItems(payload.selectedItems);
+  payload.customTripDetails = normalizeCustomTripDetails(payload.customTripDetails);
   payload.leadScore = calculateLeadScore(payload);
   return payload;
 }
@@ -331,6 +373,7 @@ async function createLead(data, agencyId) {
     lostReason,
     tags,
     selectedItems,
+    customTripDetails,
     travelStart,
     travelEnd,
     status = 'NEW',
@@ -378,6 +421,7 @@ async function createLead(data, agencyId) {
     lostReason,
     tags: normalizeTags(tags),
     selectedItems: normalizeSelectedItems(selectedItems),
+    customTripDetails: normalizeCustomTripDetails(customTripDetails),
     travelStart,
     travelEnd,
     status,
@@ -424,6 +468,7 @@ async function updateLead(leadId, agencyId, updates, requester = null) {
     'travellers', 'budgetPerPerson', 'packageId', 'propertyId', 'itemType',
     'campaignId', 'campaignName', 'campaignAction', 'notes', 'lostReason',
     'travelStart', 'travelEnd', 'interest', 'source', 'tags', 'selectedItems',
+    'customTripDetails',
   ];
 
   const filtered = {};
@@ -432,6 +477,7 @@ async function updateLead(leadId, agencyId, updates, requester = null) {
   }
   if (filtered.tags !== undefined) filtered.tags = normalizeTags(filtered.tags);
   if (filtered.selectedItems !== undefined) filtered.selectedItems = normalizeSelectedItems(filtered.selectedItems);
+  if (filtered.customTripDetails !== undefined) filtered.customTripDetails = normalizeCustomTripDetails(filtered.customTripDetails);
   if (filtered.status === 'LOST' && !String(filtered.lostReason || lead.lostReason || '').trim()) {
     throw Object.assign(new Error('Lost reason is required when marking a lead lost'), {
       statusCode: 400,
