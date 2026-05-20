@@ -138,18 +138,30 @@ export default function Agents() {
 
   return (
     <div className="w-full space-y-4">
-      <section className="flex flex-col gap-4 border-b border-neutral-200 pb-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h1 className="page-heading">Users</h1>
-          <p className="page-subtext">Manage team members and their access levels.</p>
-        </div>
-        {canManageAgents && activeTab === 'users' ? (
-          <button type="button" onClick={() => setShowCreateModal(true)} className="shell-button-primary">
-            <PlusIcon className="h-4 w-4" />
-            Add User
-          </button>
-        ) : null}
-      </section>
+      {canManageAgents && activeTab === 'users' ? (
+        <>
+          {/* Mobile Action Bar */}
+          <div className="mb-3 rounded-2xl border border-neutral-200 bg-gradient-to-b from-white to-neutral-50 p-2.5 shadow-[0_4px_18px_-14px_rgba(0,0,0,0.35)] md:hidden">
+            <div className="flex items-center justify-end">
+              <button
+                type="button"
+                onClick={() => setShowCreateModal(true)}
+                className="shell-button-primary h-10 w-full justify-center rounded-xl bg-neutral-900 px-4 text-sm font-semibold shadow-sm hover:bg-black"
+              >
+                <PlusIcon className="h-4 w-4" />
+                Add User
+              </button>
+            </div>
+          </div>
+          {/* Desktop Action Bar */}
+          <section className="hidden md:flex justify-end border-b border-neutral-200 pb-4">
+            <button type="button" onClick={() => setShowCreateModal(true)} className="shell-button-primary">
+              <PlusIcon className="h-4 w-4" />
+              Add User
+            </button>
+          </section>
+        </>
+      ) : null}
 
       {!canManageAgents ? (
         <div className="rounded-[12px] border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">

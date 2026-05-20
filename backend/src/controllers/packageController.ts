@@ -4,7 +4,7 @@ const mediaService = require('../services/mediaService');
 async function list(req, res, next) {
   try {
     const activeOnly = req.query.active === 'true';
-    const packages = await packageService.listPackages(req.agency.id, activeOnly);
+    const packages = await packageService.listPackages(req.agency.id, { ...req.query, activeOnly });
     res.json({ success: true, data: packages });
   } catch (err) {
     next(err);

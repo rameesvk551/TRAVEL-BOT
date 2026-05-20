@@ -25,6 +25,12 @@ export const analyticsApi = {
   getSources: (params) => client.get(`/analytics/sources${qs(params)}`).then((r) => r.data),
   getBookings: (params) => client.get(`/analytics/bookings${qs(params)}`).then((r) => r.data),
 
+  getCustomerLtv: (params) => client.get(`/analytics/customer-ltv${qs(params)}`).then((r) => r.data),
+  getCac: (params) => client.get(`/analytics/cac${qs(params)}`).then((r) => r.data),
+  getOperational: (params) => client.get(`/analytics/operational${qs(params)}`).then((r) => r.data),
+  getCampaignRoi: (params) => client.get(`/analytics/campaign-roi${qs(params)}`).then((r) => r.data),
+  getGrowth: (params) => client.get(`/analytics/growth${qs(params)}`).then((r) => r.data),
+
   exportCsv: (type, params) => {
     const p = new URLSearchParams({ type });
     if (params?.from) p.set('from', params.from);

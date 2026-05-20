@@ -16,6 +16,20 @@ function formatBudget(value) {
   return `₹${Math.round(amount / 100).toLocaleString('en-IN')}`;
 }
 
+function phoneDigits(phone = '') {
+  return String(phone || '').replace(/\D/g, '');
+}
+
+function phoneDialLink(phone = '') {
+  const digits = phoneDigits(phone);
+  return digits ? `tel:+${digits}` : '';
+}
+
+function whatsappChatLink(phone = '') {
+  const digits = phoneDigits(phone);
+  return digits ? `https://wa.me/${digits}` : '';
+}
+
 async function findLatestLeadForAgent(agent, agency, leadId = '') {
   const normalizedLeadId = normalizeText(leadId);
 
@@ -95,15 +109,25 @@ async function handleAgentLeadAction({ agent, agency, incoming }) {
     const pkg = lead.packageId
       ? await Package.findOne({ where: { id: lead.packageId, agencyId: agency.id } })
       : null;
+    const customerPhone = customer?.phone || '';
+    const dialLink = phoneDialLink(customerPhone);
+    const chatLink = whatsappChatLink(customerPhone);
     const callSummary = [
       '📞 Call this customer',
       '',
       `Name: ${customer?.name || 'Unknown'}`,
-      `Phone: ${customer?.phone || 'Unknown'}`,
+      `Phone: ${customerPhone || 'Unknown'}`,
       `Package: ${pkg?.name || 'Not selected'}`,
       `Date: ${lead.travelDates || 'Not shared yet'}`,
       `People: ${lead.travellers || 'Not shared yet'}`,
-    ].join('\n');
+      '',
+      dialLink ? `Dial: ${dialLink}` : null,
+      chatLink ? `WhatsApp: ${chatLink}` : null,
+      '',
+      'Tap the phone number or Dial link from WhatsApp to start the call.',
+    ].filter(Boolean).join('\n');
+
+    await appendLeadNote(lead, agency.id, 'Agent tapped Call Now in WhatsApp');
 
     return whatsappService.sendTextMessage(
       agent.phone,

@@ -22,6 +22,39 @@ const menuLabelSchema = z.object({
   customTrip: z.string().trim().max(20).optional(),
 }).partial();
 
+const menuConfigItemSchema = z.object({
+  id: z.string().trim().min(1).max(80).optional(),
+  title: z.string().trim().min(1).max(24),
+  description: z.string().trim().max(72).optional(),
+  type: z.enum(['PACKAGE_CATEGORY', 'PROPERTY', 'SERVICE', 'CUSTOM_TRIP']),
+  value: z.string().trim().max(80).optional(),
+}).passthrough();
+
+const flowMenuItemSchema = z.object({
+  id: z.string().trim().min(1).max(80).optional(),
+  title: z.string().trim().min(1).max(24),
+  description: z.string().trim().max(72).optional(),
+  action: z.enum([
+    'OPEN_PACKAGE_CATEGORY_MENU',
+    'OPEN_PROPERTY_FLOW',
+    'OPEN_SERVICE_MENU',
+    'OPEN_CUSTOM_TRIP_FLOW',
+    'SHOW_TOUR_TYPE_LIST',
+    'OPEN_PACKAGE_FLOW',
+    'CAPTURE_SERVICE_DETAILS',
+  ]),
+  category: z.string().trim().max(32).optional(),
+  tourType: z.string().trim().max(80).optional(),
+  value: z.string().trim().max(80).optional(),
+}).passthrough();
+
+const whatsappFlowConfigSchema = z.object({
+  welcomeMenu: z.array(flowMenuItemSchema).max(10).optional(),
+  packageCategories: z.array(flowMenuItemSchema).max(3).optional(),
+  tourTypes: z.array(flowMenuItemSchema).max(10).optional(),
+  serviceMenu: z.array(flowMenuItemSchema).max(10).optional(),
+}).passthrough();
+
 const updateAgencySchema = z.object({
   name: z.string().min(2).optional(),
   phone: z.string().optional(),
@@ -39,6 +72,8 @@ const updateAgencySchema = z.object({
   whatsappCatalogId: z.string().optional(),
   welcomeMessage: z.string().trim().max(900).nullable().optional(),
   whatsappMenuLabels: menuLabelSchema.optional(),
+  whatsappMenuConfig: z.array(menuConfigItemSchema).max(10).optional(),
+  whatsappFlowConfig: whatsappFlowConfigSchema.optional(),
 });
 
 const websiteSocialLinksSchema = z.object({
@@ -85,15 +120,15 @@ const marketingOsCallbackSchema = z.object({
 const marketingOsCompleteSchema = z.object({
   code: z.string().min(1, 'Authorization code is required'),
   sessionToken: z.string().min(1, 'Session token is required'),
-  phoneNumberId: z.string().optional(),
-  wabaId: z.string().optional(),
-  businessId: z.string().optional(),
+  phoneNumberId: z.string().nullable().optional(),
+  wabaId: z.string().nullable().optional(),
+  businessId: z.string().nullable().optional(),
   sessionInfo: z.object({
     phone_number_id: z.string().optional(),
     waba_id: z.string().optional(),
     business_id: z.string().optional(),
-  }).passthrough().optional(),
-});
+  }).passthrough().nullable().optional(),
+}).passthrough();
 
 const marketingOsConnectSchema = z.object({
   onboardingMode: z.enum(['standard', 'coexistence']).optional(),

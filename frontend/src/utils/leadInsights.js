@@ -5,6 +5,8 @@ const CLOSED_STATUSES = new Set(['CONVERTED', 'LOST', 'CANCELLED']);
 export const SOURCE_OPTIONS = [
   { value: 'all', label: 'All Sources' },
   { value: 'whatsapp', label: 'WhatsApp' },
+  { value: 'facebook_ad', label: 'Facebook Ads' },
+  { value: 'instagram_ad', label: 'Instagram Ads' },
   { value: 'facebook', label: 'Facebook' },
   { value: 'instagram', label: 'Instagram' },
   { value: 'google', label: 'Google' },
@@ -35,6 +37,11 @@ export function formatStatus(status) {
 
 export function formatSource(source) {
   if (!source) return 'Direct';
+  const normalized = String(source).toLowerCase();
+  if (normalized === 'facebook_ad') return 'Facebook Ads';
+  if (normalized === 'instagram_ad') return 'Instagram Ads';
+  if (normalized === 'instagram' || normalized === 'instagram_dm') return 'Instagram DM';
+  if (normalized === 'whatsapp' || normalized === 'whatsapp_organic') return 'WhatsApp';
   return String(source)
     .replace(/_/g, ' ')
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
@@ -147,6 +154,7 @@ export function getNextAction(lead) {
 export function matchesSource(lead, sourceFilter) {
   if (!sourceFilter || sourceFilter === 'all') return true;
   const source = String(lead?.source || '').toLowerCase();
+  if (sourceFilter === 'facebook_ad' || sourceFilter === 'instagram_ad') return source === sourceFilter;
   if (sourceFilter === 'direct') return !source || source.includes('direct') || source.includes('organic');
   return source.includes(sourceFilter);
 }

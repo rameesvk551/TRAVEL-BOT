@@ -1,6 +1,6 @@
 // FILE: /frontend/src/pages/Packages.jsx
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -10,16 +10,15 @@ import {
   Squares2X2Icon,
   ListBulletIcon,
   AdjustmentsHorizontalIcon,
-  ChevronLeftIcon,
-  ChevronRightIcon,
 } from '@heroicons/react/24/outline';
+import Pagination from '../components/Pagination';
 import { packagesApi } from '../api/packagesApi';
-import { formatCurrency } from '../utils/formatters';
 import { useAuthStore } from '../store/authStore';
 import PackageCard from '../components/PackageCard';
 import PackageListCard from '../components/PackageListCard';
+import BottomFiltersDrawer from '../components/BottomFiltersDrawer';
 
-const ITEMS_PER_PAGE = 8;
+const ITEMS_PER_PAGE = 15;
 
 const FILTER_TABS = [
   { key: 'ALL', label: 'All' },
@@ -39,7 +38,7 @@ export default function Packages() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const agentRole = useAuthStore((state) => state.agent?.role);
-  const canManagePackages = agentRole === 'ADMIN';
+  const canManage = agentRole === 'ADMIN';
 
   const [viewMode, setViewMode] = useState('grid');
   const [search, setSearch] = useState('');
@@ -48,70 +47,59 @@ export default function Packages() {
   const [currentPage, setCurrentPage] = useState(1);
   const [showMoreFilters, setShowMoreFilters] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState('ALL');
+  const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' ? window.innerWidth < 768 : false);
+  const effectiveViewMode = isMobile ? 'list' : viewMode;
+  const listParams = useMemo(() => ({
+    paginated: true,
+    page: currentPage,
+    pageSize: ITEMS_PER_PAGE,
+    search: search || undefined,
+    tab: activeTab,
+    category: categoryFilter !== 'ALL' ? categoryFilter : undefined,
+    sortBy,
+  }), [activeTab, categoryFilter, currentPage, search, sortBy]);
 
   const { data, isLoading } = useQuery({
-    queryKey: ['packages'],
-    queryFn: () => packagesApi.list(),
+    queryKey: ['packages', listParams],
+    queryFn: () => packagesApi.list(listParams),
   });
 
-  const deleteMutation = useMutation({
-    mutationFn: (id) => packagesApi.delete(id),
+  const toggleActiveMutation = useMutation({
+    mutationFn: (pkg) => (
+      pkg.isActive
+        ? packagesApi.delete(pkg.id)
+        : packagesApi.update(pkg.id, { isActive: true })
+    ),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['packages'] }),
   });
 
-  const allPackages = data?.data || [];
-
-  // Filtering
-  const filtered = useMemo(() => {
-    let result = [...allPackages];
-
-    // Search
-    if (search) {
-      const q = search.toLowerCase();
-      result = result.filter((p) =>
-        p.name?.toLowerCase().includes(q) ||
-        p.destinations?.some((d) => d.toLowerCase().includes(q)) ||
-        p.category?.toLowerCase().includes(q)
-      );
-    }
-
-    // Tab filter
-    if (activeTab === 'DOMESTIC') result = result.filter((p) => p.type === 'domestic' || p.category?.toLowerCase().includes('domestic'));
-    else if (activeTab === 'INTERNATIONAL') result = result.filter((p) => p.type === 'international' || p.category?.toLowerCase().includes('international'));
-    else if (activeTab === 'INACTIVE') result = result.filter((p) => !p.isActive);
-
-    // Category filter
-    if (categoryFilter !== 'ALL') result = result.filter((p) => p.category === categoryFilter);
-
-    // Sort
-    if (sortBy === 'price_asc') result.sort((a, b) => (a.basePrice || 0) - (b.basePrice || 0));
-    else if (sortBy === 'price_desc') result.sort((a, b) => (b.basePrice || 0) - (a.basePrice || 0));
-    else if (sortBy === 'name') result.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-    else result.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
-
-    return result;
-  }, [allPackages, search, activeTab, categoryFilter, sortBy]);
-
-  // Get unique categories for filter
-  const categories = [...new Set(allPackages.map((p) => p.category).filter(Boolean))];
-
-  // Pagination
-  const totalPages = Math.max(1, Math.ceil(filtered.length / ITEMS_PER_PAGE));
-  const paginatedPackages = filtered.slice(
-    (currentPage - 1) * ITEMS_PER_PAGE,
-    currentPage * ITEMS_PER_PAGE
-  );
+  const packagesResponse = data?.data || {};
+  const paginatedPackages = Array.isArray(packagesResponse) ? packagesResponse : packagesResponse.data || [];
+  const totalItems = Number(Array.isArray(packagesResponse) ? packagesResponse.length : packagesResponse.total || 0);
+  const totalPages = Math.max(1, Math.ceil(totalItems / ITEMS_PER_PAGE));
 
   const handleFilterChange = (setter) => (value) => {
     setter(value);
     setCurrentPage(1);
   };
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const handleResize = () => {
+      const mobile = window.innerWidth < 768;
+      setIsMobile(mobile);
+      if (mobile) setViewMode('list');
+    };
+    if (window.innerWidth < 768) setViewMode('list');
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   return (
     <div className="w-full space-y-6 page-enter">
       {/* ── Top Header Bar ── */}
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <div>
+        <div className="hidden sm:block">
           <h1 className="text-xl font-bold text-neutral-900 tracking-tight md:text-2xl">Packages</h1>
           <p className="text-xs text-neutral-500 mt-0.5 md:text-sm">Browse and manage all your travel packages</p>
         </div>
@@ -123,10 +111,10 @@ export default function Packages() {
               value={search}
               onChange={(e) => { setSearch(e.target.value); setCurrentPage(1); }}
               placeholder="Search by package, destination, or category"
-              className="w-full rounded-xl border border-neutral-200 bg-white py-2.5 pl-10 pr-4 text-sm text-neutral-700 outline-none transition placeholder:text-neutral-400 focus:border-emerald-300 focus:ring-2 focus:ring-emerald-50 md:w-[300px]"
+              className="w-full rounded-xl border border-neutral-200 bg-white py-2.5 pl-10 pr-4 text-sm text-neutral-700 outline-none transition placeholder:text-neutral-400 focus:border-neutral-300 focus:ring-2 focus:ring-neutral-50 md:w-[300px]"
             />
           </div>
-          {canManagePackages && (
+          {canManage && (
             <button type="button" onClick={() => navigate('/packages/new')} className="listing-add-button w-full justify-center md:w-auto">
               <PlusIcon className="h-4 w-4" /> New Package
             </button>
@@ -134,8 +122,23 @@ export default function Packages() {
         </div>
       </div>
 
-      {/* ── Filter Tabs + Sort Bar ── */}
-      <div className="flex flex-col gap-3">
+      {/* ── Mobile: Filter button ── */}
+      <div className="flex items-center gap-2 md:hidden">
+        <button
+          type="button"
+          onClick={() => setShowMoreFilters(true)}
+          className="flex items-center gap-1.5 rounded-xl border border-neutral-200 bg-white px-3.5 py-2 text-xs font-semibold text-neutral-700 transition hover:bg-neutral-50 active:scale-95"
+        >
+          <AdjustmentsHorizontalIcon className="h-4 w-4 text-neutral-500" />
+          Filters
+          {(activeTab !== 'ALL' || sortBy !== 'newest' || categoryFilter !== 'ALL') && (
+            <span className="ml-1 h-1.5 w-1.5 rounded-full bg-neutral-900" />
+          )}
+        </button>
+      </div>
+
+      {/* ── Desktop: Filter Tabs + Sort Bar ── */}
+      <div className="hidden md:flex flex-col gap-3">
         <div className="flex items-center gap-2 overflow-x-auto hide-scrollbar">
           {FILTER_TABS.map((tab) => (
             <button
@@ -147,14 +150,6 @@ export default function Packages() {
               {tab.label}
             </button>
           ))}
-          <button
-            type="button"
-            onClick={() => setShowMoreFilters((prev) => !prev)}
-            className="listing-filter-tab flex items-center gap-1.5 shrink-0"
-          >
-            <AdjustmentsHorizontalIcon className="h-3.5 w-3.5" />
-            More Filters
-          </button>
         </div>
 
         <div className="flex items-center justify-between gap-3">
@@ -162,8 +157,8 @@ export default function Packages() {
             <span className="text-xs font-medium text-neutral-400">Sort by</span>
             <select
               value={sortBy}
-              onChange={(e) => setSortBy(e.target.value)}
-              className="rounded-lg border border-neutral-200 bg-white px-3 py-2 text-xs font-medium text-neutral-700 outline-none cursor-pointer focus:border-emerald-300"
+              onChange={(e) => { setSortBy(e.target.value); setCurrentPage(1); }}
+              className="rounded-lg border border-neutral-200 bg-white px-3 py-2 text-xs font-medium text-neutral-700 outline-none cursor-pointer focus:border-neutral-300"
             >
               {SORT_OPTIONS.map((opt) => (
                 <option key={opt.key} value={opt.key}>{opt.label}</option>
@@ -171,7 +166,7 @@ export default function Packages() {
             </select>
           </div>
 
-          <div className="hidden md:flex items-center gap-0.5 rounded-xl border border-neutral-200 p-0.5 bg-white">
+          <div className="flex items-center gap-0.5 rounded-xl border border-neutral-200 p-0.5 bg-white">
             <button type="button" onClick={() => setViewMode('grid')} className={`listing-view-toggle ${viewMode === 'grid' ? 'listing-view-toggle-active' : ''}`}>
               <Squares2X2Icon className="h-4 w-4" />
             </button>
@@ -182,34 +177,42 @@ export default function Packages() {
         </div>
       </div>
 
-      {/* ── More Filters Panel ── */}
-      {showMoreFilters && (
-        <div className="flex items-center gap-3 flex-wrap animate-wizard-in">
-          <select
-            value={categoryFilter}
-            onChange={(e) => handleFilterChange(setCategoryFilter)(e.target.value)}
-            className="rounded-lg border border-neutral-200 bg-white px-3 py-2 text-xs font-medium text-neutral-700 outline-none cursor-pointer focus:border-emerald-300"
-          >
-            <option value="ALL">All Categories</option>
-            {categories.map((cat) => (
-              <option key={cat} value={cat}>{cat}</option>
-            ))}
-          </select>
-        </div>
+      {/* ── Mobile: Bottom drawer with ALL filters ── */}
+      {isMobile && (
+        <BottomFiltersDrawer
+          open={showMoreFilters}
+          onClose={() => setShowMoreFilters(false)}
+          tabs={FILTER_TABS}
+          activeTab={activeTab}
+          onTabChange={(val) => handleFilterChange(setActiveTab)(val)}
+          sortOptions={SORT_OPTIONS}
+          sortBy={sortBy}
+          onSortChange={setSortBy}
+          extraFilters={[{
+            label: 'Category',
+            value: categoryFilter,
+            onChange: (val) => handleFilterChange(setCategoryFilter)(val),
+            options: [
+              { key: 'ALL', label: 'All Categories' },
+              { key: 'DOMESTIC', label: 'Domestic' },
+              { key: 'INTERNATIONAL', label: 'International' },
+            ],
+          }]}
+        />
       )}
 
       {/* ── Admin Notice ── */}
-      {!canManagePackages && (
+      {!canManage && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
           Your account can view packages, but only ADMIN users can create, edit, or deactivate them.
         </div>
       )}
 
       {/* ── Grid View ── */}
-      {viewMode === 'grid' && (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      {effectiveViewMode === 'grid' && (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
           {isLoading ? (
-            Array.from({ length: 8 }).map((_, i) => (
+            Array.from({ length: ITEMS_PER_PAGE }).map((_, i) => (
               <div key={i} className="package-listing-card animate-pulse">
                 <div className="package-card-image-wrapper bg-neutral-100" />
                 <div className="p-3 space-y-2">
@@ -227,7 +230,7 @@ export default function Packages() {
                 </div>
                 <p className="text-lg font-semibold text-neutral-700">No packages found</p>
                 <p className="text-sm text-neutral-400 mt-1 mb-5">Try adjusting your filters or create your first package.</p>
-                {canManagePackages && (
+                {canManage && (
                   <button type="button" onClick={() => navigate('/packages/new')} className="listing-add-button">
                     <PlusIcon className="h-4 w-4" /> Create First Package
                   </button>
@@ -239,9 +242,9 @@ export default function Packages() {
               <PackageCard
                 key={pkg.id}
                 pkg={pkg}
-                canManage={canManagePackages}
+                canManage={canManage}
                 onEdit={() => navigate(`/packages/${pkg.id}/edit`)}
-                onDelete={(id) => deleteMutation.mutate(id)}
+                onToggleActive={(item) => toggleActiveMutation.mutate(item)}
                 onClick={() => navigate(`/packages/${pkg.id}/edit`)}
               />
             ))
@@ -250,7 +253,7 @@ export default function Packages() {
       )}
 
       {/* ── List View ── */}
-      {viewMode === 'list' && (
+      {effectiveViewMode === 'list' && (
         <div className="flex flex-col gap-4">
           {isLoading ? (
             Array.from({ length: 4 }).map((_, i) => (
@@ -273,9 +276,9 @@ export default function Packages() {
               <PackageListCard
                 key={pkg.id}
                 pkg={pkg}
-                canManage={canManagePackages}
+                canManage={canManage}
                 onEdit={() => navigate(`/packages/${pkg.id}/edit`)}
-                onDelete={(id) => deleteMutation.mutate(id)}
+                onToggleActive={(item) => toggleActiveMutation.mutate(item)}
                 onClick={() => navigate(`/packages/${pkg.id}/edit`)}
               />
             ))
@@ -284,69 +287,15 @@ export default function Packages() {
       )}
 
       {/* ── Pagination ── */}
-      {filtered.length > 0 && (
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-2">
-          <p className="text-xs text-neutral-500 font-medium">
-            Showing {(currentPage - 1) * ITEMS_PER_PAGE + 1} -{' '}
-            {Math.min(currentPage * ITEMS_PER_PAGE, filtered.length)} of {filtered.length} packages
-          </p>
-
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              disabled={currentPage === 1}
-              onClick={() => setCurrentPage((p) => p - 1)}
-              className="listing-pagination-btn"
-            >
-              <ChevronLeftIcon className="h-4 w-4" />
-            </button>
-
-            {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
-              let page;
-              if (totalPages <= 5) {
-                page = i + 1;
-              } else if (currentPage <= 3) {
-                page = i + 1;
-              } else if (currentPage >= totalPages - 2) {
-                page = totalPages - 4 + i;
-              } else {
-                page = currentPage - 2 + i;
-              }
-              return (
-                <button
-                  key={page}
-                  type="button"
-                  onClick={() => setCurrentPage(page)}
-                  className={`listing-pagination-btn ${currentPage === page ? 'listing-pagination-btn-active' : ''}`}
-                >
-                  {page}
-                </button>
-              );
-            })}
-
-            {totalPages > 5 && currentPage < totalPages - 2 && (
-              <>
-                <span className="px-1 text-neutral-400 text-xs">…</span>
-                <button
-                  type="button"
-                  onClick={() => setCurrentPage(totalPages)}
-                  className="listing-pagination-btn"
-                >
-                  {totalPages}
-                </button>
-              </>
-            )}
-
-            <button
-              type="button"
-              disabled={currentPage === totalPages}
-              onClick={() => setCurrentPage((p) => p + 1)}
-              className="listing-pagination-btn"
-            >
-              <ChevronRightIcon className="h-4 w-4" />
-            </button>
-          </div>
-        </div>
+      {totalItems > 0 && (
+        <Pagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalItems={totalItems}
+          pageSize={ITEMS_PER_PAGE}
+          onPageChange={setCurrentPage}
+          itemLabel="packages"
+        />
       )}
     </div>
   );

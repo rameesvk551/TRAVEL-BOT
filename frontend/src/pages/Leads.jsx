@@ -1,4 +1,5 @@
-import { useMemo, useState, useCallback } from 'react';
+import { useEffect, useMemo, useState, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import LeadCard from '../components/LeadCard';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -13,7 +14,6 @@ import {
   ExclamationTriangleIcon,
   FunnelIcon,
   MagnifyingGlassIcon,
-  PaperAirplaneIcon,
   PencilIcon,
   PhoneIcon,
   PlusIcon,
@@ -23,6 +23,7 @@ import {
   XCircleIcon,
   XMarkIcon,
 } from '@heroicons/react/24/outline';
+import Pagination from '../components/Pagination';
 import client from '../api/client';
 import {
   useAddFollowUp,
@@ -67,7 +68,17 @@ const TABS = [
   ...LEAD_PIPELINE_COLUMNS.map((column) => ({ key: column.key, label: column.label })),
 ];
 
+const PAGE_SIZE_DEFAULT = 12;
+const PAGE_SIZE_OPTIONS = [10, 12, 25, 50];
+
 const EMPTY = '-';
+
+function getDefaultFollowupDateTime() {
+  const date = new Date(Date.now() + 60 * 60 * 1000);
+  date.setMinutes(Math.ceil(date.getMinutes() / 15) * 15, 0, 0);
+  const offsetMs = date.getTimezoneOffset() * 60000;
+  return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16);
+}
 
 function formatServiceLabel(value = '') {
   const normalized = String(value || '').trim().toUpperCase();
@@ -78,10 +89,50 @@ function formatServiceLabel(value = '') {
   return String(value || '').replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase()) || EMPTY;
 }
 
+function formatReadinessAnswer(value = '') {
+  if (Array.isArray(value)) return value.map(formatReadinessAnswer).filter(Boolean).join(', ') || EMPTY;
+  return String(value || '')
+    .replace(/_/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\b\w/g, (char) => char.toUpperCase()) || EMPTY;
+}
+
+function hasCustomTripDetails(details = {}) {
+  return Boolean(
+    details.serviceCategory
+    || details.service
+    || details.serviceDetails
+    || details.propertyName
+    || details.propertyLocation
+    || details.destination
+    || details.checkInDate
+    || details.checkOutDate
+    || details.travelDate
+    || details.travellersText
+    || details.travellers
+    || details.budgetText
+    || details.budgetPerPerson
+    || details.campaignName
+    || details.submittedAt
+    || details.notes
+    || details.staycationInterest
+  );
+}
+
 function getLeadRequestSummaries(lead, details = {}) {
   if (!lead) return [];
   const notes = String(lead.notes || '').toLowerCase();
   const summaries = [];
+  const readinessDetails = details.travelReadiness || {};
+  const isPropertyRequest = Boolean(
+    lead.propertyId
+    || details.propertyName
+    || details.propertyLocation
+    || details.checkInDate
+    || details.checkOutDate
+    || String(details.source || '').includes('property')
+  );
 
   if (details.serviceCategory || details.service || String(lead.interest || '').includes('TICKETING')) {
     summaries.push({
@@ -92,16 +143,40 @@ function getLeadRequestSummaries(lead, details = {}) {
     });
   }
 
-  if (details.staycationInterest || notes.includes('properties viewed from whatsapp menu') || lead.propertyId) {
+  if (details.staycationInterest || notes.includes('properties viewed from whatsapp menu') || isPropertyRequest) {
+    const stayMeta = [
+      details.propertyName || lead.property?.name,
+      details.propertyLocation || details.destination || lead.destination,
+      details.checkInDate ? `Check-in ${details.checkInDate}` : '',
+      details.checkOutDate ? `Checkout ${details.checkOutDate}` : '',
+      details.travellersText || (details.travellers ? `${details.travellers} guests` : ''),
+    ].filter(Boolean).join(' - ');
+
     summaries.push({
       key: 'staycations',
       title: 'Staycations',
       tone: 'border-emerald-200 bg-emerald-50 text-emerald-700',
-      meta: lead.property?.name ? `Selected ${lead.property.name}` : 'Opened stay/property flow',
+      meta: stayMeta || (lead.property?.name ? `Selected ${lead.property.name}` : 'Opened stay/property flow'),
     });
   }
 
-  if (details.destination || details.travelDate || details.travellers || details.budgetPerPerson || notes.includes('custom trip requested')) {
+  if (readinessDetails.travellerCount || readinessDetails.bookingReadiness || readinessDetails.departureAirport || notes.includes('travel readiness questionnaire submitted')) {
+    const readinessMeta = [
+      lead.package?.name,
+      readinessDetails.travellerCount ? `${formatReadinessAnswer(readinessDetails.travellerCount)} traveller${String(readinessDetails.travellerCount).trim() === '1' ? '' : 's'}` : '',
+      readinessDetails.bookingReadiness ? formatReadinessAnswer(readinessDetails.bookingReadiness) : '',
+      readinessDetails.departureAirport ? `From ${formatReadinessAnswer(readinessDetails.departureAirport)}` : '',
+    ].filter(Boolean).join(' - ');
+
+    summaries.push({
+      key: 'travel-readiness',
+      title: 'Availability Check',
+      tone: 'border-violet-200 bg-violet-50 text-violet-700',
+      meta: readinessMeta || 'Questionnaire submitted',
+    });
+  }
+
+  if (!isPropertyRequest && (details.destination || details.travelDate || details.travellers || details.budgetPerPerson || notes.includes('custom trip requested'))) {
     summaries.push({
       key: 'custom-trip',
       title: 'Custom Trip',
@@ -114,8 +189,11 @@ function getLeadRequestSummaries(lead, details = {}) {
 }
 
 export default function Leads() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState('Needs Attention');
   const [isNewLeadModalOpen, setIsNewLeadModalOpen] = useState(false);
+  const [isFilterDrawerOpen, setIsFilterDrawerOpen] = useState(false);
+  const [isStatsDrawerOpen, setIsStatsDrawerOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [view, setView] = useState('list');
   const [selectedLeadId, setSelectedLeadId] = useState(null);
@@ -125,10 +203,65 @@ export default function Leads() {
   const [agentFilter, setAgentFilter] = useState('all');
   const [tagFilter, setTagFilter] = useState('all');
   const [selectedLeadIds, setSelectedLeadIds] = useState(new Set());
+  const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
+  const [assigningLead, setAssigningLead] = useState(null);
+  const [isStatusModalOpen, setIsStatusModalOpen] = useState(false);
+  const [statusLead, setStatusLead] = useState(null);
+  const [followupLead, setFollowupLead] = useState(null);
+  const [followupDate, setFollowupDate] = useState('');
+  const [followupNote, setFollowupNote] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(PAGE_SIZE_DEFAULT);
+  useEffect(() => {
+    const tab = searchParams.get('tab');
+    const q = searchParams.get('q');
+    const source = searchParams.get('source');
+    const sort = searchParams.get('sort');
+    const range = searchParams.get('range');
+    const agent = searchParams.get('agent');
+    const tag = searchParams.get('tag');
+    const viewParam = searchParams.get('view');
+    const page = Number(searchParams.get('page') || 1);
+    const size = Number(searchParams.get('size') || PAGE_SIZE_DEFAULT);
+
+    if (tab && TABS.some((item) => item.key === tab)) setActiveTab(tab);
+    if (q) setSearch(q);
+    if (source) setSourceFilter(source);
+    if (sort) setSortBy(sort);
+    if (range) setDateRange(range);
+    if (agent) setAgentFilter(agent);
+    if (tag) setTagFilter(tag);
+    if (viewParam === 'list' || viewParam === 'kanban') setView(viewParam);
+    if (Number.isInteger(page) && page > 0) setCurrentPage(page);
+    if (PAGE_SIZE_OPTIONS.includes(size)) setPageSize(size);
+    // Only hydrate from URL once on initial load.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
 
   const currentAgent = useAuthStore((state) => state.agent);
-  const leadsQuery = useLeads({ pageSize: 200 });
-  const leads = leadsQuery.data?.data?.data || [];
+  const leadQueryParams = useMemo(() => {
+    const params = {
+      page: currentPage,
+      pageSize,
+      sortBy,
+    };
+    if (activeTab === 'Needs Attention') params.attention = true;
+    else if (activeTab !== 'All Leads') params.status = activeTab;
+    if (search.trim()) params.search = search.trim();
+    if (sourceFilter !== 'all') params.source = sourceFilter;
+    if (dateRange !== 'all') params.dateRange = dateRange;
+    if (agentFilter !== 'all') params.agentId = agentFilter;
+    if (tagFilter !== 'all') params.tag = tagFilter;
+    return params;
+  }, [activeTab, agentFilter, currentPage, dateRange, pageSize, search, sortBy, sourceFilter, tagFilter]);
+  const leadsQuery = useLeads(leadQueryParams);
+  const leadsResponse = leadsQuery.data?.data || {};
+  const leads = leadsResponse.data || [];
+  const totalItems = Number(leadsResponse.total || 0);
+  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const pageStartIndex = (safeCurrentPage - 1) * pageSize;
 
   const { data: agentsResponse } = useQuery({
     queryKey: ['agents'],
@@ -137,6 +270,7 @@ export default function Leads() {
   const agents = agentsResponse?.data || [];
   const updateLead = useUpdateLead();
   const bulkAssign = useBulkAssignLeads();
+  const addFollowup = useAddFollowUp();
   const tagOptions = useMemo(() => {
     const tags = new Set();
     leads.forEach((lead) => (lead.tags || []).forEach((tag) => tags.add(tag)));
@@ -161,49 +295,55 @@ export default function Leads() {
   }, [selectedLeadIds, bulkAssign]);
 
   const tabCounts = useMemo(() => {
-    const counts = {
-      'Needs Attention': leads.filter(needsAttention).length,
-      'All Leads': leads.length,
+    const counts = leadsResponse.counts || {};
+    return {
+      'Needs Attention': counts['Needs Attention'] ?? 0,
+      'All Leads': counts['All Leads'] ?? totalItems,
+      ...LEAD_PIPELINE_COLUMNS.reduce((acc, column) => {
+        acc[column.key] = counts[column.key] ?? 0;
+        return acc;
+      }, {}),
     };
-    LEAD_PIPELINE_COLUMNS.forEach((column) => {
-      counts[column.key] = leads.filter((lead) => lead.status === column.key).length;
-    });
-    return counts;
-  }, [leads]);
+  }, [leadsResponse.counts, totalItems]);
 
-  const filteredLeads = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    const byTab = leads.filter((lead) => {
-      if (activeTab === 'Needs Attention') return needsAttention(lead);
-      if (activeTab === 'All Leads') return true;
-      return lead.status === activeTab;
-    });
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [activeTab, agentFilter, dateRange, search, sortBy, sourceFilter, tagFilter, view, pageSize]);
 
-    const filtered = byTab.filter((lead) => {
-      const searchable = [
-        lead.customer?.name,
-        lead.customer?.phone,
-        lead.customer?.email,
-        lead.destination,
-        lead.source,
-        lead.assignedAgent?.name,
-        ...(lead.tags || []),
-      ]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase();
+  useEffect(() => {
+    if (currentPage !== safeCurrentPage) {
+      setCurrentPage(safeCurrentPage);
+    }
+  }, [currentPage, safeCurrentPage]);
 
-      return (
-        (!query || searchable.includes(query)) &&
-        matchesSource(lead, sourceFilter) &&
-        matchesAgent(lead, agentFilter, currentAgent?.id) &&
-        matchesTag(lead, tagFilter) &&
-        matchesDateRange(lead, dateRange)
-      );
-    });
+  useEffect(() => {
+    const params = new URLSearchParams();
 
-    return sortLeads(filtered, sortBy);
-  }, [activeTab, agentFilter, currentAgent?.id, dateRange, leads, search, sortBy, sourceFilter, tagFilter]);
+    if (activeTab !== 'Needs Attention') params.set('tab', activeTab);
+    if (search.trim()) params.set('q', search.trim());
+    if (sourceFilter !== 'all') params.set('source', sourceFilter);
+    if (sortBy !== 'overdue') params.set('sort', sortBy);
+    if (dateRange !== 'all') params.set('range', dateRange);
+    if (agentFilter !== 'all') params.set('agent', agentFilter);
+    if (tagFilter !== 'all') params.set('tag', tagFilter);
+    if (view !== 'list') params.set('view', view);
+    if (safeCurrentPage > 1) params.set('page', String(safeCurrentPage));
+    if (pageSize !== PAGE_SIZE_DEFAULT) params.set('size', String(pageSize));
+
+    setSearchParams(params, { replace: true });
+  }, [
+    activeTab,
+    agentFilter,
+    dateRange,
+    pageSize,
+    safeCurrentPage,
+    search,
+    setSearchParams,
+    sortBy,
+    sourceFilter,
+    tagFilter,
+    view,
+  ]);
 
   const metrics = useMemo(() => {
     const attention = leads.filter(needsAttention);
@@ -216,22 +356,31 @@ export default function Leads() {
     }, 0);
 
     return {
-      totalDeals: leads.length,
-      attention: attention.length,
+      totalDeals: leadsResponse.metrics?.totalDeals ?? totalItems,
+      attention: leadsResponse.metrics?.attention ?? attention.length,
       overdue: overdue.length,
-      won: leads.filter((lead) => lead.status === 'CONVERTED').length,
-      lost: leads.filter((lead) => lead.status === 'LOST').length,
+      won: leadsResponse.metrics?.won ?? leads.filter((lead) => lead.status === 'CONVERTED').length,
+      lost: leadsResponse.metrics?.lost ?? leads.filter((lead) => lead.status === 'LOST').length,
       hot: leads.filter((lead) => getLeadScore(lead) >= 75 && !['CONVERTED', 'LOST', 'CANCELLED'].includes(lead.status)).length,
       pipelineValue,
     };
-  }, [leads]);
+  }, [leads, leadsResponse.metrics, totalItems]);
 
   const toggleSelectAll = useCallback(() => {
     setSelectedLeadIds((prev) => {
-      if (prev.size === filteredLeads.length && filteredLeads.length > 0) return new Set();
-      return new Set(filteredLeads.map((lead) => lead.id));
+      const next = new Set(prev);
+      const pageLeadIds = leads.map((lead) => lead.id);
+      const allSelectedOnPage = pageLeadIds.length > 0 && pageLeadIds.every((id) => next.has(id));
+
+      if (allSelectedOnPage) {
+        pageLeadIds.forEach((id) => next.delete(id));
+      } else {
+        pageLeadIds.forEach((id) => next.add(id));
+      }
+
+      return next;
     });
-  }, [filteredLeads]);
+  }, [leads]);
 
   function clearFilters() {
     setSearch('');
@@ -241,6 +390,8 @@ export default function Leads() {
     setDateRange('all');
     setAgentFilter('all');
     setTagFilter('all');
+    setCurrentPage(1);
+    setPageSize(PAGE_SIZE_DEFAULT);
   }
 
   function updateLeadField(leadId, data) {
@@ -257,69 +408,72 @@ export default function Leads() {
     updateLeadField(lead.id, { status });
   }
 
-  return (
-    <div className="w-full pb-10">
-      {/* ── Header ── */}
-      <div className="mb-5 flex flex-col gap-4 md:mb-8 md:flex-row md:items-start md:justify-between">
-        <div>
-          <h1 className="text-xl font-extrabold tracking-tight text-neutral-900 md:text-3xl">Leads</h1>
-          <p className="mt-0.5 hidden text-sm font-medium text-neutral-500 md:block">
-            Prioritize urgent enquiries, assign owners, and keep follow-ups moving.
-          </p>
-        </div>
+  function openFollowupScheduler(lead) {
+    setFollowupLead(lead);
+    setFollowupDate(getDefaultFollowupDateTime());
+    setFollowupNote('');
+  }
 
+  function closeFollowupScheduler() {
+    setFollowupLead(null);
+    setFollowupDate('');
+    setFollowupNote('');
+  }
+
+  function handleScheduleFollowup(event) {
+    event.preventDefault();
+    if (!followupLead || !followupDate || !followupNote.trim()) return;
+
+    addFollowup.mutate(
+      {
+        id: followupLead.id,
+        data: {
+          scheduledAt: new Date(followupDate).toISOString(),
+          note: followupNote.trim(),
+        },
+      },
+      {
+        onSuccess: closeFollowupScheduler,
+      }
+    );
+  }
+
+  return (
+    <div className={`w-full ${selectedLeadIds.size > 0 ? 'pb-24' : 'pb-10'}`}>
+      {/* ── Header ── */}
+      <div className="mb-4 md:hidden">
+        <div className="sr-only">Leads</div>
+
+        {/* Mobile quick actions */}
         <div className="flex items-center gap-2">
-          <div className="flex items-center rounded-[var(--radius-md)] border border-neutral-200 bg-neutral-100/80 p-0.5 shadow-inner">
-            <button
-              onClick={() => setView('list')}
-              className={`px-3 py-1.5 text-xs font-bold rounded-[var(--radius-sm)] transition-all md:px-4 md:py-2 md:text-sm ${
-                view === 'list' ? 'bg-white shadow-sm text-neutral-900' : 'text-neutral-500'
-              }`}
-            >
-              Table
-            </button>
-            <button
-              onClick={() => setView('kanban')}
-              className={`px-3 py-1.5 text-xs font-bold rounded-[var(--radius-sm)] transition-all md:px-4 md:py-2 md:text-sm ${
-                view === 'kanban' ? 'bg-white shadow-sm text-neutral-900' : 'text-neutral-500'
-              }`}
-            >
-              Kanban
-            </button>
-          </div>
+          <button
+            onClick={() => setIsStatsDrawerOpen(true)}
+            className="shell-button-secondary h-10 px-4 rounded-xl text-sm font-medium border border-neutral-200 bg-white hover:bg-neutral-50"
+          >
+            Summary
+          </button>
+
+          <button
+            onClick={() => setIsFilterDrawerOpen(true)}
+            className="shell-button-secondary h-10 px-4 rounded-xl text-sm font-medium border border-neutral-200 bg-white hover:bg-neutral-50 md:hidden"
+          >
+            <FunnelIcon className="h-4 w-4 inline mr-2" />
+            Filter
+          </button>
+
           <button
             onClick={() => setIsNewLeadModalOpen(true)}
-            className="shell-button-primary h-9 px-3 text-xs bg-neutral-900 hover:bg-black md:h-11 md:px-5 md:text-sm"
+            className="shell-button-primary h-10 px-4 rounded-xl text-sm font-semibold bg-neutral-900 hover:bg-black flex items-center gap-1 ml-auto"
           >
-            <PlusIcon className="h-4 w-4 md:h-5 md:w-5" />
-            <span className="hidden sm:inline">New Lead</span>
-            <span className="sm:hidden">Add</span>
+            <PlusIcon className="h-4 w-4" />
+            Add Lead
           </button>
         </div>
       </div>
 
-      {/* ── Filters (collapsible on mobile) ── */}
-      <div className="mb-4 flex flex-col gap-2 md:mb-6 md:flex-row md:flex-wrap md:items-center md:gap-3">
-        <select value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value)} className="shell-input-rect h-10 flex-1 min-w-0 bg-white py-2 text-xs md:h-11 md:w-40 md:flex-none md:text-sm">
-          {SOURCE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-        </select>
-        <select value={agentFilter} onChange={(e) => setAgentFilter(e.target.value)} className="shell-input-rect h-10 flex-1 min-w-0 bg-white py-2 text-xs md:h-11 md:w-44 md:flex-none md:text-sm">
-          <option value="all">All Agents</option>
-          {currentAgent?.id && <option value="mine">Assigned To Me</option>}
-          <option value="unassigned">Unassigned</option>
-          {agents.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-        </select>
-        <select value={tagFilter} onChange={(e) => setTagFilter(e.target.value)} className="shell-input-rect h-10 flex-1 min-w-0 bg-white py-2 text-xs md:h-11 md:w-40 md:flex-none md:text-sm">
-          <option value="all">All Tags</option>
-          {tagOptions.map((t) => <option key={t} value={t}>{t}</option>)}
-        </select>
-        <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="shell-input-rect h-10 flex-1 min-w-0 bg-white py-2 text-xs md:h-11 md:w-44 md:flex-none md:text-sm">
-          {SORT_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-        </select>
-      </div>
-
-      {/* ── Metrics — horizontal scroll on mobile ── */}
-      <div className="mb-5 -mx-1 flex gap-3 overflow-x-auto pb-1 hide-scrollbar md:mx-0 md:mb-6 md:grid md:grid-cols-3 xl:grid-cols-6">
+      {/* ── Filters ── */}
+      {/* ── Metrics ── */}
+      <div className="mb-5 hidden lg:grid -mx-1 gap-3 overflow-x-auto pb-1 hide-scrollbar md:mx-0 md:mb-6 md:grid-cols-3 xl:grid-cols-6">
         <MetricCard icon={ExclamationTriangleIcon} tone="bg-amber-50 text-amber-600" value={metrics.attention} label="Attention" />
         <MetricCard icon={ClockIcon} tone="bg-rose-50 text-rose-600" value={metrics.overdue} label="Overdue" />
         <MetricCard icon={TrophyIcon} tone="bg-red-50 text-red-600" value={metrics.hot} label="Hot" />
@@ -328,10 +482,10 @@ export default function Leads() {
         <MetricCard icon={BanknotesIcon} tone="bg-indigo-50 text-indigo-600" value={formatCurrency(metrics.pipelineValue)} label="Pipeline" />
       </div>
 
-      {/* ── Search + Date Range + Tabs ── */}
+      {/* ── Search + Tabs ── */}
       <div className="mb-4 flex flex-col gap-3 md:mb-6">
-        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div className="relative w-full group md:max-w-md">
+        <div className="flex flex-col gap-3 md:flex-row md:flex-wrap md:items-center xl:flex-nowrap">
+          <div className="relative w-full group md:max-w-xs md:flex-1 xl:max-w-[450px]">
             <MagnifyingGlassIcon className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
             <input
               type="text"
@@ -341,22 +495,29 @@ export default function Leads() {
               className="shell-input-rect h-10 rounded-xl border-neutral-200 bg-white pl-10 text-sm shadow-sm focus:border-neutral-400 focus:ring-0 md:h-12 md:pl-11"
             />
           </div>
-          <div className="flex items-center gap-1.5 overflow-x-auto hide-scrollbar">
-            {DATE_RANGE_OPTIONS.map((option) => (
-              <button
-                key={option.value}
-                onClick={() => setDateRange(option.value)}
-                className={`shrink-0 rounded-[var(--radius-sm)] px-2.5 py-1.5 text-[11px] font-bold transition-all md:px-3 md:py-2 md:text-xs ${
-                  dateRange === option.value
-                    ? 'bg-neutral-900 text-white shadow-sm'
-                    : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'
-                }`}
-              >
-                {option.label}
-              </button>
-            ))}
-            <button onClick={clearFilters} className="shell-button-secondary h-7 shrink-0 px-2 py-1 text-[11px] md:h-9 md:px-3 md:text-xs">
-              <FunnelIcon className="h-3.5 w-3.5" /> Reset
+          <div className="hidden min-w-0 flex-1 items-center gap-3 md:flex">
+            <select value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value)} className="shell-input-rect h-12 w-32 flex-none bg-white py-2 text-sm lg:w-40">
+              {SOURCE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+            <select value={agentFilter} onChange={(e) => setAgentFilter(e.target.value)} className="shell-input-rect h-12 w-36 flex-none bg-white py-2 text-sm lg:w-44">
+              <option value="all">All Agents</option>
+              {currentAgent?.id && <option value="mine">Assigned To Me</option>}
+              <option value="unassigned">Unassigned</option>
+              {agents.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </select>
+            <select value={tagFilter} onChange={(e) => setTagFilter(e.target.value)} className="shell-input-rect h-12 w-32 flex-none bg-white py-2 text-sm lg:w-40">
+              <option value="all">All Labels</option>
+              {tagOptions.map((t) => <option key={t} value={t}>{t}</option>)}
+            </select>
+            <button onClick={clearFilters} className="shell-button-secondary h-11 px-3 text-xs">
+              <FunnelIcon className="h-3.5 w-3.5" /> Clear
+            </button>
+            <button
+              onClick={() => setIsNewLeadModalOpen(true)}
+              className="shell-button-primary ml-auto h-11 flex-none rounded-xl bg-neutral-900 px-4 text-sm font-semibold hover:bg-black"
+            >
+              <PlusIcon className="h-4 w-4" />
+              Add Lead
             </button>
           </div>
         </div>
@@ -382,7 +543,7 @@ export default function Leads() {
       </div>
 
       {view === 'kanban' ? (
-        <LeadPipeline leads={filteredLeads} onLeadClick={(lead) => setSelectedLeadId(lead.id)} />
+        <LeadPipeline leads={leads} onLeadClick={(lead) => setSelectedLeadId(lead.id)} />
       ) : (
         <>
           {/* Mobile card list */}
@@ -405,7 +566,7 @@ export default function Leads() {
                 <p className="text-sm font-semibold text-neutral-700">Could not load leads</p>
                 <button onClick={() => leadsQuery.refetch()} className="shell-button-secondary mt-4 text-xs"><ArrowPathIcon className="h-4 w-4" /> Retry</button>
               </div>
-            ) : filteredLeads.length === 0 ? (
+            ) : leads.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-16 rounded-2xl border border-dashed border-neutral-200 bg-white">
                 <BriefcaseIcon className="h-10 w-10 text-neutral-300 mb-3" />
                 <p className="text-sm font-semibold text-neutral-700">No leads found</p>
@@ -413,13 +574,17 @@ export default function Leads() {
               </div>
             ) : (
               <div className="space-y-3">
-                {filteredLeads.map((lead) => (
+                {leads.map((lead) => (
                   <LeadCard
                     key={lead.id}
                     lead={lead}
                     agents={agents}
+                    isSelected={selectedLeadIds.has(lead.id)}
+                    onToggleSelect={() => toggleSelectLead(lead.id)}
                     onClick={(l) => setSelectedLeadId(l.id)}
                     onAssignAgent={(leadId, agentId) => updateLeadField(leadId, { assignedAgentId: agentId || null })}
+                    onAssignClick={(l) => { setAssigningLead(l); setIsAssignModalOpen(true); }}
+                    onStatusClick={(l) => { setStatusLead(l); setIsStatusModalOpen(true); }}
                   />
                 ))}
               </div>
@@ -433,17 +598,30 @@ export default function Leads() {
               clearFilters={clearFilters}
               isError={leadsQuery.isError}
               isLoading={leadsQuery.isLoading}
-              leads={filteredLeads}
+              leads={leads}
               onLeadClick={(lead) => setSelectedLeadId(lead.id)}
               onRetry={() => leadsQuery.refetch()}
+              onScheduleFollowUp={openFollowupScheduler}
               onStatusChange={handleStatusChange}
               onUpdateLead={updateLeadField}
               selectedLeadIds={selectedLeadIds}
               onToggleSelect={toggleSelectLead}
               onToggleSelectAll={toggleSelectAll}
+              rowOffset={pageStartIndex}
             />
           </div>
         </>
+      )}
+
+      {!leadsQuery.isLoading && !leadsQuery.isError && totalItems > 0 && (
+        <Pagination
+          currentPage={safeCurrentPage}
+          totalPages={totalPages}
+          totalItems={totalItems}
+          pageSize={pageSize}
+          onPageChange={setCurrentPage}
+          itemLabel="leads"
+        />
       )}
 
       <BulkActionBar
@@ -453,6 +631,68 @@ export default function Leads() {
         onAssign={handleBulkAssign}
         onClear={() => setSelectedLeadIds(new Set())}
       />
+
+      {/* Assign modal (mobile & desktop) */}
+      {isAssignModalOpen && assigningLead && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/30" onClick={() => setIsAssignModalOpen(false)} />
+          <div className="relative z-10 w-[90%] max-w-sm rounded-2xl bg-white p-4 shadow-2xl">
+            <h3 className="text-lg font-bold text-neutral-900">Assign Lead</h3>
+            <p className="text-sm text-neutral-500 mt-1">Assign "{assigningLead.customer?.name || 'Unnamed'}" to an agent</p>
+            <div className="mt-4">
+              <select className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm" defaultValue={assigningLead.assignedAgentId || ''} onChange={(e) => {
+                const agentId = e.target.value || null;
+                updateLeadField(assigningLead.id, { assignedAgentId: agentId });
+                setIsAssignModalOpen(false);
+              }}>
+                <option value="">Unassigned</option>
+                {agents.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+              </select>
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button type="button" onClick={() => setIsAssignModalOpen(false)} className="shell-button-secondary">Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Status modal */}
+      {isStatusModalOpen && statusLead && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/30" onClick={() => setIsStatusModalOpen(false)} />
+          <div className="relative z-10 w-[90%] max-w-sm rounded-2xl bg-white p-4 shadow-2xl">
+            <h3 className="text-lg font-bold text-neutral-900">Update Status</h3>
+            <p className="text-sm text-neutral-500 mt-1">Change status for "{statusLead.customer?.name || 'Unnamed'}"</p>
+            <div className="mt-4">
+              <select className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm" defaultValue={statusLead.status || ''} onChange={(e) => {
+                const newStatus = e.target.value;
+                handleStatusChange(statusLead, newStatus);
+                setIsStatusModalOpen(false);
+              }}>
+                {LEAD_STATUS_OPTIONS.map((opt) => (
+                  <option key={opt} value={opt}>{formatStatus(opt)}</option>
+                ))}
+              </select>
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button type="button" onClick={() => setIsStatusModalOpen(false)} className="shell-button-secondary">Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {followupLead && (
+        <FollowupScheduleModal
+          followupDate={followupDate}
+          followupNote={followupNote}
+          isSaving={addFollowup.isPending}
+          lead={followupLead}
+          onClose={closeFollowupScheduler}
+          onDateChange={setFollowupDate}
+          onNoteChange={setFollowupNote}
+          onSubmit={handleScheduleFollowup}
+        />
+      )}
 
       <LeadDrawer
         agents={agents}
@@ -465,13 +705,200 @@ export default function Leads() {
         onClose={() => setIsNewLeadModalOpen(false)}
         agents={agents}
       />
+
+      <FilterDrawer
+        isOpen={isFilterDrawerOpen}
+        onClose={() => setIsFilterDrawerOpen(false)}
+        sourceFilter={sourceFilter}
+        setSourceFilter={setSourceFilter}
+        agentFilter={agentFilter}
+        setAgentFilter={setAgentFilter}
+        tagFilter={tagFilter}
+        setTagFilter={setTagFilter}
+        sortBy={sortBy}
+        setSortBy={setSortBy}
+        dateRange={dateRange}
+        setDateRange={setDateRange}
+        agents={agents}
+        tagOptions={tagOptions}
+        currentAgent={currentAgent}
+        clearFilters={clearFilters}
+      />
+
+      <StatsDrawer
+        isOpen={isStatsDrawerOpen}
+        onClose={() => setIsStatsDrawerOpen(false)}
+        metrics={metrics}
+      />
     </div>
   );
 }
 
-function MetricCard({ icon: Icon, tone, value, label }) {
+function FilterDrawer({ isOpen, onClose, sourceFilter, setSourceFilter, agentFilter, setAgentFilter, tagFilter, setTagFilter, sortBy, setSortBy, dateRange, setDateRange, agents, tagOptions, currentAgent, clearFilters }) {
+  if (!isOpen) return null;
+
   return (
-    <div className="kpi-card min-w-[120px] shrink-0 md:min-w-0">
+    <div className="fixed inset-0 z-[60] flex items-end md:hidden">
+      <div className="absolute inset-0 bg-black/20 backdrop-blur-sm transition-opacity" onClick={onClose} />
+      <div className="relative w-full bg-white flex flex-col shadow-2xl animate-slide-up rounded-t-2xl max-h-[85vh]">
+        <div className="flex items-center justify-between border-b border-neutral-100 p-4">
+          <h2 className="text-lg font-bold text-neutral-900 flex items-center gap-2">
+            <FunnelIcon className="h-5 w-5 text-neutral-500" /> Filter Leads
+          </h2>
+          <button onClick={onClose} className="p-2 text-neutral-400 hover:text-neutral-600 rounded-lg hover:bg-neutral-100">
+            <XMarkIcon className="h-5 w-5" />
+          </button>
+        </div>
+        
+        <div className="flex-1 overflow-y-auto p-4 space-y-5">
+          <div className="space-y-2">
+            <label className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">Source</label>
+            <select value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value)} className="shell-input-rect w-full h-11 bg-neutral-50 text-sm">
+              {SOURCE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">Agent</label>
+            <select value={agentFilter} onChange={(e) => setAgentFilter(e.target.value)} className="shell-input-rect w-full h-11 bg-neutral-50 text-sm">
+              <option value="all">All Agents</option>
+              {currentAgent?.id && <option value="mine">Assigned To Me</option>}
+              <option value="unassigned">Unassigned</option>
+              {agents.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </select>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">Labels</label>
+            <select value={tagFilter} onChange={(e) => setTagFilter(e.target.value)} className="shell-input-rect w-full h-11 bg-neutral-50 text-sm">
+              <option value="all">All Labels</option>
+              {tagOptions.map((t) => <option key={t} value={t}>{t}</option>)}
+            </select>
+          </div>
+        </div>
+
+        <div className="border-t border-neutral-100 p-4 flex gap-3 bg-neutral-50/50 pb-[calc(1rem+env(safe-area-inset-bottom))]">
+          <button 
+            onClick={() => { clearFilters(); onClose(); }} 
+            className="flex-1 shell-button-secondary h-11 text-sm bg-white"
+          >
+            Clear
+          </button>
+          <button 
+            onClick={onClose} 
+            className="flex-1 shell-button-primary h-11 text-sm"
+          >
+            Done
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StatsDrawer({ isOpen, onClose, metrics }) {
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-[60] flex justify-end md:hidden">
+      <div className="absolute inset-0 bg-black/20 backdrop-blur-sm transition-opacity" onClick={onClose} />
+      <div className="relative w-[85%] max-w-sm bg-neutral-50 h-full flex flex-col shadow-2xl animate-fade-in-right">
+        <div className="flex items-center justify-between border-b border-neutral-200 bg-white p-4">
+          <h2 className="text-lg font-bold text-neutral-900 flex items-center gap-2">
+            <BanknotesIcon className="h-5 w-5 text-neutral-500" /> Lead Stats
+          </h2>
+          <button onClick={onClose} className="p-2 text-neutral-400 hover:text-neutral-600 rounded-lg hover:bg-neutral-100">
+            <XMarkIcon className="h-5 w-5" />
+          </button>
+        </div>
+        
+        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+          <MetricCard icon={ExclamationTriangleIcon} tone="bg-amber-50 text-amber-600 border border-amber-100 shadow-sm" value={metrics.attention} label="Attention" fullWidth />
+          <MetricCard icon={ClockIcon} tone="bg-rose-50 text-rose-600 border border-rose-100 shadow-sm" value={metrics.overdue} label="Overdue" fullWidth />
+          <MetricCard icon={TrophyIcon} tone="bg-red-50 text-red-600 border border-red-100 shadow-sm" value={metrics.hot} label="Hot" fullWidth />
+          <MetricCard icon={BriefcaseIcon} tone="bg-sky-50 text-sky-600 border border-sky-100 shadow-sm" value={metrics.totalDeals} label="Total Leads" fullWidth />
+          <MetricCard icon={TrophyIcon} tone="bg-emerald-50 text-emerald-600 border border-emerald-100 shadow-sm" value={metrics.won} label="Won" fullWidth />
+          <MetricCard icon={BanknotesIcon} tone="bg-indigo-50 text-indigo-600 border border-indigo-100 shadow-sm" value={formatCurrency(metrics.pipelineValue)} label="Pipeline" fullWidth />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FollowupScheduleModal({
+  followupDate,
+  followupNote,
+  isSaving,
+  lead,
+  onClose,
+  onDateChange,
+  onNoteChange,
+  onSubmit,
+}) {
+  return (
+    <div className="fixed inset-0 z-[80] flex items-center justify-center px-4">
+      <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={onClose} />
+      <form
+        onSubmit={onSubmit}
+        className="relative z-10 w-full max-w-md rounded-2xl border border-neutral-200 bg-white p-5 shadow-2xl"
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h3 className="text-lg font-bold text-neutral-900">Schedule Follow-Up</h3>
+            <p className="mt-1 text-sm text-neutral-500">
+              {lead.customer?.name || 'Unnamed Lead'}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg p-2 text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-700"
+          >
+            <XMarkIcon className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="mt-5 space-y-4">
+          <label className="block">
+            <span className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-neutral-500">Date & Time</span>
+            <input
+              type="datetime-local"
+              required
+              value={followupDate}
+              onChange={(event) => onDateChange(event.target.value)}
+              className="shell-input-rect h-11 w-full bg-neutral-50 text-sm"
+            />
+          </label>
+
+          <label className="block">
+            <span className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-neutral-500">Note</span>
+            <textarea
+              required
+              rows="3"
+              value={followupNote}
+              onChange={(event) => onNoteChange(event.target.value)}
+              className="shell-input-rect w-full resize-none bg-neutral-50 py-2 text-sm"
+              placeholder="Call back regarding package, pricing, or availability"
+            />
+          </label>
+        </div>
+
+        <div className="mt-5 flex justify-end gap-3">
+          <button type="button" onClick={onClose} className="shell-button-secondary h-10 px-4 text-sm">
+            Cancel
+          </button>
+          <button type="submit" disabled={isSaving} className="shell-button-primary h-10 px-5 text-sm disabled:opacity-60">
+            {isSaving ? 'Scheduling...' : 'Schedule'}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function MetricCard({ icon: Icon, tone, value, label, fullWidth }) {
+  return (
+    <div className={`kpi-card ${fullWidth ? 'w-full bg-white' : 'min-w-[120px] shrink-0 md:min-w-0'}`}>
       <div className="flex items-center gap-3 md:gap-4">
         <div className={`kpi-icon !h-9 !w-9 md:!h-11 md:!w-11 ${tone}`}>
           <Icon className="h-4 w-4 md:h-5 md:w-5" />
@@ -485,15 +912,16 @@ function MetricCard({ icon: Icon, tone, value, label }) {
   );
 }
 
-function LeadTable({ agents, clearFilters, isError, isLoading, leads, onLeadClick, onRetry, onStatusChange, onUpdateLead, selectedLeadIds, onToggleSelect, onToggleSelectAll }) {
-  const allSelected = leads.length > 0 && selectedLeadIds.size === leads.length;
-  const someSelected = selectedLeadIds.size > 0 && selectedLeadIds.size < leads.length;
-  const colSpan = 11;
+function LeadTable({ agents, clearFilters, isError, isLoading, leads, onLeadClick, onRetry, onScheduleFollowUp, onStatusChange, onUpdateLead, selectedLeadIds, onToggleSelect, onToggleSelectAll, rowOffset = 0 }) {
+  const selectedOnPage = leads.filter((lead) => selectedLeadIds.has(lead.id)).length;
+  const allSelected = leads.length > 0 && selectedOnPage === leads.length;
+  const someSelected = selectedOnPage > 0 && selectedOnPage < leads.length;
+  const colSpan = 10;
 
   return (
     <div className="data-table-wrapper">
       <div className="overflow-x-auto hide-scrollbar">
-        <table className="w-full min-w-[1180px] border-collapse text-left">
+        <table className="w-full min-w-[1080px] border-collapse text-left">
           <thead>
             <tr className="data-table-head">
               <th className="data-table-th w-12" onClick={(e) => e.stopPropagation()}>
@@ -513,7 +941,6 @@ function LeadTable({ agents, clearFilters, isError, isLoading, leads, onLeadClic
               </th>
               <th className="data-table-th w-16">SL NO</th>
               <th className="data-table-th">Lead</th>
-              <th className="data-table-th">Score</th>
               <th className="data-table-th">Attention</th>
               <th className="data-table-th">Contact</th>
               <th className="data-table-th">Trip</th>
@@ -571,11 +998,12 @@ function LeadTable({ agents, clearFilters, isError, isLoading, leads, onLeadClic
               leads.map((lead, index) => (
                 <LeadTableRow
                   agents={agents}
-                  index={index}
+                  index={rowOffset + index}
                   isSelected={selectedLeadIds.has(lead.id)}
                   key={lead.id}
                   lead={lead}
                   onLeadClick={onLeadClick}
+                  onScheduleFollowUp={onScheduleFollowUp}
                   onStatusChange={onStatusChange}
                   onToggleSelect={onToggleSelect}
                   onUpdateLead={onUpdateLead}
@@ -588,6 +1016,8 @@ function LeadTable({ agents, clearFilters, isError, isLoading, leads, onLeadClic
   );
 }
 
+/* PaginationControls removed — now using shared <Pagination /> component */
+
 function LeadTableSkeleton({ colSpan = 10 }) {
   return Array.from({ length: 5 }).map((_, index) => (
     <tr key={index} className="border-b border-neutral-100">
@@ -598,10 +1028,9 @@ function LeadTableSkeleton({ colSpan = 10 }) {
   ));
 }
 
-function LeadTableRow({ agents, index, isSelected, lead, onLeadClick, onStatusChange, onToggleSelect, onUpdateLead }) {
+function LeadTableRow({ agents, index, isSelected, lead, onLeadClick, onScheduleFollowUp, onStatusChange, onToggleSelect, onUpdateLead }) {
   const attentionBadges = getAttentionBadges(lead);
   const nextFollowUp = getNextFollowUp(lead);
-  const score = getLeadScore(lead);
   const agentOptions = mergeAssignedAgentOption(agents, lead);
 
   return (
@@ -629,11 +1058,6 @@ function LeadTableRow({ agents, index, isSelected, lead, onLeadClick, onStatusCh
             <div className="mt-0.5 text-xs text-neutral-400">{formatSource(lead.source)}</div>
           </div>
         </div>
-      </td>
-      <td className="data-table-td">
-        <span className={`inline-flex min-w-12 justify-center rounded-full border px-2.5 py-1 text-xs font-bold ${getLeadScoreTone(score)}`}>
-          {score}
-        </span>
       </td>
       <td className="data-table-td">
         {attentionBadges.length > 0 ? (
@@ -664,11 +1088,22 @@ function LeadTableRow({ agents, index, isSelected, lead, onLeadClick, onStatusCh
         </div>
       </td>
       <td className="data-table-td">
-        <div className="flex flex-col gap-0.5 text-xs">
+        <div className="flex flex-col items-start gap-1 text-xs">
           <span className="font-semibold text-neutral-700">{getNextAction(lead)}</span>
           <span className="text-neutral-400">
             {nextFollowUp ? formatDateTime(nextFollowUp.scheduledAt) : 'No follow-up scheduled'}
           </span>
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              onScheduleFollowUp(lead);
+            }}
+            className="mt-1 inline-flex items-center gap-1 rounded-full border border-neutral-200 bg-white px-2.5 py-1 text-[11px] font-bold text-neutral-600 transition-colors hover:border-neutral-300 hover:bg-neutral-50 hover:text-neutral-900"
+          >
+            <CalendarDaysIcon className="h-3.5 w-3.5" />
+            {nextFollowUp ? 'Reschedule' : 'Schedule'}
+          </button>
         </div>
       </td>
       <td className="data-table-td text-xs text-neutral-500">{getActivityLabel(lead)}</td>
@@ -710,13 +1145,27 @@ function LeadDrawer({ leadId, onClose, agents }) {
   const customTripDetails = lead?.customTripDetails && Object.keys(lead.customTripDetails).length
     ? lead.customTripDetails
     : null;
+  const readinessDetails = customTripDetails?.travelReadiness || null;
+  const hasReadinessDetails = Boolean(
+    readinessDetails?.travellerCount
+    || readinessDetails?.bookingReadiness
+    || readinessDetails?.departureAirport
+  );
+  const shouldShowCustomTripDetails = Boolean(customTripDetails && hasCustomTripDetails(customTripDetails));
   const requestSummaries = getLeadRequestSummaries(lead, customTripDetails || {});
+  const requestSourceLabel = formatSource(lead?.source);
+  const hasMetaAttribution = Boolean(
+    lead?.metaLeadgenId
+    || lead?.metaCampaignId
+    || lead?.metaFormId
+    || lead?.metaAdId
+  );
 
   const [activeTab, setActiveTab] = useState('Notes');
   const [noteContent, setNoteContent] = useState('');
   const [followupDate, setFollowupDate] = useState('');
   const [followupNote, setFollowupNote] = useState('');
-  const [isEditing, setIsEditing] = useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editState, setEditState] = useState({});
 
   const updateLead = useUpdateLead();
@@ -745,13 +1194,7 @@ function LeadDrawer({ leadId, onClose, agents }) {
       assignedAgentId: lead?.assignedAgentId || '',
       tagsText: (lead?.tags || []).join(', '),
     });
-    setIsEditing(true);
-  };
-
-  const handleMarkLost = () => {
-    const lostReason = window.prompt('Why was this lead lost?', lead?.lostReason || '');
-    if (!lostReason?.trim()) return;
-    updateLead.mutate({ id: lead.id, data: { status: 'LOST', lostReason: lostReason.trim() } });
+    setIsEditModalOpen(true);
   };
 
   const handleSave = () => {
@@ -759,18 +1202,19 @@ function LeadDrawer({ leadId, onClose, agents }) {
       .split(',')
       .map((tag) => tag.trim())
       .filter(Boolean);
+    const { tagsText, ...leadUpdates } = editState;
 
     updateLead.mutate(
       {
         id: leadId,
         data: {
-          ...editState,
+          ...leadUpdates,
           assignedAgentId: editState.assignedAgentId || null,
           tags,
         },
       },
       {
-        onSuccess: () => setIsEditing(false),
+        onSuccess: () => setIsEditModalOpen(false),
       }
     );
   };
@@ -833,30 +1277,12 @@ function LeadDrawer({ leadId, onClose, agents }) {
             )}
 
             <div className="flex shrink-0 items-center gap-2">
-              {isEditing ? (
-                <>
-                  <button
-                    onClick={handleSave}
-                    disabled={updateLead.isPending}
-                    className="rounded-lg bg-neutral-900 px-3 py-1.5 text-xs font-bold text-white transition-all hover:bg-black disabled:opacity-60"
-                  >
-                    {updateLead.isPending ? 'Saving...' : 'Save'}
-                  </button>
-                  <button
-                    onClick={() => setIsEditing(false)}
-                    className="rounded-lg border border-neutral-200 px-3 py-1.5 text-xs font-bold text-neutral-600 transition-all hover:bg-neutral-50"
-                  >
-                    Cancel
-                  </button>
-                </>
-              ) : (
-                <button
-                  onClick={handleEditClick}
-                  className="rounded-lg p-2 text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-600"
-                >
-                  <PencilIcon className="h-5 w-5" />
-                </button>
-              )}
+              <button
+                onClick={handleEditClick}
+                className="rounded-lg p-2 text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-600"
+              >
+                <PencilIcon className="h-5 w-5" />
+              </button>
               <button onClick={onClose} className="rounded-lg p-2 text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-600">
                 <XMarkIcon className="h-5 w-5" />
               </button>
@@ -868,9 +1294,6 @@ function LeadDrawer({ leadId, onClose, agents }) {
               <QuickAction icon={ChatBubbleLeftRightIcon} label="WhatsApp" onClick={openWhatsApp} />
               <QuickAction icon={PhoneIcon} label="Call" onClick={openCall} />
               <QuickAction icon={CalendarDaysIcon} label="Follow-up" onClick={() => setActiveTab('Follow-ups')} />
-              <QuickAction icon={PaperAirplaneIcon} label="Quote" onClick={() => setActiveTab('Activity')} />
-              <QuickAction icon={CheckCircleIcon} label="Convert" onClick={() => updateLead.mutate({ id: lead.id, data: { status: 'CONVERTED' } })} />
-              <QuickAction icon={XCircleIcon} label="Lost" onClick={handleMarkLost} />
               <QuickAction icon={UserPlusIcon} label="Assign" onClick={handleEditClick} />
               <QuickAction icon={PencilIcon} label="Note" onClick={() => setActiveTab('Notes')} />
             </div>
@@ -882,7 +1305,6 @@ function LeadDrawer({ leadId, onClose, agents }) {
           <div className="border-b border-neutral-100 px-6 py-4 text-sm">
             <div className="grid grid-cols-2 gap-x-6 gap-y-4">
               <LeadField
-                isEditing={isEditing}
                 label="Destination"
                 value={lead.destination || EMPTY}
                 editControl={
@@ -895,7 +1317,6 @@ function LeadDrawer({ leadId, onClose, agents }) {
                 }
               />
               <LeadField
-                isEditing={isEditing}
                 label="Source"
                 value={formatSource(lead.source)}
                 editControl={
@@ -915,7 +1336,6 @@ function LeadDrawer({ leadId, onClose, agents }) {
                 }
               />
               <LeadField
-                isEditing={isEditing}
                 label="Contact Person"
                 value={lead.customer?.name || EMPTY}
                 editControl={
@@ -928,7 +1348,6 @@ function LeadDrawer({ leadId, onClose, agents }) {
                 }
               />
               <LeadField
-                isEditing={isEditing}
                 label="Phone"
                 value={formatPhone(lead.customer?.phone) || EMPTY}
                 editControl={
@@ -941,7 +1360,6 @@ function LeadDrawer({ leadId, onClose, agents }) {
                 }
               />
               <LeadField
-                isEditing={isEditing}
                 label="Email"
                 value={lead.customer?.email || EMPTY}
                 editControl={
@@ -954,7 +1372,6 @@ function LeadDrawer({ leadId, onClose, agents }) {
                 }
               />
               <LeadField
-                isEditing={isEditing}
                 label="Budget / Person"
                 value={lead.budgetPerPerson ? formatCurrency(lead.budgetPerPerson) : EMPTY}
                 editControl={
@@ -971,7 +1388,6 @@ function LeadDrawer({ leadId, onClose, agents }) {
               <LeadField label="Last Activity" value={getActivityLabel(lead)} />
               <LeadField label="Next Contact" value={nextFollowUp ? formatDateTime(nextFollowUp.scheduledAt) : EMPTY} />
               <LeadField
-                isEditing={isEditing}
                 label="Assigned To"
                 value={lead.assignedAgent?.name || 'Unassigned'}
                 editControl={
@@ -996,15 +1412,7 @@ function LeadDrawer({ leadId, onClose, agents }) {
                 <TagIcon className="h-4 w-4" />
                 Tags
               </div>
-              {isEditing ? (
-                <input
-                  type="text"
-                  value={editState.tagsText || ''}
-                  onChange={(event) => setEditState({ ...editState, tagsText: event.target.value })}
-                  className="w-full rounded-md border-neutral-200 bg-neutral-50 px-3 py-2 text-sm focus:ring-0"
-                  placeholder="urgent, honeymoon, high budget"
-                />
-              ) : (lead.tags || []).length > 0 ? (
+              {(lead.tags || []).length > 0 ? (
                 <div className="flex flex-wrap gap-2">
                   {lead.tags.map((tag) => (
                     <span key={tag} className="rounded-full border border-neutral-200 bg-neutral-50 px-2.5 py-1 text-xs font-semibold text-neutral-600">
@@ -1022,7 +1430,7 @@ function LeadDrawer({ leadId, onClose, agents }) {
                 <div className="mb-3">
                   <p className="text-xs font-semibold uppercase tracking-[0.18em] text-neutral-400">Requested Services</p>
                   <p className="mt-1 text-sm font-semibold text-neutral-900">
-                    {requestSummaries.length} request{requestSummaries.length === 1 ? '' : 's'} captured from WhatsApp
+                    {requestSummaries.length} request{requestSummaries.length === 1 ? '' : 's'} captured from {requestSourceLabel}
                   </p>
                 </div>
                 <div className="grid gap-2">
@@ -1032,6 +1440,25 @@ function LeadDrawer({ leadId, onClose, agents }) {
                       <p className="mt-1 text-xs font-semibold text-neutral-600">{item.meta || EMPTY}</p>
                     </div>
                   ))}
+                </div>
+              </div>
+            )}
+
+            {hasMetaAttribution && (
+              <div className="mt-5 rounded-2xl border border-sky-200 bg-sky-50/70 p-4">
+                <div className="mb-3">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-600">Meta Attribution</p>
+                  <p className="mt-1 text-sm font-semibold text-neutral-900">
+                    {formatSource(lead.source)} campaign details
+                  </p>
+                </div>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+                  <DetailValue label="Campaign" value={lead.metaCampaignName || lead.metaCampaignId || EMPTY} />
+                  <DetailValue label="Ad Set" value={lead.metaAdSetName || lead.metaAdSetId || EMPTY} />
+                  <DetailValue label="Ad" value={lead.metaAdName || lead.metaAdId || EMPTY} />
+                  <DetailValue label="Lead Form" value={lead.metaFormId || EMPTY} />
+                  <DetailValue label="Platform" value={lead.metaPlatform || EMPTY} />
+                  <DetailValue label="Leadgen ID" value={lead.metaLeadgenId || EMPTY} />
                 </div>
               </div>
             )}
@@ -1073,11 +1500,30 @@ function LeadDrawer({ leadId, onClose, agents }) {
               </div>
             )}
 
-            {customTripDetails && (
+            {hasReadinessDetails && (
+              <div className="mt-5 rounded-2xl border border-violet-200 bg-violet-50/70 p-4">
+                <div className="mb-3">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-violet-600">Questionnaire Details</p>
+                  <p className="mt-1 text-sm font-semibold text-neutral-900">
+                    Travel readiness answers from {requestSourceLabel}
+                  </p>
+                </div>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+                  <DetailValue label="Package" value={lead.package?.name || lead.campaignName || EMPTY} />
+                  <DetailValue label="Travellers" value={formatReadinessAnswer(readinessDetails.travellerCount || lead.travellers)} />
+                  <DetailValue label="Booking Readiness" value={formatReadinessAnswer(readinessDetails.bookingReadiness)} />
+                  <DetailValue label="Departure Airport" value={formatReadinessAnswer(readinessDetails.departureAirport)} />
+                  {customTripDetails?.routingIntentLabel && <DetailValue label="Routed To" value={customTripDetails.routingIntentLabel} />}
+                  {lead.assignedAgent?.name && <DetailValue label="Specialist" value={lead.assignedAgent.name} />}
+                </div>
+              </div>
+            )}
+
+            {shouldShowCustomTripDetails && (
               <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50/70 p-4">
                 <div className="mb-3">
                   <p className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-600">Custom Trip Details</p>
-                  <p className="mt-1 text-sm font-semibold text-neutral-900">Preferences submitted from WhatsApp</p>
+                  <p className="mt-1 text-sm font-semibold text-neutral-900">Preferences submitted from {requestSourceLabel}</p>
                 </div>
                 <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
                   {(customTripDetails.serviceCategory || customTripDetails.service) && (
@@ -1086,7 +1532,10 @@ function LeadDrawer({ leadId, onClose, agents }) {
                       <DetailValue label="Ticketing Type" value={formatServiceLabel(customTripDetails.service)} />
                     </>
                   )}
-                  <DetailValue label="Destination" value={customTripDetails.destination || lead.destination || EMPTY} />
+                  {customTripDetails.propertyName && <DetailValue label="Property" value={customTripDetails.propertyName} />}
+                  <DetailValue label="Destination" value={customTripDetails.propertyLocation || customTripDetails.destination || lead.destination || EMPTY} />
+                  {customTripDetails.checkInDate && <DetailValue label="Check-in" value={customTripDetails.checkInDate} />}
+                  {customTripDetails.checkOutDate && <DetailValue label="Checkout" value={customTripDetails.checkOutDate} />}
                   <DetailValue label="Travel Date" value={customTripDetails.travelDate || lead.travelDates || EMPTY} />
                   <DetailValue label="Travellers" value={customTripDetails.travellersText || customTripDetails.travellers || lead.travellers || EMPTY} />
                   <DetailValue
@@ -1163,6 +1612,17 @@ function LeadDrawer({ leadId, onClose, agents }) {
         </div>
         </div>
       </aside>
+
+      {isEditModalOpen && lead && (
+        <EditLeadModal
+          agentOptions={agentOptions}
+          editState={editState}
+          isSaving={updateLead.isPending}
+          onChange={setEditState}
+          onClose={() => setIsEditModalOpen(false)}
+          onSave={handleSave}
+        />
+      )}
     </div>
   );
 }
@@ -1177,6 +1637,132 @@ function QuickAction({ icon: Icon, label, onClick }) {
       <Icon className="h-5 w-5" />
       <span className="truncate">{label}</span>
     </button>
+  );
+}
+
+function EditLeadModal({ agentOptions, editState, isSaving, onChange, onClose, onSave }) {
+  const updateField = (field, value) => onChange({ ...editState, [field]: value });
+  const sourceOptions = SOURCE_OPTIONS.filter((option) => option.value !== 'all');
+
+  return (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center px-4 py-6">
+      <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={onClose} />
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          onSave();
+        }}
+        className="relative flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-2xl"
+      >
+        <div className="flex items-start justify-between gap-4 border-b border-neutral-100 px-5 py-4">
+          <div>
+            <h3 className="text-lg font-bold text-neutral-900">Edit Lead</h3>
+            <p className="mt-1 text-sm text-neutral-500">Update lead details and assignment.</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg p-2 text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-700"
+          >
+            <XMarkIcon className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="grid gap-4 overflow-y-auto px-5 py-5 sm:grid-cols-2">
+          <ModalField label="Contact Person">
+            <input
+              value={editState.customerName || ''}
+              onChange={(event) => updateField('customerName', event.target.value)}
+              className="shell-input-rect h-11 bg-neutral-50 text-sm"
+            />
+          </ModalField>
+          <ModalField label="Phone">
+            <input
+              value={editState.customerPhone || ''}
+              onChange={(event) => updateField('customerPhone', event.target.value)}
+              className="shell-input-rect h-11 bg-neutral-50 text-sm"
+            />
+          </ModalField>
+          <ModalField label="Email">
+            <input
+              type="email"
+              value={editState.customerEmail || ''}
+              onChange={(event) => updateField('customerEmail', event.target.value)}
+              className="shell-input-rect h-11 bg-neutral-50 text-sm"
+            />
+          </ModalField>
+          <ModalField label="Source">
+            <select
+              value={editState.source || ''}
+              onChange={(event) => updateField('source', event.target.value)}
+              className="shell-input-rect h-11 bg-neutral-50 text-sm"
+            >
+              {sourceOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </ModalField>
+          <ModalField label="Destination">
+            <input
+              value={editState.destination || ''}
+              onChange={(event) => updateField('destination', event.target.value)}
+              className="shell-input-rect h-11 bg-neutral-50 text-sm"
+            />
+          </ModalField>
+          <ModalField label="Budget / Person">
+            <input
+              type="number"
+              min="0"
+              value={Number(editState.budgetPerPerson || 0) / 100}
+              onChange={(event) => updateField('budgetPerPerson', Number(event.target.value || 0) * 100)}
+              className="shell-input-rect h-11 bg-neutral-50 text-sm"
+            />
+          </ModalField>
+          <ModalField label="Assigned To">
+            <select
+              value={editState.assignedAgentId || ''}
+              onChange={(event) => updateField('assignedAgentId', event.target.value)}
+              className="shell-input-rect h-11 bg-neutral-50 text-sm"
+            >
+              <option value="">Unassigned</option>
+              {agentOptions.map((agent) => (
+                <option key={agent.id} value={agent.id}>
+                  {agent.name}
+                </option>
+              ))}
+            </select>
+          </ModalField>
+          <ModalField label="Tags" className="sm:col-span-2">
+            <input
+              value={editState.tagsText || ''}
+              onChange={(event) => updateField('tagsText', event.target.value)}
+              className="shell-input-rect h-11 bg-neutral-50 text-sm"
+              placeholder="urgent, honeymoon, high budget"
+            />
+          </ModalField>
+        </div>
+
+        <div className="flex justify-end gap-3 border-t border-neutral-100 bg-neutral-50/70 px-5 py-4">
+          <button type="button" onClick={onClose} className="shell-button-secondary h-10 px-4 text-sm">
+            Cancel
+          </button>
+          <button type="submit" disabled={isSaving} className="shell-button-primary h-10 px-5 text-sm disabled:opacity-60">
+            {isSaving ? 'Saving...' : 'Save Lead'}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function ModalField({ children, className = '', label }) {
+  return (
+    <label className={`block min-w-0 ${className}`}>
+      <span className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-neutral-500">{label}</span>
+      {children}
+    </label>
   );
 }
 
@@ -1428,30 +2014,29 @@ function BulkActionBar({ agents, count, isPending, onAssign, onClear }) {
   if (count === 0) return null;
 
   return (
-    <div className="fixed inset-x-0 bottom-0 z-50 flex justify-center pb-6 pointer-events-none animate-fade-in">
-      <div className="pointer-events-auto flex items-center gap-4 rounded-2xl border border-neutral-200/80 bg-white/95 px-6 py-3.5 shadow-2xl backdrop-blur-xl ring-1 ring-black/5">
+    <div className="fixed inset-x-0 bottom-0 z-50 flex justify-center px-3 pb-4 md:pb-6 pointer-events-none animate-fade-in">
+      <div className="pointer-events-auto flex flex-wrap items-center gap-2 md:gap-4 rounded-2xl border border-neutral-200/80 bg-white/95 px-3 py-2.5 md:px-6 md:py-3.5 shadow-2xl backdrop-blur-xl ring-1 ring-black/5 w-full max-w-lg md:w-auto md:max-w-none">
         {/* Selection count badge */}
-        <div className="flex items-center gap-2.5">
-          <span className="flex h-8 w-8 items-center justify-center rounded-full bg-neutral-900 text-xs font-bold text-white shadow-sm">
+        <div className="flex items-center gap-2">
+          <span className="flex h-7 w-7 md:h-8 md:w-8 items-center justify-center rounded-full bg-neutral-900 text-[11px] md:text-xs font-bold text-white shadow-sm">
             {count}
           </span>
-          <span className="text-sm font-semibold text-neutral-700">
+          <span className="text-xs md:text-sm font-semibold text-neutral-700 hidden md:inline">
             {count === 1 ? 'lead' : 'leads'} selected
           </span>
         </div>
 
-        {/* Divider */}
-        <div className="h-8 w-px bg-neutral-200" />
+        {/* Divider (desktop only) */}
+        <div className="hidden md:block h-8 w-px bg-neutral-200" />
 
         {/* Agent picker */}
-        <div className="flex items-center gap-2.5">
-          <UserPlusIcon className="h-4.5 w-4.5 text-neutral-400" />
+        <div className="flex items-center gap-2 flex-1 min-w-0">
           <select
             value={bulkAgentId}
             onChange={(e) => setBulkAgentId(e.target.value)}
-            className="h-9 w-48 cursor-pointer rounded-lg border border-neutral-200 bg-neutral-50 px-3 text-sm font-medium text-neutral-700 transition-colors hover:border-neutral-400 focus:border-neutral-500 focus:ring-0"
+            className="h-9 flex-1 min-w-0 md:w-48 md:flex-none cursor-pointer rounded-lg border border-neutral-200 bg-neutral-50 px-2 md:px-3 text-xs md:text-sm font-medium text-neutral-700 transition-colors hover:border-neutral-400 focus:border-neutral-500 focus:ring-0"
           >
-            <option value="">Select Agent...</option>
+            <option value="">Select Agent</option>
             {agents.map((agent) => (
               <option key={agent.id} value={agent.id}>
                 {agent.name}
@@ -1468,29 +2053,29 @@ function BulkActionBar({ agents, count, isPending, onAssign, onClear }) {
             setBulkAgentId('');
           }}
           disabled={!bulkAgentId || isPending}
-          className="flex h-9 items-center gap-2 rounded-lg bg-neutral-900 px-5 text-sm font-bold text-white shadow-sm transition-all hover:bg-black disabled:cursor-not-allowed disabled:opacity-40"
+          className="flex h-9 items-center gap-1.5 rounded-lg bg-neutral-900 px-3 md:px-5 text-xs md:text-sm font-bold text-white shadow-sm transition-all hover:bg-black disabled:cursor-not-allowed disabled:opacity-40"
         >
           {isPending ? (
             <>
-              <ArrowPathIcon className="h-4 w-4 animate-spin" />
-              Assigning...
+              <ArrowPathIcon className="h-3.5 w-3.5 animate-spin" />
+              <span className="hidden md:inline">Assigning...</span>
             </>
           ) : (
             <>
-              <CheckCircleIcon className="h-4 w-4" />
+              <CheckCircleIcon className="h-3.5 w-3.5" />
               Assign
             </>
           )}
         </button>
 
-        {/* Unassign button */}
+        {/* Unassign button (desktop only) */}
         <button
           onClick={() => {
             onAssign(null);
             setBulkAgentId('');
           }}
           disabled={isPending}
-          className="flex h-9 items-center gap-1.5 rounded-lg border border-neutral-200 bg-white px-4 text-sm font-semibold text-neutral-600 transition-all hover:bg-neutral-50 hover:border-neutral-300 disabled:opacity-40"
+          className="hidden md:flex h-9 items-center gap-1.5 rounded-lg border border-neutral-200 bg-white px-4 text-sm font-semibold text-neutral-600 transition-all hover:bg-neutral-50 hover:border-neutral-300 disabled:opacity-40"
         >
           Unassign
         </button>
@@ -1498,10 +2083,10 @@ function BulkActionBar({ agents, count, isPending, onAssign, onClear }) {
         {/* Clear selection */}
         <button
           onClick={onClear}
-          className="flex h-8 w-8 items-center justify-center rounded-full text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-600"
+          className="flex h-7 w-7 md:h-8 md:w-8 items-center justify-center rounded-full text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-600"
           title="Clear selection"
         >
-          <XMarkIcon className="h-4.5 w-4.5" />
+          <XMarkIcon className="h-4 w-4" />
         </button>
       </div>
     </div>

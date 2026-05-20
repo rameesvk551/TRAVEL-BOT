@@ -8,6 +8,7 @@ const { detectLanguage } = require('../utils/languageDetect');
 const templates = require('../utils/messageTemplates');
 const whatsappService = require(path.resolve(__dirname, '../../../backend/src/services/whatsappService.ts'));
 const leadService = require(path.resolve(__dirname, '../../../backend/src/services/leadService.ts'));
+const { sendAgentLeadAssignment } = require('../utils/agentNotificationSender');
 
 /**
  * Multi-step lead capture state machine.
@@ -219,13 +220,16 @@ async function handleLeadCapture(session, messageText, customer, agency) {
         if (agent) {
           await leadService.updateLead(lead.id, agency.id, { assignedAgentId: agent.id });
 
-          // Notify agent
-          const agentNotif = templates.agentNewLead(
-            data.name, customer.phone, data.destination,
-            data.dates, data.travellers, data.budget
-          );
           if (agent.phone) {
-            await whatsappService.sendTextMessage(agent.phone, agentNotif, ctx);
+            await sendAgentLeadAssignment(agent.phone, agency.id, {
+              customerName: data.name,
+              phone: customer.phone,
+              destination: data.destination,
+              travelDate: data.dates,
+              travellers: data.travellers,
+              budget: data.budget,
+              notes: `Collected via WhatsApp bot. Source input: ${data.source}`,
+            }, ctx);
           }
         }
 

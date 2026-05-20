@@ -15,7 +15,7 @@ import { useAgencyTemplates, useCreateTemplate, useSubmitTemplate } from '../hoo
 import { packagesApi } from '../api/packagesApi';
 import { campaignsApi } from '../api/campaignsApi';
 import { propertiesApi } from '../api/propertiesApi';
-import { TemplatePickerDrawer, ConfigDrawer } from '../components/CampaignStep2Drawers';
+import { TemplatePickerDrawer, ConfigDrawer, TemplatePickerContent, ConfigContent } from '../components/CampaignStep2Drawers';
 
 const CAMPAIGN_TYPES = [
   { value: 'BROADCAST', label: 'Broadcast', icon: Megaphone, desc: 'General announcement to all or filtered audiences', gradient: 'from-blue-500 to-indigo-600' },
@@ -358,6 +358,73 @@ const isTemplateMediaCompatible = (template, builderMode, mediaType) => {
   return getTemplateMediaMode(template) === String(mediaType).toUpperCase();
 };
 
+const CTA_BUTTON_ACTIONS = [
+  { value: 'VIEW_PACKAGES', label: 'Package selection', itemTypes: ['PACKAGE'] },
+  { value: 'VIEW_PROPERTIES', label: 'Property selection', itemTypes: ['PROPERTY'] },
+  { value: 'CUSTOM_TRIP', label: 'Custom trip flow', itemTypes: [] },
+  { value: 'VIEW_DETAILS', label: 'View details', itemTypes: ['PACKAGE', 'PROPERTY'] },
+  { value: 'SEND_ITINERARY', label: 'Send itinerary', itemTypes: ['PACKAGE'] },
+  { value: 'CHECK_AVAILABILITY', label: 'Check availability', itemTypes: ['PACKAGE'] },
+  { value: 'TALK_TO_AGENT', label: 'WhatsApp / talk to agent', itemTypes: ['PACKAGE'] },
+];
+
+const CTA_BUTTON_ACTION_LABELS = CTA_BUTTON_ACTIONS.reduce((acc, action) => {
+  acc[action.value] = action.label;
+  return acc;
+}, {});
+
+const normalizeButtonTextKey = (value = '') => String(value || '')
+  .trim()
+  .toLowerCase()
+  .replace(/[^\p{L}\p{N}]+/gu, '_')
+  .replace(/^_+|_+$/g, '');
+
+const getButtonActionKey = (button, index) => `${normalizeButtonTextKey(button?.text || button?.title || `button_${index + 1}`)}:${index}`;
+
+const getTemplateQuickReplyButtons = (template) => (
+  Array.isArray(template?.buttons)
+    ? template.buttons.filter((button) => String(button.type || 'QUICK_REPLY').toUpperCase() === 'QUICK_REPLY' && String(button.text || button.title || '').trim())
+    : []
+);
+
+const getTemplateProviderButtons = (template) => (
+  Array.isArray(template?.buttons)
+    ? template.buttons.filter((button) => String(button.type || 'QUICK_REPLY').toUpperCase() !== 'QUICK_REPLY')
+    : []
+);
+
+const getSectionKeyForButtonAction = (action, itemType) => {
+  if (action === 'VIEW_PROPERTIES' || itemType === 'PROPERTY') return 'properties';
+  if (action === 'CUSTOM_TRIP') return 'custom_trip';
+  if (['VIEW_PACKAGES', 'VIEW_DETAILS', 'SEND_ITINERARY', 'CHECK_AVAILABILITY', 'TALK_TO_AGENT'].includes(action)) return 'packages';
+  return null;
+};
+
+const buildDefaultButtonActions = (buttons = [], existing = {}) => buttons.reduce((acc, button, index) => {
+  const key = getButtonActionKey(button, index);
+  acc[key] = {
+    buttonKey: key,
+    buttonText: String(button.text || button.title || `Button ${index + 1}`).trim(),
+    buttonIndex: index,
+    action: existing[key]?.action || '',
+    itemType: existing[key]?.itemType || null,
+    itemId: existing[key]?.itemId || null,
+  };
+  return acc;
+}, {});
+
+const getDuplicateQuickReplyLabels = (buttons = []) => {
+  const seen = new Set();
+  const duplicates = new Set();
+  buttons.forEach((button) => {
+    const text = normalizeButtonTextKey(button.text || button.title);
+    if (!text) return;
+    if (seen.has(text)) duplicates.add(text);
+    seen.add(text);
+  });
+  return Array.from(duplicates);
+};
+
 export default function CreateCampaign() {
   const navigate = useNavigate();
   const { id: editId } = useParams();
@@ -601,6 +668,14 @@ export default function CreateCampaign() {
   const currentExperience = MESSAGE_EXPERIENCES.find((experience) => experience.id === currentExperienceId) || MESSAGE_EXPERIENCES[0];
   const activePackages = packages.filter((pkg) => pkg.isActive !== false);
   const activeProperties = properties.filter((property) => property.isActive !== false);
+  const ctaTemplateButtons = builderMode === 'cta' ? getTemplateQuickReplyButtons(selectedTemplate) : [];
+  const ctaProviderButtons = builderMode === 'cta' ? getTemplateProviderButtons(selectedTemplate) : [];
+  const duplicateCtaButtonLabels = getDuplicateQuickReplyLabels(ctaTemplateButtons);
+  const hasTemplateButtonActions = ctaTemplateButtons.length > 0;
+  const rawCtaButtonActions = formData.ctaConfig?.buttonActions || {};
+  const ctaButtonActions = hasTemplateButtonActions
+    ? buildDefaultButtonActions(ctaTemplateButtons, rawCtaButtonActions)
+    : rawCtaButtonActions;
 
   const getSectionByKey = useCallback(
     (key) => (formData.campaignSections || []).find((section) => section.key === key) || createDefaultCampaignSections().find((section) => section.key === key),
@@ -643,6 +718,59 @@ export default function CreateCampaign() {
     updateSection(key, {
       selectionMode: 'MANUAL',
       selectedItemIds: nextSelectedIds,
+    });
+  };
+
+  const updateButtonAction = (button, index, updates = {}) => {
+    const key = getButtonActionKey(button, index);
+    setFormData((prev) => {
+      const currentActions = prev.ctaConfig?.buttonActions || {};
+      const existing = currentActions[key] || buildDefaultButtonActions([button], {})[getButtonActionKey(button, 0)] || {};
+      const nextAction = {
+        ...existing,
+        buttonKey: key,
+        buttonText: String(button.text || button.title || `Button ${index + 1}`).trim(),
+        buttonIndex: index,
+        ...updates,
+      };
+
+      const allowedItemTypes = CTA_BUTTON_ACTIONS.find((action) => action.value === nextAction.action)?.itemTypes || [];
+      if (allowedItemTypes.length === 0) {
+        nextAction.itemType = null;
+        nextAction.itemId = null;
+      } else if (nextAction.itemType && !allowedItemTypes.includes(nextAction.itemType)) {
+        nextAction.itemType = allowedItemTypes[0] || null;
+        nextAction.itemId = null;
+      } else if (!nextAction.itemType && nextAction.itemId) {
+        nextAction.itemType = allowedItemTypes[0] || null;
+      }
+
+      const sectionKey = getSectionKeyForButtonAction(nextAction.action, nextAction.itemType);
+
+      const nextSections = ((prev.campaignSections || []).length ? prev.campaignSections : createDefaultCampaignSections()).map((section) => {
+        if (section.key !== sectionKey) return section;
+        const selectedItemIds = nextAction.itemId && ['PACKAGE', 'PROPERTY'].includes(nextAction.itemType)
+          ? Array.from(new Set([...(section.selectedItemIds || []), nextAction.itemId]))
+          : section.selectedItemIds || [];
+        return {
+          ...section,
+          enabled: true,
+          selectionMode: 'MANUAL',
+          selectedItemIds: section.itemType === 'CUSTOM_TRIP' ? [] : selectedItemIds,
+        };
+      });
+
+      return {
+        ...prev,
+        campaignSections: nextSections,
+        ctaConfig: {
+          ...(prev.ctaConfig || {}),
+          buttonActions: {
+            ...currentActions,
+            [key]: nextAction,
+          },
+        },
+      };
     });
   };
 
@@ -728,12 +856,42 @@ export default function CreateCampaign() {
       messageBody: template.body || '',
       mediaType: mediaMode,
       format: normalizeTemplateType(template) === 'CAROUSEL' ? 'ITEM_CAROUSEL' : 'SECTION_CTA',
+      ctaConfig: {
+        ...(prev.ctaConfig || {}),
+        buttonActions: normalizeTemplateType(template) === 'CAROUSEL'
+          ? {}
+          : buildDefaultButtonActions(getTemplateQuickReplyButtons(template), prev.ctaConfig?.buttonActions || {}),
+      },
       carouselConfig: {
         ...(prev.carouselConfig || {}),
         mediaMode,
       },
     }));
   }, []);
+
+  useEffect(() => {
+    if (builderMode !== 'cta' || !selectedTemplate) return;
+    const buttons = getTemplateQuickReplyButtons(selectedTemplate);
+    if (!buttons.length) return;
+
+    setFormData((prev) => ({
+      ...prev,
+      campaignSections: ((prev.campaignSections || []).length ? prev.campaignSections : createDefaultCampaignSections()).map((section) => {
+        const buttonActions = Object.values(buildDefaultButtonActions(buttons, prev.ctaConfig?.buttonActions || {}));
+        const shouldEnable = buttonActions.some((entry) => getSectionKeyForButtonAction(entry.action, entry.itemType) === section.key);
+        if (!shouldEnable) return section;
+        return {
+          ...section,
+          enabled: true,
+          selectionMode: section.itemType === 'CUSTOM_TRIP' ? section.selectionMode : 'MANUAL',
+        };
+      }),
+      ctaConfig: {
+        ...(prev.ctaConfig || {}),
+        buttonActions: buildDefaultButtonActions(buttons, prev.ctaConfig?.buttonActions || {}),
+      },
+    }));
+  }, [builderMode, selectedTemplate?.id]);
 
   useEffect(() => {
     if (!formData.templateId) {
@@ -776,8 +934,28 @@ export default function CreateCampaign() {
       )
     : [];
   const previewButtons = selectedTemplate && normalizeTemplateType(selectedTemplate) !== 'CAROUSEL'
-    ? (selectedTemplate.buttons || [])
+    ? ctaTemplateButtons
     : [];
+  const ctaButtonActionEntries = ctaTemplateButtons.map((button, index) => {
+    const key = getButtonActionKey(button, index);
+    return ctaButtonActions[key] || buildDefaultButtonActions([button], {})[getButtonActionKey(button, 0)];
+  });
+
+  const isCtaButtonActionReady = (entry = {}) => {
+    if (!CTA_BUTTON_ACTION_LABELS[entry.action]) return false;
+    if (entry.action === 'VIEW_PACKAGES') return selectedPackageRecords.length > 0;
+    if (entry.action === 'VIEW_PROPERTIES') return selectedPropertyRecords.length > 0;
+    if (entry.action === 'VIEW_DETAILS') {
+      return !!entry.itemId || selectedPackageRecords.length + selectedPropertyRecords.length > 0;
+    }
+    if (entry.action === 'SEND_ITINERARY') {
+      return (entry.itemType === 'PACKAGE' && !!entry.itemId) || selectedPackageRecords.length > 0;
+    }
+    if (entry.action === 'CHECK_AVAILABILITY') {
+      return (entry.itemType === 'PACKAGE' && !!entry.itemId) || selectedPackageRecords.length > 0;
+    }
+    return true;
+  };
 
   const canProceed = () => {
     if (step === 0) return formData.name.trim().length > 0;
@@ -785,6 +963,13 @@ export default function CreateCampaign() {
       if (!(formData.templateId || formData.messageBody.trim().length > 0)) return false;
       if (templateNeedsCampaignDescription && !campaignDescription) return false;
       if (formData.format === 'SECTION_CTA') {
+        if (hasTemplateButtonActions) {
+          if (duplicateCtaButtonLabels.length > 0) return false;
+          return ctaButtonActionEntries.length > 0
+            && ctaButtonActionEntries.every(isCtaButtonActionReady)
+            && (!ctaNeedsFeaturedMedia || !!featuredCtaRecord);
+        }
+
         if (activeSections.length === 0) return false;
         const catalogSections = activeSections.filter((section) => section.itemType === 'PACKAGE' || section.itemType === 'PROPERTY');
         if (catalogSections.length === 0) return false;
@@ -889,31 +1074,12 @@ export default function CreateCampaign() {
         <div className="absolute -bottom-48 -left-48 w-[500px] h-[500px] rounded-full bg-gradient-to-tr from-indigo-400/6 to-violet-500/4 blur-3xl animate-pulse-soft" style={{ animationDelay: '1s' }} />
       </div>
 
-      {/* ── Page Header ── */}
-      <div className="relative z-10 px-4 pt-4 sm:px-6 md:px-8 mb-4 flex items-center gap-3 sm:mb-5 sm:gap-4 bg-white/50 backdrop-blur-sm border-b border-slate-100 pb-4">
-        <button
-          onClick={() => navigate('/campaigns')}
-          className="group flex h-11 w-11 shrink-0 items-center justify-center rounded-[var(--radius-md)] border border-slate-200/80 bg-white/80 text-slate-400 backdrop-blur-sm transition-all duration-300 hover:bg-white hover:text-slate-700 hover:shadow-sm"
-        >
-          <ArrowLeft className="w-5 h-5 group-hover:-translate-x-0.5 transition-transform duration-200" />
-        </button>
-        <div>
-          <h1 className="text-2xl font-extrabold tracking-tight text-slate-900">
-            {isEdit ? 'Edit Campaign' : 'Create Campaign'}
-          </h1>
-          <p className="text-sm text-slate-500 mt-0.5 flex items-center gap-2">
-            <Zap className="w-3.5 h-3.5 text-[#f0f0f0]0" />
-            Step {step + 1} of {STEPS.length} — {STEPS[step].desc}
-          </p>
-        </div>
-      </div>
-
       {/* ── Main Card ── */}
       <div className="relative z-10 flex flex-1 flex-col overflow-hidden bg-white">
 
         {/* ── Step Indicator Bar ── */}
         <div className="relative overflow-x-auto border-b border-slate-100 bg-gradient-to-r from-slate-50/80 via-white to-slate-50/80 px-4 py-4 sm:px-6 sm:py-5 hide-scrollbar">
-          <div className="mx-auto flex min-w-[560px] items-center justify-between sm:max-w-2xl">
+          <div className="mx-auto flex min-w-[560px] items-start justify-between w-full">
             {STEPS.map((s, i) => {
               const Icon = s.icon;
               const isActive = i === step;
@@ -950,7 +1116,7 @@ export default function CreateCampaign() {
                   </button>
                   {/* Connector line */}
                   {i < STEPS.length - 1 && (
-                    <div className="flex-1 mx-2">
+                    <div className="flex-1 mx-2 mt-5">
                       <div className="h-0.5 rounded-full overflow-hidden bg-slate-100">
                         <div
                           className="h-full rounded-full bg-gradient-to-r from-[#8a8a8a] to-[#f0f0f0]0 transition-all duration-700 ease-out"
@@ -966,20 +1132,12 @@ export default function CreateCampaign() {
         </div>
 
         {/* ── Step Content ── */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 2xl:px-10">
           {/* ───── Step 1: Details ───── */}
           {step === 0 && (
-            <div className="max-w-2xl mx-auto space-y-6 animate-fade-in">
-              <div className="wizard-section-header">
-                <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-[#404040] mb-2">
-                  <Target className="w-3.5 h-3.5" />
-                  Campaign Identity
-                </div>
-                <h2 className="text-lg font-bold text-slate-900">Give your campaign a name</h2>
-                <p className="text-sm text-slate-500 mt-0.5">Choose a descriptive name and type that represents this campaign's purpose.</p>
-              </div>
+            <div className="w-full max-w-[1400px] mx-auto space-y-6 animate-fade-in">
 
-              <div>
+<div>
                 <label className="block text-sm font-semibold text-slate-700 mb-2">Campaign Name *</label>
                 <input
                   type="text"
@@ -1031,146 +1189,235 @@ export default function CreateCampaign() {
             </div>
           )}
 
-          {/* ───── Step 2: Template (Drawer UX) ───── */}
+          {/* ───── Step 2: Template (Responsive UX) ───── */}
           {step === 1 && (
-            <div className="max-w-2xl mx-auto w-full space-y-4 animate-fade-in">
-
-              {/* ── 1. Campaign Mode ── */}
-              <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-3">Campaign Mode</p>
-                <div className="flex gap-2">
-                  {TOP_LEVEL_MODES.map((mode) => {
-                    const Icon = mode.icon;
-                    const isActive = builderMode === mode.id;
-                    return (
-                      <button key={mode.id} type="button"
-                        onClick={() => { if (mode.id === 'carousel') { selectMessageExperience(MESSAGE_EXPERIENCES.find((e) => e.id === 'IMAGE_CAROUSEL')); } else { setFormData((prev) => ({ ...prev, format: 'SECTION_CTA' })); } }}
-                        className={`flex-1 flex items-center justify-center gap-2 rounded-xl py-3 text-sm font-bold transition-all duration-200 ${isActive ? 'bg-slate-900 text-white shadow-md' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
-                        <Icon className="h-4 w-4" />{mode.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* ── 2. Template Selection Card ── */}
-              <button type="button" onClick={() => setShowTemplateDrawer(true)}
-                className="w-full rounded-2xl border border-slate-200 bg-white p-4 shadow-sm text-left transition hover:border-slate-300 hover:shadow-md group">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${selectedTemplate ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-400'}`}>
-                      <Send className="h-4 w-4" />
-                    </div>
-                    <div>
-                      <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Template</p>
-                      <p className="text-sm font-bold text-slate-900 mt-0.5">
-                        {selectedTemplate ? (selectedTemplate.displayName || selectedTemplate.name) : 'Tap to choose a template'}
-                      </p>
+            <div className="w-full animate-fade-in">
+              <div className="grid grid-cols-1 gap-6 lg:grid-cols-[320px_minmax(0,1fr)_minmax(0,1fr)] xl:grid-cols-[360px_minmax(0,1fr)_minmax(0,1fr)] 2xl:grid-cols-[380px_minmax(0,1fr)_minmax(0,1fr)]">
+                
+                {/* ── Left Column: Core Controls & Preview ── */}
+                <div className="space-y-4">
+                  {/* Campaign Mode */}
+                  <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                    <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-3">Campaign Mode</p>
+                    <div className="flex gap-2">
+                      {TOP_LEVEL_MODES.map((mode) => {
+                        const Icon = mode.icon;
+                        const isActive = builderMode === mode.id;
+                        return (
+                          <button key={mode.id} type="button"
+                            onClick={() => { if (mode.id === 'carousel') { selectMessageExperience(MESSAGE_EXPERIENCES.find((e) => e.id === 'IMAGE_CAROUSEL')); } else { setFormData((prev) => ({ ...prev, format: 'SECTION_CTA' })); } }}
+                            className={`flex-1 flex items-center justify-center gap-2 rounded-xl py-3 text-sm font-bold transition-all duration-200 ${isActive ? 'bg-slate-900 text-white shadow-md' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
+                            <Icon className="h-4 w-4" />{mode.label}
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
-                  <ChevronRight className="h-5 w-5 text-slate-300 group-hover:text-slate-500 transition" />
-                </div>
-                {selectedTemplate && (
-                  <p className="mt-2 text-xs text-slate-500 line-clamp-2 pl-[52px]">
-                    {renderTemplatePreviewText(selectedTemplate.body || '', campaignDescription)}
-                  </p>
-                )}
-              </button>
 
-              {/* ── 3. Configure Content Card ── */}
-              <button type="button" onClick={() => setShowConfigDrawer(true)}
-                className="w-full rounded-2xl border border-slate-200 bg-white p-4 shadow-sm text-left transition hover:border-slate-300 hover:shadow-md group">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${activeSections.length > 0 || selectedCarouselRecords.length > 0 ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-400'}`}>
-                      <Layers className="h-4 w-4" />
-                    </div>
-                    <div>
-                      <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Content & Actions</p>
-                      <p className="text-sm font-bold text-slate-900 mt-0.5">
-                        {builderMode === 'carousel'
-                          ? `${selectedCarouselRecords.length} carousel items`
-                          : activeSections.length > 0
-                            ? activeSections.map(s => s.label).join(', ')
-                            : 'Tap to configure'}
-                      </p>
-                    </div>
-                  </div>
-                  <ChevronRight className="h-5 w-5 text-slate-300 group-hover:text-slate-500 transition" />
-                </div>
-                {(activeSections.length > 0 || selectedCarouselRecords.length > 0) && (
-                  <div className="mt-2 flex flex-wrap gap-1.5 pl-[52px]">
-                    {builderMode === 'cta' && (
-                      <>
-                        <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[10px] font-bold text-slate-600">{getMediaModeLabel(formData.mediaType)}</span>
-                        {featuredCtaRecord && <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[10px] font-bold text-slate-600">📷 {featuredCtaRecord.name}</span>}
-                        {selectedPackageRecords.length > 0 && <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[10px] font-bold text-slate-600">{selectedPackageRecords.length} pkg</span>}
-                        {selectedPropertyRecords.length > 0 && <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[10px] font-bold text-slate-600">{selectedPropertyRecords.length} prop</span>}
-                      </>
-                    )}
-                    {builderMode === 'carousel' && <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[10px] font-bold text-slate-600">{selectedCarouselRecords.length}/10 items</span>}
-                  </div>
-                )}
-              </button>
-
-              {/* ── 4. Inline WhatsApp Preview ── */}
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 shadow-sm">
-                <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-3">Live Preview</p>
-                <div className="rounded-xl bg-[#efeae2] p-3 ring-1 ring-slate-200">
-                  <div className="ml-auto max-w-[92%] rounded-[12px] rounded-tr-sm bg-[#dcf8c6] p-3 text-xs text-slate-800 shadow-sm">
-                    {builderMode === 'cta' && ctaNeedsFeaturedMedia && featuredCtaRecord && (
-                      <div className="mb-3 overflow-hidden rounded-lg border border-black/10 bg-white">
-                        <div className="aspect-[4/3] bg-slate-100"><img src={getCatalogItemMediaUrl(featuredCtaRecord)} alt="" className="h-full w-full object-cover" /></div>
-                        <div className="border-t border-black/10 px-2 py-1 text-[10px] font-bold text-slate-600">{featuredCtaRecord.name}</div>
+                  {/* Media Type Filter */}
+                  <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                    <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-3">Media Type</p>
+                    {builderMode === 'cta' ? (
+                      <div className="flex gap-2">
+                        {[{ value: 'IMAGE', label: 'Image', icon: Image }, { value: 'VIDEO', label: 'Video', icon: Video }, { value: 'TEXT', label: 'Text', icon: Type }].map((opt) => {
+                          const Icon = opt.icon;
+                          const isActive = formData.mediaType === opt.value;
+                          return (
+                            <button key={opt.value} type="button"
+                              onClick={() => setFormData((prev) => ({ ...prev, mediaType: opt.value }))}
+                              className={`flex-1 flex items-center justify-center gap-2 rounded-xl py-3 text-sm font-bold transition-all duration-200 ${isActive ? 'bg-slate-900 text-white shadow-md' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
+                              <Icon className="h-4 w-4" />{opt.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="flex gap-2">
+                        {MESSAGE_EXPERIENCES.filter(e => e.group === 'carousel').map(exp => {
+                          const Icon = exp.icon;
+                          const isActive = currentExperience.id === exp.id;
+                          return (
+                            <button key={exp.id} type="button"
+                              onClick={() => selectMessageExperience(exp)}
+                              className={`flex-1 flex items-center justify-center gap-2 rounded-xl py-3 text-sm font-bold transition-all duration-200 ${isActive ? 'bg-slate-900 text-white shadow-md' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
+                              <Icon className="h-4 w-4" />{exp.mediaMode}
+                            </button>
+                          );
+                        })}
                       </div>
                     )}
-                    <p className="whitespace-pre-line leading-relaxed">
-                      {renderTemplatePreviewText(formData.messageBody || 'Your campaign message will appear here.', campaignDescription)}
-                    </p>
-                    {templateNeedsCampaignDescription && !campaignDescription && (
-                      <p className="mt-2 rounded-md bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-700">
-                        This template uses {'{{2}}'}, so add a campaign description before continuing.
-                      </p>
-                    )}
-                    {builderMode === 'cta' && (
-                      <div className="mt-3 space-y-1.5 border-t border-black/10 pt-2">
-                        {selectedTemplate && normalizeTemplateType(selectedTemplate) !== 'CAROUSEL'
-                          ? previewButtons.length > 0 ? previewButtons.map((button, index) => (
-                            <div key={`${button.type || 'button'}-${index}`} className="rounded-md bg-white px-3 py-2 text-center text-[11px] font-bold text-sky-700">{button.text || `Button ${index + 1}`}</div>
-                          )) : (<div className="rounded-md bg-white px-3 py-2 text-center text-[11px] font-bold text-slate-400">No previewable buttons</div>)
-                          : activeSections.length > 0 ? activeSections.map((section) => (
-                            <div key={section.key} className="rounded-md bg-white px-3 py-2 text-center text-[11px] font-bold text-sky-700">{section.label}</div>
-                          )) : (<div className="rounded-md bg-white px-3 py-2 text-center text-[11px] font-bold text-slate-400">Enable at least one CTA action</div>)}
-                      </div>
-                    )}
-                    {builderMode === 'carousel' && previewCarouselCards.length > 0 && (
-                      <div className="mt-3 border-t border-black/10 pt-2 overflow-x-auto pb-2">
-                        <div className="flex gap-2 min-w-max">
-                          {previewCarouselCards.map((card, index) => (
-                            <div key={`${card.itemType || 'T'}-${card.id || index}`} className="w-36 flex-shrink-0 overflow-hidden rounded-lg border border-black/10 bg-white">
-                              <div className="flex aspect-[4/3] items-center justify-center bg-slate-100">{getCatalogItemMediaUrl(card) ? <img src={getCatalogItemMediaUrl(card)} alt="" className="h-full w-full object-cover" /> : <Image className="h-6 w-6 text-slate-400" />}</div>
-                              <div className="p-2">
-                                <p className="truncate text-[11px] font-bold text-slate-900">{card.title || card.name || `Card ${index + 1}`}</p>
-                                <div className="mt-1.5 rounded border border-sky-100 px-2 py-0.5 text-center text-[9px] font-bold text-sky-700">{card.buttons?.[0]?.text || 'Enquiry'}</div>
-                              </div>
-                            </div>
-                          ))}
+                  </div>
+
+                  {/* Mobile-Only Drawer Triggers */}
+                  <div className="lg:hidden space-y-4">
+                    <button type="button" onClick={() => setShowTemplateDrawer(true)}
+                      className="w-full rounded-2xl border border-slate-200 bg-white p-4 shadow-sm text-left transition hover:border-slate-300 hover:shadow-md group">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${selectedTemplate ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-400'}`}>
+                            <Send className="h-4 w-4" />
+                          </div>
+                          <div>
+                            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Template</p>
+                            <p className="text-sm font-bold text-slate-900 mt-0.5">
+                              {selectedTemplate ? (selectedTemplate.displayName || selectedTemplate.name) : 'Tap to choose a template'}
+                            </p>
+                          </div>
                         </div>
+                        <ChevronRight className="h-5 w-5 text-slate-300 group-hover:text-slate-500 transition" />
                       </div>
-                    )}
+                      {selectedTemplate && (
+                        <p className="mt-2 text-xs text-slate-500 line-clamp-2 pl-[52px]">
+                          {renderTemplatePreviewText(selectedTemplate.body || '', campaignDescription)}
+                        </p>
+                      )}
+                    </button>
+
+                    <button type="button" onClick={() => setShowConfigDrawer(true)}
+                      className="w-full rounded-2xl border border-slate-200 bg-white p-4 shadow-sm text-left transition hover:border-slate-300 hover:shadow-md group">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${activeSections.length > 0 || selectedCarouselRecords.length > 0 ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-400'}`}>
+                            <Layers className="h-4 w-4" />
+                          </div>
+                          <div>
+                            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Content & Actions</p>
+                            <p className="text-sm font-bold text-slate-900 mt-0.5">
+                              {builderMode === 'carousel'
+                                ? `${selectedCarouselRecords.length} carousel items`
+                                : activeSections.length > 0
+                                  ? activeSections.map(s => s.label).join(', ')
+                                  : 'Tap to configure'}
+                            </p>
+                          </div>
+                        </div>
+                        <ChevronRight className="h-5 w-5 text-slate-300 group-hover:text-slate-500 transition" />
+                      </div>
+                      {(activeSections.length > 0 || selectedCarouselRecords.length > 0) && (
+                        <div className="mt-2 flex flex-wrap gap-1.5 pl-[52px]">
+                          {builderMode === 'cta' && (
+                            <>
+                              <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[10px] font-bold text-slate-600">{getMediaModeLabel(formData.mediaType)}</span>
+                              {featuredCtaRecord && <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[10px] font-bold text-slate-600">📷 {featuredCtaRecord.name}</span>}
+                              {selectedPackageRecords.length > 0 && <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[10px] font-bold text-slate-600">{selectedPackageRecords.length} pkg</span>}
+                              {selectedPropertyRecords.length > 0 && <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[10px] font-bold text-slate-600">{selectedPropertyRecords.length} prop</span>}
+                            </>
+                          )}
+                          {builderMode === 'carousel' && <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[10px] font-bold text-slate-600">{selectedCarouselRecords.length}/10 items</span>}
+                        </div>
+                      )}
+                    </button>
+                  </div>
+
+                  {/* Inline WhatsApp Preview */}
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 shadow-sm">
+                    <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-3">Live Preview</p>
+                    <div className="rounded-xl bg-[#efeae2] p-3 ring-1 ring-slate-200">
+                      <div className="ml-auto max-w-[92%] rounded-[12px] rounded-tr-sm bg-[#dcf8c6] p-3 text-xs text-slate-800 shadow-sm">
+                        {builderMode === 'cta' && ctaNeedsFeaturedMedia && featuredCtaRecord && (
+                          <div className="mb-3 overflow-hidden rounded-lg border border-black/10 bg-white">
+                            <div className="aspect-[4/3] bg-slate-100"><img src={getCatalogItemMediaUrl(featuredCtaRecord)} alt="" className="h-full w-full object-cover" /></div>
+                            <div className="border-t border-black/10 px-2 py-1 text-[10px] font-bold text-slate-600">{featuredCtaRecord.name}</div>
+                          </div>
+                        )}
+                        <p className="whitespace-pre-line leading-relaxed">
+                          {renderTemplatePreviewText(formData.messageBody || 'Your campaign message will appear here.', campaignDescription)}
+                        </p>
+                        {templateNeedsCampaignDescription && !campaignDescription && (
+                          <p className="mt-2 rounded-md bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-700">
+                            This template uses {'{{2}}'}, so add a campaign description before continuing.
+                          </p>
+                        )}
+                        {builderMode === 'cta' && (
+                          <div className="mt-3 space-y-1.5 border-t border-black/10 pt-2">
+                            {selectedTemplate && normalizeTemplateType(selectedTemplate) !== 'CAROUSEL'
+                              ? previewButtons.length > 0 ? previewButtons.map((button, index) => (
+                                <div key={`${button.type || 'button'}-${index}`} className="rounded-md bg-white px-3 py-1.5 text-center">
+                                  <p className="text-[11px] font-bold text-sky-700">{button.text || `Button ${index + 1}`}</p>
+                                  <p className="mt-0.5 truncate text-[9px] font-semibold text-slate-400">
+                                    {CTA_BUTTON_ACTION_LABELS[ctaButtonActions[getButtonActionKey(button, index)]?.action] || 'Configure in campaign'}
+                                  </p>
+                                </div>
+                              )) : (<div className="rounded-md bg-white px-3 py-2 text-center text-[11px] font-bold text-slate-400">No previewable buttons</div>)
+                              : activeSections.length > 0 ? activeSections.map((section) => (
+                                <div key={section.key} className="rounded-md bg-white px-3 py-2 text-center text-[11px] font-bold text-sky-700">{section.label}</div>
+                              )) : (<div className="rounded-md bg-white px-3 py-2 text-center text-[11px] font-bold text-slate-400">Enable at least one CTA action</div>)}
+                          </div>
+                        )}
+                        {builderMode === 'carousel' && previewCarouselCards.length > 0 && (
+                          <div className="mt-3 border-t border-black/10 pt-2 overflow-x-auto pb-2">
+                            <div className="flex gap-2 min-w-max">
+                              {previewCarouselCards.map((card, index) => (
+                                <div key={`${card.itemType || 'T'}-${card.id || index}`} className="w-36 flex-shrink-0 overflow-hidden rounded-lg border border-black/10 bg-white">
+                                  <div className="flex aspect-[4/3] items-center justify-center bg-slate-100">{getCatalogItemMediaUrl(card) ? <img src={getCatalogItemMediaUrl(card)} alt="" className="h-full w-full object-cover" /> : <Image className="h-6 w-6 text-slate-400" />}</div>
+                                  <div className="p-2">
+                                    <p className="truncate text-[11px] font-bold text-slate-900">{card.title || card.name || `Card ${index + 1}`}</p>
+                                    <div className="mt-1.5 rounded border border-sky-100 px-2 py-0.5 text-center text-[9px] font-bold text-sky-700">{card.buttons?.[0]?.text || 'Enquiry'}</div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 </div>
+
+                {/* ── Middle/Right Columns (Desktop Only) ── */}
+                <div className="hidden lg:flex flex-col rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden h-[calc(100vh-280px)] min-h-[600px]">
+                  <div className="bg-slate-50 border-b border-slate-200 px-4 py-3 shrink-0">
+                    <p className="text-sm font-bold text-slate-900">{builderMode === 'carousel' ? 'Choose Carousel Template' : 'Choose CTA Template'}</p>
+                    <p className="text-xs text-slate-500 mt-0.5">{filteredCompatibleTemplates.length} approved templates match media type</p>
+                  </div>
+                  <div className="flex-1 overflow-hidden">
+                    <TemplatePickerContent 
+                      templates={filteredCompatibleTemplates} templateSearch={templateSearch} setTemplateSearch={setTemplateSearch} 
+                      selectedId={formData.templateId} builderMode={builderMode} onSelect={applyApprovedTemplateSelection} 
+                    />
+                  </div>
+                </div>
+
+                <div className="hidden lg:flex flex-col rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden h-[calc(100vh-280px)] min-h-[600px]">
+                  <div className="bg-slate-50 border-b border-slate-200 px-4 py-3 shrink-0">
+                    <p className="text-sm font-bold text-slate-900">Configure Content</p>
+                    <p className="text-xs text-slate-500 mt-0.5">Set up media, description & actions</p>
+                  </div>
+                  <div className="flex-1 overflow-hidden">
+                    <ConfigContent 
+                      builderMode={builderMode} formData={formData} setFormData={setFormData}
+                      selectedTemplate={selectedTemplate} activeSections={activeSections} 
+                      packageSection={packageSection} propertySection={propertySection} customTripSection={customTripSection}
+                      activePackages={activePackages} activeProperties={activeProperties} 
+                      selectedPackageRecords={selectedPackageRecords} selectedPropertyRecords={selectedPropertyRecords}
+                      updateSection={updateSection} toggleSectionItem={toggleSectionItem} 
+                      ctaNeedsFeaturedMedia={ctaNeedsFeaturedMedia} featuredCtaRecord={featuredCtaRecord}
+                      getCatalogItemMediaUrl={getCatalogItemMediaUrl} setShowMediaModal={setShowMediaModal}
+                      selectMessageExperience={selectMessageExperience} MESSAGE_EXPERIENCES={MESSAGE_EXPERIENCES} 
+                      currentExperience={currentExperience} carouselItems={carouselItems} 
+                      toggleCarouselItem={toggleCarouselItem} selectedCarouselRecords={selectedCarouselRecords}
+                      ctaTemplateButtons={ctaTemplateButtons} ctaProviderButtons={ctaProviderButtons}
+                      ctaButtonActions={ctaButtonActions} ctaButtonActionOptions={CTA_BUTTON_ACTIONS}
+                      ctaButtonActionLabels={CTA_BUTTON_ACTION_LABELS} duplicateCtaButtonLabels={duplicateCtaButtonLabels}
+                      selectedCtaCatalogRecords={selectedCtaCatalogRecords} allCatalogRecords={allCatalogRecords}
+                      getButtonActionKey={getButtonActionKey} updateButtonAction={updateButtonAction}
+                    />
+                  </div>
+                </div>
+
               </div>
 
-              {/* ── Bottom Drawers ── */}
-              <TemplatePickerDrawer open={showTemplateDrawer} onClose={() => setShowTemplateDrawer(false)} templates={filteredCompatibleTemplates} templateSearch={templateSearch} setTemplateSearch={setTemplateSearch} selectedId={formData.templateId} onSelect={applyApprovedTemplateSelection} builderMode={builderMode} />
-              <ConfigDrawer open={showConfigDrawer} onClose={() => setShowConfigDrawer(false)} builderMode={builderMode} formData={formData} setFormData={setFormData} selectedTemplate={selectedTemplate} activeSections={activeSections} packageSection={packageSection} propertySection={propertySection} customTripSection={customTripSection} activePackages={activePackages} activeProperties={activeProperties} selectedPackageRecords={selectedPackageRecords} selectedPropertyRecords={selectedPropertyRecords} updateSection={updateSection} toggleSectionItem={toggleSectionItem} ctaNeedsFeaturedMedia={ctaNeedsFeaturedMedia} featuredCtaRecord={featuredCtaRecord} getCatalogItemMediaUrl={getCatalogItemMediaUrl} setShowMediaModal={setShowMediaModal} selectMessageExperience={selectMessageExperience} MESSAGE_EXPERIENCES={MESSAGE_EXPERIENCES} currentExperience={currentExperience} carouselItems={carouselItems} toggleCarouselItem={toggleCarouselItem} selectedCarouselRecords={selectedCarouselRecords} />
+              {/* ── Bottom Drawers (Mobile Only) ── */}
+              <div className="lg:hidden">
+                <TemplatePickerDrawer open={showTemplateDrawer} onClose={() => setShowTemplateDrawer(false)} templates={filteredCompatibleTemplates} templateSearch={templateSearch} setTemplateSearch={setTemplateSearch} selectedId={formData.templateId} onSelect={applyApprovedTemplateSelection} builderMode={builderMode} />
+                <ConfigDrawer open={showConfigDrawer} onClose={() => setShowConfigDrawer(false)} builderMode={builderMode} formData={formData} setFormData={setFormData} selectedTemplate={selectedTemplate} activeSections={activeSections} packageSection={packageSection} propertySection={propertySection} customTripSection={customTripSection} activePackages={activePackages} activeProperties={activeProperties} selectedPackageRecords={selectedPackageRecords} selectedPropertyRecords={selectedPropertyRecords} updateSection={updateSection} toggleSectionItem={toggleSectionItem} ctaNeedsFeaturedMedia={ctaNeedsFeaturedMedia} featuredCtaRecord={featuredCtaRecord} getCatalogItemMediaUrl={getCatalogItemMediaUrl} setShowMediaModal={setShowMediaModal} selectMessageExperience={selectMessageExperience} MESSAGE_EXPERIENCES={MESSAGE_EXPERIENCES} currentExperience={currentExperience} carouselItems={carouselItems} toggleCarouselItem={toggleCarouselItem} selectedCarouselRecords={selectedCarouselRecords} ctaTemplateButtons={ctaTemplateButtons} ctaProviderButtons={ctaProviderButtons} ctaButtonActions={ctaButtonActions} ctaButtonActionOptions={CTA_BUTTON_ACTIONS} ctaButtonActionLabels={CTA_BUTTON_ACTION_LABELS} duplicateCtaButtonLabels={duplicateCtaButtonLabels} selectedCtaCatalogRecords={selectedCtaCatalogRecords} allCatalogRecords={allCatalogRecords} getButtonActionKey={getButtonActionKey} updateButtonAction={updateButtonAction} />
+              </div>
             </div>
           )}
 
           {/* ───── Step 3: Audience ───── */}
           {step === 2 && (
-            <div className="max-w-3xl mx-auto space-y-5 animate-fade-in">
+            <div className="w-full max-w-[1400px] mx-auto space-y-5 animate-fade-in">
               <div className="wizard-section-header">
                 <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-[#404040] mb-2">
                   <Users className="w-3.5 h-3.5" />
@@ -1532,7 +1779,7 @@ export default function CreateCampaign() {
 
           {/* ───── Step 4: Schedule ───── */}
           {step === 3 && (
-            <div className="max-w-2xl mx-auto space-y-5 animate-fade-in">
+            <div className="w-full max-w-[1400px] mx-auto space-y-5 animate-fade-in">
               <div className="wizard-section-header">
                 <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-[#404040] mb-2">
                   <Calendar className="w-3.5 h-3.5" />
@@ -1603,9 +1850,9 @@ export default function CreateCampaign() {
             </div>
           )}
 
-          {/* ───── Step 5: Review ───── */}
+          {/* ───── Step 5: Review & Send ───── */}
           {step === 4 && (
-            <div className="max-w-2xl mx-auto space-y-5 animate-fade-in">
+            <div className="w-full max-w-[1400px] mx-auto space-y-6 animate-fade-in">
               <div className="wizard-section-header">
                 <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-[#404040] mb-2">
                   <Eye className="w-3.5 h-3.5" />
@@ -1623,7 +1870,9 @@ export default function CreateCampaign() {
                   { label: 'Format', value: CAMPAIGN_FORMATS.find((format) => format.value === formData.format)?.label || 'Standard', icon: Layers, highlight: formData.format !== 'STANDARD' },
                   ...(formData.format === 'SECTION_CTA' ? [{
                     label: 'Customer Choices',
-                    value: activeSections.map((section) => section.label).join(', ') || 'No sections enabled',
+                    value: hasTemplateButtonActions
+                      ? ctaButtonActionEntries.map((entry) => `${entry.buttonText}: ${CTA_BUTTON_ACTION_LABELS[entry.action] || 'Not configured'}`).join(', ')
+                      : activeSections.map((section) => section.label).join(', ') || 'No sections enabled',
                     icon: UserPlus,
                     highlight: true,
                   }] : []),

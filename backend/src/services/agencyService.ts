@@ -106,6 +106,103 @@ function normalizeWhatsAppMenuLabels(labels = {}) {
   );
 }
 
+function toMenuId(value, fallback) {
+  const raw = String(value || fallback || '').trim().toLowerCase();
+  return raw
+    .replace(/[^a-z0-9:_-]+/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_|_$/g, '')
+    .slice(0, 80);
+}
+
+function normalizeWhatsAppMenuConfig(items = []) {
+  if (!Array.isArray(items)) return [];
+
+  const seen = new Set();
+  return items
+    .map((item, index) => {
+      if (!item || typeof item !== 'object') return null;
+      const type = String(item.type || '').trim().toUpperCase();
+      if (!['PACKAGE_CATEGORY', 'PROPERTY', 'SERVICE', 'CUSTOM_TRIP'].includes(type)) return null;
+
+      const title = String(item.title || '').trim().slice(0, 24);
+      if (!title) return null;
+
+      const value = String(item.value || '').trim().slice(0, 80);
+      const id = toMenuId(item.id, `${type}_${value || title || index}`);
+      if (!id || seen.has(id)) return null;
+      seen.add(id);
+
+      return {
+        id,
+        title,
+        description: String(item.description || '').trim().slice(0, 72),
+        type,
+        value,
+      };
+    })
+    .filter(Boolean)
+    .slice(0, 10);
+}
+
+const FLOW_ACTIONS = new Set([
+  'OPEN_PACKAGE_CATEGORY_MENU',
+  'OPEN_PROPERTY_FLOW',
+  'OPEN_SERVICE_MENU',
+  'OPEN_CUSTOM_TRIP_FLOW',
+  'SHOW_TOUR_TYPE_LIST',
+  'OPEN_PACKAGE_FLOW',
+  'CAPTURE_SERVICE_DETAILS',
+]);
+
+function normalizeFlowMenuItems(items = [], limit = 10) {
+  if (!Array.isArray(items)) return [];
+
+  const seen = new Set();
+  return items
+    .map((item, index) => {
+      if (!item || typeof item !== 'object') return null;
+      const action = String(item.action || '').trim().toUpperCase();
+      if (!FLOW_ACTIONS.has(action)) return null;
+
+      const title = String(item.title || '').trim().slice(0, 24);
+      if (!title) return null;
+
+      const category = String(item.category || '').trim().toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 32);
+      const tourType = String(item.tourType || item.value || '').trim().toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 80);
+      const id = toMenuId(item.id, `${action}_${category || tourType || title || index}`);
+      if (!id || seen.has(id)) return null;
+      seen.add(id);
+
+      return {
+        id,
+        title,
+        description: String(item.description || '').trim().slice(0, 72),
+        action,
+        ...(category ? { category } : {}),
+        ...(tourType ? { tourType, value: tourType } : {}),
+      };
+    })
+    .filter(Boolean)
+    .slice(0, limit);
+}
+
+function normalizeWhatsAppFlowConfig(config = {}) {
+  if (!config || typeof config !== 'object' || Array.isArray(config)) return {};
+
+  const welcomeMenu = normalizeFlowMenuItems(config.welcomeMenu, 10);
+  const packageCategories = normalizeFlowMenuItems(config.packageCategories, 3);
+  const tourTypes = normalizeFlowMenuItems(config.tourTypes, 10);
+  const serviceMenu = normalizeFlowMenuItems(config.serviceMenu, 10);
+
+  return {
+    ...(welcomeMenu.length ? { welcomeMenu } : {}),
+    ...(packageCategories.length ? { packageCategories } : {}),
+    ...(tourTypes.length ? { tourTypes } : {}),
+    ...(serviceMenu.length ? { serviceMenu } : {}),
+  };
+}
+
 function mapMarketingOsStatus(status) {
   const normalized = String(status || '').toLowerCase();
   if (normalized === 'connected') return 'CONNECTED';
@@ -161,11 +258,38 @@ function hasValidSignedProxySignature(headers = {}, rawPayload = '') {
   });
 }
 
-async function relayMarketingOsMessageWebhook(payload, rawBody) {
-  const rawPayload = getRawBodyString(rawBody, payload);
+async function relayMarketingOsMessageWebhook(payload, rawBody, inboundHeaders = {}) {
+  const inboundEventType = String(inboundHeaders['x-marketing-os-event'] || payload?.eventType || '').toLowerCase();
+  const shouldUnwrapPartnerEnvelope = ['instagram_message', 'instagram_comment'].includes(inboundEventType)
+    && payload?.data
+    && typeof payload.data === 'object'
+    && !Array.isArray(payload.data);
+  const forwardedPayload = shouldUnwrapPartnerEnvelope
+    ? {
+        ...payload.data,
+        tenantId: payload.tenantId || inboundHeaders['x-partner-tenant-id'],
+      }
+    : payload;
+  const rawPayload = getRawBodyString(null, forwardedPayload);
   const headers = {
     'content-type': 'application/json',
   };
+
+  const eventType = inboundHeaders['x-marketing-os-event'] || payload?.eventType;
+  const tenantId = payload?.tenantId || inboundHeaders['x-partner-tenant-id'];
+  const accountId = inboundHeaders['x-instagram-account-id'];
+
+  if (eventType) {
+    headers['x-marketing-os-event'] = eventType;
+  }
+
+  if (tenantId) {
+    headers['x-partner-tenant-id'] = tenantId;
+  }
+
+  if (accountId) {
+    headers['x-instagram-account-id'] = accountId;
+  }
 
   if (WEBHOOK_APP_SECRET) {
     const signature = crypto
@@ -191,7 +315,8 @@ async function relayMarketingOsMessageWebhook(payload, rawBody) {
 }
 
 function isRawMarketingOsMessageEvent(headers = {}, payload = {}) {
-  return String(headers['x-marketing-os-event'] || '').toLowerCase() === 'message'
+  const eventType = String(headers['x-marketing-os-event'] || '').toLowerCase();
+  return ['message', 'instagram_message', 'instagram_comment'].includes(eventType)
     || Array.isArray(payload?.entry);
 }
 
@@ -286,6 +411,14 @@ async function updateCurrentAgency(agencyId, updates) {
 
   if (Object.prototype.hasOwnProperty.call(payload, 'whatsappMenuLabels')) {
     payload.whatsappMenuLabels = normalizeWhatsAppMenuLabels(payload.whatsappMenuLabels);
+  }
+
+  if (Object.prototype.hasOwnProperty.call(payload, 'whatsappMenuConfig')) {
+    payload.whatsappMenuConfig = normalizeWhatsAppMenuConfig(payload.whatsappMenuConfig);
+  }
+
+  if (Object.prototype.hasOwnProperty.call(payload, 'whatsappFlowConfig')) {
+    payload.whatsappFlowConfig = normalizeWhatsAppFlowConfig(payload.whatsappFlowConfig);
   }
 
   if (
@@ -423,16 +556,27 @@ async function completeMarketingOsConnectSession(agencyId, payload) {
     throw Object.assign(new Error('Agency not found'), { statusCode: 404, code: 'NOT_FOUND' });
   }
 
-  const result = await marketingOsPartnerService.completeEmbeddedSignup(session.tenantToken, {
-    code: payload.code,
-    state: session.state,
-    featureType: session.featureType || undefined,
-    sessionInfoVersion: '3',
-    phoneNumberId: payload.phoneNumberId || payload.sessionInfo?.phone_number_id,
-    wabaId: payload.wabaId || payload.sessionInfo?.waba_id,
-    businessId: payload.businessId || payload.sessionInfo?.business_id,
-    sessionInfo: payload.sessionInfo,
-  });
+  let result;
+  try {
+    result = await marketingOsPartnerService.completeEmbeddedSignup(session.tenantToken, {
+      code: payload.code,
+      state: session.state,
+      featureType: session.featureType || undefined,
+      sessionInfoVersion: '3',
+      phoneNumberId: payload.phoneNumberId || payload.sessionInfo?.phone_number_id,
+      wabaId: payload.wabaId || payload.sessionInfo?.waba_id,
+      businessId: payload.businessId || payload.sessionInfo?.business_id,
+      sessionInfo: payload.sessionInfo,
+    });
+  } catch (err) {
+    const upstream = err.response?.data;
+    const message = upstream?.message || upstream?.error || err.message || 'Marketing OS embedded signup failed';
+    throw Object.assign(new Error(message), {
+      statusCode: err.response?.status || 502,
+      code: upstream?.code || 'MARKETING_OS_EMBEDDED_SIGNUP_FAILED',
+      details: upstream?.errors || upstream?.details || upstream || null,
+    });
+  }
 
   const providerConnection = result?.connection;
   const displayPhoneNumber = providerConnection?.displayPhoneNumber || null;
@@ -525,7 +669,7 @@ async function handleMarketingOsCallback(headers, payload, rawBody) {
       });
     }
 
-    await relayMarketingOsMessageWebhook(payload, rawPayload);
+    await relayMarketingOsMessageWebhook(payload, rawPayload, headers);
     return {
       message: 'Marketing OS message webhook relayed to bot',
       data: { relayed: true },

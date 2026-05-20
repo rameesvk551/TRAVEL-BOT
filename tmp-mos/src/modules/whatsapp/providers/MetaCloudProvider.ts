@@ -472,10 +472,16 @@ export function createMetaCloudProvider(config: MetaConfig): IWhatsAppProvider {
             ? {
                 link: request.mediaContent.downloadUrl,
                 caption: request.mediaContent?.caption,
+                ...(request.messageType === 'DOCUMENT' && request.mediaContent?.fileName
+                  ? { filename: request.mediaContent.fileName }
+                  : {}),
               }
             : {
                 id: request.mediaContent?.mediaId,
                 caption: request.mediaContent?.caption,
+                ...(request.messageType === 'DOCUMENT' && request.mediaContent?.fileName
+                  ? { filename: request.mediaContent.fileName }
+                  : {}),
               };
           break;
 

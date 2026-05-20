@@ -14,7 +14,6 @@ import {
   ShieldCheckIcon,
   StarIcon,
 } from '@heroicons/react/24/outline';
-import logo from '../assets/logo.png';
 import metaBadge from '../assets/meta_tech_provider_badge.png';
 
 const featureGroups = [
@@ -146,7 +145,7 @@ export default function Brochure() {
               <header className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
                 <div className="flex items-center gap-4">
                   <div className="flex h-16 w-16 items-center justify-center rounded-[22px] bg-[#16211d] p-2.5 shadow-lg">
-                    <img src={logo} alt="WAYON logo" className="h-full w-full object-contain brightness-0 invert" />
+                    <img src="/wayon-logo.svg" alt="WAYON logo" className="h-full w-full object-contain brightness-0 invert" />
                   </div>
                   <div>
                     <p className="text-[11px] font-black uppercase tracking-[0.28em] text-[#0c766e]">Client Pitch Brochure</p>
@@ -344,7 +343,7 @@ export default function Brochure() {
             <div className="grid gap-5 lg:grid-cols-[1.15fr_0.85fr]">
               <div className="brochure-print-card overflow-hidden rounded-[32px] border border-[#dccfbe] bg-white shadow-[0_18px_48px_-40px_rgba(44,34,24,0.55)]">
                 <div className="relative aspect-[16/10]">
-                  <img src="/login-hero.png" alt="Travel concierge dashboard visual" className="h-full w-full object-cover" />
+                  <img src="/login-hero.jpg" alt="Travel concierge dashboard visual" className="h-full w-full object-cover" loading="lazy" decoding="async" />
                   <div className="absolute inset-0 bg-gradient-to-t from-[#16211d]/70 via-[#16211d]/10 to-transparent" />
                   <div className="absolute bottom-0 left-0 right-0 p-6 text-white">
                     <p className="text-[11px] font-black uppercase tracking-[0.24em] text-[#bfeee7]">Premium Positioning</p>
@@ -356,7 +355,7 @@ export default function Brochure() {
               <div className="grid gap-5">
                 <div className="brochure-print-card overflow-hidden rounded-[32px] border border-[#dccfbe] bg-white shadow-[0_18px_48px_-40px_rgba(44,34,24,0.55)]">
                   <div className="relative aspect-[16/11]">
-                    <img src="/signup-hero.png" alt="Travel planning and booking visual" className="h-full w-full object-cover" />
+                    <img src="/signup-hero.jpg" alt="Travel planning and booking visual" className="h-full w-full object-cover" loading="lazy" decoding="async" />
                     <div className="absolute inset-0 bg-gradient-to-t from-[#8a5a35]/65 via-transparent to-transparent" />
                   </div>
                   <div className="p-5">

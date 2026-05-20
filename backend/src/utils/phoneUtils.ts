@@ -2,8 +2,9 @@
 // DEPS: none
 
 /**
- * Normalizes an Indian phone number to E.164 format (+91XXXXXXXXXX).
- * Handles inputs like: 9876543210, 09876543210, 919876543210, +919876543210
+ * Normalizes a WhatsApp phone number to E.164 format.
+ * Defaults bare 10-digit numbers to India (+91) for legacy Indian tenants,
+ * and preserves international numbers that already include a country code.
  * @param {string} phone - The raw phone number
  * @returns {string} The normalized E.164 phone number
  */
@@ -12,10 +13,13 @@ function normalizePhone(phone) {
   let cleaned = phone.replace(/[\s\-\(\)\.]/g, '');
 
   // Already in E.164
-  if (/^\+91\d{10}$/.test(cleaned)) return cleaned;
+  if (/^\+\d{8,15}$/.test(cleaned)) return cleaned;
 
   // Remove leading +
   if (cleaned.startsWith('+')) cleaned = cleaned.slice(1);
+
+  // Convert international dialing prefix to country-code digits.
+  if (cleaned.startsWith('00') && cleaned.length > 10) cleaned = cleaned.slice(2);
 
   // Remove leading 0
   if (cleaned.startsWith('0')) cleaned = cleaned.slice(1);
@@ -28,6 +32,12 @@ function normalizePhone(phone) {
   // 10-digit Indian number
   if (/^\d{10}$/.test(cleaned)) {
     return `+91${cleaned}`;
+  }
+
+  // International WhatsApp IDs often arrive as country code + national number
+  // without the leading +, for example 971581766290.
+  if (/^\d{11,15}$/.test(cleaned)) {
+    return `+${cleaned}`;
   }
 
   // Return as-is if we can't normalize (log for debugging)

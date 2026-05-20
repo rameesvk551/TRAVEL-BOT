@@ -13,8 +13,12 @@ const STARTER_JSON = {
   PROPERTY: {
     version: '7.2',
     data_api_version: '3.0',
-    routing_model: { PROPERTY_SELECTOR: [] },
-    screens: [{ id: 'PROPERTY_SELECTOR', title: 'Choose Property', terminal: true, data: {}, layout: { type: 'SingleColumnLayout', children: [] } }],
+    routing_model: { PROPERTY_FILTER: ['PROPERTY_SELECTOR'], PROPERTY_SELECTOR: ['PROPERTY_DATES'], PROPERTY_DATES: [] },
+    screens: [
+      { id: 'PROPERTY_FILTER', title: 'Find a Stay', data: {}, layout: { type: 'SingleColumnLayout', children: [] } },
+      { id: 'PROPERTY_SELECTOR', title: 'Choose Property', data: {}, layout: { type: 'SingleColumnLayout', children: [] } },
+      { id: 'PROPERTY_DATES', title: 'Stay Details', terminal: true, data: {}, layout: { type: 'SingleColumnLayout', children: [] } },
+    ],
   },
   CUSTOM_TRIP: {
     version: '7.2',

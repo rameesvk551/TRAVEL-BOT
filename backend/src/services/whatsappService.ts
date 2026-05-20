@@ -50,8 +50,37 @@ function getMetaClient(phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID) {
   });
 }
 
-function toMetaRecipient(phone) {
-  return String(phone || '').replace(/^\+/, '');
+function inferDefaultCountryCode(channel = {}) {
+  const agencyNumber = String(channel.whatsappDisplayPhoneNumber || channel.whatsappNumber || '').replace(/\D/g, '');
+  if (agencyNumber.startsWith('971')) return '971';
+  if (agencyNumber.startsWith('91')) return '91';
+  return '91';
+}
+
+function normalizeRecipientPhone(phone, channel = {}) {
+  const raw = String(phone || '').trim();
+  if (!raw || raw.startsWith('ig_')) return raw;
+
+  const compact = raw.replace(/[\s\-\(\)\.]/g, '');
+  if (/^\+\d{8,15}$/.test(compact)) return compact;
+
+  let digits = compact.replace(/\D/g, '');
+  if (!digits) return raw;
+  if (digits.startsWith('00') && digits.length > 10) digits = digits.slice(2);
+
+  if (/^\d{11,15}$/.test(digits) && !digits.startsWith('0')) return `+${digits}`;
+
+  const defaultCountryCode = inferDefaultCountryCode(channel);
+  if (defaultCountryCode === '971') {
+    if (/^0\d{8,10}$/.test(digits)) return `+971${digits.slice(1)}`;
+    if (/^\d{9}$/.test(digits)) return `+971${digits}`;
+  }
+
+  return normalizePhone(raw) || raw;
+}
+
+function toMetaRecipient(phone, channel = {}) {
+  return String(normalizeRecipientPhone(phone, channel) || '').replace(/^\+/, '').replace(/\D/g, '');
 }
 
 async function createOutboundMessage(context, payload) {
@@ -153,18 +182,20 @@ async function resolveAgencyChannel(context = {}) {
   }
 
   const agency = await Agency.findByPk(context.agencyId, {
-    attributes: ['id', 'whatsappProvider', 'whatsappPhoneNumberId', 'marketingOsTenantId'],
+    attributes: ['id', 'whatsappProvider', 'whatsappPhoneNumberId', 'marketingOsTenantId', 'whatsappNumber', 'whatsappDisplayPhoneNumber'],
   });
 
   return {
     provider: agency?.whatsappProvider || 'SELF_HOSTED',
     phoneNumberId: agency?.whatsappPhoneNumberId || process.env.WHATSAPP_PHONE_NUMBER_ID || null,
     marketingOsTenantId: agency?.marketingOsTenantId || null,
+    whatsappNumber: agency?.whatsappNumber || null,
+    whatsappDisplayPhoneNumber: agency?.whatsappDisplayPhoneNumber || null,
     isInstagram,
   };
 }
 
-async function sendViaMeta(phone, payload, phoneNumberId) {
+async function sendViaMeta(phone, payload, phoneNumberId, channel = {}) {
   const client = getMetaClient(phoneNumberId);
   if (!client) {
     throw new Error('Meta Cloud API is not configured');
@@ -172,7 +203,7 @@ async function sendViaMeta(phone, payload, phoneNumberId) {
 
   return client.post('/messages', {
     messaging_product: 'whatsapp',
-    to: toMetaRecipient(phone),
+    to: toMetaRecipient(phone, channel),
     ...payload,
   });
 }
@@ -191,7 +222,7 @@ async function sendTypingIndicator(phone, incomingWaMessageId, context = {}) {
       const tenantToken = await marketingOsPartnerService.getTenantToken(channel.marketingOsTenantId);
       return await marketingOsPartnerService.sendTenantWhatsAppReadTyping(tenantToken, {
         tenantId: channel.marketingOsTenantId,
-        to: toMetaRecipient(phone),
+        to: toMetaRecipient(phone, channel),
         messageId,
       });
     }
@@ -204,7 +235,7 @@ async function sendTypingIndicator(phone, incomingWaMessageId, context = {}) {
       typing_indicator: {
         type: 'text',
       },
-    }, channel.phoneNumberId);
+    }, channel.phoneNumberId, channel);
   } catch (err) {
     if (
       err?.response?.data?.code === 'NOT_FOUND'
@@ -270,7 +301,7 @@ function ensureMarketingOsSuccess(data, scope) {
   return data;
 }
 
-async function sendViaMarketingOs(phone, payload, tenantId) {
+async function sendViaMarketingOs(phone, payload, tenantId, channel = {}) {
   const idempotencyKey = `travelbot-${tenantId}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
   const tenantToken = await marketingOsPartnerService.getTenantToken(tenantId);
   let data;
@@ -281,7 +312,7 @@ async function sendViaMarketingOs(phone, payload, tenantId) {
   const instagramAccountId = separatorIndex > -1 ? instagramAddress.slice(0, separatorIndex) : null;
   const actualRecipient = isInstagram
     ? (separatorIndex > -1 ? instagramAddress.slice(separatorIndex + 1) : instagramAddress)
-    : toMetaRecipient(phone);
+    : toMetaRecipient(phone, channel);
 
   if (isInstagram) {
     // Currently, Instagram via Marketing OS only supports basic text/media proxying out-of-the-box
@@ -324,6 +355,8 @@ async function sendViaMarketingOs(phone, payload, tenantId) {
       caption: payload.caption,
       mediaType: payload.mediaType || 'image',
       mimeType: payload.mimeType,
+      fileName: payload.fileName || payload.filename,
+      filename: payload.filename || payload.fileName,
       idempotencyKey,
     });
   } else {
@@ -355,6 +388,12 @@ function renderListFallback(body, sections, options = {}) {
   }).join('\n\n');
 
   return `${header}${body}\n\n${sectionText}${footer}`.trim();
+}
+
+function renderUrlButtonFallback(body, buttonText, url, options = {}) {
+  const header = options.headerText ? `*${options.headerText}*\n` : '';
+  const footer = options.footerText ? `\n${options.footerText}` : '';
+  return `${header}${body}\n\n${buttonText}${footer}`.trim();
 }
 
 function normalizeImageUrlForWhatsApp(imageUrl) {
@@ -390,7 +429,7 @@ async function sendTextMessage(phone, content, context) {
       const response = await sendViaMarketingOs(phone, {
         type: 'text',
         text: content,
-      }, channel.marketingOsTenantId);
+      }, channel.marketingOsTenantId, channel);
       return markMessageSent(message, response);
     }
 
@@ -401,7 +440,7 @@ async function sendTextMessage(phone, content, context) {
           preview_url: false,
           body: content,
         },
-      }, channel.phoneNumberId);
+      }, channel.phoneNumberId, channel);
       return markMessageSent(message, response);
     }
 
@@ -442,7 +481,7 @@ async function sendButtonsMessage(phone, body, buttons, context, options = {}) {
             title: button.title,
           })),
         },
-      }, channel.marketingOsTenantId);
+      }, channel.marketingOsTenantId, channel);
       return markMessageSent(message, response);
     } catch (err) {
       return markMessageFailed(message, 'sendButtonsMessage', err);
@@ -476,11 +515,87 @@ async function sendButtonsMessage(phone, body, buttons, context, options = {}) {
           })),
         },
       },
-    }, channel.phoneNumberId);
+    }, channel.phoneNumberId, channel);
 
     return markMessageSent(message, response);
   } catch (err) {
     return markMessageFailed(message, 'sendButtonsMessage', err);
+  }
+}
+
+async function sendUrlButtonMessage(phone, body, buttonText, url, context, options = {}) {
+  const safeButtonText = String(buttonText || 'Open Link').trim().slice(0, 20) || 'Open Link';
+  const safeUrl = String(url || '').trim();
+  if (!safeUrl) return sendTextMessage(phone, body, context);
+
+  const fallbackContent = renderUrlButtonFallback(body, safeButtonText, safeUrl, options);
+  const channel = await resolveAgencyChannel(context);
+
+  if (canUseMarketingOs(channel)) {
+    const message = await createOutboundMessage(context, {
+      content: fallbackContent,
+      type: 'TEXT',
+    });
+
+    try {
+      const response = await sendViaMarketingOs(phone, {
+        type: 'interactive',
+        interactiveContent: {
+          type: 'CTA_URL',
+          header: options.headerText,
+          body,
+          footer: options.footerText,
+          action: {
+            name: 'cta_url',
+            parameters: {
+              display_text: safeButtonText,
+              url: safeUrl,
+            },
+          },
+          button: {
+            title: safeButtonText,
+            url: safeUrl,
+          },
+        },
+      }, channel.marketingOsTenantId, channel);
+      return markMessageSent(message, response);
+    } catch (err) {
+      await markMessageFailed(message, 'sendUrlButtonMessage', err);
+      return sendTextMessage(phone, fallbackContent, context);
+    }
+  }
+
+  if (!canUseCloudApi(channel.phoneNumberId)) {
+    return sendTextMessage(phone, fallbackContent, context);
+  }
+
+  const message = await createOutboundMessage(context, {
+    content: fallbackContent,
+    type: 'TEXT',
+  });
+
+  try {
+    const response = await sendViaMeta(phone, {
+      type: 'interactive',
+      interactive: {
+        type: 'cta_url',
+        header: options.headerText ? { type: 'text', text: options.headerText } : undefined,
+        body: { text: body },
+        footer: options.footerText ? { text: options.footerText } : undefined,
+        action: {
+          name: 'cta_url',
+          parameters: {
+            display_text: safeButtonText,
+            url: safeUrl,
+          },
+        },
+      },
+    }, channel.phoneNumberId, channel);
+
+    return markMessageSent(message, response);
+  } catch (err) {
+    await markMessageFailed(message, 'sendUrlButtonMessage', err);
+    return sendTextMessage(phone, fallbackContent, context);
   }
 }
 
@@ -516,7 +631,7 @@ async function sendMediaButtonsMessage(phone, body, imageUrl, buttons, context, 
             title: button.title,
           })),
         },
-      }, channel.marketingOsTenantId);
+      }, channel.marketingOsTenantId, channel);
       return markMessageSent(message, response);
     } catch (err) {
       return markMessageFailed(message, 'sendMediaButtonsMessage', err);
@@ -555,7 +670,7 @@ async function sendMediaButtonsMessage(phone, body, imageUrl, buttons, context, 
           })),
         },
       },
-    }, channel.phoneNumberId);
+    }, channel.phoneNumberId, channel);
 
     return markMessageSent(message, response);
   } catch (err) {
@@ -586,7 +701,7 @@ async function sendListMessage(phone, body, buttonText, sections, context, optio
             button: buttonText,
           },
         },
-      }, channel.marketingOsTenantId);
+      }, channel.marketingOsTenantId, channel);
       return markMessageSent(message, response);
     } catch (err) {
       return markMessageFailed(message, 'sendListMessage', err);
@@ -615,7 +730,7 @@ async function sendListMessage(phone, body, buttonText, sections, context, optio
           sections,
         },
       },
-    }, channel.phoneNumberId);
+    }, channel.phoneNumberId, channel);
 
     return markMessageSent(message, response);
   } catch (err) {
@@ -641,7 +756,7 @@ async function sendImageMessage(phone, imageUrl, caption, context) {
         caption,
         mediaType: 'image',
         mimeType: 'image/jpeg',
-      }, channel.marketingOsTenantId);
+      }, channel.marketingOsTenantId, channel);
       return markMessageSent(message, response);
     } catch (err) {
       return markMessageFailed(message, 'sendImageMessage', err);
@@ -664,7 +779,7 @@ async function sendImageMessage(phone, imageUrl, caption, context) {
         link: normalizedImageUrl,
         caption: caption || undefined,
       },
-    }, channel.phoneNumberId);
+    }, channel.phoneNumberId, channel);
 
     return markMessageSent(message, response);
   } catch (err) {
@@ -691,7 +806,9 @@ async function sendDocumentMessage(phone, documentUrl, filename, caption, contex
         caption,
         mediaType: 'document',
         mimeType: 'application/pdf',
-      }, channel.marketingOsTenantId);
+        fileName: safeFilename,
+        filename: safeFilename,
+      }, channel.marketingOsTenantId, channel);
       return markMessageSent(message, response);
     } catch (err) {
       return markMessageFailed(message, 'sendDocumentMessage', err);
@@ -715,7 +832,7 @@ async function sendDocumentMessage(phone, documentUrl, filename, caption, contex
         filename: safeFilename,
         caption: caption || undefined,
       },
-    }, channel.phoneNumberId);
+    }, channel.phoneNumberId, channel);
 
     return markMessageSent(message, response);
   } catch (err) {
@@ -773,7 +890,7 @@ async function sendFlowMessage(phone, body, flowConfig, context, options = {}) {
             parameters,
           },
         },
-      }, channel.marketingOsTenantId);
+      }, channel.marketingOsTenantId, channel);
 
       return markMessageSent(message, response);
     } catch (err) {
@@ -826,7 +943,7 @@ async function sendFlowMessage(phone, body, flowConfig, context, options = {}) {
           parameters,
         },
       },
-    }, channel.phoneNumberId);
+    }, channel.phoneNumberId, channel);
 
     return markMessageSent(message, response);
   } catch (err) {
@@ -863,7 +980,7 @@ async function sendTemplateMessage(phone, templateName, variables, context, opti
           return acc;
         }, {}),
         components: componentPayload,
-      }, channel.marketingOsTenantId);
+      }, channel.marketingOsTenantId, channel);
 
       return markMessageSent(message, response);
     } catch (err) {
@@ -949,7 +1066,7 @@ async function sendCatalogMessage(phone, body, catalogId, productIds, context, o
             sections,
           },
         },
-      }, channel.marketingOsTenantId);
+      }, channel.marketingOsTenantId, channel);
 
       return markMessageSent(message, response);
     } catch (err) {
@@ -974,7 +1091,7 @@ async function sendCatalogMessage(phone, body, catalogId, productIds, context, o
           sections,
         },
       },
-    }, channel.phoneNumberId);
+    }, channel.phoneNumberId, channel);
 
     return markMessageSent(message, response);
   } catch (err) {
@@ -1004,7 +1121,12 @@ async function updateMessageStatus(waMessageId, newStatus, statusEvent = {}) {
     sent: 'SENT',
   };
 
-  const status = statusMap[String(newStatus || '').toLowerCase()] || newStatus;
+  const normalizedStatus = String(newStatus || '').trim().toLowerCase();
+  const status = statusMap[normalizedStatus];
+  if (!status) {
+    console.warn('[WhatsAppService] Ignoring unsupported message status:', newStatus);
+    return;
+  }
 
   await Message.update(
     { status },
@@ -1108,7 +1230,7 @@ async function sendSystemNotificationWhatsApp(phone, content, context = {}) {
       return await sendViaMarketingOs(phone, {
         type: 'text',
         text: content,
-      }, channel.marketingOsTenantId);
+      }, channel.marketingOsTenantId, channel);
     }
 
     if (canUseCloudApi(channel.phoneNumberId)) {
@@ -1118,7 +1240,7 @@ async function sendSystemNotificationWhatsApp(phone, content, context = {}) {
           preview_url: false,
           body: content,
         },
-      }, channel.phoneNumberId);
+      }, channel.phoneNumberId, channel);
     }
 
     return await interaktClient.post('/message/', {
@@ -1193,13 +1315,31 @@ function buildTemplateComponents(template) {
 
     return base;
   };
+  const getPlaceholderIndexes = (text = '') => {
+    const matches = String(text || '').match(/\{\{\s*\d+\s*\}\}/g) || [];
+    return [...new Set(matches
+      .map((token) => parseInt(token.replace(/[^\d]/g, ''), 10))
+      .filter((value) => Number.isFinite(value) && value > 0))]
+      .sort((a, b) => a - b);
+  };
+  const getSampleValue = (position) => {
+    const sample = variableSamples[position - 1];
+    return sample !== undefined && sample !== null && String(sample).trim()
+      ? String(sample)
+      : `Sample ${position}`;
+  };
+  const buildTextExample = (text = '') => {
+    const indexes = getPlaceholderIndexes(text);
+    return indexes.length ? indexes.map(getSampleValue) : null;
+  };
 
   if (templateType !== 'CAROUSEL' && headerType !== 'NONE') {
     const header = { type: 'HEADER', format: headerType };
     if (headerType === 'TEXT') {
       header.text = template.headerContent || '';
-      if (countTemplateVariables(header.text) > 0 && variableSamples.length > 0) {
-        header.example = { header_text: [variableSamples[0]] };
+      const headerExample = buildTextExample(header.text);
+      if (headerExample) {
+        header.example = { header_text: [headerExample[0]] };
       }
     } else {
       const mediaExample = buildMediaExample(template.headerContent);
@@ -1211,9 +1351,9 @@ function buildTemplateComponents(template) {
   }
 
   const body = { type: 'BODY', text: template.body || '' };
-  const bodyVariableCount = countTemplateVariables(body.text);
-  if (bodyVariableCount > 0 && variableSamples.length >= bodyVariableCount) {
-    body.example = { body_text: [variableSamples.slice(0, bodyVariableCount)] };
+  const bodyExample = buildTextExample(body.text);
+  if (bodyExample) {
+    body.example = { body_text: [bodyExample] };
   }
   components.push(body);
 
@@ -1241,11 +1381,10 @@ function buildTemplateComponents(template) {
           {
             type: 'BODY',
             text: String(card.body || card.title || 'Deal details').slice(0, 1024),
-            ...(countTemplateVariables(String(card.body || card.title || 'Deal details').slice(0, 1024)) > 0
-              && variableSamples.length >= countTemplateVariables(String(card.body || card.title || 'Deal details').slice(0, 1024))
+            ...(buildTextExample(String(card.body || card.title || 'Deal details').slice(0, 1024))
               ? {
                   example: {
-                    body_text: [variableSamples.slice(0, countTemplateVariables(String(card.body || card.title || 'Deal details').slice(0, 1024)))],
+                    body_text: [buildTextExample(String(card.body || card.title || 'Deal details').slice(0, 1024))],
                   },
                 }
               : {}),
@@ -1541,6 +1680,7 @@ module.exports = {
   sendProcessingPlaceholder,
   sendTextMessage,
   sendButtonsMessage,
+  sendUrlButtonMessage,
   sendMediaButtonsMessage,
   sendListMessage,
   sendImageMessage,

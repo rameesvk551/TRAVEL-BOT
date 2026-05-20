@@ -24,6 +24,35 @@ function scopedLeadWhere(agencyId, requester, extra = {}) {
   return where;
 }
 
+function parsePositiveInt(value, fallback, max = 200) {
+  const parsed = parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed < 1) return fallback;
+  return Math.min(parsed, max);
+}
+
+function getDateRangeBounds(range) {
+  const now = new Date();
+  if (range === 'month') {
+    return {
+      from: new Date(now.getFullYear(), now.getMonth(), 1),
+      to: new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999),
+    };
+  }
+  if (range === 'year') {
+    return {
+      from: new Date(now.getFullYear(), 0, 1),
+      to: new Date(now.getFullYear(), 11, 31, 23, 59, 59, 999),
+    };
+  }
+  return {};
+}
+
+function endOfToday() {
+  const date = new Date();
+  date.setHours(23, 59, 59, 999);
+  return date;
+}
+
 function normalizeTags(tags = []) {
   if (!Array.isArray(tags)) return [];
   const seen = new Set();
@@ -65,18 +94,29 @@ function normalizeCustomTripDetails(details = {}) {
   const normalized = {};
   const stringFields = [
     'name',
+    'phone',
     'destination',
     'travelDate',
+    'travelDates',
     'travellersText',
     'budgetText',
     'notes',
     'campaignName',
     'source',
+    'interest',
+    'metaLeadgenId',
+    'metaFormId',
     'service',
     'serviceCategory',
     'serviceDetails',
     'staycationInterest',
     'staycationViewedAt',
+    'propertyLocation',
+    'propertyName',
+    'checkInDate',
+    'checkOutDate',
+    'routingIntentKey',
+    'routingIntentLabel',
   ];
 
   for (const field of stringFields) {
@@ -95,6 +135,34 @@ function normalizeCustomTripDetails(details = {}) {
   if (details.submittedAt) {
     const submittedAt = new Date(details.submittedAt);
     if (!Number.isNaN(submittedAt.getTime())) normalized.submittedAt = submittedAt.toISOString();
+  }
+
+  if (details.travelReadiness && typeof details.travelReadiness === 'object' && !Array.isArray(details.travelReadiness)) {
+    const readiness = {};
+    const readinessStringFields = [
+      'travellerCount',
+      'travelerCount',
+      'bookingReadiness',
+      'departureAirport',
+    ];
+
+    for (const field of readinessStringFields) {
+      const value = details.travelReadiness[field];
+      if (value === undefined || value === null) continue;
+      const text = String(value).trim();
+      if (text) readiness[field] = text.slice(0, 500);
+    }
+
+    if (details.travelReadiness.submittedAt) {
+      const submittedAt = new Date(details.travelReadiness.submittedAt);
+      if (!Number.isNaN(submittedAt.getTime())) readiness.submittedAt = submittedAt.toISOString();
+    }
+
+    if (Object.keys(readiness).length) normalized.travelReadiness = readiness;
+  }
+
+  if (details.metaFields && typeof details.metaFields === 'object' && !Array.isArray(details.metaFields)) {
+    normalized.metaFields = details.metaFields;
   }
 
   return normalized;
@@ -134,14 +202,46 @@ function enrichLeadPayload(lead) {
   payload.tags = normalizeTags(payload.tags);
   payload.selectedItems = normalizeSelectedItems(payload.selectedItems);
   payload.customTripDetails = normalizeCustomTripDetails(payload.customTripDetails);
+
+  const capturedPhone = String(payload.customTripDetails?.phone || '').trim();
+  if (capturedPhone && payload.customer) {
+    payload.customer = {
+      ...payload.customer,
+      phone: capturedPhone,
+      channelContactId: payload.customer.phone,
+    };
+  }
+
+  if (String(payload.source || '').toLowerCase() === 'instagram_dm') {
+    payload.source = 'instagram';
+  }
+
   payload.leadScore = calculateLeadScore(payload);
   return payload;
 }
 
 async function listLeads(agencyId, filters = {}, requester = null) {
-  const { status, agentId, search, dateFrom, dateTo, page = 1, pageSize = 20 } = filters;
+  const {
+    status,
+    agentId,
+    search,
+    source,
+    tag,
+    attention,
+    sortBy = 'newest',
+    dateRange,
+    metaCampaignId,
+    metaPlatform,
+    metaFormId,
+    dateFrom,
+    dateTo,
+    page = 1,
+    pageSize = 20,
+  } = filters;
 
   const where = scopedLeadWhere(agencyId, requester);
+  const andConditions = [];
+  const closedStatuses = ['CONVERTED', 'LOST', 'CANCELLED'];
 
   if (status) {
     if (Array.isArray(status)) {
@@ -151,40 +251,189 @@ async function listLeads(agencyId, filters = {}, requester = null) {
     }
   }
 
-  if (agentId && isAdmin(requester)) where.assignedAgentId = agentId;
+  if (agentId === 'mine' && requester?.id) where.assignedAgentId = requester.id;
+  else if (agentId === 'unassigned') where.assignedAgentId = null;
+  else if (agentId && isAdmin(requester)) where.assignedAgentId = agentId;
 
-  if (dateFrom || dateTo) {
+  if (source) {
+    if (Array.isArray(source)) {
+      where.source = { [Op.in]: source };
+    } else if (source === 'direct') {
+      andConditions.push({
+        [Op.or]: [
+          { source: null },
+          { source: { [Op.iLike]: '%direct%' } },
+          { source: { [Op.iLike]: '%organic%' } },
+        ],
+      });
+    } else if (source === 'facebook_ad' || source === 'instagram_ad') {
+      where.source = source;
+    } else if (String(source).includes(',')) {
+      where.source = { [Op.in]: String(source).split(',').map((item) => item.trim()).filter(Boolean) };
+    } else {
+      where.source = { [Op.iLike]: `%${source}%` };
+    }
+  }
+
+  if (tag) where.tags = { [Op.contains]: [String(tag)] };
+
+  if (metaCampaignId) where.metaCampaignId = metaCampaignId;
+  if (metaPlatform) where.metaPlatform = String(metaPlatform).toLowerCase();
+  if (metaFormId) where.metaFormId = metaFormId;
+
+  const rangeBounds = getDateRangeBounds(dateRange);
+  const effectiveDateFrom = dateFrom || rangeBounds.from;
+  const effectiveDateTo = dateTo || rangeBounds.to;
+  if (effectiveDateFrom || effectiveDateTo) {
     where.createdAt = {};
-    if (dateFrom) where.createdAt[Op.gte] = new Date(dateFrom);
-    if (dateTo) where.createdAt[Op.lte] = new Date(dateTo);
+    if (effectiveDateFrom) where.createdAt[Op.gte] = new Date(effectiveDateFrom);
+    if (effectiveDateTo) where.createdAt[Op.lte] = new Date(effectiveDateTo);
   }
 
-  // Search by customer name or phone
-  const customerWhere = {};
-  if (search) {
-    customerWhere[Op.or] = [
-      { name: { [Op.iLike]: `%${search}%` } },
-      { phone: { [Op.iLike]: `%${search}%` } },
-    ];
+  const searchText = String(search || '').trim();
+  if (searchText) {
+    const [matchingCustomers, matchingAgents] = await Promise.all([
+      Customer.findAll({
+        attributes: ['id'],
+        where: {
+          agencyId,
+          [Op.or]: [
+            { name: { [Op.iLike]: `%${searchText}%` } },
+            { phone: { [Op.iLike]: `%${searchText}%` } },
+            { email: { [Op.iLike]: `%${searchText}%` } },
+          ],
+        },
+        raw: true,
+      }),
+      Agent.findAll({
+        attributes: ['id'],
+        where: {
+          agencyId,
+          name: { [Op.iLike]: `%${searchText}%` },
+        },
+        raw: true,
+      }),
+    ]);
+    const customerIds = matchingCustomers.map((customer) => customer.id).filter(Boolean);
+    const agentIds = matchingAgents.map((agent) => agent.id).filter(Boolean);
+
+    andConditions.push({
+      [Op.or]: [
+        { destination: { [Op.iLike]: `%${searchText}%` } },
+        { source: { [Op.iLike]: `%${searchText}%` } },
+        { metaCampaignName: { [Op.iLike]: `%${searchText}%` } },
+        { metaAdName: { [Op.iLike]: `%${searchText}%` } },
+        { metaFormId: { [Op.iLike]: `%${searchText}%` } },
+        ...(customerIds.length ? [{ customerId: { [Op.in]: customerIds } }] : []),
+        ...(agentIds.length ? [{ assignedAgentId: { [Op.in]: agentIds } }] : []),
+      ],
+    });
   }
 
-  const offset = (page - 1) * pageSize;
+  const scheduledFollowUps = await FollowUp.findAll({
+    attributes: ['leadId', 'scheduledAt'],
+    where: { agencyId, status: 'Scheduled' },
+    raw: true,
+  });
+  const scheduledLeadIds = [...new Set(scheduledFollowUps.map((followUp) => followUp.leadId).filter(Boolean))];
+  const overdueCutoff = endOfToday().getTime();
+  const overdueLeadIds = [
+    ...new Set(
+      scheduledFollowUps
+        .filter((followUp) => new Date(followUp.scheduledAt).getTime() <= overdueCutoff)
+        .map((followUp) => followUp.leadId)
+        .filter(Boolean)
+    ),
+  ];
+  const activeStatusWhere = { status: { [Op.notIn]: closedStatuses } };
+  const noScheduledFollowUpWhere = scheduledLeadIds.length
+    ? { id: { [Op.notIn]: scheduledLeadIds }, ...activeStatusWhere }
+    : activeStatusWhere;
+  const attentionWhere = {
+    [Op.or]: [
+      {
+        assignedAgentId: null,
+        ...activeStatusWhere,
+      },
+      noScheduledFollowUpWhere,
+      ...(overdueLeadIds.length ? [{ id: { [Op.in]: overdueLeadIds } }] : []),
+      {
+        leadScore: { [Op.gte]: 75 },
+        ...activeStatusWhere,
+      },
+    ],
+  };
+
+  if (attention === 'true' || attention === true || attention === '1') {
+    andConditions.push(attentionWhere);
+  }
+
+  if (andConditions.length > 0) where[Op.and] = andConditions;
+
+  const limit = parsePositiveInt(pageSize, 20);
+  const currentPage = parsePositiveInt(page, 1, Number.MAX_SAFE_INTEGER);
+  const offset = (currentPage - 1) * limit;
+  const include = [
+    { model: Customer, as: 'customer' },
+    { model: Agent, as: 'assignedAgent', attributes: ['id', 'name', 'email'] },
+    { model: Package, as: 'package', attributes: ['id', 'name', 'basePrice'] },
+    { model: Property, as: 'property', attributes: ['id', 'name', 'propertyType', 'location', 'pricePerNight'] },
+    {
+      model: FollowUp,
+      as: 'followUps',
+      required: false,
+      separate: true,
+      where: { status: 'Scheduled' },
+      order: [['scheduledAt', 'ASC']],
+    },
+  ];
+  const order = (() => {
+    if (sortBy === 'oldest') return [['createdAt', 'ASC']];
+    if (sortBy === 'highestBudget') return [['budgetPerPerson', 'DESC'], ['createdAt', 'DESC']];
+    if (sortBy === 'nextFollowUp' || sortBy === 'overdue') return [['updatedAt', 'DESC'], ['createdAt', 'DESC']];
+    if (sortBy === 'hot') return [['leadScore', 'DESC'], ['createdAt', 'DESC']];
+    return [['createdAt', 'DESC']];
+  })();
 
   const { count, rows } = await Lead.findAndCountAll({
     where,
-    include: [
-      { model: Customer, as: 'customer', where: Object.keys(customerWhere).length ? customerWhere : undefined },
-      { model: Agent, as: 'assignedAgent', attributes: ['id', 'name', 'email'] },
-      { model: Package, as: 'package', attributes: ['id', 'name', 'basePrice'] },
-      { model: Property, as: 'property', attributes: ['id', 'name', 'propertyType', 'location', 'pricePerNight'] },
-      { model: FollowUp, as: 'followUps', required: false, where: { status: 'Scheduled' } },
-    ],
-    order: [['createdAt', 'DESC']],
-    limit: pageSize,
+    include,
+    distinct: true,
+    order,
+    limit,
     offset,
   });
 
-  return { data: rows.map(enrichLeadPayload), total: count, page: parseInt(page), pageSize: parseInt(pageSize) };
+  const countBaseWhere = { ...where };
+  delete countBaseWhere.status;
+  const countForWhere = (extraWhere = {}) => Lead.count({ where: { ...countBaseWhere, ...extraWhere } });
+  const statusKeys = ['JUST_CONTACTED', 'PACKAGE_SEARCHED', 'PACKAGE_INTERESTED', 'NEW', 'ENQUIRY', 'CONTACTED', 'QUOTED', 'NEGOTIATING', 'BOOKED', 'CONVERTED', 'LOST', 'CANCELLED', 'UNKNOWN'];
+  const [allCount, attentionCount, convertedCount, lostCount, statusPairs] = await Promise.all([
+    countForWhere(),
+    countForWhere(attentionWhere),
+    countForWhere({ status: 'CONVERTED' }),
+    countForWhere({ status: 'LOST' }),
+    Promise.all(statusKeys.map(async (key) => [key, await countForWhere({ status: key })])),
+  ]);
+  const statusCounts = Object.fromEntries(statusPairs);
+
+  return {
+    data: rows.map(enrichLeadPayload),
+    total: count,
+    page: currentPage,
+    pageSize: limit,
+    counts: {
+      'All Leads': allCount,
+      'Needs Attention': attentionCount,
+      ...statusCounts,
+    },
+    metrics: {
+      totalDeals: allCount,
+      attention: attentionCount,
+      won: convertedCount,
+      lost: lostCount,
+    },
+  };
 }
 
 /**
@@ -218,33 +467,23 @@ async function getLeadById(leadId, agencyId, requester = null) {
   const leadJson = enrichLeadPayload(lead);
   const selectedPackageIds = new Set();
   const selectedPropertyIds = new Set();
-  const campaignSections = Array.isArray(leadJson.campaign?.campaignSections) ? leadJson.campaign.campaignSections : [];
+  const normalizedSelectedItems = normalizeSelectedItems(leadJson.selectedItems);
+  const leadInterest = String(leadJson.customTripDetails?.interest || leadJson.interest || '').toUpperCase();
+  const leadItemType = String(leadJson.itemType || '').toUpperCase();
+  const leadSource = String(leadJson.source || '').toLowerCase();
+  const leadNotes = String(leadJson.notes || '').toLowerCase();
+  const isCustomTripLead = leadItemType === 'CUSTOM_TRIP'
+    || leadInterest === 'CUSTOM_TRIP'
+    || (leadSource === 'instagram' && leadInterest === 'CUSTOM')
+    || leadNotes.includes('custom trip');
 
-  normalizeSelectedItems(leadJson.selectedItems).forEach((item) => {
+  normalizedSelectedItems.forEach((item) => {
+    if (isCustomTripLead && item.itemType === 'PACKAGE') return;
     if (item.itemType === 'PACKAGE') selectedPackageIds.add(item.itemId);
     if (item.itemType === 'PROPERTY') selectedPropertyIds.add(item.itemId);
   });
 
-  if (campaignSections.length > 0) {
-    campaignSections
-      .filter((section) => section?.enabled !== false)
-      .forEach((section) => {
-        const selectedIds = Array.isArray(section?.selectedItemIds) ? section.selectedItemIds : [];
-        const itemType = String(section?.itemType || '').toUpperCase();
-        if (itemType === 'PROPERTY') {
-          selectedIds.forEach((id) => id && selectedPropertyIds.add(id));
-          return;
-        }
-        if (itemType === 'PACKAGE') {
-          selectedIds.forEach((id) => id && selectedPackageIds.add(id));
-        }
-      });
-  } else {
-    const linkedPackageIds = Array.isArray(leadJson.campaign?.linkedPackageIds) ? leadJson.campaign.linkedPackageIds : [];
-    linkedPackageIds.forEach((id) => id && selectedPackageIds.add(id));
-  }
-
-  if (leadJson.packageId) selectedPackageIds.add(leadJson.packageId);
+  if (!isCustomTripLead && leadJson.packageId) selectedPackageIds.add(leadJson.packageId);
   if (leadJson.propertyId) selectedPropertyIds.add(leadJson.propertyId);
 
   const [followUps, notes, messages, selectedPackages, selectedProperties] = await Promise.all([
@@ -450,6 +689,24 @@ async function createLead(data, agencyId) {
   return fullLead;
 }
 
+async function assertPackageBelongsToAgency(packageId, agencyId) {
+  if (!packageId) return null;
+  const pkg = await Package.findOne({ where: { id: packageId, agencyId } });
+  if (!pkg) {
+    throw Object.assign(new Error('Package not found'), { statusCode: 404, code: 'PACKAGE_NOT_FOUND' });
+  }
+  return pkg;
+}
+
+async function assertPropertyBelongsToAgency(propertyId, agencyId) {
+  if (!propertyId) return null;
+  const property = await Property.findOne({ where: { id: propertyId, agencyId } });
+  if (!property) {
+    throw Object.assign(new Error('Property not found'), { statusCode: 404, code: 'PROPERTY_NOT_FOUND' });
+  }
+  return property;
+}
+
 /**
  * Updates a lead's fields.
  * @param {string} leadId - Lead ID
@@ -468,7 +725,9 @@ async function updateLead(leadId, agencyId, updates, requester = null) {
     'travellers', 'budgetPerPerson', 'packageId', 'propertyId', 'itemType',
     'campaignId', 'campaignName', 'campaignAction', 'notes', 'lostReason',
     'travelStart', 'travelEnd', 'interest', 'source', 'tags', 'selectedItems',
-    'customTripDetails',
+    'customTripDetails', 'metaLeadgenId', 'metaFormId', 'metaPageId', 'metaAdAccountId',
+    'metaCampaignId', 'metaCampaignName', 'metaAdSetId', 'metaAdSetName',
+    'metaAdId', 'metaAdName', 'metaPlatform', 'metaRawPayload',
   ];
 
   const filtered = {};
@@ -478,6 +737,8 @@ async function updateLead(leadId, agencyId, updates, requester = null) {
   if (filtered.tags !== undefined) filtered.tags = normalizeTags(filtered.tags);
   if (filtered.selectedItems !== undefined) filtered.selectedItems = normalizeSelectedItems(filtered.selectedItems);
   if (filtered.customTripDetails !== undefined) filtered.customTripDetails = normalizeCustomTripDetails(filtered.customTripDetails);
+  if (filtered.packageId) await assertPackageBelongsToAgency(filtered.packageId, agencyId);
+  if (filtered.propertyId) await assertPropertyBelongsToAgency(filtered.propertyId, agencyId);
   if (filtered.status === 'LOST' && !String(filtered.lostReason || lead.lostReason || '').trim()) {
     throw Object.assign(new Error('Lost reason is required when marking a lead lost'), {
       statusCode: 400,
@@ -498,7 +759,8 @@ async function updateLead(leadId, agencyId, updates, requester = null) {
     }
   }
 
-  const isNewAgentAssigned = updates.assignedAgentId && lead.assignedAgentId !== updates.assignedAgentId;
+  const hasAssignmentUpdate = Object.prototype.hasOwnProperty.call(updates, 'assignedAgentId');
+  const shouldNotifyAssignedAgent = !!updates.assignedAgentId && (hasAssignmentUpdate || lead.assignedAgentId !== updates.assignedAgentId);
   await lead.update(filtered);
 
   if (filtered.status === 'CONVERTED') {
@@ -508,7 +770,7 @@ async function updateLead(leadId, agencyId, updates, requester = null) {
     }
   }
 
-  if (isNewAgentAssigned) {
+  if (shouldNotifyAssignedAgent) {
     const fullLead = await getLeadById(lead.id, agencyId, { role: 'ADMIN' });
     const agent = fullLead.assignedAgent;
     if (agent && agent.phone) {
@@ -595,6 +857,7 @@ async function listFollowUps(agencyId, filters = {}, requester = null) {
     search,
     dateFrom,
     dateTo,
+    due,
     page = 1,
     pageSize = 50,
   } = filters;
@@ -610,6 +873,18 @@ async function listFollowUps(agencyId, filters = {}, requester = null) {
     where.scheduledAt = {};
     if (dateFrom) where.scheduledAt[Op.gte] = new Date(dateFrom);
     if (dateTo) where.scheduledAt[Op.lte] = new Date(dateTo);
+  }
+
+  if (due === 'overdue') {
+    where.scheduledAt = { ...(where.scheduledAt || {}), [Op.lt]: new Date() };
+  }
+
+  if (due === 'today') {
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    const end = new Date();
+    end.setHours(23, 59, 59, 999);
+    where.scheduledAt = { ...(where.scheduledAt || {}), [Op.between]: [start, end] };
   }
 
   if (search) {
@@ -630,8 +905,22 @@ async function listFollowUps(agencyId, filters = {}, requester = null) {
     where.leadId = { [Op.in]: matchedLeads.map((lead) => lead.id) };
   }
 
-  const limit = Math.min(parseInt(pageSize, 10) || 50, 200);
-  const currentPage = parseInt(page, 10) || 1;
+  const metricWhere = { agencyId };
+  if (where.agentId) metricWhere.agentId = where.agentId;
+  if (where.leadId) metricWhere.leadId = where.leadId;
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const todayEnd = new Date();
+  todayEnd.setHours(23, 59, 59, 999);
+  const [scheduledMetric, overdueMetric, todayMetric, doneMetric] = await Promise.all([
+    FollowUp.count({ where: { ...metricWhere, status: 'Scheduled' } }),
+    FollowUp.count({ where: { ...metricWhere, status: 'Scheduled', scheduledAt: { [Op.lt]: new Date() } } }),
+    FollowUp.count({ where: { ...metricWhere, status: 'Scheduled', scheduledAt: { [Op.between]: [todayStart, todayEnd] } } }),
+    FollowUp.count({ where: { ...metricWhere, status: 'Done' } }),
+  ]);
+
+  const limit = parsePositiveInt(pageSize, 50);
+  const currentPage = parsePositiveInt(page, 1, Number.MAX_SAFE_INTEGER);
   const offset = (currentPage - 1) * limit;
 
   const { count, rows } = await FollowUp.findAndCountAll({
@@ -655,7 +944,18 @@ async function listFollowUps(agencyId, filters = {}, requester = null) {
     offset,
   });
 
-  return { data: rows, total: count, page: currentPage, pageSize: limit };
+  return {
+    data: rows,
+    total: count,
+    page: currentPage,
+    pageSize: limit,
+    metrics: {
+      scheduled: scheduledMetric,
+      overdue: overdueMetric,
+      today: todayMetric,
+      done: doneMetric,
+    },
+  };
 }
 
 async function updateFollowUp(leadId, followUpId, agencyId, updates, requester = null) {

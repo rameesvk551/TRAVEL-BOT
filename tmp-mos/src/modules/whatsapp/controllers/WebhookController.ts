@@ -320,7 +320,7 @@ export const createWebhookController = (
             res.json(result);
         },
         sendMedia: async (req: any, res: any) => {
-            const { tenantId, recipientPhone, to, mediaUrl, caption, mediaType, mimeType } = req.body;
+            const { tenantId, recipientPhone, to, mediaUrl, caption, mediaType, mimeType, fileName, filename } = req.body;
             const effectiveTenantId = await resolveSqlTenantId(tenantId || req.context?.tenantId);
             if (!effectiveTenantId) {
                 res.status(400).json({ success: false, error: 'Unable to resolve tenant for WhatsApp send' });
@@ -337,6 +337,7 @@ export const createWebhookController = (
                 caption,
                 mediaType: mediaType || 'image',
                 mimeType,
+                fileName: fileName || filename,
                 senderUserId: 'PARTNER_API',
             });
             res.json(result);

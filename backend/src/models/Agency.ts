@@ -194,11 +194,23 @@ module.exports = (sequelize) => {
       defaultValue: {},
       comment: 'Tenant-controlled labels for fixed WhatsApp welcome menu actions',
     },
+    whatsappMenuConfig: {
+      type: DataTypes.JSONB,
+      allowNull: false,
+      defaultValue: [],
+      comment: 'Tenant-controlled WhatsApp welcome menu items and routing rules',
+    },
+    whatsappFlowConfig: {
+      type: DataTypes.JSONB,
+      allowNull: false,
+      defaultValue: {},
+      comment: 'Tenant-controlled nested WhatsApp menu tree and response flow routing',
+    },
     isActive: {
       type: DataTypes.BOOLEAN,
       defaultValue: true,
     },
-    // Website Builder fields
+    // ── Website Builder fields ──
     subdomain: {
       type: DataTypes.STRING(80),
       allowNull: true,

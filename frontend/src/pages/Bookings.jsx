@@ -113,21 +113,7 @@ export default function Bookings() {
 
   return (
     <div className="w-full space-y-4">
-      <section className="flex flex-col gap-4 border-b border-neutral-200 pb-4 md:flex-row md:items-end md:justify-between">
-        <div className="flex flex-col gap-2">
-          <h1 className="page-heading">Bookings</h1>
-          <p className="page-subtext">Manage all customer bookings and trip schedules.</p>
-        </div>
-
-        <button
-          type="button"
-          onClick={() => setIsCreateOpen(true)}
-          className="shell-button-primary inline-flex w-full items-center justify-center gap-2 md:w-auto"
-        >
-          <PlusIcon className="h-4 w-4" />
-          Create Booking
-        </button>
-      </section>
+      {/* Bookings header removed per request */}
 
       <section className="mobile-card-list">
         {isLoading ? (

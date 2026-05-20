@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import toast from 'react-hot-toast';
 import {
   ArrowDownIcon,
   ArrowLeftIcon,
@@ -16,8 +17,6 @@ import {
   TrashIcon,
   UserGroupIcon,
 } from '@heroicons/react/24/outline';
-import html2canvas from 'html2canvas';
-import { jsPDF } from 'jspdf';
 import { itinerariesApi } from '../api/itinerariesApi';
 import { packagesApi } from '../api/packagesApi';
 import { useLeads } from '../hooks/useLeads';
@@ -28,13 +27,14 @@ const blankForm = {
   customerId: '',
   packageId: '',
   destination: '',
-  adults: 2,
+  adults: 0,
   children: 0,
   travelStartDate: '',
   travelEndDate: '',
   status: 'DRAFT',
   days: [],
   totalPrice: 0,
+  pdfUrl: '',
 };
 
 const steps = ['Trip Basics', 'Package', 'Day Plan', 'Price & Send'];
@@ -116,33 +116,42 @@ function templateDay(template) {
 }
 
 function Preview({ form, customer }) {
-  const guests = `${Number(form.adults || 0)} adult${Number(form.adults || 0) === 1 ? '' : 's'}${Number(form.children || 0) ? `, ${form.children} child${Number(form.children || 0) === 1 ? '' : 'ren'}` : ''}`;
+  const adultCount = Number(form.adults || 0);
+  const childCount = Number(form.children || 0);
+  const guests = adultCount || childCount
+    ? `${adultCount} adult${adultCount === 1 ? '' : 's'}${childCount ? `, ${childCount} child${childCount === 1 ? '' : 'ren'}` : ''}`
+    : '';
+  const hasDates = Boolean(form.travelStartDate || form.travelEndDate);
 
   return (
     <aside className="rounded-[var(--radius-lg)] border border-neutral-200 bg-white shadow-[0_12px_32px_-24px_rgba(15,23,42,0.35)]">
       <div className="border-b border-neutral-100 p-5">
         <div className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.14em] text-indigo-600">
           <EyeIcon className="h-4 w-4" />
-          Customer Preview
+          Itinerary Preview
         </div>
         <h2 className="text-2xl font-extrabold leading-tight text-neutral-950">{form.name || 'New itinerary proposal'}</h2>
         <p className="mt-1 text-sm text-neutral-500">{form.destination || 'Destination not selected yet'}</p>
       </div>
 
-      <div className="grid gap-3 p-5 sm:grid-cols-3 lg:grid-cols-1 xl:grid-cols-3">
-        <div className="rounded-[var(--radius-md)] bg-neutral-50 p-3">
-          <CalendarDaysIcon className="mb-2 h-5 w-5 text-neutral-500" />
-          <p className="text-xs font-bold uppercase tracking-[0.12em] text-neutral-400">Dates</p>
-          <p className="mt-1 text-sm font-semibold text-neutral-900">
-            {form.travelStartDate ? formatDate(form.travelStartDate, { month: 'short', year: undefined }) : '-'}
-            {form.travelEndDate ? ` to ${formatDate(form.travelEndDate, { month: 'short', year: undefined })}` : ''}
-          </p>
-        </div>
-        <div className="rounded-[var(--radius-md)] bg-neutral-50 p-3">
-          <UserGroupIcon className="mb-2 h-5 w-5 text-neutral-500" />
-          <p className="text-xs font-bold uppercase tracking-[0.12em] text-neutral-400">Guests</p>
-          <p className="mt-1 text-sm font-semibold text-neutral-900">{guests}</p>
-        </div>
+      <div className={`grid gap-3 p-5 ${hasDates || guests ? 'sm:grid-cols-3 lg:grid-cols-1 xl:grid-cols-3' : 'grid-cols-1'}`}>
+        {hasDates ? (
+          <div className="rounded-[var(--radius-md)] bg-neutral-50 p-3">
+            <CalendarDaysIcon className="mb-2 h-5 w-5 text-neutral-500" />
+            <p className="text-xs font-bold uppercase tracking-[0.12em] text-neutral-400">Dates</p>
+            <p className="mt-1 text-sm font-semibold text-neutral-900">
+              {form.travelStartDate ? formatDate(form.travelStartDate, { month: 'short', year: undefined }) : ''}
+              {form.travelEndDate ? ` to ${formatDate(form.travelEndDate, { month: 'short', year: undefined })}` : ''}
+            </p>
+          </div>
+        ) : null}
+        {guests ? (
+          <div className="rounded-[var(--radius-md)] bg-neutral-50 p-3">
+            <UserGroupIcon className="mb-2 h-5 w-5 text-neutral-500" />
+            <p className="text-xs font-bold uppercase tracking-[0.12em] text-neutral-400">Guests</p>
+            <p className="mt-1 text-sm font-semibold text-neutral-900">{guests}</p>
+          </div>
+        ) : null}
         <div className="rounded-[var(--radius-md)] bg-neutral-50 p-3">
           <CheckCircleIcon className="mb-2 h-5 w-5 text-neutral-500" />
           <p className="text-xs font-bold uppercase tracking-[0.12em] text-neutral-400">Price</p>
@@ -154,7 +163,7 @@ function Preview({ form, customer }) {
         {customer?.name ? <p className="rounded-[var(--radius-md)] bg-indigo-50 px-3 py-2 text-sm font-medium text-indigo-800">Prepared for {customer.name}</p> : null}
         {form.days.length === 0 ? (
           <div className="rounded-[var(--radius-md)] border border-dashed border-neutral-200 p-6 text-center text-sm text-neutral-500">
-            Add days to see the customer-ready itinerary here.
+            Add days to see the itinerary here.
           </div>
         ) : (
           form.days.map((day, index) => (
@@ -249,6 +258,7 @@ export default function ItineraryBuilder() {
   const [customerSearch, setCustomerSearch] = useState('');
   const [showPackageDropdown, setShowPackageDropdown] = useState(false);
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
+  const [savingPdf, setSavingPdf] = useState(false);
 
   const { data: leadsData } = useLeads({ pageSize: 500 });
   const { data: packagesData } = useQuery({ queryKey: ['packages'], queryFn: () => packagesApi.list() });
@@ -317,6 +327,20 @@ export default function ItineraryBuilder() {
 
   const updateForm = (updates) => setForm((current) => ({ ...current, ...updates }));
 
+  const buildItineraryPayload = (status = form.status || 'DRAFT') => ({
+    ...form,
+    status,
+    customerId: form.customerId || null,
+    packageId: form.packageId || null,
+    leadId: form.leadId || null,
+    travelStartDate: form.travelStartDate || null,
+    travelEndDate: form.travelEndDate || null,
+    destination: form.destination || null,
+    pdfUrl: form.pdfUrl || null,
+    adults: Number(form.adults || 0),
+    children: Number(form.children || 0),
+  });
+
   const selectPackage = (pkg) => {
     if (!pkg) {
       updateForm({ packageId: '' });
@@ -326,8 +350,7 @@ export default function ItineraryBuilder() {
     }
 
     const importedDays = Array.isArray(pkg.itinerary) ? pkg.itinerary.map(normalizeDay) : [];
-    const travellers = Number(form.adults || 0) + Number(form.children || 0);
-    const packagePrice = Number(pkg.basePrice || 0) * Math.max(travellers, 1);
+    const packagePrice = Number(pkg.basePrice || 0);
 
     updateForm({
       packageId: pkg.id,
@@ -359,17 +382,88 @@ export default function ItineraryBuilder() {
     updateForm({ days });
   };
 
-  const saveAs = (status) => saveMutation.mutate({ ...form, status });
+  const saveAs = (status) => saveMutation.mutate(buildItineraryPayload(status));
 
-  const exportPDF = async () => {
+  const getPdfFileName = (source = form) => `Itinerary_${String(source.name || 'Proposal').replace(/[^\w\-]+/g, '_')}.pdf`;
+
+  const buildPdfDocument = async () => {
     if (!pdfRef.current) return;
+    const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
+      import('html2canvas'),
+      import('jspdf'),
+    ]);
     const canvas = await html2canvas(pdfRef.current, { scale: 2, backgroundColor: '#ffffff' });
     const image = canvas.toDataURL('image/png');
     const pdf = new jsPDF('p', 'mm', 'a4');
     const width = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
     const height = (canvas.height * width) / canvas.width;
-    pdf.addImage(image, 'PNG', 0, 0, width, height);
-    pdf.save(`Itinerary_${form.name || 'Proposal'}.pdf`);
+    let y = 0;
+    let remainingHeight = height;
+
+    pdf.addImage(image, 'PNG', 0, y, width, height);
+    remainingHeight -= pageHeight;
+    while (remainingHeight > 0) {
+      y -= pageHeight;
+      pdf.addPage();
+      pdf.addImage(image, 'PNG', 0, y, width, height);
+      remainingHeight -= pageHeight;
+    }
+
+    return pdf;
+  };
+
+  const exportPDF = async () => {
+    const pdf = await buildPdfDocument();
+    if (!pdf) return;
+    pdf.save(getPdfFileName());
+  };
+
+  const persistItinerary = async () => {
+    const payload = buildItineraryPayload(form.status || 'DRAFT');
+    const response = isEdit ? await itinerariesApi.update(id, payload) : await itinerariesApi.create(payload);
+    const itinerary = response.data;
+    qc.invalidateQueries({ queryKey: ['itineraries'] });
+    if (!isEdit && itinerary?.id) navigate(`/itineraries/${itinerary.id}/edit`, { replace: true });
+    return itinerary;
+  };
+
+  const exportAndSavePDF = async () => {
+    if (!form.name.trim()) {
+      toast.error('Add an itinerary name before saving the PDF');
+      setActiveStep(0);
+      return;
+    }
+
+    setSavingPdf(true);
+    try {
+      const savedItinerary = await persistItinerary();
+      const pdf = await buildPdfDocument();
+      if (!pdf || !savedItinerary?.id) throw new Error('Could not generate itinerary PDF');
+
+      const blob = pdf.output('blob');
+      const file = new File([blob], getPdfFileName(savedItinerary), { type: 'application/pdf' });
+      const response = await itinerariesApi.uploadPdf(savedItinerary.id, file);
+      const updated = response.data?.itinerary || savedItinerary;
+
+      setForm((current) => ({
+        ...current,
+        ...updated,
+        customerId: updated.customerId || '',
+        packageId: updated.packageId || '',
+        travelStartDate: updated.travelStartDate || '',
+        travelEndDate: updated.travelEndDate || '',
+        days: (updated.days || current.days || []).map(normalizeDay),
+        totalPrice: Number(updated.totalPrice || current.totalPrice || 0),
+      }));
+      qc.invalidateQueries({ queryKey: ['itineraries'] });
+      qc.invalidateQueries({ queryKey: ['itinerary', savedItinerary.id] });
+      toast.success('Itinerary PDF saved. Campaigns can now send it.');
+    } catch (err) {
+      toast.error(err.response?.data?.error || err.message || 'Failed to save itinerary PDF');
+    } finally {
+      setSavingPdf(false);
+    }
   };
 
   const renderStep = () => {
@@ -377,49 +471,12 @@ export default function ItineraryBuilder() {
       return (
         <div className="space-y-5">
           <div>
-            <label className="text-xs font-bold uppercase tracking-[0.14em] text-neutral-500">Client</label>
-            <div className="relative mt-1" data-dropdown="customer">
-              <input className="shell-input-rect" placeholder="Search client by name or phone" value={customerSearch} onChange={(e) => setCustomerSearch(e.target.value)} onFocus={() => setShowCustomerDropdown(true)} />
-              {showCustomerDropdown ? (
-                <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-56 overflow-y-auto rounded-[var(--radius-md)] border border-neutral-200 bg-white shadow-lg">
-                  <button type="button" onClick={() => { updateForm({ customerId: '' }); setCustomerSearch(''); setShowCustomerDropdown(false); }} className="block w-full px-3 py-2 text-left text-sm text-neutral-600 hover:bg-neutral-50">No client selected</button>
-                  {filteredCustomers.map((customer) => (
-                    <button key={customer.id} type="button" onClick={() => { updateForm({ customerId: customer.id }); setCustomerSearch(customer.name || ''); setShowCustomerDropdown(false); }} className="block w-full px-3 py-2 text-left hover:bg-neutral-50">
-                      <span className="block text-sm font-semibold text-neutral-900">{customer.name}</span>
-                      {customer.phone ? <span className="text-xs text-neutral-500">{customer.phone}</span> : null}
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-            </div>
-          </div>
-          <div>
             <label className="text-xs font-bold uppercase tracking-[0.14em] text-neutral-500">Itinerary Name</label>
-            <input className="shell-input-rect mt-1" value={form.name} onChange={(e) => updateForm({ name: e.target.value })} placeholder="Example: Bali honeymoon proposal" />
+            <input className="shell-input-rect mt-1" value={form.name} onChange={(e) => updateForm({ name: e.target.value })} placeholder="Example: Kashmir 4N 5D itinerary" />
           </div>
           <div>
             <label className="text-xs font-bold uppercase tracking-[0.14em] text-neutral-500">Destination</label>
             <input className="shell-input-rect mt-1" value={form.destination} onChange={(e) => updateForm({ destination: e.target.value })} placeholder="Goa, Bali, Dubai..." />
-          </div>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <label className="text-xs font-bold uppercase tracking-[0.14em] text-neutral-500">Start Date</label>
-              <input type="date" className="shell-input-rect mt-1" value={form.travelStartDate} onChange={(e) => updateForm({ travelStartDate: e.target.value })} />
-            </div>
-            <div>
-              <label className="text-xs font-bold uppercase tracking-[0.14em] text-neutral-500">End Date</label>
-              <input type="date" className="shell-input-rect mt-1" value={form.travelEndDate} onChange={(e) => updateForm({ travelEndDate: e.target.value })} />
-            </div>
-          </div>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <label className="text-xs font-bold uppercase tracking-[0.14em] text-neutral-500">Adults</label>
-              <input type="number" min="0" className="shell-input-rect mt-1" value={form.adults} onChange={(e) => updateForm({ adults: Number(e.target.value || 0) })} />
-            </div>
-            <div>
-              <label className="text-xs font-bold uppercase tracking-[0.14em] text-neutral-500">Children</label>
-              <input type="number" min="0" className="shell-input-rect mt-1" value={form.children} onChange={(e) => updateForm({ children: Number(e.target.value || 0) })} />
-            </div>
           </div>
         </div>
       );
@@ -521,9 +578,14 @@ export default function ItineraryBuilder() {
         <div className="rounded-[var(--radius-lg)] border border-neutral-200 bg-white p-4">
           <h3 className="font-bold text-neutral-950">Ready actions</h3>
           <p className="mt-1 text-sm text-neutral-500">Save as draft while planning, or mark as sent once shared with the customer.</p>
+          {form.pdfUrl ? <p className="mt-2 text-xs font-semibold text-emerald-700">PDF saved for campaign sending.</p> : null}
           <div className="mt-4 flex flex-wrap gap-3">
             <button type="button" onClick={() => saveAs('DRAFT')} disabled={saveMutation.isPending} className="shell-button-secondary">Save Draft</button>
             <button type="button" onClick={exportPDF} className="shell-button-secondary"><DocumentArrowDownIcon className="h-4 w-4" /> Export PDF</button>
+            <button type="button" onClick={exportAndSavePDF} disabled={savingPdf || saveMutation.isPending} className="shell-button-secondary">
+              <DocumentArrowDownIcon className="h-4 w-4" />
+              {savingPdf ? 'Saving PDF...' : 'Export & Save PDF'}
+            </button>
             <button type="button" onClick={() => saveAs('SENT')} disabled={saveMutation.isPending} className="shell-button-primary"><PaperAirplaneIcon className="h-4 w-4" /> Mark Sent</button>
           </div>
         </div>

@@ -91,7 +91,7 @@ function canSeedDefaultFlows(agency) {
   if (!agency.marketingOsTenantId) return false;
 
   const status = String(agency.whatsappConnectionStatus || '').toUpperCase();
-  return status && status !== 'NOT_CONNECTED' && status !== 'FAILED';
+  return status !== 'FAILED';
 }
 
 async function ensureDefaultFlowsForAgency(agencyOrId) {

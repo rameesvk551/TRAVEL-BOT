@@ -21,23 +21,23 @@ function BottomDrawer({ open, onClose, title, subtitle, children }) {
   );
 }
 
-/* ── Template Picker Drawer ── */
-export function TemplatePickerDrawer({ open, onClose, templates, templateSearch, setTemplateSearch, selectedId, onSelect, builderMode }) {
+/* ── Template Picker Content ── */
+export function TemplatePickerContent({ templates, templateSearch, setTemplateSearch, selectedId, onSelect, builderMode }) {
   const filtered = templates.filter(t => (t.displayName || t.name || '').toLowerCase().includes(templateSearch.toLowerCase()));
   return (
-    <BottomDrawer open={open} onClose={onClose} title={builderMode === 'carousel' ? 'Choose Carousel Template' : 'Choose CTA Template'} subtitle={`${filtered.length} approved templates`}>
-      <div className="p-4 border-b border-slate-100 bg-slate-50/50">
+    <div className="flex h-full flex-col">
+      <div className="p-4 border-b border-slate-100 bg-slate-50/50 shrink-0">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
           <input type="text" value={templateSearch} onChange={e => setTemplateSearch(e.target.value)} placeholder="Search templates..." className="w-full rounded-xl border border-slate-200 bg-white pl-10 pr-4 py-2.5 text-sm outline-none focus:border-slate-400" />
         </div>
       </div>
-      <div className="p-4 space-y-2">
+      <div className="p-4 space-y-2 flex-1 overflow-y-auto">
         {filtered.length > 0 ? filtered.map(t => {
           const active = selectedId === t.id;
           const buttons = Array.isArray(t.buttons) ? t.buttons.length : 0;
           return (
-            <button key={t.id} type="button" onClick={() => { onSelect(t); onClose(); }}
+            <button key={t.id} type="button" onClick={() => { onSelect(t); }}
               className={`flex w-full items-center gap-3 rounded-2xl border p-4 text-left transition-all duration-200 ${active ? 'border-slate-900 bg-slate-900 text-white shadow-md' : 'border-slate-200 bg-white hover:border-slate-300 hover:shadow-sm'}`}>
               <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${active ? 'bg-white/15' : 'bg-slate-100'}`}>
                 <Send className={`h-4 w-4 ${active ? 'text-white' : 'text-slate-500'}`} />
@@ -54,55 +54,46 @@ export function TemplatePickerDrawer({ open, onClose, templates, templateSearch,
           <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 py-8 text-center text-sm text-slate-500">No approved templates found</div>
         )}
       </div>
+    </div>
+  );
+}
+
+/* ── Template Picker Drawer ── */
+export function TemplatePickerDrawer({ open, onClose, templates, templateSearch, setTemplateSearch, selectedId, onSelect, builderMode }) {
+  const filtered = templates.filter(t => (t.displayName || t.name || '').toLowerCase().includes(templateSearch.toLowerCase()));
+  return (
+    <BottomDrawer open={open} onClose={onClose} title={builderMode === 'carousel' ? 'Choose Carousel Template' : 'Choose CTA Template'} subtitle={`${filtered.length} approved templates`}>
+      <TemplatePickerContent 
+        templates={templates} templateSearch={templateSearch} setTemplateSearch={setTemplateSearch} 
+        selectedId={selectedId} builderMode={builderMode}
+        onSelect={(t) => { onSelect(t); onClose(); }} 
+      />
     </BottomDrawer>
   );
 }
 
-/* ── Config Drawer (description, media, CTA actions) ── */
-export function ConfigDrawer({
-  open, onClose, builderMode, formData, setFormData,
+/* ── Config Content ── */
+export function ConfigContent({
+  builderMode, formData, setFormData,
   selectedTemplate, activeSections, packageSection, propertySection, customTripSection,
   activePackages, activeProperties, selectedPackageRecords, selectedPropertyRecords,
   updateSection, toggleSectionItem, ctaNeedsFeaturedMedia, featuredCtaRecord,
   getCatalogItemMediaUrl, setShowMediaModal,
   selectMessageExperience, MESSAGE_EXPERIENCES, currentExperience,
   carouselItems, toggleCarouselItem, selectedCarouselRecords,
+  ctaTemplateButtons = [], ctaProviderButtons = [], ctaButtonActions = {},
+  ctaButtonActionOptions = [], ctaButtonActionLabels = {},
+  duplicateCtaButtonLabels = [], selectedCtaCatalogRecords = [], allCatalogRecords = [],
+  getButtonActionKey, updateButtonAction, onDone
 }) {
-  return (
-    <BottomDrawer open={open} onClose={onClose} title="Configure Content" subtitle="Set up media, description & actions">
-      <div className="p-4 space-y-4">
+  const hasTemplateButtonActions = builderMode === 'cta' && ctaTemplateButtons.length > 0;
+  const actionItemOptions = allCatalogRecords.filter((item) => ['PACKAGE', 'PROPERTY'].includes(item.itemType));
 
-        {/* Media Type Toggle */}
-        <div>
-          <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-2">Media Type</p>
-          {builderMode === 'cta' ? (
-            <div className="flex gap-2">
-              {[{ value: 'NONE', label: 'Text', icon: Type }, { value: 'IMAGE', label: 'Image', icon: Image }, { value: 'VIDEO', label: 'Video', icon: Video }].map(opt => {
-                const Icon = opt.icon;
-                const sel = formData.mediaType === opt.value;
-                return (
-                  <button key={opt.value} type="button" onClick={() => setFormData(p => ({ ...p, format: 'SECTION_CTA', mediaType: opt.value }))}
-                    className={`flex-1 flex items-center justify-center gap-1.5 rounded-xl py-2.5 text-xs font-bold transition ${sel ? 'bg-slate-900 text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
-                    <Icon className="h-3.5 w-3.5" />{opt.label}
-                  </button>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="flex gap-2">
-              {MESSAGE_EXPERIENCES.filter(e => e.group === 'carousel').map(exp => {
-                const Icon = exp.icon;
-                const sel = currentExperience.id === exp.id;
-                return (
-                  <button key={exp.id} type="button" onClick={() => selectMessageExperience(exp)}
-                    className={`flex-1 flex items-center justify-center gap-1.5 rounded-xl py-2.5 text-xs font-bold transition ${sel ? 'bg-slate-900 text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
-                    <Icon className="h-3.5 w-3.5" />{exp.mediaMode}
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </div>
+  return (
+    <div className="flex h-full flex-col">
+      <div className="p-4 space-y-4 flex-1 overflow-y-auto">
+
+        {/* Media Type Toggle removed because it is handled in the main UI */}
 
         {/* Featured Media (CTA Image mode) */}
         {builderMode === 'cta' && ctaNeedsFeaturedMedia && (
@@ -139,32 +130,120 @@ export function ConfigDrawer({
           </div>
         )}
 
-        {/* CTA Action Toggles */}
+        {/* CTA Action Configuration */}
         {builderMode === 'cta' && (
           <div>
             <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-2">Action Buttons</p>
-            <div className="rounded-2xl border border-slate-200 bg-white divide-y divide-slate-100">
-              {(formData.campaignSections || []).map(section => {
-                const Icon = section.itemType === 'PROPERTY' ? Home : section.itemType === 'CUSTOM_TRIP' ? UserPlus : Package;
-                const count = section.itemType === 'PACKAGE' ? selectedPackageRecords.length : section.itemType === 'PROPERTY' ? selectedPropertyRecords.length : 0;
-                return (
-                  <button key={section.key} type="button"
-                    onClick={() => updateSection(section.key, { enabled: !section.enabled, selectionMode: 'MANUAL', selectedItemIds: section.itemType === 'CUSTOM_TRIP' ? [] : section.selectedItemIds || [] })}
-                    className="flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors hover:bg-slate-50/60">
-                    <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition ${section.enabled ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-400'}`}>
-                      <Icon className="h-4 w-4" />
+            {hasTemplateButtonActions ? (
+              <div className="space-y-2">
+                {duplicateCtaButtonLabels.length > 0 && (
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
+                    Duplicate quick-reply labels found. WhatsApp sends back button text, so make each quick reply unique before continuing.
+                  </div>
+                )}
+                <div className="rounded-2xl border border-slate-200 bg-white divide-y divide-slate-100">
+                  {ctaTemplateButtons.map((button, index) => {
+                    const key = getButtonActionKey?.(button, index) || `${button.text || button.title}-${index}`;
+                    const current = ctaButtonActions[key] || {};
+                    const action = current.action || '';
+                    const allowedTypes = ctaButtonActionOptions.find((option) => option.value === action)?.itemTypes || [];
+                    const itemOptions = actionItemOptions.filter((item) => allowedTypes.includes(item.itemType));
+                    const needsItemPicker = ['VIEW_DETAILS', 'SEND_ITINERARY', 'CHECK_AVAILABILITY', 'TALK_TO_AGENT'].includes(action);
+                    const hasSelectedPool = selectedCtaCatalogRecords.length > 0;
+                    const selectedItemLabel = current.itemId
+                      ? itemOptions.find((item) => item.itemType === current.itemType && item.id === current.itemId)?.name
+                      : null;
+
+                    return (
+                      <div key={key} className="space-y-3 px-4 py-3.5">
+                        <div className="flex items-start gap-3">
+                          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-500">
+                            <Send className="h-4 w-4" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-semibold text-slate-900">{button.text || button.title || `Button ${index + 1}`}</p>
+                            <p className="text-xs text-slate-400">{ctaButtonActionLabels[action] || 'Choose what this campaign should send next'}</p>
+                          </div>
+                        </div>
+                        <select
+                          value={action}
+                          onChange={(event) => updateButtonAction?.(button, index, {
+                            action: event.target.value,
+                            itemType: null,
+                            itemId: null,
+                          })}
+                          className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none transition focus:border-slate-400"
+                        >
+                          <option value="">Choose campaign action</option>
+                          {ctaButtonActionOptions.map((option) => (
+                            <option key={option.value} value={option.value}>{option.label}</option>
+                          ))}
+                        </select>
+                        {needsItemPicker && (
+                          <select
+                            value={current.itemId ? `${current.itemType}:${current.itemId}` : ''}
+                            onChange={(event) => {
+                              const [itemType, itemId] = String(event.target.value || '').split(':');
+                              updateButtonAction?.(button, index, {
+                                itemType: itemType || null,
+                                itemId: itemId || null,
+                              });
+                            }}
+                            className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none transition focus:border-slate-400"
+                          >
+                            <option value="">{hasSelectedPool ? 'Auto: show matching selected items' : 'Select an item or choose items below'}</option>
+                            {itemOptions.map((item) => (
+                              <option key={`${item.itemType}:${item.id}`} value={`${item.itemType}:${item.id}`}>
+                                {item.itemType === 'PROPERTY' ? 'Property' : 'Package'}: {item.name}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                        {needsItemPicker && selectedItemLabel && (
+                          <p className="text-[11px] font-semibold text-emerald-600">Configured for {selectedItemLabel}</p>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+                {ctaProviderButtons.length > 0 && (
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                    <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Provider Buttons</p>
+                    <div className="mt-2 space-y-1.5">
+                      {ctaProviderButtons.map((button, index) => (
+                        <div key={`${button.text || button.title}-${index}`} className="flex items-center justify-between gap-2 text-xs">
+                          <span className="font-semibold text-slate-700">{button.text || button.title || `Button ${index + 1}`}</span>
+                          <span className="text-slate-400">{String(button.type || '').replace('_', ' ')}</span>
+                        </div>
+                      ))}
                     </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-semibold text-slate-900">{section.label}</p>
-                      <p className="text-xs text-slate-400">{section.itemType === 'CUSTOM_TRIP' ? 'Opens custom-trip flow' : `${count} selected`}</p>
-                    </div>
-                    <div className={`relative h-6 w-11 shrink-0 rounded-full transition-colors duration-200 ${section.enabled ? 'bg-slate-900' : 'bg-slate-200'}`}>
-                      <div className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${section.enabled ? 'translate-x-[22px]' : 'translate-x-0.5'}`} />
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-slate-200 bg-white divide-y divide-slate-100">
+                {(formData.campaignSections || []).map(section => {
+                  const Icon = section.itemType === 'PROPERTY' ? Home : section.itemType === 'CUSTOM_TRIP' ? UserPlus : Package;
+                  const count = section.itemType === 'PACKAGE' ? selectedPackageRecords.length : section.itemType === 'PROPERTY' ? selectedPropertyRecords.length : 0;
+                  return (
+                    <button key={section.key} type="button"
+                      onClick={() => updateSection(section.key, { enabled: !section.enabled, selectionMode: 'MANUAL', selectedItemIds: section.itemType === 'CUSTOM_TRIP' ? [] : section.selectedItemIds || [] })}
+                      className="flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors hover:bg-slate-50/60">
+                      <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition ${section.enabled ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-400'}`}>
+                        <Icon className="h-4 w-4" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-semibold text-slate-900">{section.label}</p>
+                        <p className="text-xs text-slate-400">{section.itemType === 'CUSTOM_TRIP' ? 'Opens custom-trip flow' : `${count} selected`}</p>
+                      </div>
+                      <div className={`relative h-6 w-11 shrink-0 rounded-full transition-colors duration-200 ${section.enabled ? 'bg-slate-900' : 'bg-slate-200'}`}>
+                        <div className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${section.enabled ? 'translate-x-[22px]' : 'translate-x-0.5'}`} />
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
 
@@ -172,7 +251,7 @@ export function ConfigDrawer({
         {builderMode === 'cta' && packageSection.enabled && (
           <div className="rounded-2xl border border-slate-200 bg-white p-4">
             <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-3">Select Packages <span className="text-slate-300 normal-case">({selectedPackageRecords.length}/{activePackages.length})</span></p>
-            <div className="space-y-2 max-h-52 overflow-y-auto">
+            <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
               {activePackages.map(pkg => {
                 const sel = (packageSection.selectedItemIds || []).includes(pkg.id);
                 return (
@@ -197,7 +276,7 @@ export function ConfigDrawer({
         {builderMode === 'cta' && propertySection.enabled && (
           <div className="rounded-2xl border border-slate-200 bg-white p-4">
             <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-3">Select Properties <span className="text-slate-300 normal-case">({selectedPropertyRecords.length}/{activeProperties.length})</span></p>
-            <div className="space-y-2 max-h-52 overflow-y-auto">
+            <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
               {activeProperties.map(prop => {
                 const sel = (propertySection.selectedItemIds || []).includes(prop.id);
                 return (
@@ -222,7 +301,7 @@ export function ConfigDrawer({
         {builderMode === 'carousel' && (
           <div>
             <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-2">Carousel Items <span className="text-slate-300 normal-case">({selectedCarouselRecords.length} selected, 2-10 required)</span></p>
-            <div className="space-y-2 max-h-64 overflow-y-auto">
+            <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
               {[...activePackages.map(p => ({ ...p, _type: 'PACKAGE' })), ...activeProperties.map(p => ({ ...p, _type: 'PROPERTY' }))].map(item => {
                 const sel = carouselItems.some(ci => ci.itemType === item._type && ci.itemId === item.id);
                 const Icon = item._type === 'PROPERTY' ? Home : Package;
@@ -252,11 +331,54 @@ export function ConfigDrawer({
           </div>
         )}
 
-        {/* Done button */}
-        <button type="button" onClick={onClose} className="w-full rounded-xl bg-slate-900 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-slate-800 active:scale-[0.98]">
-          Done
-        </button>
+        {/* Done button (only visible if onDone is provided, i.e. in drawer mode) */}
+        {onDone && (
+          <div className="pt-2 shrink-0">
+            <button type="button" onClick={onDone} className="w-full rounded-xl bg-slate-900 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-slate-800 active:scale-[0.98]">
+              Done
+            </button>
+          </div>
+        )}
       </div>
+    </div>
+  );
+}
+
+/* ── Config Drawer (description, media, CTA actions) ── */
+export function ConfigDrawer({
+  open, onClose, builderMode, formData, setFormData,
+  selectedTemplate, activeSections, packageSection, propertySection, customTripSection,
+  activePackages, activeProperties, selectedPackageRecords, selectedPropertyRecords,
+  updateSection, toggleSectionItem, ctaNeedsFeaturedMedia, featuredCtaRecord,
+  getCatalogItemMediaUrl, setShowMediaModal,
+  selectMessageExperience, MESSAGE_EXPERIENCES, currentExperience,
+  carouselItems, toggleCarouselItem, selectedCarouselRecords,
+  ctaTemplateButtons = [], ctaProviderButtons = [], ctaButtonActions = {},
+  ctaButtonActionOptions = [], ctaButtonActionLabels = {},
+  duplicateCtaButtonLabels = [], selectedCtaCatalogRecords = [], allCatalogRecords = [],
+  getButtonActionKey, updateButtonAction,
+}) {
+  return (
+    <BottomDrawer open={open} onClose={onClose} title="Configure Content" subtitle="Set up media, description & actions">
+      <ConfigContent 
+        builderMode={builderMode} formData={formData} setFormData={setFormData}
+        selectedTemplate={selectedTemplate} activeSections={activeSections} 
+        packageSection={packageSection} propertySection={propertySection} customTripSection={customTripSection}
+        activePackages={activePackages} activeProperties={activeProperties} 
+        selectedPackageRecords={selectedPackageRecords} selectedPropertyRecords={selectedPropertyRecords}
+        updateSection={updateSection} toggleSectionItem={toggleSectionItem} 
+        ctaNeedsFeaturedMedia={ctaNeedsFeaturedMedia} featuredCtaRecord={featuredCtaRecord}
+        getCatalogItemMediaUrl={getCatalogItemMediaUrl} setShowMediaModal={setShowMediaModal}
+        selectMessageExperience={selectMessageExperience} MESSAGE_EXPERIENCES={MESSAGE_EXPERIENCES} 
+        currentExperience={currentExperience} carouselItems={carouselItems} 
+        toggleCarouselItem={toggleCarouselItem} selectedCarouselRecords={selectedCarouselRecords}
+        ctaTemplateButtons={ctaTemplateButtons} ctaProviderButtons={ctaProviderButtons}
+        ctaButtonActions={ctaButtonActions} ctaButtonActionOptions={ctaButtonActionOptions}
+        ctaButtonActionLabels={ctaButtonActionLabels} duplicateCtaButtonLabels={duplicateCtaButtonLabels}
+        selectedCtaCatalogRecords={selectedCtaCatalogRecords} allCatalogRecords={allCatalogRecords}
+        getButtonActionKey={getButtonActionKey} updateButtonAction={updateButtonAction}
+        onDone={onClose}
+      />
     </BottomDrawer>
   );
 }

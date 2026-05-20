@@ -5,6 +5,15 @@ const { Campaign, CampaignRecipient, Customer, Lead, Booking, MessageTemplate, P
 
 const CAMPAIGN_FORMATS = new Set(['STANDARD', 'SECTION_CTA', 'ITEM_CAROUSEL']);
 const ITEM_TYPES = new Set(['PACKAGE', 'PROPERTY', 'CUSTOM_TRIP']);
+const CTA_BUTTON_ACTIONS = new Set([
+  'VIEW_PACKAGES',
+  'VIEW_PROPERTIES',
+  'CUSTOM_TRIP',
+  'VIEW_DETAILS',
+  'SEND_ITINERARY',
+  'CHECK_AVAILABILITY',
+  'TALK_TO_AGENT',
+]);
 
 function normalizeArray(value) {
   return Array.isArray(value) ? value.filter(Boolean) : [];
@@ -70,11 +79,31 @@ function normalizeCtaConfig(data = {}) {
   const featuredItemType = ITEM_TYPES.has(String(source.featuredItemType || '').toUpperCase())
     ? String(source.featuredItemType).toUpperCase()
     : null;
+  const buttonActions = source.buttonActions && typeof source.buttonActions === 'object' && !Array.isArray(source.buttonActions)
+    ? Object.entries(source.buttonActions).reduce((acc, [key, value = {}]) => {
+      const action = String(value.action || '').toUpperCase();
+      if (!CTA_BUTTON_ACTIONS.has(action)) return acc;
+      const itemType = ITEM_TYPES.has(String(value.itemType || '').toUpperCase())
+        ? String(value.itemType).toUpperCase()
+        : null;
+      acc[String(key)] = {
+        ...value,
+        buttonKey: String(value.buttonKey || key),
+        buttonText: String(value.buttonText || '').trim(),
+        buttonIndex: Number.isFinite(Number(value.buttonIndex)) ? Number(value.buttonIndex) : null,
+        action,
+        itemType,
+        itemId: value.itemId || null,
+      };
+      return acc;
+    }, {})
+    : {};
 
   return {
     ...source,
     featuredItemType,
     featuredItemId: source.featuredItemId || null,
+    buttonActions,
   };
 }
 
@@ -87,18 +116,48 @@ function validateCampaignPayload(payload = {}) {
 
   if (format === 'SECTION_CTA') {
     const sections = normalizeArray(payload.campaignSections).filter((section) => section.enabled !== false);
-    if (sections.length === 0) {
-      throw new Error('CTA campaigns need at least one enabled action');
-    }
+    const buttonActions = Object.values(payload.ctaConfig?.buttonActions || {});
+    const hasButtonActions = buttonActions.length > 0;
 
-    const catalogSections = sections.filter((section) => ['PACKAGE', 'PROPERTY'].includes(String(section.itemType || '').toUpperCase()));
-    if (catalogSections.length === 0) {
-      throw new Error('CTA campaigns must include at least one selected package or property');
-    }
+    if (hasButtonActions) {
+      const packageSection = sections.find((section) => String(section.itemType || '').toUpperCase() === 'PACKAGE');
+      const propertySection = sections.find((section) => String(section.itemType || '').toUpperCase() === 'PROPERTY');
+      const packageIds = normalizeArray(packageSection?.selectedItemIds);
+      const propertyIds = normalizeArray(propertySection?.selectedItemIds);
 
-    const missingSelection = catalogSections.find((section) => normalizeArray(section.selectedItemIds).length === 0);
-    if (missingSelection) {
-      throw new Error(`${missingSelection.label || 'CTA action'} needs at least one selected item`);
+      const missingAction = buttonActions.find((entry) => !CTA_BUTTON_ACTIONS.has(String(entry.action || '').toUpperCase()));
+      if (missingAction) {
+        throw new Error(`${missingAction.buttonText || 'CTA button'} needs a valid action`);
+      }
+
+      const missingSelection = buttonActions.find((entry) => {
+        const action = String(entry.action || '').toUpperCase();
+        const itemType = String(entry.itemType || '').toUpperCase();
+        if (action === 'VIEW_PACKAGES') return packageIds.length === 0;
+        if (action === 'VIEW_PROPERTIES') return propertyIds.length === 0;
+        if (action === 'VIEW_DETAILS') return !entry.itemId && packageIds.length + propertyIds.length === 0;
+        if (action === 'SEND_ITINERARY') return !(itemType === 'PACKAGE' && entry.itemId) && packageIds.length === 0;
+        if (action === 'CHECK_AVAILABILITY') return !(itemType === 'PACKAGE' && entry.itemId) && packageIds.length === 0;
+        return false;
+      });
+
+      if (missingSelection) {
+        throw new Error(`${missingSelection.buttonText || 'CTA button'} needs selected campaign items`);
+      }
+    } else {
+      if (sections.length === 0) {
+        throw new Error('CTA campaigns need at least one enabled action');
+      }
+
+      const catalogSections = sections.filter((section) => ['PACKAGE', 'PROPERTY'].includes(String(section.itemType || '').toUpperCase()));
+      if (catalogSections.length === 0) {
+        throw new Error('CTA campaigns must include at least one selected package or property');
+      }
+
+      const missingSelection = catalogSections.find((section) => normalizeArray(section.selectedItemIds).length === 0);
+      if (missingSelection) {
+        throw new Error(`${missingSelection.label || 'CTA action'} needs at least one selected item`);
+      }
     }
   }
 
@@ -525,6 +584,7 @@ async function sendCampaign(id, agencyId) {
     format: campaign.format,
     campaignSections: campaign.campaignSections,
     carouselConfig: campaign.carouselConfig,
+    ctaConfig: campaign.ctaConfig,
   });
 
   const audience = await buildAudience(agencyId, campaign.audienceFilter);

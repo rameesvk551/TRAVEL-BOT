@@ -1,32 +1,45 @@
-// FILE: /backend/src/routes/ads.ts
-// DEPS: express, zod
-
-import { Router } from 'express';
-import { z } from 'zod';
-import * as adsController from '../controllers/adsController';
-import authenticate from '../middleware/authenticate';
-import requirePermission from '../middleware/requirePermission';
-import validateBody from '../middleware/validateBody';
-import { PERMISSIONS } from '../constants/permissions';
+const { Router } = require('express');
+const { z } = require('zod');
+const adsController = require('../controllers/adsController');
+const authenticate = require('../middleware/authenticate');
+const requirePermission = require('../middleware/requirePermission');
+const validateBody = require('../middleware/validateBody');
+const { PERMISSIONS } = require('../constants/permissions');
 
 const router = Router();
 
-const createAdSchema = z.object({
-  headline: z.string().min(1, 'Headline required'),
-  primaryText: z.string().min(1, 'Primary text required'),
-  budget: z.number().min(100, 'Minimum budget is 100'),
-  mediaUrl: z.string().url('Must be a valid media URL').optional(),
-});
+const backfillSchema = z.object({
+  since: z.string().optional(),
+  until: z.string().optional(),
+  limit: z.number().int().min(1).max(500).optional(),
+}).passthrough();
 
-/**
- * POST /api/ads - Proxies ad creation request to Marketing OS Meta layer
- */
+const connectSchema = z.object({
+  returnUrl: z.string().url().optional(),
+  webhookUrl: z.string().url().optional(),
+}).passthrough();
+
+router.get('/webhook/leadgen', adsController.verifyLeadgenWebhook);
+router.post('/webhook/leadgen', adsController.handleLeadgenWebhook);
+
 router.post(
-  '/',
+  '/connect',
   authenticate,
-  requirePermission(PERMISSIONS.AGENCY_MANAGE), 
-  validateBody(createAdSchema),
-  adsController.createClickToWhatsAppAd
+  requirePermission(PERMISSIONS.AGENCY_MANAGE),
+  validateBody(connectSchema),
+  adsController.createConnectSession
+);
+router.get('/accounts', authenticate, requirePermission(PERMISSIONS.AGENCY_VIEW), adsController.listAccounts);
+router.get('/campaigns', authenticate, requirePermission(PERMISSIONS.AGENCY_VIEW), adsController.listCampaigns);
+router.get('/campaigns/:campaignId', authenticate, requirePermission(PERMISSIONS.AGENCY_VIEW), adsController.getCampaign);
+router.get('/campaigns/:campaignId/insights', authenticate, requirePermission(PERMISSIONS.AGENCY_VIEW), adsController.getCampaignInsights);
+router.get('/forms', authenticate, requirePermission(PERMISSIONS.AGENCY_VIEW), adsController.listForms);
+router.post(
+  '/forms/:formId/backfill',
+  authenticate,
+  requirePermission(PERMISSIONS.AGENCY_MANAGE),
+  validateBody(backfillSchema),
+  adsController.backfillForm
 );
 
-export default router;
+module.exports = router;

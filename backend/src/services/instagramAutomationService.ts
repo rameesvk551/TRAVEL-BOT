@@ -1,8 +1,11 @@
 // FILE: /backend/src/services/instagramAutomationService.js
 
+const crypto = require('crypto');
 const { Op } = require('sequelize');
 const {
   Agency,
+  BotSession,
+  Customer,
   InstagramAutomation,
   InstagramAutomationLog,
 } = require('../models');
@@ -66,6 +69,18 @@ function getCommenter(event = {}) {
   };
 }
 
+function buildInstagramCustomerIdentifier(managedAccountId, senderId) {
+  const simple = `ig_${String(senderId || '').trim()}`;
+  if (simple.length > 3 && simple.length <= 20) return simple;
+
+  const digest = crypto
+    .createHash('sha1')
+    .update(`${managedAccountId || 'unknown'}:${senderId || 'unknown'}`)
+    .digest('hex')
+    .slice(0, 17);
+  return `ig_${digest}`;
+}
+
 function findMatch(automation, commentText) {
   const matchType = automation.matchType || 'CONTAINS';
   const text = String(commentText || '').trim();
@@ -92,6 +107,55 @@ function findMatch(automation, commentText) {
   return { matched: false, keyword: null };
 }
 
+function uniqueList(items) {
+  const seen = new Set();
+  return cleanList(items).filter((item) => {
+    const key = item.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function actionDefaults(actionType) {
+  switch (actionType) {
+    case 'PROPERTY_FLOW':
+      return {
+        intent: 'PROPERTY',
+        step: 'IG_PACKAGE_INTENT',
+        quickReplies: ['Show Properties', 'Talk to Agent', 'Show Packages'],
+        leadInterest: 'PROPERTY',
+      };
+    case 'BROCHURE_LINK':
+      return {
+        intent: 'BROCHURE_LINK',
+        step: 'IG_PACKAGE_INTENT',
+        quickReplies: ['Send Brochure', 'Show Packages', 'Talk to Agent'],
+        leadInterest: 'BROCHURE_LINK',
+      };
+    case 'AGENT_HANDOFF':
+      return {
+        intent: 'AGENT_HANDOFF',
+        step: 'IG_PACKAGE_INTENT',
+        quickReplies: ['Talk to Agent', 'Share Phone', 'Show Packages'],
+        leadInterest: 'AGENT_HANDOFF',
+      };
+    case 'PACKAGE_FLOW':
+    default:
+      return {
+        intent: 'PACKAGES',
+        step: 'IG_PACKAGE_INTENT',
+        quickReplies: ['Show Packages', 'Custom Trip', 'Talk to Agent'],
+        leadInterest: 'PACKAGES',
+      };
+  }
+}
+
+function buildActionQuickReplies(automation) {
+  const defaults = actionDefaults(automation.actionType).quickReplies;
+  return uniqueList([...defaults, ...(automation.quickReplies || [])]).slice(0, 4);
+}
+
 function buildPrivateReply(automation, event = {}) {
   const username = getCommenter(event).username || 'there';
   const base = String(automation.privateReplyMessage || '').trim()
@@ -101,12 +165,24 @@ function buildPrivateReply(automation, event = {}) {
     : '';
   const replies = cleanList(automation.quickReplies);
   const replyLine = replies.length ? `\n\n${replies.map((reply) => `[${reply}]`).join(' ')}` : '';
+  const afterLine = automation.followPromptMode === 'AFTER_DETAILS'
+    ? '\n\nFollow our page for more travel deals.'
+    : '';
 
   return base
     .replace(/\{\{\s*username\s*\}\}/gi, username)
     .replace(/\{\{\s*keyword\s*\}\}/gi, event.matchedKeyword || '')
     + followLine
-    + replyLine;
+    + replyLine
+    + afterLine;
+}
+
+function buildPublicReply(automation, event = {}) {
+  const username = getCommenter(event).username || 'there';
+  const base = String(automation.publicReplyMessage || '').trim() || 'Sent you details in DM.';
+  return base
+    .replace(/\{\{\s*username\s*\}\}/gi, username)
+    .replace(/\{\{\s*keyword\s*\}\}/gi, event.matchedKeyword || '');
 }
 
 async function listAutomations(agencyId, filters = {}) {
@@ -211,6 +287,84 @@ async function sendPrivateReplyForComment(agencyId, payload) {
   return marketingOsPartnerService.sendTenantInstagramPrivateReply(tenantToken, payload);
 }
 
+async function sendPublicReplyForComment(agencyId, payload) {
+  const agency = await Agency.findByPk(agencyId);
+  if (!agency?.marketingOsTenantId) {
+    throw Object.assign(new Error('No Instagram provider connected. Go to Settings first.'), {
+      statusCode: 400,
+      code: 'INSTAGRAM_NOT_CONNECTED',
+    });
+  }
+
+  const tenantToken = await marketingOsPartnerService.getTenantToken(agency.marketingOsTenantId);
+  return marketingOsPartnerService.sendTenantInstagramCommentReply(tenantToken, payload);
+}
+
+async function prepareAutomationSession(agencyId, automation, event = {}) {
+  const accountId = String(event.accountId || event.igAccountId || '');
+  const commenter = getCommenter(event);
+  if (!accountId || !commenter.id) return null;
+
+  const customerKey = buildInstagramCustomerIdentifier(accountId, commenter.id);
+  const defaults = actionDefaults(automation.actionType);
+  const [customer] = await Customer.findOrCreate({
+    where: { agencyId, phone: customerKey },
+    defaults: {
+      agencyId,
+      phone: customerKey,
+      source: 'instagram_comment',
+      name: commenter.username || null,
+    },
+  });
+
+  const customerPatch = {};
+  if (customer.source !== 'instagram' && customer.source !== 'instagram_comment') {
+    customerPatch.source = 'instagram_comment';
+  }
+  if (commenter.username && !customer.name) customerPatch.name = commenter.username;
+  if (Object.keys(customerPatch).length) await customer.update(customerPatch);
+
+  const [session] = await BotSession.findOrCreate({
+    where: { customerId: customer.id },
+    defaults: {
+      customerId: customer.id,
+      agencyId,
+      currentStep: defaults.step,
+      collectedData: {},
+      lastActivityAt: new Date(),
+    },
+  });
+
+  const collectedData = {
+    ...(session.collectedData || {}),
+    igFlow: true,
+    igIntent: defaults.intent,
+    instagramAutomation: {
+      id: automation.id,
+      actionType: automation.actionType,
+      commentId: String(event.commentId || event.id || ''),
+      mediaId: String(event.mediaId || ''),
+      accountId,
+      matchedKeyword: event.matchedKeyword || '',
+      linkedPackageIds: cleanList(automation.linkedPackageIds),
+      linkedPropertyIds: cleanList(automation.linkedPropertyIds),
+    },
+    igLead: {
+      ...(session.collectedData?.igLead || {}),
+      interest: defaults.leadInterest,
+    },
+  };
+
+  await session.update({
+    currentStep: defaults.step,
+    collectedData,
+    isHandedOff: automation.actionType === 'AGENT_HANDOFF' ? false : session.isHandedOff,
+    lastActivityAt: new Date(),
+  });
+
+  return { customerId: customer.id, sessionId: session.id, customerKey };
+}
+
 async function processCommentEvent(agencyId, event = {}) {
   const accountId = String(event.accountId || event.igAccountId || '');
   const mediaId = String(event.mediaId || '');
@@ -263,7 +417,13 @@ async function processCommentEvent(agencyId, event = {}) {
     });
   }
 
-  const privateReplyText = buildPrivateReply(automation, { ...event, matchedKeyword: match.keyword });
+  const actionQuickReplies = buildActionQuickReplies(automation);
+  const replyAutomation = {
+    ...(typeof automation.get === 'function' ? automation.get({ plain: true }) : automation),
+    quickReplies: actionQuickReplies,
+  };
+  const eventWithMatch = { ...event, matchedKeyword: match.keyword };
+  const privateReplyText = buildPrivateReply(replyAutomation, eventWithMatch);
   const log = await InstagramAutomationLog.create({
     automationId: automation.id,
     agencyId,
@@ -275,7 +435,11 @@ async function processCommentEvent(agencyId, event = {}) {
     commentText,
     matchedKeyword: match.keyword,
     status: 'MATCHED',
-    metadata: event,
+    metadata: {
+      ...event,
+      actionType: automation.actionType,
+      quickReplies: actionQuickReplies,
+    },
   });
 
   try {
@@ -283,14 +447,58 @@ async function processCommentEvent(agencyId, event = {}) {
       accountId,
       commentId,
       text: privateReplyText,
-      quickReplies: automation.quickReplies || [],
+      quickReplies: actionQuickReplies,
     });
 
+    let preparedSession = null;
+    let sessionError = null;
+    try {
+      preparedSession = await prepareAutomationSession(agencyId, automation, eventWithMatch);
+    } catch (sessionErr) {
+      sessionError = sessionErr.message || 'Automation session preparation failed';
+    }
+
+    let publicReplyMessageId = null;
+    let publicReplySent = false;
+    let publicReplyError = null;
+    if (automation.publicReplyEnabled) {
+      try {
+        const publicResponse = await sendPublicReplyForComment(agencyId, {
+          accountId,
+          commentId,
+          text: buildPublicReply(automation, eventWithMatch),
+        });
+        publicReplySent = true;
+        publicReplyMessageId = publicResponse?.data?.messageId
+          || publicResponse?.data?.id
+          || publicResponse?.messageId
+          || publicResponse?.id
+          || null;
+      } catch (publicErr) {
+        publicReplyError = publicErr.response?.data?.error || publicErr.message || 'Public reply failed';
+      }
+    }
+
     await log.update({
-      status: 'PRIVATE_REPLY_SENT',
-      privateReplyMessageId: response?.data?.messageId || response?.messageId || null,
+      status: 'WAITING_FOR_REPLY',
+      privateReplyMessageId: response?.data?.messageId || response?.data?.id || response?.messageId || response?.id || null,
+      publicReplyMessageId,
+      errorMessage: publicReplyError || sessionError,
+      metadata: {
+        ...(log.metadata || {}),
+        preparedSession,
+        privateReplyText,
+        publicReplyEnabled: Boolean(automation.publicReplyEnabled),
+        sessionError,
+        publicReplyError,
+      },
     });
-    await incrementStats(automation, { matched: 1, privateRepliesSent: 1 });
+    await incrementStats(automation, {
+      matched: 1,
+      privateRepliesSent: 1,
+      publicRepliesSent: publicReplySent ? 1 : 0,
+      errors: publicReplyError || sessionError ? 1 : 0,
+    });
     return log;
   } catch (err) {
     await log.update({
@@ -302,6 +510,77 @@ async function processCommentEvent(agencyId, event = {}) {
   }
 }
 
+async function findLatestConvertibleLog(agencyId, event = {}, statuses = ['WAITING_FOR_REPLY', 'PRIVATE_REPLY_SENT']) {
+  const accountId = String(event.accountId || event.igAccountId || event.recipientId || '');
+  const senderId = String(event.senderId || event.commenterId || event.from?.id || '');
+  if (!accountId || !senderId) return null;
+
+  return InstagramAutomationLog.findOne({
+    where: {
+      agencyId,
+      accountId,
+      commenterId: senderId,
+      status: { [Op.in]: statuses },
+    },
+    order: [['createdAt', 'DESC']],
+  });
+}
+
+async function markDmReplyReceived(agencyId, event = {}) {
+  const log = await findLatestConvertibleLog(agencyId, event);
+  if (!log) return null;
+
+  await log.update({
+    status: 'CONVERTED_TO_DM',
+    metadata: {
+      ...(log.metadata || {}),
+      convertedToDmAt: new Date().toISOString(),
+      dmReply: {
+        messageId: event.messageId || null,
+        text: event.text || '',
+      },
+    },
+  });
+
+  return log;
+}
+
+async function markLeadCreatedFromDm(agencyId, event = {}, lead = null) {
+  const accountId = String(event.accountId || event.igAccountId || event.recipientId || '');
+  const senderId = String(event.senderId || event.commenterId || event.from?.id || '');
+  if (!accountId || !senderId || !lead?.id) return null;
+
+  const logs = await InstagramAutomationLog.findAll({
+    where: {
+      agencyId,
+      accountId,
+      commenterId: senderId,
+      status: { [Op.in]: ['CONVERTED_TO_DM', 'WAITING_FOR_REPLY', 'PRIVATE_REPLY_SENT'] },
+    },
+    order: [['createdAt', 'DESC']],
+    limit: 5,
+  });
+
+  const log = logs.find((item) => !(item.metadata || {}).leadId);
+  if (!log) return null;
+
+  await log.update({
+    status: 'CONVERTED_TO_DM',
+    metadata: {
+      ...(log.metadata || {}),
+      leadId: lead.id,
+      leadCreatedAt: new Date().toISOString(),
+    },
+  });
+
+  const automation = log.automationId
+    ? await InstagramAutomation.findByPk(log.automationId)
+    : null;
+  if (automation) await incrementStats(automation, { leadsCreated: 1 });
+
+  return log;
+}
+
 module.exports = {
   listAutomations,
   createAutomation,
@@ -309,6 +588,11 @@ module.exports = {
   deleteAutomation,
   listLogs,
   processCommentEvent,
+  markDmReplyReceived,
+  markLeadCreatedFromDm,
   sendPrivateReplyForComment,
+  sendPublicReplyForComment,
   buildPrivateReply,
+  buildPublicReply,
+  buildActionQuickReplies,
 };

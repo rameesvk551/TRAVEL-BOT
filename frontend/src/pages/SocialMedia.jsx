@@ -27,6 +27,8 @@ import {
 } from '@heroicons/react/24/outline';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import * as igApi from '../api/instagramApi';
+import { packagesApi } from '../api/packagesApi';
+import { propertiesApi } from '../api/propertiesApi';
 import { timeAgo } from '../utils/formatters';
 
 const TABS = [
@@ -38,6 +40,13 @@ const TABS = [
 ];
 
 const DEFAULT_PRIVATE_REPLY = 'Hi {{username}}, thanks for commenting. I can send the details here.';
+const DEFAULT_PUBLIC_REPLY = 'Sent you details in DM.';
+const ACTION_QUICK_REPLY_PRESETS = {
+  PACKAGE_FLOW: 'Show Packages, Custom Trip, Talk to Agent',
+  PROPERTY_FLOW: 'Show Properties, Talk to Agent, Show Packages',
+  BROCHURE_LINK: 'Send Brochure, Show Packages, Talk to Agent',
+  AGENT_HANDOFF: 'Talk to Agent, Share Phone, Show Packages',
+};
 
 function asArray(value) {
   if (Array.isArray(value)) return value;
@@ -47,7 +56,10 @@ function asArray(value) {
 }
 
 function displayName(item) {
-  return item?.from?.username
+  return item?.customerName
+    || item?.name
+    || item?.fromUsername
+    || item?.from?.username
     || item?.from?.name
     || item?.profile?.username
     || item?.commenter?.username
@@ -57,12 +69,135 @@ function displayName(item) {
     || 'Instagram user';
 }
 
+function providerCommentId(comment) {
+  return comment?.igCommentId || comment?.commentId || comment?.id;
+}
+
 function messageText(item) {
   return item?.text || item?.message || item?.content || item?.commentText || item?.caption || '';
 }
 
 function itemTime(item) {
   return item?.timestamp || item?.createdAt || item?.updatedAt || item?.time || null;
+}
+
+function cleanTextValue(value) {
+  const text = String(value || '').trim();
+  return text && text !== '-' ? text : '';
+}
+
+function looksLikeBudget(value) {
+  const text = cleanTextValue(value).toLowerCase();
+  if (!text) return false;
+  return /₹|rs|inr|k|lakh|budget|under|above|\d/.test(text) && !['hi', 'hello', 'hey', 'hii'].includes(text);
+}
+
+function conversationPreview(thread) {
+  const text = cleanTextValue(messageText(thread));
+  if (text) return text;
+  if (thread?.collectedPhone || thread?.phone) return `Phone captured: ${thread.collectedPhone || thread.phone}`;
+  return 'Instagram DM conversation';
+}
+
+function messageBubbleText(reply) {
+  const text = cleanTextValue(messageText(reply));
+  if (text) return text;
+  if (Array.isArray(reply?.attachments) && reply.attachments.length) return 'Media or action received';
+  return 'Action received';
+}
+
+function getThreadParticipantId(item, account) {
+  if (!item) return '';
+  if (Array.isArray(item.replies)) {
+    return String(item.senderId || item.from?.id || item.id || '');
+  }
+
+  const senderId = String(item.senderId || item.from?.id || '');
+  const recipientId = String(item.recipientId || item.to?.id || '');
+  const accountIds = new Set([
+    String(account?.id || ''),
+    String(account?.igUserId || ''),
+    String(account?.instagramUserId || ''),
+  ].filter(Boolean));
+
+  if (item.isEcho || item.direction === 'OUT' || senderId === 'business' || accountIds.has(senderId)) {
+    return recipientId;
+  }
+
+  return senderId || recipientId || String(item.id || '');
+}
+
+function normalizeMessageReply(item, participantId, account) {
+  const isOut = Boolean(item?.isEcho || item?.direction === 'OUT' || item?.senderId === 'business');
+  return {
+    ...item,
+    text: messageText(item),
+    message: messageText(item),
+    content: messageText(item),
+    direction: isOut ? 'OUT' : 'IN',
+    from: { id: isOut ? String(account?.id || '') : participantId },
+  };
+}
+
+function normalizeInboxThreads(rows, account) {
+  const grouped = new Map();
+
+  for (const item of rows) {
+    const participantId = getThreadParticipantId(item, account);
+    if (!participantId || participantId === 'business') continue;
+
+    const existing = grouped.get(participantId) || {
+      ...item,
+      id: participantId,
+      senderId: participantId,
+      source: item.source || 'DM',
+      replies: [],
+      text: '',
+      message: '',
+      content: '',
+    };
+
+    const replies = Array.isArray(item.replies) && item.replies.length
+      ? item.replies.map((reply) => normalizeMessageReply(reply, participantId, account))
+      : [normalizeMessageReply(item, participantId, account)];
+
+    existing.replies = [...existing.replies, ...replies];
+
+    const newest = replies.reduce((latest, reply) => {
+      const latestTime = new Date(itemTime(latest) || 0).getTime();
+      const replyTime = new Date(itemTime(reply) || 0).getTime();
+      return replyTime >= latestTime ? reply : latest;
+    }, existing);
+
+    const keep = (key) => existing[key] || item[key] || newest[key];
+    existing.text = messageText(newest) || messageText(item) || existing.text;
+    existing.message = existing.text;
+    existing.content = existing.text;
+    existing.timestamp = itemTime(newest) || itemTime(item) || existing.timestamp;
+    existing.updatedAt = item.updatedAt || existing.updatedAt;
+    existing.customerName = keep('customerName');
+    existing.name = keep('name');
+    existing.phone = keep('phone');
+    existing.collectedPhone = keep('collectedPhone');
+    existing.destination = keep('destination');
+    existing.travelDates = keep('travelDates');
+    existing.travellers = keep('travellers');
+    existing.budget = looksLikeBudget(keep('budget')) ? keep('budget') : '';
+    existing.budgetPerPerson = keep('budgetPerPerson');
+    existing.lead = existing.lead || item.lead;
+    existing.leadStatus = keep('leadStatus');
+
+    grouped.set(participantId, existing);
+  }
+
+  return Array.from(grouped.values())
+    .map((thread) => ({
+      ...thread,
+      replies: thread.replies
+        .filter((reply, index, list) => list.findIndex((candidate) => String(candidate.id) === String(reply.id)) === index)
+        .sort((a, b) => new Date(itemTime(a) || 0) - new Date(itemTime(b) || 0)),
+    }))
+    .sort((a, b) => new Date(itemTime(b) || 0) - new Date(itemTime(a) || 0));
 }
 
 function statusTone(status) {
@@ -288,13 +423,13 @@ function InboxTab({ account }) {
   });
 
   const threads = useMemo(() => {
-    const rows = asArray(messagesQuery.data?.data);
+    const rows = normalizeInboxThreads(asArray(messagesQuery.data?.data), account);
     if (filter === 'unread') return rows.filter((item) => item.unread || item.isUnread);
     if (filter === 'qualified') return rows.filter((item) => item.lead || item.leadStatus || item.collectedPhone);
     if (filter === 'needs_phone') return rows.filter((item) => !item.collectedPhone && !item.phone);
     if (filter === 'human') return rows.filter((item) => item.isHandedOff || item.assignedAgent);
     return rows;
-  }, [filter, messagesQuery.data]);
+  }, [account, filter, messagesQuery.data]);
 
   const selectedThread = threads.find((item) => String(item.id) === String(selectedThreadId)) || threads[0] || null;
 
@@ -353,19 +488,19 @@ function InboxTab({ account }) {
                   key={thread.id}
                   type="button"
                   onClick={() => setSelectedThreadId(thread.id)}
-                  className={`w-full rounded-[var(--radius-md)] border p-3 text-left transition ${
-                    active ? 'border-neutral-900 bg-neutral-900 text-white' : 'border-transparent bg-white hover:border-neutral-200'
+                  className={`w-full rounded-[var(--radius-md)] border px-3 py-3 text-left transition ${
+                    active ? 'border-neutral-900 bg-neutral-900 text-white shadow-sm' : 'border-neutral-100 bg-white hover:border-neutral-200 hover:bg-neutral-50'
                   }`}
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                       <p className={`truncate text-sm font-bold ${active ? 'text-white' : 'text-neutral-900'}`}>{displayName(thread)}</p>
-                      <p className={`mt-1 line-clamp-2 text-xs ${active ? 'text-neutral-200' : 'text-neutral-500'}`}>{messageText(thread) || 'Media or action received'}</p>
+                      <p className={`mt-1 truncate text-xs ${active ? 'text-neutral-200' : 'text-neutral-500'}`}>{conversationPreview(thread)}</p>
                     </div>
                     {itemTime(thread) ? <span className={`shrink-0 text-[10px] ${active ? 'text-neutral-300' : 'text-neutral-400'}`}>{timeAgo(itemTime(thread))}</span> : null}
                   </div>
                   <div className="mt-3 flex flex-wrap gap-1.5">
-                    <span className={`badge ${active ? 'bg-white/15 text-white' : 'bg-indigo-50 text-indigo-700'}`}>{thread.source || 'DM'}</span>
+                    <span className={`badge ${active ? 'bg-white/15 text-white' : 'bg-indigo-50 text-indigo-700'}`}>{thread.source || 'Instagram DM'}</span>
                     {thread.collectedPhone || thread.phone ? <span className={`badge ${active ? 'bg-white/15 text-white' : 'bg-emerald-50 text-emerald-700'}`}>Phone</span> : null}
                     {thread.isHandedOff ? <span className={`badge ${active ? 'bg-white/15 text-white' : 'bg-amber-50 text-amber-700'}`}>Human</span> : null}
                   </div>
@@ -399,21 +534,23 @@ function InboxTab({ account }) {
               </div>
             ) : null}
 
-            <div className="flex-1 overflow-y-auto p-5">
-              <div className="space-y-4">
-                <div className="max-w-[76%] rounded-[20px] rounded-tl-[6px] bg-white px-4 py-3 text-sm text-neutral-800 shadow-sm">
-                  {messageText(selectedThread) || 'Media or quick reply received.'}
-                </div>
+            <div className="flex-1 overflow-y-auto bg-neutral-50 p-5">
+              <div className="space-y-3">
                 {asArray(selectedThread.replies).map((reply, index) => (
                   <div
                     key={reply.id || index}
-                    className={`max-w-[76%] rounded-[20px] px-4 py-3 text-sm shadow-sm ${
+                    className={`w-fit max-w-[68%] rounded-[18px] px-4 py-2.5 text-sm leading-relaxed shadow-sm ${
                       reply.from?.id === account.id || reply.direction === 'OUT'
-                        ? 'ml-auto rounded-tr-[6px] bg-neutral-900 text-white'
-                        : 'rounded-tl-[6px] bg-white text-neutral-800'
+                        ? 'ml-auto rounded-tr-[5px] bg-neutral-900 text-white'
+                        : 'rounded-tl-[5px] border border-neutral-100 bg-white text-neutral-800'
                     }`}
                   >
-                    {messageText(reply)}
+                    <p className="whitespace-pre-wrap break-words">{messageBubbleText(reply)}</p>
+                    {itemTime(reply) ? (
+                      <p className={`mt-1 text-[10px] ${reply.direction === 'OUT' ? 'text-white/55' : 'text-neutral-400'}`}>
+                        {timeAgo(itemTime(reply))}
+                      </p>
+                    ) : null}
                   </div>
                 ))}
                 <div className="mx-auto w-fit rounded-full bg-neutral-100 px-3 py-1 text-[11px] font-semibold text-neutral-500">
@@ -470,7 +607,7 @@ function LeadIntelligencePanel({ thread }) {
     ['Destination', thread.destination || thread.location || 'Not captured'],
     ['Dates', thread.travelDates || thread.dates || 'Not captured'],
     ['Travellers', thread.travellers || thread.guests || 'Not captured'],
-    ['Budget', thread.budget || thread.budgetPerPerson || 'Not captured'],
+    ['Budget', looksLikeBudget(thread.budget) ? thread.budget : (thread.budgetPerPerson || 'Not captured')],
   ];
 
   return (
@@ -614,7 +751,7 @@ function CommentsTab({ account }) {
                 </div>
                 <button
                   type="button"
-                  onClick={() => deleteMutation.mutate(selectedComment.id)}
+                  onClick={() => deleteMutation.mutate(providerCommentId(selectedComment))}
                   disabled={deleteMutation.isPending}
                   className="rounded-[var(--radius-sm)] p-2 text-rose-500 transition hover:bg-rose-50"
                   title="Delete or hide comment"
@@ -637,7 +774,7 @@ function CommentsTab({ account }) {
                 />
                 <button
                   type="button"
-                  onClick={() => replyMutation.mutate({ commentId: selectedComment.id, text: replyText.trim() })}
+                  onClick={() => replyMutation.mutate({ commentId: providerCommentId(selectedComment), text: replyText.trim() })}
                   disabled={!replyText.trim() || replyMutation.isPending}
                   className="mt-4 shell-button-primary w-full"
                 >
@@ -658,7 +795,7 @@ function CommentsTab({ account }) {
                 />
                 <button
                   type="button"
-                  onClick={() => privateReplyMutation.mutate({ commentId: selectedComment.id, text: privateReplyText.trim() })}
+                  onClick={() => privateReplyMutation.mutate({ commentId: providerCommentId(selectedComment), text: privateReplyText.trim() })}
                   disabled={!privateReplyText.trim() || privateReplyMutation.isPending}
                   className="mt-4 shell-button-secondary w-full"
                 >
@@ -684,10 +821,13 @@ function AutomationsTab({ account }) {
     matchType: 'CONTAINS',
     actionType: 'PACKAGE_FLOW',
     privateReplyMessage: DEFAULT_PRIVATE_REPLY,
-    quickReplies: 'Show Packages, Talk to Agent',
+    quickReplies: ACTION_QUICK_REPLY_PRESETS.PACKAGE_FLOW,
     followPromptMode: 'OFF',
     publicReplyEnabled: false,
+    publicReplyMessage: DEFAULT_PUBLIC_REPLY,
     duplicatePolicy: 'USER_PER_POST',
+    linkedPackageIds: [],
+    linkedPropertyIds: [],
   });
 
   const automationsQuery = useQuery({
@@ -698,6 +838,18 @@ function AutomationsTab({ account }) {
   const mediaQuery = useQuery({
     queryKey: ['ig-media', account.id, 'automation-picker'],
     queryFn: () => igApi.getMedia({ accountId: account.id, limit: 12 }),
+  });
+
+  const packagesQuery = useQuery({
+    queryKey: ['ig-automation-packages'],
+    queryFn: () => packagesApi.list({ active: 'true' }),
+    enabled: ['PACKAGE_FLOW', 'BROCHURE_LINK'].includes(form.actionType),
+  });
+
+  const propertiesQuery = useQuery({
+    queryKey: ['ig-automation-properties'],
+    queryFn: () => propertiesApi.list({ active: 'true' }),
+    enabled: form.actionType === 'PROPERTY_FLOW',
   });
 
   const createMutation = useMutation({
@@ -717,9 +869,25 @@ function AutomationsTab({ account }) {
 
   const automations = asArray(automationsQuery.data?.data);
   const media = asArray(mediaQuery.data?.data);
+  const packages = asArray(packagesQuery.data?.data);
+  const properties = asArray(propertiesQuery.data?.data);
 
   const previewReplies = form.quickReplies.split(',').map((item) => item.trim()).filter(Boolean).slice(0, 4);
   const previewKeywords = form.triggerKeywords.split(',').map((item) => item.trim()).filter(Boolean);
+
+  const updateActionType = (actionType) => {
+    setForm({
+      ...form,
+      actionType,
+      quickReplies: ACTION_QUICK_REPLY_PRESETS[actionType] || form.quickReplies,
+    });
+  };
+
+  const toggleFormListValue = (field, id) => {
+    const current = Array.isArray(form[field]) ? form[field] : [];
+    const next = current.includes(id) ? current.filter((item) => item !== id) : [...current, id];
+    setForm({ ...form, [field]: next });
+  };
 
   const submitAutomation = () => {
     createMutation.mutate({
@@ -733,7 +901,10 @@ function AutomationsTab({ account }) {
       quickReplies: previewReplies,
       followPromptMode: form.followPromptMode,
       publicReplyEnabled: form.publicReplyEnabled,
+      publicReplyMessage: form.publicReplyMessage,
       duplicatePolicy: form.duplicatePolicy,
+      linkedPackageIds: form.linkedPackageIds,
+      linkedPropertyIds: form.linkedPropertyIds,
     });
   };
 
@@ -787,13 +958,65 @@ function AutomationsTab({ account }) {
 
               <label className="block">
                 <span className="mb-2 block text-sm font-bold text-neutral-700">Action</span>
-                <select value={form.actionType} onChange={(event) => setForm({ ...form, actionType: event.target.value })} className="shell-input-rect bg-white">
+                <select value={form.actionType} onChange={(event) => updateActionType(event.target.value)} className="shell-input-rect bg-white">
                   <option value="PACKAGE_FLOW">Start package flow</option>
                   <option value="PROPERTY_FLOW">Start property flow</option>
                   <option value="BROCHURE_LINK">Send brochure or link</option>
                   <option value="AGENT_HANDOFF">Assign agent handoff</option>
                 </select>
               </label>
+
+              {['PACKAGE_FLOW', 'BROCHURE_LINK'].includes(form.actionType) ? (
+                <div className="md:col-span-2 rounded-[var(--radius-md)] border border-neutral-200 bg-white p-4">
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <span className="text-sm font-bold text-neutral-700">Linked packages</span>
+                    <button type="button" onClick={() => setForm({ ...form, linkedPackageIds: [] })} className="text-xs font-bold text-neutral-500">
+                      Clear
+                    </button>
+                  </div>
+                  <div className="grid max-h-48 gap-2 overflow-y-auto sm:grid-cols-2">
+                    {packagesQuery.isLoading ? <span className="text-sm text-neutral-500">Loading packages...</span> : null}
+                    {!packagesQuery.isLoading && packages.length === 0 ? <span className="text-sm text-neutral-500">No active packages found.</span> : null}
+                    {packages.map((pkg) => (
+                      <label key={pkg.id} className="flex cursor-pointer items-center gap-3 rounded-[var(--radius-sm)] border border-neutral-100 px-3 py-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={form.linkedPackageIds.includes(pkg.id)}
+                          onChange={() => toggleFormListValue('linkedPackageIds', pkg.id)}
+                          className="h-4 w-4 rounded border-neutral-300 text-neutral-900 focus:ring-neutral-900"
+                        />
+                        <span className="min-w-0 truncate font-semibold text-neutral-700">{pkg.name}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              {form.actionType === 'PROPERTY_FLOW' ? (
+                <div className="md:col-span-2 rounded-[var(--radius-md)] border border-neutral-200 bg-white p-4">
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <span className="text-sm font-bold text-neutral-700">Linked properties</span>
+                    <button type="button" onClick={() => setForm({ ...form, linkedPropertyIds: [] })} className="text-xs font-bold text-neutral-500">
+                      Clear
+                    </button>
+                  </div>
+                  <div className="grid max-h-48 gap-2 overflow-y-auto sm:grid-cols-2">
+                    {propertiesQuery.isLoading ? <span className="text-sm text-neutral-500">Loading properties...</span> : null}
+                    {!propertiesQuery.isLoading && properties.length === 0 ? <span className="text-sm text-neutral-500">No active properties found.</span> : null}
+                    {properties.map((property) => (
+                      <label key={property.id} className="flex cursor-pointer items-center gap-3 rounded-[var(--radius-sm)] border border-neutral-100 px-3 py-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={form.linkedPropertyIds.includes(property.id)}
+                          onChange={() => toggleFormListValue('linkedPropertyIds', property.id)}
+                          className="h-4 w-4 rounded border-neutral-300 text-neutral-900 focus:ring-neutral-900"
+                        />
+                        <span className="min-w-0 truncate font-semibold text-neutral-700">{property.name}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
 
               <label className="block md:col-span-2">
                 <span className="mb-2 block text-sm font-bold text-neutral-700">Private reply message</span>
@@ -837,6 +1060,18 @@ function AutomationsTab({ account }) {
                 />
                 <span className="text-sm font-bold text-neutral-700">Also post public reply</span>
               </label>
+
+              {form.publicReplyEnabled ? (
+                <label className="block md:col-span-2">
+                  <span className="mb-2 block text-sm font-bold text-neutral-700">Public reply message</span>
+                  <textarea
+                    rows={2}
+                    value={form.publicReplyMessage}
+                    onChange={(event) => setForm({ ...form, publicReplyMessage: event.target.value })}
+                    className="shell-input-rect resize-none bg-white"
+                  />
+                </label>
+              ) : null}
             </div>
 
             <div className="mt-5 flex flex-wrap items-center justify-end gap-3 border-t border-neutral-100 pt-5">

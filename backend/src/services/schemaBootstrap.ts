@@ -106,6 +106,18 @@ async function ensureAgenciesSchema() {
     defaultValue: {},
   });
 
+  await ensureColumn('agencies', 'whatsapp_menu_config', {
+    type: Sequelize.JSONB,
+    allowNull: false,
+    defaultValue: [],
+  });
+
+  await ensureColumn('agencies', 'whatsapp_flow_config', {
+    type: Sequelize.JSONB,
+    allowNull: false,
+    defaultValue: {},
+  });
+
   await ensureColumn('agencies', 'subdomain', {
     type: Sequelize.STRING(80),
     allowNull: true,
@@ -196,6 +208,13 @@ async function ensureAgenciesSchema() {
   );
 }
 
+async function ensurePackagesSchema() {
+  await ensureColumn('packages', 'tour_type', {
+    type: Sequelize.STRING(80),
+    allowNull: true,
+  });
+}
+
 async function ensureLeadsSchema() {
   await ensureEnumValues('enum_leads_status', [
     'JUST_CONTACTED',
@@ -276,6 +295,80 @@ async function ensureLeadsSchema() {
     allowNull: false,
     defaultValue: {},
   });
+
+  await ensureColumn('leads', 'meta_leadgen_id', {
+    type: Sequelize.STRING(255),
+    allowNull: true,
+  });
+
+  await ensureColumn('leads', 'meta_form_id', {
+    type: Sequelize.STRING(255),
+    allowNull: true,
+  });
+
+  await ensureColumn('leads', 'meta_page_id', {
+    type: Sequelize.STRING(255),
+    allowNull: true,
+  });
+
+  await ensureColumn('leads', 'meta_ad_account_id', {
+    type: Sequelize.STRING(255),
+    allowNull: true,
+  });
+
+  await ensureColumn('leads', 'meta_campaign_id', {
+    type: Sequelize.STRING(255),
+    allowNull: true,
+  });
+
+  await ensureColumn('leads', 'meta_campaign_name', {
+    type: Sequelize.STRING(500),
+    allowNull: true,
+  });
+
+  await ensureColumn('leads', 'meta_ad_set_id', {
+    type: Sequelize.STRING(255),
+    allowNull: true,
+  });
+
+  await ensureColumn('leads', 'meta_ad_set_name', {
+    type: Sequelize.STRING(500),
+    allowNull: true,
+  });
+
+  await ensureColumn('leads', 'meta_ad_id', {
+    type: Sequelize.STRING(255),
+    allowNull: true,
+  });
+
+  await ensureColumn('leads', 'meta_ad_name', {
+    type: Sequelize.STRING(500),
+    allowNull: true,
+  });
+
+  await ensureColumn('leads', 'meta_platform', {
+    type: Sequelize.STRING(50),
+    allowNull: true,
+  });
+
+  await ensureColumn('leads', 'meta_raw_payload', {
+    type: Sequelize.JSONB,
+    allowNull: false,
+    defaultValue: {},
+  });
+
+  await ensureIndex(
+    'leads_agency_meta_leadgen_unique',
+    'CREATE UNIQUE INDEX leads_agency_meta_leadgen_unique ON leads (agency_id, meta_leadgen_id) WHERE meta_leadgen_id IS NOT NULL'
+  );
+  await ensureIndex(
+    'leads_agency_meta_campaign_id_idx',
+    'CREATE INDEX leads_agency_meta_campaign_id_idx ON leads (agency_id, meta_campaign_id)'
+  );
+  await ensureIndex(
+    'leads_agency_meta_form_id_idx',
+    'CREATE INDEX leads_agency_meta_form_id_idx ON leads (agency_id, meta_form_id)'
+  );
 }
 
 async function ensureCustomersSchema() {
@@ -920,9 +1013,139 @@ async function ensureInstagramAutomationTables() {
   }
 }
 
+async function ensureMetaAdsTables() {
+  const queryInterface = sequelize.getQueryInterface();
+
+  await ensureEnumValues('enum_meta_lead_sync_events_event_type', ['WEBHOOK', 'BACKFILL', 'MANUAL']);
+  await ensureEnumValues('enum_meta_lead_sync_events_status', ['RECEIVED', 'IMPORTED', 'DUPLICATE', 'FAILED']);
+
+  if (!(await tableExists('meta_ad_campaigns'))) {
+    await queryInterface.createTable('meta_ad_campaigns', {
+      id: { type: Sequelize.UUID, defaultValue: Sequelize.UUIDV4, primaryKey: true, allowNull: false },
+      agency_id: { type: Sequelize.UUID, allowNull: false },
+      meta_campaign_id: { type: Sequelize.STRING(255), allowNull: false },
+      meta_ad_account_id: { type: Sequelize.STRING(255), allowNull: true },
+      name: { type: Sequelize.STRING(500), allowNull: true },
+      status: { type: Sequelize.STRING(80), allowNull: true },
+      objective: { type: Sequelize.STRING(120), allowNull: true },
+      platform: { type: Sequelize.STRING(50), allowNull: true },
+      last_insights: { type: Sequelize.JSONB, allowNull: false, defaultValue: {} },
+      raw_payload: { type: Sequelize.JSONB, allowNull: false, defaultValue: {} },
+      last_synced_at: { type: Sequelize.DATE, allowNull: true },
+      created_at: { type: Sequelize.DATE, allowNull: false, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') },
+      updated_at: { type: Sequelize.DATE, allowNull: false, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') },
+    });
+    await queryInterface.addIndex('meta_ad_campaigns', ['agency_id', 'meta_campaign_id'], { unique: true });
+    await queryInterface.addIndex('meta_ad_campaigns', ['agency_id', 'meta_ad_account_id']);
+    await queryInterface.addIndex('meta_ad_campaigns', ['agency_id', 'status']);
+    console.log('[SchemaBootstrap] Created meta_ad_campaigns table');
+  }
+
+  if (!(await tableExists('meta_lead_forms'))) {
+    await queryInterface.createTable('meta_lead_forms', {
+      id: { type: Sequelize.UUID, defaultValue: Sequelize.UUIDV4, primaryKey: true, allowNull: false },
+      agency_id: { type: Sequelize.UUID, allowNull: false },
+      meta_form_id: { type: Sequelize.STRING(255), allowNull: false },
+      meta_page_id: { type: Sequelize.STRING(255), allowNull: true },
+      meta_ad_account_id: { type: Sequelize.STRING(255), allowNull: true },
+      name: { type: Sequelize.STRING(500), allowNull: true },
+      status: { type: Sequelize.STRING(80), allowNull: true },
+      platform: { type: Sequelize.STRING(50), allowNull: true },
+      is_subscribed: { type: Sequelize.BOOLEAN, allowNull: false, defaultValue: false },
+      raw_payload: { type: Sequelize.JSONB, allowNull: false, defaultValue: {} },
+      last_synced_at: { type: Sequelize.DATE, allowNull: true },
+      created_at: { type: Sequelize.DATE, allowNull: false, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') },
+      updated_at: { type: Sequelize.DATE, allowNull: false, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') },
+    });
+    await queryInterface.addIndex('meta_lead_forms', ['agency_id', 'meta_form_id'], { unique: true });
+    await queryInterface.addIndex('meta_lead_forms', ['agency_id', 'meta_page_id']);
+    await queryInterface.addIndex('meta_lead_forms', ['agency_id', 'status']);
+    console.log('[SchemaBootstrap] Created meta_lead_forms table');
+  }
+
+  if (!(await tableExists('meta_lead_sync_events'))) {
+    await queryInterface.createTable('meta_lead_sync_events', {
+      id: { type: Sequelize.UUID, defaultValue: Sequelize.UUIDV4, primaryKey: true, allowNull: false },
+      agency_id: { type: Sequelize.UUID, allowNull: false },
+      event_type: { type: Sequelize.ENUM('WEBHOOK', 'BACKFILL', 'MANUAL'), allowNull: false, defaultValue: 'WEBHOOK' },
+      status: { type: Sequelize.ENUM('RECEIVED', 'IMPORTED', 'DUPLICATE', 'FAILED'), allowNull: false, defaultValue: 'RECEIVED' },
+      meta_leadgen_id: { type: Sequelize.STRING(255), allowNull: true },
+      meta_form_id: { type: Sequelize.STRING(255), allowNull: true },
+      meta_campaign_id: { type: Sequelize.STRING(255), allowNull: true },
+      lead_id: { type: Sequelize.UUID, allowNull: true },
+      error_message: { type: Sequelize.TEXT, allowNull: true },
+      payload: { type: Sequelize.JSONB, allowNull: false, defaultValue: {} },
+      created_at: { type: Sequelize.DATE, allowNull: false, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') },
+      updated_at: { type: Sequelize.DATE, allowNull: false, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') },
+    });
+    await queryInterface.addIndex('meta_lead_sync_events', ['agency_id', 'created_at']);
+    await queryInterface.addIndex('meta_lead_sync_events', ['agency_id', 'status']);
+    await queryInterface.addIndex('meta_lead_sync_events', ['meta_leadgen_id']);
+    await queryInterface.addIndex('meta_lead_sync_events', ['lead_id']);
+    console.log('[SchemaBootstrap] Created meta_lead_sync_events table');
+  }
+}
+
+async function ensurePlatformAdminTables() {
+  const queryInterface = sequelize.getQueryInterface();
+
+  await ensureEnumValues('enum_platform_admins_role', ['OWNER', 'SUPPORT']);
+
+  if (!(await tableExists('platform_admins'))) {
+    await queryInterface.createTable('platform_admins', {
+      id: { type: Sequelize.UUID, defaultValue: Sequelize.UUIDV4, primaryKey: true, allowNull: false },
+      name: { type: Sequelize.STRING(255), allowNull: false },
+      email: { type: Sequelize.STRING(255), allowNull: false, unique: true },
+      password_hash: { type: Sequelize.STRING(255), allowNull: false },
+      role: { type: Sequelize.ENUM('OWNER', 'SUPPORT'), allowNull: false, defaultValue: 'OWNER' },
+      last_login_at: { type: Sequelize.DATE, allowNull: true },
+      is_active: { type: Sequelize.BOOLEAN, allowNull: false, defaultValue: true },
+      created_at: { type: Sequelize.DATE, allowNull: false, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') },
+      updated_at: { type: Sequelize.DATE, allowNull: false, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') },
+    });
+    await queryInterface.addIndex('platform_admins', ['is_active']);
+    console.log('[SchemaBootstrap] Created platform_admins table');
+  }
+
+  if (!(await tableExists('platform_admin_sessions'))) {
+    await queryInterface.createTable('platform_admin_sessions', {
+      id: { type: Sequelize.UUID, defaultValue: Sequelize.UUIDV4, primaryKey: true, allowNull: false },
+      admin_id: { type: Sequelize.UUID, allowNull: false },
+      token: { type: Sequelize.STRING(255), allowNull: false, unique: true },
+      expires_at: { type: Sequelize.DATE, allowNull: false },
+      revoked_at: { type: Sequelize.DATE, allowNull: true },
+      created_at: { type: Sequelize.DATE, allowNull: false, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') },
+      updated_at: { type: Sequelize.DATE, allowNull: false, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') },
+    });
+    await queryInterface.addIndex('platform_admin_sessions', ['token']);
+    await queryInterface.addIndex('platform_admin_sessions', ['admin_id']);
+    console.log('[SchemaBootstrap] Created platform_admin_sessions table');
+  }
+
+  if (!(await tableExists('platform_audit_logs'))) {
+    await queryInterface.createTable('platform_audit_logs', {
+      id: { type: Sequelize.UUID, defaultValue: Sequelize.UUIDV4, primaryKey: true, allowNull: false },
+      admin_id: { type: Sequelize.UUID, allowNull: true },
+      action: { type: Sequelize.STRING(120), allowNull: false },
+      target_type: { type: Sequelize.STRING(80), allowNull: true },
+      target_id: { type: Sequelize.UUID, allowNull: true },
+      metadata: { type: Sequelize.JSONB, allowNull: false, defaultValue: {} },
+      ip_address: { type: Sequelize.STRING(80), allowNull: true },
+      user_agent: { type: Sequelize.STRING(500), allowNull: true },
+      created_at: { type: Sequelize.DATE, allowNull: false, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') },
+    });
+    await queryInterface.addIndex('platform_audit_logs', ['admin_id']);
+    await queryInterface.addIndex('platform_audit_logs', ['action']);
+    await queryInterface.addIndex('platform_audit_logs', ['target_type', 'target_id']);
+    await queryInterface.addIndex('platform_audit_logs', ['created_at']);
+    console.log('[SchemaBootstrap] Created platform_audit_logs table');
+  }
+}
+
 async function ensureProductionSchema() {
   await ensureLeadsSchema();
   await ensureAgenciesSchema();
+  await ensurePackagesSchema();
   await ensureCustomersSchema();
   await ensurePropertiesSchema();
   await ensureBookingsSchema();
@@ -933,6 +1156,8 @@ async function ensureProductionSchema() {
   await ensureFollowUpsTable();
   await ensureLeadNotesTable();
   await ensureInstagramAutomationTables();
+  await ensureMetaAdsTables();
+  await ensurePlatformAdminTables();
 }
 
 module.exports = {

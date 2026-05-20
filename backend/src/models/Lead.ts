@@ -160,6 +160,56 @@ module.exports = (sequelize) => {
       type: DataTypes.TEXT,
       allowNull: true,
     },
+    metaLeadgenId: {
+      type: DataTypes.STRING(255),
+      allowNull: true,
+      comment: 'Meta Lead Ads leadgen ID used for dedupe',
+    },
+    metaFormId: {
+      type: DataTypes.STRING(255),
+      allowNull: true,
+    },
+    metaPageId: {
+      type: DataTypes.STRING(255),
+      allowNull: true,
+    },
+    metaAdAccountId: {
+      type: DataTypes.STRING(255),
+      allowNull: true,
+    },
+    metaCampaignId: {
+      type: DataTypes.STRING(255),
+      allowNull: true,
+    },
+    metaCampaignName: {
+      type: DataTypes.STRING(500),
+      allowNull: true,
+    },
+    metaAdSetId: {
+      type: DataTypes.STRING(255),
+      allowNull: true,
+    },
+    metaAdSetName: {
+      type: DataTypes.STRING(500),
+      allowNull: true,
+    },
+    metaAdId: {
+      type: DataTypes.STRING(255),
+      allowNull: true,
+    },
+    metaAdName: {
+      type: DataTypes.STRING(500),
+      allowNull: true,
+    },
+    metaPlatform: {
+      type: DataTypes.STRING(50),
+      allowNull: true,
+    },
+    metaRawPayload: {
+      type: DataTypes.JSONB,
+      allowNull: false,
+      defaultValue: {},
+    },
   }, {
     tableName: 'leads',
     indexes: [
@@ -169,6 +219,9 @@ module.exports = (sequelize) => {
       { fields: ['created_at'] },
       { fields: ['campaign_id'] },
       { fields: ['property_id'] },
+      { fields: ['agency_id', 'meta_leadgen_id'], unique: true },
+      { fields: ['agency_id', 'meta_campaign_id'] },
+      { fields: ['agency_id', 'meta_form_id'] },
     ],
   });
 

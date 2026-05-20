@@ -8,6 +8,8 @@ import {
   CheckCircleIcon,
   LinkIcon,
   PhoneIcon,
+  PlusIcon,
+  TrashIcon,
   XMarkIcon,
   CameraIcon,
 } from '@heroicons/react/24/outline';
@@ -124,7 +126,7 @@ function runEmbeddedSignup(embeddedSignup) {
     }
 
     FB.login((response) => {
-      const code = response?.authResponse?.code || response?.authResponse?.accessToken;
+      const code = response?.authResponse?.code;
       if (!code) {
         fail(new Error('Facebook signup was cancelled or no authorization code was returned'));
         return;
@@ -135,33 +137,41 @@ function runEmbeddedSignup(embeddedSignup) {
   }));
 }
 
-function runInstagramSignup(appId) {
-  return loadFacebookSdk(appId).then((FB) => new Promise((resolve, reject) => {
-    FB.login((response) => {
-      const authResponse = response?.authResponse;
-      if (!authResponse?.accessToken) {
-        reject(new Error('Facebook login was cancelled or no access token was returned'));
-        return;
-      }
-      resolve({
-        accessToken: authResponse.accessToken,
-        igUserId: authResponse.userID,
-      });
-    }, {
-      scope: [
-        'instagram_business_basic',
-        'instagram_business_manage_messages',
-        'instagram_business_content_publish',
-        'instagram_business_manage_insights',
-        'instagram_business_manage_comments',
-        'pages_show_list',
-        'pages_manage_metadata',
-        'pages_manage_ads',
-        'ads_read',
-      ].join(','),
-      return_scopes: true,
-    });
-  }));
+const INSTAGRAM_OAUTH_SCOPES = [
+  'instagram_business_basic',
+  'instagram_business_manage_messages',
+];
+const DEFAULT_INSTAGRAM_APP_ID = '1458846952437606';
+const CONFIGURED_INSTAGRAM_APP_ID = String(import.meta.env.VITE_INSTAGRAM_APP_ID || DEFAULT_INSTAGRAM_APP_ID).trim();
+
+function createInstagramOAuthState() {
+  const randomPart = typeof crypto !== 'undefined' && 'randomUUID' in crypto
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+  return `travelbot_instagram_connect:${randomPart}`;
+}
+
+function startInstagramSignup(appId) {
+  if (!appId) {
+    throw new Error('Instagram App ID is missing. Set VITE_INSTAGRAM_APP_ID after enabling Instagram Login in Meta.');
+  }
+
+  const redirectUri = `${window.location.origin}/auth/meta/callback`;
+  const state = createInstagramOAuthState();
+  sessionStorage.setItem('travelbot_instagram_oauth_state', state);
+
+  const params = new URLSearchParams({
+    client_id: appId,
+    redirect_uri: redirectUri,
+    response_type: 'code',
+    scope: INSTAGRAM_OAUTH_SCOPES.join(','),
+    state,
+    enable_fb_login: '0',
+    force_authentication: '1',
+  });
+
+  window.location.assign(`https://www.instagram.com/oauth/authorize?${params.toString()}`);
 }
 
 function statusTone(status) {
@@ -201,6 +211,64 @@ const MENU_LABEL_FIELDS = [
   ['customTrip', 'Trip submenu: Custom Trip'],
 ];
 
+const MENU_ITEM_TYPES = [
+  ['PACKAGE_CATEGORY', 'Package category'],
+  ['PROPERTY', 'Property / resort'],
+  ['SERVICE', 'Booking service'],
+  ['CUSTOM_TRIP', 'Custom trip form'],
+];
+
+const SAMPLE_MENU_CONFIG = [
+  { id: 'college_packages', title: 'College Packages', description: 'Tours for students', type: 'PACKAGE_CATEGORY', value: 'COLLEGE' },
+  { id: 'family_packages', title: 'Family Packages', description: 'Family-friendly trips', type: 'PACKAGE_CATEGORY', value: 'FAMILY' },
+  { id: 'couple_packages', title: 'Couple Packages', description: 'Honeymoon and couples', type: 'PACKAGE_CATEGORY', value: 'COUPLE' },
+  { id: 'budget_packages', title: 'Budget Packages', description: 'Affordable packages', type: 'PACKAGE_CATEGORY', value: 'BUDGET' },
+  { id: 'resorts', title: 'Resorts', description: 'Stays and properties', type: 'PROPERTY', value: 'Resort' },
+  { id: 'train_booking', title: 'Train Booking', description: 'Rail ticket enquiries', type: 'SERVICE', value: 'TRAIN' },
+  { id: 'bus_booking', title: 'Bus Booking', description: 'Bus ticket enquiries', type: 'SERVICE', value: 'BUS' },
+];
+
+const FLOW_ACTION_TYPES = [
+  ['OPEN_PACKAGE_CATEGORY_MENU', 'Open package categories'],
+  ['OPEN_PROPERTY_FLOW', 'Open properties flow'],
+  ['OPEN_SERVICE_MENU', 'Open services menu'],
+  ['OPEN_CUSTOM_TRIP_FLOW', 'Open custom trip form'],
+  ['SHOW_TOUR_TYPE_LIST', 'Show tour type list'],
+  ['OPEN_PACKAGE_FLOW', 'Open package flow'],
+  ['CAPTURE_SERVICE_DETAILS', 'Capture service details'],
+];
+
+const FLOW_SECTIONS = [
+  ['welcomeMenu', 'First message menu', 'The first options a WhatsApp user sees. Use up to 3 for buttons; more becomes a list.', 10],
+  ['packageCategories', 'Package category buttons', 'Shown after user taps packages. Keep this to 3 WhatsApp buttons.', 3],
+  ['tourTypes', 'Tour type list', 'Shown after Domestic or International, then opens filtered packages.', 10],
+  ['serviceMenu', 'Service list', 'Shown after user taps Services, then captures service details.', 10],
+];
+
+const SAMPLE_FLOW_CONFIG = {
+  welcomeMenu: [
+    { id: 'show_packages', title: 'Show Packages', description: 'Domestic and international trips', action: 'OPEN_PACKAGE_CATEGORY_MENU' },
+    { id: 'show_properties', title: 'Show Properties', description: 'Resorts and stays', action: 'OPEN_PROPERTY_FLOW' },
+    { id: 'services', title: 'Services', description: 'Train, bus, visa and more', action: 'OPEN_SERVICE_MENU' },
+  ],
+  packageCategories: [
+    { id: 'custom_packages', title: 'Custom', description: 'Build a custom trip', action: 'OPEN_CUSTOM_TRIP_FLOW' },
+    { id: 'domestic_packages', title: 'Domestic', description: 'India packages', action: 'SHOW_TOUR_TYPE_LIST', category: 'DOMESTIC' },
+    { id: 'international_packages', title: 'International', description: 'Abroad packages', action: 'SHOW_TOUR_TYPE_LIST', category: 'INTERNATIONAL' },
+  ],
+  tourTypes: [
+    { id: 'couple_tours', title: 'Couple', description: 'Couple and honeymoon packages', action: 'OPEN_PACKAGE_FLOW', tourType: 'COUPLE' },
+    { id: 'family_tours', title: 'Family', description: 'Family packages', action: 'OPEN_PACKAGE_FLOW', tourType: 'FAMILY' },
+    { id: 'budget_tours', title: 'Budget', description: 'Affordable packages', action: 'OPEN_PACKAGE_FLOW', tourType: 'BUDGET' },
+    { id: 'college_tours', title: 'College', description: 'Student and group packages', action: 'OPEN_PACKAGE_FLOW', tourType: 'COLLEGE' },
+  ],
+  serviceMenu: [
+    { id: 'train_booking', title: 'Train Booking', description: 'Rail ticket enquiry', action: 'CAPTURE_SERVICE_DETAILS', value: 'TRAIN' },
+    { id: 'bus_booking', title: 'Bus Booking', description: 'Bus ticket enquiry', action: 'CAPTURE_SERVICE_DETAILS', value: 'BUS' },
+    { id: 'visa_ticketing', title: 'Visa & Ticketing', description: 'Visa, flights and ticketing', action: 'CAPTURE_SERVICE_DETAILS', value: 'VISA_TICKETING' },
+  ],
+};
+
 function getMenuLabels(overrides = {}) {
   return Object.fromEntries(
     Object.entries(DEFAULT_WHATSAPP_MENU_LABELS).map(([key, fallback]) => [
@@ -216,6 +284,90 @@ function getMenuLabelPayload(labels = {}) {
       .map(([key, fallback]) => [key, String(labels?.[key] || '').trim().slice(0, 20), fallback])
       .filter(([, value, fallback]) => value && value !== fallback)
       .map(([key, value]) => [key, value])
+  );
+}
+
+function toMenuId(value, fallback) {
+  return String(value || fallback || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9:_-]+/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_|_$/g, '')
+    .slice(0, 80);
+}
+
+function normalizeMenuConfig(items = []) {
+  if (!Array.isArray(items)) return [];
+  const seen = new Set();
+
+  return items
+    .map((item, index) => {
+      const type = String(item?.type || 'PACKAGE_CATEGORY').toUpperCase();
+      const title = String(item?.title || '').trim().slice(0, 24);
+      if (!title || !MENU_ITEM_TYPES.some(([value]) => value === type)) return null;
+
+      const value = String(item?.value || '').trim().slice(0, 80);
+      const id = toMenuId(item?.id, `${type}_${value || title || index}`);
+      if (!id || seen.has(id)) return null;
+      seen.add(id);
+
+      return {
+        id,
+        title,
+        description: String(item?.description || '').trim().slice(0, 72),
+        type,
+        value,
+      };
+    })
+    .filter(Boolean)
+    .slice(0, 10);
+}
+
+function normalizeFlowValue(value, limit = 80) {
+  return String(value || '')
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, '_')
+    .replace(/^_|_$/g, '')
+    .slice(0, limit);
+}
+
+function normalizeFlowItems(items = [], limit = 10) {
+  if (!Array.isArray(items)) return [];
+  const seen = new Set();
+
+  return items
+    .map((item, index) => {
+      const action = String(item?.action || '').trim().toUpperCase();
+      const title = String(item?.title || '').trim().slice(0, 24);
+      if (!title || !FLOW_ACTION_TYPES.some(([value]) => value === action)) return null;
+
+      const category = normalizeFlowValue(item?.category, 32);
+      const tourType = normalizeFlowValue(item?.tourType || item?.value, 80);
+      const id = toMenuId(item?.id, `${action}_${category || tourType || title || index}`);
+      if (!id || seen.has(id)) return null;
+      seen.add(id);
+
+      return {
+        id,
+        title,
+        description: String(item?.description || '').trim().slice(0, 72),
+        action,
+        ...(category ? { category } : {}),
+        ...(tourType ? { tourType, value: tourType } : {}),
+      };
+    })
+    .filter(Boolean)
+    .slice(0, limit);
+}
+
+function normalizeFlowConfig(config = {}) {
+  if (!config || typeof config !== 'object' || Array.isArray(config)) return {};
+  return Object.fromEntries(
+    FLOW_SECTIONS
+      .map(([key,, , limit]) => [key, normalizeFlowItems(config[key], limit)])
+      .filter(([, items]) => items.length > 0)
   );
 }
 
@@ -250,6 +402,8 @@ export default function Settings() {
     whatsappCatalogId: agency?.whatsappCatalogId || '',
     welcomeMessage: agency?.welcomeMessage || '',
     whatsappMenuLabels: getMenuLabels(agency?.whatsappMenuLabels || {}),
+    whatsappMenuConfig: normalizeMenuConfig(agency?.whatsappMenuConfig || []),
+    whatsappFlowConfig: normalizeFlowConfig(agency?.whatsappFlowConfig || {}),
     razorpayKeyId: '',
     razorpayKeySecret: '',
     webhookSecret: '',
@@ -355,13 +509,15 @@ export default function Settings() {
 
   const handleConnectInstagram = async () => {
     try {
-      // Using WhatsApp connect to trigger Marketing OS tenant handshake and get appId
-      const { data } = await client.post('/agencies/me/whatsapp-connection/connect', { onboardingMode: 'standard' });
-      const appId = data?.data?.embeddedSignup?.appId;
-      if (!appId) throw new Error('Facebook App ID not found in Marketing OS config');
+      const appId = CONFIGURED_INSTAGRAM_APP_ID;
 
-      const { accessToken, igUserId } = await runInstagramSignup(appId);
-      connectIgMutation.mutate({ accessToken, igUserId });
+      if (!appId) {
+        throw new Error('Instagram App ID not found. Add VITE_INSTAGRAM_APP_ID for the Instagram Login app.');
+      }
+
+      setError('');
+      setSuccess('');
+      startInstagramSignup(appId);
     } catch (err) {
       setError(err.message || 'Failed to start Instagram connection');
     }
@@ -383,6 +539,12 @@ export default function Settings() {
     const menuLabelPayload = getMenuLabelPayload(form.whatsappMenuLabels);
     const currentMenuLabelPayload = getMenuLabelPayload(getMenuLabels(agency?.whatsappMenuLabels || {}));
     if (JSON.stringify(menuLabelPayload) !== JSON.stringify(currentMenuLabelPayload)) data.whatsappMenuLabels = menuLabelPayload;
+    const menuConfigPayload = normalizeMenuConfig(form.whatsappMenuConfig);
+    const currentMenuConfigPayload = normalizeMenuConfig(agency?.whatsappMenuConfig || []);
+    if (JSON.stringify(menuConfigPayload) !== JSON.stringify(currentMenuConfigPayload)) data.whatsappMenuConfig = menuConfigPayload;
+    const flowConfigPayload = normalizeFlowConfig(form.whatsappFlowConfig);
+    const currentFlowConfigPayload = normalizeFlowConfig(agency?.whatsappFlowConfig || {});
+    if (JSON.stringify(flowConfigPayload) !== JSON.stringify(currentFlowConfigPayload)) data.whatsappFlowConfig = flowConfigPayload;
     if (form.razorpayKeyId) data.razorpayKeyId = form.razorpayKeyId;
     if (form.razorpayKeySecret) data.razorpayKeySecret = form.razorpayKeySecret;
     if (form.webhookSecret) data.webhookSecret = form.webhookSecret;
@@ -403,6 +565,105 @@ export default function Settings() {
       [field]: value.slice(0, 20),
     },
   }));
+  const updateMenuItem = (index, field, value) => setForm((current) => {
+    const items = [...current.whatsappMenuConfig];
+    const currentItem = items[index] || { type: 'PACKAGE_CATEGORY' };
+    const nextItem = {
+      ...currentItem,
+      [field]: field === 'title' ? value.slice(0, 24) : field === 'description' ? value.slice(0, 72) : value.slice(0, 80),
+    };
+
+    if (field === 'title' && !currentItem.id) {
+      nextItem.id = toMenuId(value, `menu_${index + 1}`);
+    }
+
+    if (field === 'type' && value === 'CUSTOM_TRIP') {
+      nextItem.value = '';
+    }
+
+    items[index] = nextItem;
+    return { ...current, whatsappMenuConfig: items };
+  });
+  const addMenuItem = () => setForm((current) => ({
+    ...current,
+    whatsappMenuConfig: [
+      ...current.whatsappMenuConfig,
+      { id: '', title: '', description: '', type: 'PACKAGE_CATEGORY', value: '' },
+    ].slice(0, 10),
+  }));
+  const removeMenuItem = (index) => setForm((current) => ({
+    ...current,
+    whatsappMenuConfig: current.whatsappMenuConfig.filter((_, itemIndex) => itemIndex !== index),
+  }));
+  const loadSampleMenuConfig = () => update('whatsappMenuConfig', SAMPLE_MENU_CONFIG);
+  const clearMenuConfig = () => update('whatsappMenuConfig', []);
+  const updateFlowItem = (sectionKey, index, field, value) => setForm((current) => {
+    const config = current.whatsappFlowConfig || {};
+    const items = [...(config[sectionKey] || [])];
+    const currentItem = items[index] || { action: 'OPEN_PACKAGE_FLOW' };
+    const nextItem = {
+      ...currentItem,
+      [field]: field === 'title' ? value.slice(0, 24) : field === 'description' ? value.slice(0, 72) : value.slice(0, 80),
+    };
+
+    if (field === 'title' && !currentItem.id) {
+      nextItem.id = toMenuId(value, `${sectionKey}_${index + 1}`);
+    }
+
+    if (field === 'action') {
+      if (!['SHOW_TOUR_TYPE_LIST', 'OPEN_PACKAGE_FLOW'].includes(value)) {
+        delete nextItem.category;
+      }
+      if (!['OPEN_PACKAGE_FLOW', 'CAPTURE_SERVICE_DETAILS'].includes(value)) {
+        delete nextItem.tourType;
+        delete nextItem.value;
+      }
+    }
+
+    if (field === 'tourType' || field === 'value') {
+      nextItem.value = value.slice(0, 80);
+    }
+
+    items[index] = nextItem;
+    return {
+      ...current,
+      whatsappFlowConfig: {
+        ...config,
+        [sectionKey]: items,
+      },
+    };
+  });
+  const addFlowItem = (sectionKey, limit) => setForm((current) => {
+    const config = current.whatsappFlowConfig || {};
+    const sectionDefaults = {
+      welcomeMenu: { id: '', title: '', description: '', action: 'OPEN_PACKAGE_CATEGORY_MENU' },
+      packageCategories: { id: '', title: '', description: '', action: 'SHOW_TOUR_TYPE_LIST', category: 'DOMESTIC' },
+      tourTypes: { id: '', title: '', description: '', action: 'OPEN_PACKAGE_FLOW', tourType: '' },
+      serviceMenu: { id: '', title: '', description: '', action: 'CAPTURE_SERVICE_DETAILS', value: '' },
+    };
+    return {
+      ...current,
+      whatsappFlowConfig: {
+        ...config,
+        [sectionKey]: [
+          ...(config[sectionKey] || []),
+          sectionDefaults[sectionKey] || { id: '', title: '', description: '', action: 'OPEN_PACKAGE_FLOW' },
+        ].slice(0, limit),
+      },
+    };
+  });
+  const removeFlowItem = (sectionKey, index) => setForm((current) => {
+    const config = current.whatsappFlowConfig || {};
+    return {
+      ...current,
+      whatsappFlowConfig: {
+        ...config,
+        [sectionKey]: (config[sectionKey] || []).filter((_, itemIndex) => itemIndex !== index),
+      },
+    };
+  });
+  const loadSampleFlowConfig = () => update('whatsappFlowConfig', SAMPLE_FLOW_CONFIG);
+  const clearFlowConfig = () => update('whatsappFlowConfig', {});
   const resetWelcomeMessage = () => update('welcomeMessage', '');
   const resetMenuLabels = () => update('whatsappMenuLabels', getMenuLabels({}));
   const connection = whatsappConnectionQuery.data;
@@ -549,6 +810,292 @@ export default function Settings() {
                       ))}
                     </div>
                   </div>
+                </div>
+
+                <div className="mt-6 border-t border-slate-200 pt-5">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <h4 className="text-sm font-semibold text-slate-800">Custom menu actions</h4>
+                      <p className="mt-1 max-w-2xl text-xs text-slate-500">
+                        Add rows here only for agencies that need their own welcome flow. Empty means the default 3-button flow stays active.
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button type="button" onClick={loadSampleMenuConfig} className="shell-button-secondary px-3 py-2 text-xs">Use travel sample</button>
+                      <button type="button" onClick={addMenuItem} disabled={form.whatsappMenuConfig.length >= 10} className="shell-button-secondary px-3 py-2 text-xs">
+                        <PlusIcon className="h-4 w-4" />
+                        Add action
+                      </button>
+                      <button type="button" onClick={clearMenuConfig} className="shell-button-secondary px-3 py-2 text-xs">Clear</button>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 space-y-3">
+                    {form.whatsappMenuConfig.length === 0 ? (
+                      <div className="rounded-[18px] border border-dashed border-slate-300 bg-white px-4 py-5 text-sm text-slate-500">
+                        No custom actions mapped. This agency will use the default Visa, Plan a Trip, and Staycations menu.
+                      </div>
+                    ) : form.whatsappMenuConfig.map((item, index) => (
+                      <div key={`${item.id || 'menu'}-${index}`} className="rounded-[18px] border border-slate-200 bg-white p-4">
+                        <div className="grid gap-3 lg:grid-cols-[1fr_1fr_1fr_auto]">
+                          <Field label="WhatsApp title">
+                            <input
+                              value={item.title || ''}
+                              onChange={(event) => updateMenuItem(index, 'title', event.target.value)}
+                              maxLength={24}
+                              placeholder="College Packages"
+                              className="shell-input-rect"
+                            />
+                          </Field>
+
+                          <Field label="Action">
+                            <select
+                              value={item.type || 'PACKAGE_CATEGORY'}
+                              onChange={(event) => updateMenuItem(index, 'type', event.target.value)}
+                              className="shell-input-rect"
+                            >
+                              {MENU_ITEM_TYPES.map(([value, label]) => (
+                                <option key={value} value={value}>{label}</option>
+                              ))}
+                            </select>
+                          </Field>
+
+                          <Field
+                            label="Map value"
+                            hint={
+                              item.type === 'PACKAGE_CATEGORY'
+                                ? 'Package category, e.g. COLLEGE'
+                                : item.type === 'SERVICE'
+                                  ? 'Service key, e.g. TRAIN or BUS'
+                                  : item.type === 'PROPERTY'
+                                    ? 'Property type filter, e.g. Resort'
+                                    : 'Not needed'
+                            }
+                          >
+                            <input
+                              value={item.value || ''}
+                              onChange={(event) => updateMenuItem(index, 'value', event.target.value)}
+                              disabled={item.type === 'CUSTOM_TRIP'}
+                              placeholder={
+                                item.type === 'PACKAGE_CATEGORY'
+                                  ? 'COLLEGE'
+                                  : item.type === 'SERVICE'
+                                    ? 'TRAIN'
+                                    : item.type === 'PROPERTY'
+                                      ? 'Resort'
+                                      : ''
+                              }
+                              className="shell-input-rect disabled:cursor-not-allowed disabled:opacity-60"
+                            />
+                          </Field>
+
+                          <div className="flex items-end">
+                            <button
+                              type="button"
+                              onClick={() => removeMenuItem(index)}
+                              className="shell-button-secondary h-[46px] px-3 text-rose-600"
+                              aria-label={`Remove ${item.title || 'menu action'}`}
+                            >
+                              <TrashIcon className="h-4 w-4" />
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="mt-3 grid gap-3 lg:grid-cols-[1fr_1fr]">
+                          <Field label="Description">
+                            <input
+                              value={item.description || ''}
+                              onChange={(event) => updateMenuItem(index, 'description', event.target.value)}
+                              maxLength={72}
+                              placeholder="Shown under the menu title"
+                              className="shell-input-rect"
+                            />
+                          </Field>
+                          <Field label="Action ID">
+                            <input
+                              value={item.id || ''}
+                              onChange={(event) => updateMenuItem(index, 'id', event.target.value)}
+                              maxLength={80}
+                              placeholder="college_packages"
+                              className="shell-input-rect"
+                            />
+                          </Field>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {form.whatsappMenuConfig.length > 0 ? (
+                    <div className="mt-4 rounded-[18px] border border-slate-200 bg-white p-4">
+                      <p className="eyebrow">Mapped Preview</p>
+                      <div className="mt-3 grid gap-2 md:grid-cols-2">
+                        {normalizeMenuConfig(form.whatsappMenuConfig).map((item) => (
+                          <div key={item.id} className="rounded-[14px] border border-slate-200 bg-slate-50 px-3 py-2">
+                            <p className="text-sm font-semibold text-slate-800">{item.title}</p>
+                            <p className="mt-1 text-xs text-slate-500">
+                              {item.type.replace(/_/g, ' ')}{item.value ? ` -> ${item.value}` : ''}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+
+                <div className="mt-6 border-t border-slate-200 pt-5">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <h4 className="text-sm font-semibold text-slate-800">Custom response flow</h4>
+                      <p className="mt-1 max-w-2xl text-xs text-slate-500">
+                        Map first message options into package, property, service, and tour-type flows for this agency only.
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button type="button" onClick={loadSampleFlowConfig} className="shell-button-secondary px-3 py-2 text-xs">Use package flow sample</button>
+                      <button type="button" onClick={clearFlowConfig} className="shell-button-secondary px-3 py-2 text-xs">Clear flow</button>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 space-y-4">
+                    {FLOW_SECTIONS.map(([sectionKey, sectionTitle, sectionHint, limit]) => {
+                      const items = form.whatsappFlowConfig?.[sectionKey] || [];
+                      return (
+                        <div key={sectionKey} className="rounded-[18px] border border-slate-200 bg-white p-4">
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div>
+                              <h5 className="text-sm font-semibold text-slate-800">{sectionTitle}</h5>
+                              <p className="mt-1 max-w-xl text-xs text-slate-500">{sectionHint}</p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => addFlowItem(sectionKey, limit)}
+                              disabled={items.length >= limit}
+                              className="shell-button-secondary px-3 py-2 text-xs"
+                            >
+                              <PlusIcon className="h-4 w-4" />
+                              Add
+                            </button>
+                          </div>
+
+                          <div className="mt-4 space-y-3">
+                            {items.length === 0 ? (
+                              <div className="rounded-[16px] border border-dashed border-slate-300 bg-slate-50 px-4 py-4 text-sm text-slate-500">
+                                No rows mapped in this section.
+                              </div>
+                            ) : items.map((item, index) => (
+                              <div key={`${sectionKey}-${item.id || index}`} className="rounded-[16px] border border-slate-200 bg-slate-50 p-4">
+                                <div className="grid gap-3 lg:grid-cols-[1fr_1fr_auto]">
+                                  <Field label="Button / list title">
+                                    <input
+                                      value={item.title || ''}
+                                      onChange={(event) => updateFlowItem(sectionKey, index, 'title', event.target.value)}
+                                      maxLength={24}
+                                      placeholder={sectionKey === 'welcomeMenu' ? 'Show Packages' : sectionKey === 'tourTypes' ? 'Couple' : 'Domestic'}
+                                      className="shell-input-rect bg-white"
+                                    />
+                                  </Field>
+
+                                  <Field label="Action">
+                                    <select
+                                      value={item.action || 'OPEN_PACKAGE_FLOW'}
+                                      onChange={(event) => updateFlowItem(sectionKey, index, 'action', event.target.value)}
+                                      className="shell-input-rect bg-white"
+                                    >
+                                      {FLOW_ACTION_TYPES.map(([value, label]) => (
+                                        <option key={value} value={value}>{label}</option>
+                                      ))}
+                                    </select>
+                                  </Field>
+
+                                  <div className="flex items-end">
+                                    <button
+                                      type="button"
+                                      onClick={() => removeFlowItem(sectionKey, index)}
+                                      className="shell-button-secondary h-[46px] px-3 text-rose-600"
+                                      aria-label={`Remove ${item.title || sectionTitle} row`}
+                                    >
+                                      <TrashIcon className="h-4 w-4" />
+                                    </button>
+                                  </div>
+                                </div>
+
+                                <div className="mt-3 grid gap-3 lg:grid-cols-[1fr_1fr_1fr]">
+                                  <Field label="Category">
+                                    <input
+                                      value={item.category || ''}
+                                      onChange={(event) => updateFlowItem(sectionKey, index, 'category', event.target.value)}
+                                      maxLength={32}
+                                      placeholder="DOMESTIC or INTERNATIONAL"
+                                      className="shell-input-rect bg-white"
+                                    />
+                                  </Field>
+
+                                  <Field label="Tour type / service key">
+                                    <input
+                                      value={item.tourType || item.value || ''}
+                                      onChange={(event) => updateFlowItem(sectionKey, index, 'tourType', event.target.value)}
+                                      maxLength={80}
+                                      placeholder={sectionKey === 'serviceMenu' ? 'TRAIN' : 'COUPLE'}
+                                      className="shell-input-rect bg-white"
+                                    />
+                                  </Field>
+
+                                  <Field label="Action ID">
+                                    <input
+                                      value={item.id || ''}
+                                      onChange={(event) => updateFlowItem(sectionKey, index, 'id', event.target.value)}
+                                      maxLength={80}
+                                      placeholder="show_packages"
+                                      className="shell-input-rect bg-white"
+                                    />
+                                  </Field>
+                                </div>
+
+                                <div className="mt-3">
+                                  <Field label="Description">
+                                    <input
+                                      value={item.description || ''}
+                                      onChange={(event) => updateFlowItem(sectionKey, index, 'description', event.target.value)}
+                                      maxLength={72}
+                                      placeholder="Shown under list row where WhatsApp supports it"
+                                      className="shell-input-rect bg-white"
+                                    />
+                                  </Field>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {Object.keys(normalizeFlowConfig(form.whatsappFlowConfig)).length > 0 ? (
+                    <div className="mt-4 rounded-[18px] border border-slate-200 bg-white p-4">
+                      <p className="eyebrow">Flow Preview</p>
+                      <div className="mt-3 grid gap-3 lg:grid-cols-2">
+                        {FLOW_SECTIONS.map(([sectionKey, sectionTitle]) => {
+                          const items = normalizeFlowConfig(form.whatsappFlowConfig)[sectionKey] || [];
+                          if (!items.length) return null;
+                          return (
+                            <div key={`preview-${sectionKey}`} className="rounded-[14px] border border-slate-200 bg-slate-50 px-3 py-3">
+                              <p className="text-sm font-semibold text-slate-800">{sectionTitle}</p>
+                              <div className="mt-2 space-y-2">
+                                {items.map((item) => (
+                                  <div key={item.id} className="rounded-[12px] bg-white px-3 py-2 text-xs text-slate-600">
+                                    <span className="font-semibold text-slate-800">{item.title}</span>
+                                    <span>{' -> '}{item.action.replace(/_/g, ' ').toLowerCase()}</span>
+                                    {item.category ? <span> / {item.category}</span> : null}
+                                    {item.tourType ? <span> / {item.tourType}</span> : null}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               </div>
 

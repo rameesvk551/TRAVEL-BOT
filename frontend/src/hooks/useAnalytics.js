@@ -98,3 +98,43 @@ export function useBookingReport(params) {
     staleTime: 60 * 1000,
   });
 }
+
+export function useCustomerLtvReport(params) {
+  return useQuery({
+    queryKey: ['analytics-customer-ltv', params],
+    queryFn: () => analyticsApi.getCustomerLtv(params),
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useCacReport(params) {
+  return useQuery({
+    queryKey: ['analytics-cac', params],
+    queryFn: () => analyticsApi.getCac(params),
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useOperationalReport(params) {
+  return useQuery({
+    queryKey: ['analytics-operational', params],
+    queryFn: () => analyticsApi.getOperational(params),
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useCampaignRoiReport(params) {
+  return useQuery({
+    queryKey: ['analytics-campaign-roi', params],
+    queryFn: () => analyticsApi.getCampaignRoi(params),
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useGrowthReport(params) {
+  return useQuery({
+    queryKey: ['analytics-growth', params],
+    queryFn: () => analyticsApi.getGrowth(params),
+    staleTime: 60 * 1000,
+  });
+}

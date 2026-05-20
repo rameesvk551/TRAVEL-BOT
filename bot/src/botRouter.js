@@ -18,7 +18,15 @@ const RESET_TO_MENU_KEYWORDS = new Set([
   'menu',
   'main menu',
   'restart',
+  'see other',
+  'see others',
 ]);
+
+function extractPackageDeepLinkAction(messageText = '') {
+  const text = String(messageText || '').trim();
+  const match = text.match(/\b(?:VIEW_PACKAGE|PACKAGE_ID|PKG|PACKAGE)\s*[:#-]?\s*([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\b/i);
+  return match ? `pkg_pick:${match[1]}` : '';
+}
 
 function getMessageText(incoming) {
   if (typeof incoming === 'string') return incoming;
@@ -30,6 +38,21 @@ async function routeMessage(session, incoming, customer, agency, options = {}) {
   const normalizedText = String(messageText || '').trim().toLowerCase();
   const actionId = String(incoming?.actionId || '').trim();
   const isFirstInboundMessage = options.isFirstInboundMessage === true;
+  const packageDeepLinkAction = !actionId ? extractPackageDeepLinkAction(messageText) : '';
+
+  if (packageDeepLinkAction) {
+    await handleTravelFlow(
+      session,
+      { ...(typeof incoming === 'object' && incoming ? incoming : {}), text: messageText, actionId: packageDeepLinkAction },
+      customer,
+      agency,
+      {
+        handoffToAgent,
+        forwardToAgent,
+      }
+    );
+    return;
+  }
 
   // Explicit menu commands and greetings reset the flow to the welcome menu.
   if (RESET_TO_MENU_KEYWORDS.has(normalizedText) || GREETING_KEYWORDS.has(normalizedText)) {
@@ -60,10 +83,28 @@ async function routeMessage(session, incoming, customer, agency, options = {}) {
     && menuContext
     && (
       /^[1-3]$/.test(normalizedText)
-      || ['visa', 'ticketing', 'visa & ticketing', 'plan a trip', 'packages', 'staycations', 'properties', 'flight', 'rail', 'train'].includes(normalizedText)
+      || [
+        'visa',
+        'visa services',
+        'ticketing',
+        'visa & ticketing',
+        'flight',
+        'flight tickets',
+        'tour',
+        'tour package',
+        'tour packages',
+        'plan a trip',
+        'packages',
+        'show packages',
+        'staycations',
+        'properties',
+        'show properties',
+        'rail',
+        'train',
+      ].includes(normalizedText)
     );
 
-  if (!actionId && await tryHandleCampaignTextAction(session, messageText, customer, agency)) {
+  if (!actionId && !isMenuFallbackReply && await tryHandleCampaignTextAction(session, messageText, customer, agency)) {
     return;
   }
 
@@ -110,7 +151,8 @@ async function routeMessage(session, incoming, customer, agency, options = {}) {
     // Template quick replies arrive with an actionId too, but their payload is often
     // just plain text like "View Packages" instead of a campaign_* action id.
     // Give campaign text matching a chance before falling back to the generic flow.
-    if (await tryHandleCampaignTextAction(session, messageText || actionId, customer, agency)) {
+    const isConfiguredFlowAction = actionId.startsWith('flow_') || actionId.startsWith('custom_menu:') || actionId.startsWith('menu_');
+    if (!isConfiguredFlowAction && await tryHandleCampaignTextAction(session, messageText || actionId, customer, agency)) {
       return;
     }
 

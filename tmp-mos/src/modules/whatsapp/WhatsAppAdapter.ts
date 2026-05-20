@@ -47,7 +47,8 @@ export function createWhatsAppAdapter(provider: IWhatsAppProvider) {
         context: ConversationContext,
         url: string,
         caption?: string,
-        mediaType: 'image' | 'document' | 'video' | 'audio' = 'image'
+        mediaType: 'image' | 'document' | 'video' | 'audio' = 'image',
+        fileName?: string
     ): Promise<string> {
         const result = await provider.sendMessage({
             recipientPhone: context.externalId,
@@ -56,7 +57,8 @@ export function createWhatsAppAdapter(provider: IWhatsAppProvider) {
                 mediaId: 'url-reference',
                 downloadUrl: url,
                 caption,
-                mimeType: 'application/octet-stream'
+                mimeType: mediaType === 'document' ? 'application/pdf' : 'application/octet-stream',
+                fileName
             }
         });
         if (!result.success) {

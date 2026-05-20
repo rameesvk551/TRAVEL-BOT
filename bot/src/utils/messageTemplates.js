@@ -7,6 +7,78 @@
  * Supports EN (English) and ML (Malayalam) languages.
  */
 
+const leadMessageIcons = {
+  fire: '\u{1F525}',
+  pin: '\u{1F4CD}',
+  people: '\u{1F465}',
+  money: '\u{1F4B0}',
+  notes: '\u{1F4DD}',
+};
+
+const NOT_SHARED = 'Not shared yet';
+
+function presentLeadValue(value, fallback = NOT_SHARED) {
+  if (value === null || value === undefined) return fallback;
+  const text = String(value).trim();
+  return text || fallback;
+}
+
+function formatLeadBudget(details = {}) {
+  const explicitBudget = details.budgetText ?? details.budgetLabel ?? details.budget;
+  if (presentLeadValue(explicitBudget, '')) return presentLeadValue(explicitBudget);
+
+  const amountPaise = Number(details.budgetPerPerson || 0);
+  if (!Number.isFinite(amountPaise) || amountPaise <= 0) return NOT_SHARED;
+
+  return `\u20B9${Math.round(amountPaise / 100).toLocaleString('en-IN')}`;
+}
+
+function leadPackageName(details = {}) {
+  return presentLeadValue(details.packageName || details.package?.name, 'Not selected');
+}
+
+function leadPackageOrDestinationLine(details = {}) {
+  if (details.packageName || details.package?.name) {
+    return `Package: ${leadPackageName(details)}`;
+  }
+
+  if (details.destination) {
+    return `Destination: ${presentLeadValue(details.destination)}`;
+  }
+
+  return `Package: ${leadPackageName(details)}`;
+}
+
+function buildLeadAssignmentMessage(details = {}) {
+  const notes = presentLeadValue(details.notes, '');
+
+  return [
+    `${leadMessageIcons.fire} New Enquiry`,
+    '',
+    `Name: ${presentLeadValue(details.customerName || details.name, 'Unknown')}`,
+    `Phone: ${presentLeadValue(details.phone, 'Unknown')}`,
+    leadPackageOrDestinationLine(details),
+    `${leadMessageIcons.pin} Date: ${presentLeadValue(details.travelDate || details.dates || details.travelDates)}`,
+    `${leadMessageIcons.people} People: ${presentLeadValue(details.travellers || details.people)}`,
+    `${leadMessageIcons.money} Budget: ${formatLeadBudget(details)}`,
+    notes ? `${leadMessageIcons.notes} Notes: ${notes}` : null,
+    '',
+    'Take action:',
+  ].filter((line) => line !== null).join('\n');
+}
+
+function buildTalkToAgentIntentMessage(details = {}) {
+  return [
+    'Talk-to-agent intent',
+    '',
+    `Customer: ${presentLeadValue(details.customerName || details.name, 'Unknown')}`,
+    `Phone: ${presentLeadValue(details.phone, 'Unknown')}`,
+    `Package: ${leadPackageName(details)}`,
+    details.campaignName ? `Campaign: ${details.campaignName}` : null,
+    details.leadId ? `Lead ID: ${details.leadId}` : null,
+  ].filter((line) => line !== null).join('\n');
+}
+
 const templates = {
   /** Greeting when customer first messages */
   greeting: (agencyName, lang = 'EN') => {
@@ -90,6 +162,15 @@ const templates = {
   agentHandoff: (customerName, phone, destination, dates, travellers, budget, reason, lastMessages) => {
     return `🔴 *NEW TRANSFER*\n\n👤 ${customerName} (${phone})\n📍 ${destination || 'N/A'} | 📅 ${dates || 'N/A'}\n👥 ${travellers || '?'} | 💰 ₹${budget || '?'}\n\n📝 Reason: ${reason}\n\n💬 Last messages:\n${lastMessages}\n\nReply via the TravelBot dashboard.`;
   },
+
+  /** Agent notification for a newly assigned enquiry */
+  agentLeadAssignment: buildLeadAssignmentMessage,
+
+  /** Backward-friendly alias for newly assigned enquiry notifications */
+  agentNewEnquiry: buildLeadAssignmentMessage,
+
+  /** Agent notification when a customer asks to talk to an agent */
+  talkToAgentIntent: buildTalkToAgentIntentMessage,
 
   /** Invalid date format */
   invalidDates: (lang = 'EN') => {

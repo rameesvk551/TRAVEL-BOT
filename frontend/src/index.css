@@ -312,11 +312,11 @@
 
   /* ── Listing Page: List View ── */
   .listing-list-card {
-    @apply flex min-h-[128px] bg-white rounded-2xl overflow-hidden border border-neutral-100 shadow-[0_1px_4px_rgba(0,0,0,0.04)] transition-all duration-300 hover:shadow-[0_12px_32px_-8px_rgba(0,0,0,0.10)] cursor-pointer;
+    @apply flex items-stretch bg-white rounded-xl md:rounded-2xl overflow-hidden border border-neutral-100 shadow-[0_1px_2px_rgba(0,0,0,0.04)] transition-all duration-200 hover:shadow-[0_8px_24px_-8px_rgba(0,0,0,0.10)] cursor-pointer;
   }
 
   .listing-list-card-image {
-    @apply relative w-[220px] flex-shrink-0 overflow-hidden bg-neutral-100;
+    @apply relative ml-2 my-2 h-[72px] w-[80px] rounded-lg flex-shrink-0 overflow-hidden bg-neutral-100 md:m-0 md:h-auto md:w-[200px] md:rounded-none;
   }
 
   /* ── Listing Page: Filter Tabs ── */
@@ -330,7 +330,7 @@
 
   /* ── Listing Page: Add Button ── */
   .listing-add-button {
-    @apply inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-all hover:bg-emerald-700 active:scale-[0.98];
+    @apply inline-flex items-center gap-2 rounded-xl bg-neutral-900 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-all hover:bg-neutral-800 active:scale-[0.98];
   }
 
   /* ── Listing Page: View Toggle ── */
@@ -348,7 +348,68 @@
   }
 
   .listing-pagination-btn-active {
-    @apply bg-emerald-600 border-emerald-600 text-white hover:bg-emerald-700 hover:border-emerald-700;
+    @apply bg-neutral-900 border-neutral-900 text-white hover:bg-neutral-800 hover:border-neutral-800;
+  }
+
+  /* ══════════════════════════════════════════
+     Property / Package Wizard — Mobile-first
+     ══════════════════════════════════════════ */
+  .prop-wizard {
+    @apply flex flex-col bg-white rounded-2xl border border-neutral-200 shadow-sm overflow-hidden md:max-w-2xl md:mx-auto;
+    /* Fill remaining viewport below the global topbar + page padding */
+    min-height: calc(100dvh - 7.5rem);
+  }
+
+  .prop-wizard-progress-track {
+    @apply h-[3px] bg-neutral-100 flex-shrink-0;
+  }
+
+  .prop-wizard-progress-fill {
+    @apply h-full bg-neutral-900 transition-all duration-500 ease-out rounded-r-full;
+  }
+
+  .prop-wizard-body {
+    @apply flex-1 overflow-y-auto px-5 py-4 md:px-8 md:py-6;
+  }
+
+  .prop-wizard-step {
+    animation: propStepIn 0.3s ease-out;
+  }
+
+  .prop-wizard-fields {
+    @apply space-y-4;
+  }
+
+  .prop-label {
+    @apply block text-[12px] font-bold text-neutral-700 mb-1.5 uppercase tracking-wide;
+  }
+
+  .prop-input {
+    @apply w-full rounded-xl border border-neutral-200 bg-neutral-50/80 px-3.5 py-2.5 text-sm text-neutral-900 outline-none transition placeholder:text-neutral-400 focus:border-neutral-400 focus:bg-white focus:ring-2 focus:ring-neutral-100;
+  }
+
+  .prop-input-icon {
+    @apply absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-400;
+  }
+
+  .prop-icon-btn {
+    @apply flex items-center justify-center h-[42px] w-[42px] rounded-xl border border-neutral-200 bg-white text-neutral-600 transition hover:bg-neutral-50 active:scale-95 flex-shrink-0;
+  }
+
+  .prop-wizard-footer {
+    @apply flex items-center justify-between gap-3 px-4 py-3 border-t border-neutral-100 bg-white flex-shrink-0;
+  }
+
+  .prop-btn-back {
+    @apply flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-semibold text-neutral-600 bg-neutral-50 transition hover:bg-neutral-100 active:scale-95;
+  }
+
+  .prop-btn-next {
+    @apply flex items-center gap-1.5 px-6 py-2.5 rounded-xl text-sm font-bold text-white bg-neutral-900 shadow-sm transition hover:bg-neutral-800 active:scale-95 ml-auto;
+  }
+
+  .prop-btn-publish {
+    @apply flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold text-white bg-neutral-900 shadow-sm transition hover:bg-neutral-800 active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed ml-auto;
   }
 }
 
@@ -471,4 +532,9 @@
 }
 .animate-drawer-up {
   animation: drawerUp 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+@keyframes propStepIn {
+  0% { opacity: 0; transform: translateX(16px); }
+  100% { opacity: 1; transform: translateX(0); }
 }

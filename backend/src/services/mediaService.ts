@@ -29,6 +29,7 @@ function resolvePublicWebRoot() {
   const candidates = [
     process.env.PUBLIC_WEB_ROOT,
     '/var/www/travel-bot',
+    '/home/ec2-user/travel-bot-frontend-release',
     path.resolve(__dirname, '../../../frontend/dist'),
   ].filter(Boolean);
 
@@ -55,6 +56,33 @@ function buildPublicAssetUrl(relativePath) {
   }
 
   return `${baseUrl}/${relativePath.replace(/^\/+/, '')}`;
+}
+
+function safePdfBaseName(originalName = 'document.pdf', fallback = 'document') {
+  return String(originalName || fallback)
+    .replace(/\.[^.]+$/, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80) || fallback;
+}
+
+async function uploadPublicPdf(fileBuffer, relativeFolder, id, originalName = 'document.pdf', fallbackName = 'document') {
+  const safeBaseName = safePdfBaseName(originalName, fallbackName);
+  const publicRoot = resolvePublicWebRoot();
+  const folder = path.join(publicRoot, relativeFolder);
+  const filename = `${safeBaseName}-${id}.pdf`;
+  const absolutePath = path.join(folder, filename);
+  const publicPath = path.posix.join(relativeFolder.replace(/\\/g, '/'), filename);
+
+  fs.mkdirSync(folder, { recursive: true });
+  fs.writeFileSync(absolutePath, fileBuffer);
+
+  return {
+    secureUrl: buildPublicAssetUrl(publicPath),
+    publicId: `local-pdf-${id}`,
+    originalFilename: originalName,
+  };
 }
 
 async function uploadPackageImage(fileBuffer, agencyId) {
@@ -90,27 +118,13 @@ async function uploadPackageImage(fileBuffer, agencyId) {
 }
 
 async function uploadPackageBrochure(fileBuffer, agencyId, originalName = 'brochure.pdf') {
-  if (!hasCloudinaryConfig()) {
-    const publicRoot = resolvePublicWebRoot();
-    const folder = path.join(publicRoot, 'assets', 'brochures', String(agencyId));
-    const safeBaseName = String(originalName || 'brochure.pdf')
-      .replace(/\.[^.]+$/, '')
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '')
-      .slice(0, 80) || 'brochure';
-    const filename = `${safeBaseName}.pdf`;
-    const absolutePath = path.join(folder, filename);
-
-    fs.mkdirSync(folder, { recursive: true });
-    fs.writeFileSync(absolutePath, fileBuffer);
-
-    return {
-      secureUrl: buildPublicAssetUrl(`assets/brochures/${agencyId}/${filename}`),
-      publicId: `local-brochure-${agencyId}-${safeBaseName}`,
-      originalFilename: originalName,
-    };
-  }
+  return uploadPublicPdf(
+    fileBuffer,
+    path.join('assets', 'brochures', String(agencyId)),
+    Date.now(),
+    originalName,
+    'brochure'
+  );
 
   assertCloudinaryConfigured();
 
@@ -135,6 +149,51 @@ async function uploadPackageBrochure(fileBuffer, agencyId, originalName = 'broch
       (err, result) => {
         if (err) {
           reject(Object.assign(new Error(err.message || 'Cloudinary brochure upload failed'), {
+            statusCode: 502,
+            code: 'CLOUDINARY_UPLOAD_FAILED',
+          }));
+          return;
+        }
+
+        resolve({
+          secureUrl: result.secure_url,
+          publicId: result.public_id,
+          originalFilename: originalName,
+        });
+      }
+    );
+
+    stream.end(fileBuffer);
+  });
+}
+
+async function uploadItineraryPdf(fileBuffer, agencyId, itineraryId, originalName = 'itinerary.pdf') {
+  return uploadPublicPdf(
+    fileBuffer,
+    path.join('assets', 'itineraries', String(agencyId)),
+    itineraryId,
+    originalName,
+    'itinerary'
+  );
+
+  assertCloudinaryConfigured();
+
+  const rootFolder = process.env.CLOUDINARY_FOLDER || 'travel-bot/packages';
+  const folder = `${rootFolder}/${agencyId}/itineraries`;
+  const publicId = `${safeBaseName}-${itineraryId}`;
+
+  return new Promise((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(
+      {
+        folder,
+        public_id: publicId,
+        overwrite: true,
+        resource_type: 'raw',
+        format: 'pdf',
+      },
+      (err, result) => {
+        if (err) {
+          reject(Object.assign(new Error(err.message || 'Cloudinary itinerary upload failed'), {
             statusCode: 502,
             code: 'CLOUDINARY_UPLOAD_FAILED',
           }));
@@ -226,9 +285,37 @@ async function uploadTemplateMedia(fileBuffer, agencyId, mimeType = 'image/jpeg'
   });
 }
 
+async function uploadRemoteTemplateMedia(mediaUrl, agencyId, resourceType = 'image') {
+  assertCloudinaryConfigured();
+
+  const rootFolder = process.env.CLOUDINARY_FOLDER || 'travel-bot/templates';
+  const folder = `${rootFolder}/${agencyId}/campaign-media`;
+  const trimmedUrl = String(mediaUrl || '').trim();
+
+  if (!trimmedUrl) {
+    throw Object.assign(new Error('Remote media URL is required'), {
+      statusCode: 400,
+      code: 'REMOTE_MEDIA_URL_REQUIRED',
+    });
+  }
+
+  const result = await cloudinary.uploader.upload(trimmedUrl, {
+    folder,
+    resource_type: resourceType,
+  });
+
+  return {
+    secureUrl: result.secure_url,
+    publicId: result.public_id,
+    resourceType,
+  };
+}
+
 module.exports = {
   uploadPackageImage,
   uploadPropertyImage,
   uploadPackageBrochure,
+  uploadItineraryPdf,
   uploadTemplateMedia,
+  uploadRemoteTemplateMedia,
 };

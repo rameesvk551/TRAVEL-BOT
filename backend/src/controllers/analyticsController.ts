@@ -120,6 +120,56 @@ async function bookingReport(req, res, next) {
   }
 }
 
+async function customerLtvReport(req, res, next) {
+  try {
+    const { from, to } = req.query;
+    const data = await analyticsService.getCustomerLtvReport(req.agency.id, from, to);
+    res.json({ success: true, data });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function cacReport(req, res, next) {
+  try {
+    const { from, to } = req.query;
+    const data = await analyticsService.getCacReport(req.agency.id, from, to);
+    res.json({ success: true, data });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function operationalReport(req, res, next) {
+  try {
+    const { from, to } = req.query;
+    const data = await analyticsService.getOperationalReport(req.agency.id, from, to);
+    res.json({ success: true, data });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function campaignRoiReport(req, res, next) {
+  try {
+    const { from, to } = req.query;
+    const data = await analyticsService.getCampaignRoiReport(req.agency.id, from, to);
+    res.json({ success: true, data });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function growthReport(req, res, next) {
+  try {
+    const { from, to } = req.query;
+    const data = await analyticsService.getGrowthReport(req.agency.id, from, to);
+    res.json({ success: true, data });
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function exportReport(req, res, next) {
   try {
     const { type, from, to } = req.query;
@@ -147,5 +197,10 @@ module.exports = {
   profitReport,
   sourceReport,
   bookingReport,
+  customerLtvReport,
+  cacReport,
+  operationalReport,
+  campaignRoiReport,
+  growthReport,
   exportReport,
 };

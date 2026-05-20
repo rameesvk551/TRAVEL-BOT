@@ -135,6 +135,16 @@ async function sendTenantInstagramPrivateReply(tenantToken, payload) {
   return response.data;
 }
 
+async function sendTenantInstagramCommentReply(tenantToken, payload) {
+  const client = getTenantClient(tenantToken);
+  // payload expects { accountId, commentId, text }
+  const response = await client.post(
+    `/instagram/inbox/comments/${encodeURIComponent(payload.accountId)}/${encodeURIComponent(payload.commentId)}/reply`,
+    { text: payload.text }
+  );
+  return response.data;
+}
+
 async function sendTenantWhatsAppReadTyping(tenantToken, payload) {
   const client = getTenantClient(tenantToken);
   const response = await client.post('/whatsapp/messages/read-typing', payload);
@@ -243,6 +253,82 @@ async function disconnectTenantInstagram(tenantToken, accountId) {
   return response.data;
 }
 
+async function createTenantMetaConnectSession(tenantToken, payload = {}) {
+  const client = getTenantClient(tenantToken);
+  const response = await client.post('/meta/connect-session', payload);
+  return response.data;
+}
+
+async function getTenantMetaLoginUrl(tenantToken, payload = {}) {
+  const client = getTenantClient(tenantToken);
+  const response = await client.get('/auth/meta/login', {
+    params: {
+      token: tenantToken,
+      redirectUri: payload.redirectUri,
+      scope: Array.isArray(payload.scopes) ? payload.scopes.join(',') : payload.scope,
+    },
+  });
+  return response.data;
+}
+
+async function listTenantMetaAdAccounts(tenantToken) {
+  const client = getTenantClient(tenantToken);
+  const response = await client.get('/meta/ad-accounts');
+  return response.data;
+}
+
+async function listTenantMetaCampaigns(tenantToken, params = {}) {
+  const client = getTenantClient(tenantToken);
+  const adAccountId = params.adAccountId || params.accountId;
+  const path = adAccountId
+    ? `/meta/ad-accounts/${encodeURIComponent(adAccountId)}/campaigns`
+    : '/meta/campaigns';
+  const response = await client.get(path, { params });
+  return response.data;
+}
+
+async function getTenantMetaCampaign(tenantToken, campaignId) {
+  const client = getTenantClient(tenantToken);
+  const response = await client.get(`/meta/campaigns/${encodeURIComponent(campaignId)}`);
+  return response.data;
+}
+
+async function getTenantMetaCampaignInsights(tenantToken, campaignId, params = {}) {
+  const client = getTenantClient(tenantToken);
+  const response = await client.get(`/meta/campaigns/${encodeURIComponent(campaignId)}/insights`, { params });
+  return response.data;
+}
+
+async function listTenantMetaForms(tenantToken, params = {}) {
+  const client = getTenantClient(tenantToken);
+  const response = await client.get('/meta/forms', { params });
+  return response.data;
+}
+
+async function listTenantMetaFormLeads(tenantToken, formId, params = {}) {
+  const client = getTenantClient(tenantToken);
+  const response = await client.get(`/meta/forms/${encodeURIComponent(formId)}/leads`, { params });
+  return response.data;
+}
+
+async function getTenantMetaLead(tenantToken, leadgenId) {
+  const client = getTenantClient(tenantToken);
+  const response = await client.get(`/meta/leads/${encodeURIComponent(leadgenId)}`);
+  return response.data;
+}
+
+async function subscribeTenantMetaForm(tenantToken, formId) {
+  const client = getTenantClient(tenantToken);
+  const response = await client.post(`/meta/forms/${encodeURIComponent(formId)}/subscribe`);
+  return response.data;
+}
+
+async function backfillTenantMetaForm(tenantToken, formId, payload = {}) {
+  const client = getTenantClient(tenantToken);
+  const response = await client.post(`/meta/forms/${encodeURIComponent(formId)}/backfill`, payload);
+  return response.data;
+}
+
 module.exports = {
   findTenantByEmail,
   createTenant,
@@ -257,6 +343,7 @@ module.exports = {
   syncTenantWhatsAppBusinessAppData,
   sendTenantInstagramMessage,
   sendTenantInstagramPrivateReply,
+  sendTenantInstagramCommentReply,
   sendTenantWhatsAppReadTyping,
   getTenantWhatsAppTemplates,
   createTenantWhatsAppTemplate,
@@ -273,5 +360,16 @@ module.exports = {
   getTenantInstagramConnection,
   connectTenantInstagram,
   disconnectTenantInstagram,
+  createTenantMetaConnectSession,
+  getTenantMetaLoginUrl,
+  listTenantMetaAdAccounts,
+  listTenantMetaCampaigns,
+  getTenantMetaCampaign,
+  getTenantMetaCampaignInsights,
+  listTenantMetaForms,
+  listTenantMetaFormLeads,
+  getTenantMetaLead,
+  subscribeTenantMetaForm,
+  backfillTenantMetaForm,
 };
 

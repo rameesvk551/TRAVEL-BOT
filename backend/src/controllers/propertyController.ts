@@ -10,7 +10,7 @@ async function listProperties(req, res, next) {
   try {
     const { agencyId } = req.user;
     const activeOnly = req.query.active === 'true';
-    const properties = await propertyService.listProperties(agencyId, activeOnly);
+    const properties = await propertyService.listProperties(agencyId, { ...req.query, activeOnly });
     res.json({ status: 'success', data: properties });
   } catch (error) {
     next(error);

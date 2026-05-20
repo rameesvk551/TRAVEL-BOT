@@ -43,9 +43,15 @@ function errorHandler(err, req, res, _next) {
 
   if (err.name === 'MulterError') {
     if (err.code === 'LIMIT_FILE_SIZE') {
+      const routePath = String(req.originalUrl || req.path || '');
+      const maxSize = routePath.includes('/templates/')
+        ? '50MB'
+        : routePath.includes('/properties/')
+          ? '5MB'
+          : '20MB';
       return res.status(400).json({
         success: false,
-        error: 'Image file too large. Max size is 5MB.',
+        error: `File too large. Max size is ${maxSize}.`,
         code: 'FILE_TOO_LARGE',
       });
     }

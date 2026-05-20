@@ -197,7 +197,8 @@ export function createMessageService(
                 context,
                 dto.mediaUrl,
                 dto.caption,
-                dto.mediaType || 'image'
+                dto.mediaType || 'image',
+                dto.fileName || dto.filename
             );
             const message = WhatsAppMessage.create({
                 tenantId: dto.tenantId,
@@ -211,6 +212,7 @@ export function createMessageService(
                 mediaContent: {
                     mediaId: providerMessageId,
                     mimeType: dto.mimeType || 'image/jpeg',
+                    fileName: dto.fileName || dto.filename,
                     caption: dto.caption,
                     downloadUrl: dto.mediaUrl,
                 },

@@ -215,8 +215,8 @@ export function createWhatsAppContainer(
           async sendTemplate(context: any, templateName: string, languageCode: string, variables: any) {
             return (await getTenantAdapter()).sendTemplate(context, templateName, languageCode, variables);
           },
-          async sendMedia(context: any, url: string, caption?: string, mediaType?: string) {
-            return (await getTenantAdapter()).sendMedia(context, url, caption, mediaType as any);
+          async sendMedia(context: any, url: string, caption?: string, mediaType?: string, fileName?: string) {
+            return (await getTenantAdapter()).sendMedia(context, url, caption, mediaType as any, fileName);
           },
           async sendInteractive(context: any, content: any) {
             return (await getTenantAdapter()).sendInteractive(context, content);

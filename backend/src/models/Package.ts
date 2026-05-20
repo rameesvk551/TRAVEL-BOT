@@ -28,6 +28,11 @@ module.exports = (sequelize) => {
       allowNull: true,
       comment: 'DOMESTIC or INTERNATIONAL for WhatsApp browsing',
     },
+    tourType: {
+      type: DataTypes.STRING(80),
+      allowNull: true,
+      comment: 'Agency-defined tour style such as COUPLE, FAMILY, COLLEGE, or BUDGET',
+    },
     duration: {
       type: DataTypes.STRING(100),
       allowNull: true,

@@ -48,8 +48,8 @@ const marketingItems = [
   { to: '/templates', icon: QueueListIcon, label: 'Templates' },
   { to: '/flows', icon: DocumentDuplicateIcon, label: 'Flows' },
   { to: '/campaigns', icon: MegaphoneIcon, label: 'Campaigns' },
+  { to: '/ads', icon: ChartBarIcon, label: 'Social Ads' },
   { to: '/social', icon: CubeIcon, label: 'Social Media' },
-  { to: '/ads', icon: MegaphoneIcon, label: 'Social Ads' },
   { to: '/reviews', icon: StarIcon, label: 'Reviews' },
 ];
 
@@ -142,26 +142,7 @@ export default function Sidebar() {
           )}
         </div>
 
-        {/* Agent info */}
-        <div
-          className={`mt-4 flex items-center rounded-[var(--radius-md)] border border-neutral-100 bg-neutral-50 ${collapsed ? 'justify-center px-2 py-3' : 'gap-3 px-3 py-3'
-            }`}
-        >
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 text-xs font-bold text-white shadow-sm">
-            {getInitials(agent?.name, 'LC')}
-          </div>
-          {!collapsed && (
-            <div className="min-w-0">
-              <p className="truncate text-sm font-semibold text-neutral-900">
-                {agent?.name || 'Lead Curator'}
-              </p>
-              <p className="text-xs text-neutral-400 flex items-center gap-1.5">
-                <span className={`w-1.5 h-1.5 rounded-full ${agent?.isOnline ? 'bg-emerald-500' : 'bg-neutral-300'}`} />
-                {agent?.isOnline ? 'Active Now' : 'Offline'}
-              </p>
-            </div>
-          )}
-        </div>
+        {/* Agent/profile header removed as requested */}
 
         {/* Main nav */}
         <nav className="mt-6 space-y-1">
@@ -207,7 +188,7 @@ export default function Sidebar() {
           <button
             onClick={() => logoutMutation.mutate()}
             title={collapsed ? 'Logout' : undefined}
-            className={`flex w-full items-center rounded-[var(--radius-sm)] px-3 py-2.5 text-sm font-medium text-neutral-400 transition hover:bg-neutral-100 hover:text-neutral-900 ${collapsed ? 'justify-center' : 'gap-3'
+            className={`hidden lg:flex w-full items-center rounded-[var(--radius-sm)] px-3 py-2.5 text-sm font-medium text-neutral-400 transition hover:bg-neutral-100 hover:text-neutral-900 ${collapsed ? 'justify-center' : 'gap-3'
               }`}
           >
             <ArrowRightOnRectangleIcon className="h-5 w-5 shrink-0" />

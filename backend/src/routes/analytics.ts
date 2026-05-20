@@ -74,4 +74,29 @@ router.get('/bookings', ...guard, analyticsController.bookingReport);
  */
 router.get('/export', ...guard, analyticsController.exportReport);
 
+/**
+ * GET /api/analytics/customer-ltv - Customer Lifetime Value report
+ */
+router.get('/customer-ltv', ...guard, analyticsController.customerLtvReport);
+
+/**
+ * GET /api/analytics/cac - Customer Acquisition Cost report
+ */
+router.get('/cac', ...guard, analyticsController.cacReport);
+
+/**
+ * GET /api/analytics/operational - Operational Excellence report
+ */
+router.get('/operational', ...guard, analyticsController.operationalReport);
+
+/**
+ * GET /api/analytics/campaign-roi - Campaign ROI report
+ */
+router.get('/campaign-roi', ...guard, analyticsController.campaignRoiReport);
+
+/**
+ * GET /api/analytics/growth - Growth & Pipeline Velocity report
+ */
+router.get('/growth', ...guard, analyticsController.growthReport);
+
 module.exports = router;

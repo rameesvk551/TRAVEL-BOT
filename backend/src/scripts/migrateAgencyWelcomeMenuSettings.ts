@@ -28,6 +28,23 @@ async function migrate() {
     allowNull: false,
     defaultValue: {},
   });
+
+  await ensureColumn('agencies', 'whatsapp_menu_config', {
+    type: Sequelize.JSONB,
+    allowNull: false,
+    defaultValue: [],
+  });
+
+  await ensureColumn('agencies', 'whatsapp_flow_config', {
+    type: Sequelize.JSONB,
+    allowNull: false,
+    defaultValue: {},
+  });
+
+  await ensureColumn('packages', 'tour_type', {
+    type: Sequelize.STRING(80),
+    allowNull: true,
+  });
 }
 
 migrate()

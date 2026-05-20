@@ -288,30 +288,40 @@ export default function CampaignWizard({ onClose, editCampaign = null }) {
         </div>
 
         {/* Step Indicators */}
-        <div className="flex items-center gap-1 px-6 py-3 border-b border-slate-50 bg-slate-50/50">
-          {STEPS.map((s, i) => {
-            const Icon = s.icon;
-            const isActive = i === step;
-            const isDone = i < step;
-            return (
-              <React.Fragment key={i}>
+        <div className="border-b border-slate-50 bg-slate-50/50 px-4 py-3 sm:px-6">
+          <div className="grid grid-cols-5 gap-2">
+            {STEPS.map((s, i) => {
+              const Icon = s.icon;
+              const isActive = i === step;
+              const isDone = i < step;
+              return (
                 <button
+                  key={s.label}
                   onClick={() => i < step && setStep(i)}
-                  className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition ${
-                    isActive ? 'bg-[#2d2d2d] text-white shadow-sm' :
-                    isDone ? 'bg-[#f5f5f5] text-[#2d2d2d] cursor-pointer hover:bg-[#ebebeb]' :
-                    'text-slate-400'
+                  className={`flex min-w-0 flex-col items-center justify-center gap-1 rounded-2xl px-2 py-2 text-center text-xs font-semibold transition ${
+                    isActive
+                      ? 'bg-[#2d2d2d] text-white shadow-sm'
+                      : isDone
+                        ? 'bg-[#f5f5f5] text-[#2d2d2d] cursor-pointer hover:bg-[#ebebeb]'
+                        : 'text-slate-400'
                   }`}
                 >
-                  {isDone ? <Check className="w-3.5 h-3.5" /> : <Icon className="w-3.5 h-3.5" />}
-                  <span className="hidden sm:inline">{s.label}</span>
+                  <span
+                    className={`flex h-9 w-9 items-center justify-center rounded-full transition ${
+                      isActive
+                        ? 'bg-white/15 text-white'
+                        : isDone
+                          ? 'bg-white text-[#2d2d2d] shadow-sm'
+                          : 'bg-white text-slate-300'
+                    }`}
+                  >
+                    {isDone ? <Check className="h-3.5 w-3.5" /> : <Icon className="h-3.5 w-3.5" />}
+                  </span>
+                  <span className="truncate text-[11px] leading-tight sm:text-xs">{s.label}</span>
                 </button>
-                {i < STEPS.length - 1 && (
-                  <ChevronRight className={`w-3.5 h-3.5 flex-shrink-0 ${isDone ? 'text-[#8a8a8a]' : 'text-slate-200'}`} />
-                )}
-              </React.Fragment>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
 
         {/* Step Content */}

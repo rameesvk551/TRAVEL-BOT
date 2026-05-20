@@ -45,8 +45,14 @@ const LeadNote = require('./LeadNote')(sequelize);
 const Property = require('./Property')(sequelize);
 const InstagramAutomation = require('./InstagramAutomation')(sequelize);
 const InstagramAutomationLog = require('./InstagramAutomationLog')(sequelize);
+const MetaAdCampaign = require('./MetaAdCampaign')(sequelize);
+const MetaLeadForm = require('./MetaLeadForm')(sequelize);
+const MetaLeadSyncEvent = require('./MetaLeadSyncEvent')(sequelize);
 const WhatsAppFlow = require('./WhatsAppFlow')(sequelize);
 const ServiceRoutingRule = require('./ServiceRoutingRule')(sequelize);
+const PlatformAdmin = require('./PlatformAdmin')(sequelize);
+const PlatformAdminSession = require('./PlatformAdminSession')(sequelize);
+const PlatformAuditLog = require('./PlatformAuditLog')(sequelize);
 
 // Marketing models
 const MessageTemplate = require('./MessageTemplate')(sequelize);
@@ -79,8 +85,12 @@ Agency.hasMany(Review, { foreignKey: 'agencyId', as: 'reviews' });
 Agency.hasMany(Property, { foreignKey: 'agencyId', as: 'properties' });
 Agency.hasMany(InstagramAutomation, { foreignKey: 'agencyId', as: 'instagramAutomations' });
 Agency.hasMany(InstagramAutomationLog, { foreignKey: 'agencyId', as: 'instagramAutomationLogs' });
+Agency.hasMany(MetaAdCampaign, { foreignKey: 'agencyId', as: 'metaAdCampaigns' });
+Agency.hasMany(MetaLeadForm, { foreignKey: 'agencyId', as: 'metaLeadForms' });
+Agency.hasMany(MetaLeadSyncEvent, { foreignKey: 'agencyId', as: 'metaLeadSyncEvents' });
 Agency.hasMany(WhatsAppFlow, { foreignKey: 'agencyId', as: 'whatsappFlows' });
 Agency.hasMany(ServiceRoutingRule, { foreignKey: 'agencyId', as: 'serviceRoutingRules' });
+Agency.hasMany(PlatformAuditLog, { foreignKey: 'targetId', constraints: false, scope: { targetType: 'Agency' }, as: 'platformAuditLogs' });
 
 // Property belongs to Agency
 Property.belongsTo(Agency, { foreignKey: 'agencyId', as: 'agency' });
@@ -134,6 +144,10 @@ InstagramAutomation.belongsTo(Agency, { foreignKey: 'agencyId', as: 'agency' });
 InstagramAutomation.hasMany(InstagramAutomationLog, { foreignKey: 'automationId', as: 'logs' });
 InstagramAutomationLog.belongsTo(Agency, { foreignKey: 'agencyId', as: 'agency' });
 InstagramAutomationLog.belongsTo(InstagramAutomation, { foreignKey: 'automationId', as: 'automation' });
+MetaAdCampaign.belongsTo(Agency, { foreignKey: 'agencyId', as: 'agency' });
+MetaLeadForm.belongsTo(Agency, { foreignKey: 'agencyId', as: 'agency' });
+MetaLeadSyncEvent.belongsTo(Agency, { foreignKey: 'agencyId', as: 'agency' });
+MetaLeadSyncEvent.belongsTo(Lead, { foreignKey: 'leadId', as: 'lead' });
 
 // Booking
 Booking.belongsTo(Lead, { foreignKey: 'leadId', as: 'lead' });
@@ -172,6 +186,12 @@ MessageTemplate.belongsTo(Agency, { foreignKey: 'agencyId', as: 'agency' });
 WhatsAppFlow.belongsTo(Agency, { foreignKey: 'agencyId', as: 'agency' });
 ServiceRoutingRule.belongsTo(Agency, { foreignKey: 'agencyId', as: 'agency' });
 ServiceRoutingRule.belongsTo(Agent, { foreignKey: 'agentId', as: 'agent' });
+
+// Platform admin
+PlatformAdmin.hasMany(PlatformAdminSession, { foreignKey: 'adminId', as: 'sessions' });
+PlatformAdminSession.belongsTo(PlatformAdmin, { foreignKey: 'adminId', as: 'admin' });
+PlatformAdmin.hasMany(PlatformAuditLog, { foreignKey: 'adminId', as: 'auditLogs' });
+PlatformAuditLog.belongsTo(PlatformAdmin, { foreignKey: 'adminId', as: 'admin' });
 
 // Campaign
 Campaign.belongsTo(Agency, { foreignKey: 'agencyId', as: 'agency' });
@@ -246,6 +266,12 @@ module.exports = {
   Property,
   InstagramAutomation,
   InstagramAutomationLog,
+  MetaAdCampaign,
+  MetaLeadForm,
+  MetaLeadSyncEvent,
   WhatsAppFlow,
   ServiceRoutingRule,
+  PlatformAdmin,
+  PlatformAdminSession,
+  PlatformAuditLog,
 };

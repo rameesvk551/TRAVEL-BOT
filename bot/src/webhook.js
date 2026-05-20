@@ -4,7 +4,8 @@
 
 const crypto = require('crypto');
 const path = require('path');
-const { Agency, Agent, Customer, Lead, Message } = require(path.resolve(__dirname, '../../backend/src/models/index.ts'));
+const { Op } = require('sequelize');
+const { Agency, Agent, BotSession, Customer, Lead, Message, Package, Property } = require(path.resolve(__dirname, '../../backend/src/models/index.ts'));
 const whatsappService = require(path.resolve(__dirname, '../../backend/src/services/whatsappService.ts'));
 const schedulerService = require(path.resolve(__dirname, '../../backend/src/services/schedulerService.ts'));
 const { loadOrCreateSession, updateSession } = require('./utils/sessionManager');
@@ -226,7 +227,7 @@ async function handleIncoming(req, res) {
             continue;
           }
 
-          await processMessage(msg, metadata).catch((err) => {
+          await processMessage(msg, metadata, value.contacts || []).catch((err) => {
             console.error('[Webhook] Error processing message:', err.message);
           });
         }
@@ -314,7 +315,7 @@ function extractMessageContent(msg = {}) {
   return '';
 }
 
-async function saveCoexistenceMessage({ agency, customerPhone, msg, direction, status, source }) {
+async function saveCoexistenceMessage({ agency, customerPhone, msg, direction, status, source, agentId = null }) {
   if (!agency || !customerPhone || !msg?.id) return null;
 
   const existing = await Message.findOne({ where: { waMessageId: msg.id } });
@@ -326,12 +327,85 @@ async function saveCoexistenceMessage({ agency, customerPhone, msg, direction, s
   return Message.create({
     customerId: customer.id,
     agencyId: agency.id,
+    agentId,
     direction,
     content: extractMessageContent(msg) || '',
     type: normalizeStoredMessageType(msg.type),
     waMessageId: msg.id,
     status: status || 'SENT',
     timestamp: msg.timestamp ? new Date(parseInt(msg.timestamp, 10) * 1000) : new Date(),
+  });
+}
+
+async function resolveManualReplyAgent(agencyId, customerId) {
+  const lead = await Lead.findOne({
+    where: {
+      agencyId,
+      customerId,
+      assignedAgentId: { [Op.ne]: null },
+    },
+    order: [['updatedAt', 'DESC']],
+  });
+
+  if (lead?.assignedAgentId) {
+    const assignedAgent = await Agent.findOne({
+      where: { id: lead.assignedAgentId, agencyId },
+      attributes: ['id'],
+    });
+    if (assignedAgent) return assignedAgent.id;
+  }
+
+  const fallbackAgent = await Agent.findOne({
+    where: { agencyId },
+    attributes: ['id'],
+    order: [
+      ['isOnline', 'DESC'],
+      ['role', 'ASC'],
+      ['createdAt', 'ASC'],
+    ],
+  });
+
+  return fallbackAgent?.id || null;
+}
+
+async function pauseBotForManualReply({ agency, customerId, agentId, source }) {
+  if (!agency?.id || !customerId) return;
+
+  const [session] = await BotSession.findOrCreate({
+    where: { customerId },
+    defaults: {
+      customerId,
+      agencyId: agency.id,
+      currentStep: 'HANDOFF',
+      isHandedOff: true,
+      handedOffAt: new Date(),
+      handedOffToId: agentId || null,
+      collectedData: {
+        manualHandoff: {
+          source,
+          reason: 'whatsapp_business_app_reply',
+          at: new Date().toISOString(),
+        },
+      },
+    },
+  });
+
+  const collectedData = {
+    ...(session.collectedData || {}),
+    manualHandoff: {
+      source,
+      reason: 'whatsapp_business_app_reply',
+      at: new Date().toISOString(),
+    },
+  };
+
+  await updateSession(session, {
+    isHandedOff: true,
+    handedOffAt: session.handedOffAt || new Date(),
+    handedOffToId: agentId || session.handedOffToId || null,
+    currentStep: 'HANDOFF',
+    collectedData,
+    lastActivityAt: new Date(),
   });
 }
 
@@ -460,14 +534,31 @@ async function processMessageEchoes(value = {}, metadata = {}) {
 
   const echoes = Array.isArray(value.message_echoes) ? value.message_echoes : [];
   for (const msg of echoes) {
-    await saveCoexistenceMessage({
+    const customerPhone = msg.to || msg.recipient || msg.recipient_phone_number || msg.customer_phone;
+    const customer = await upsertCustomerContact(agency.id, customerPhone, {
+      source: 'whatsapp_business_app_echo',
+    });
+    if (!customer) continue;
+
+    const agentId = await resolveManualReplyAgent(agency.id, customer.id);
+    const savedMessage = await saveCoexistenceMessage({
       agency,
-      customerPhone: msg.to,
+      customerPhone,
       msg,
       direction: 'OUT',
       status: 'SENT',
       source: 'whatsapp_business_app_echo',
+      agentId,
     });
+
+    if (savedMessage) {
+      await pauseBotForManualReply({
+        agency,
+        customerId: customer.id,
+        agentId,
+        source: 'whatsapp_business_app_echo',
+      });
+    }
   }
 
   await agency.update({
@@ -513,7 +604,7 @@ async function processMessageRevoke(msg = {}) {
  * @param {object} msg - WhatsApp message object
  * @param {object} metadata - Webhook metadata (contains display_phone_number)
  */
-async function processMessage(msg, metadata) {
+async function processMessage(msg, metadata, contacts = []) {
   const fromPhone = normalizePhone(msg.from);
   const toPhone = normalizePhone(metadata.display_phone_number);
   const incoming = extractIncoming(msg);
@@ -534,31 +625,41 @@ async function processMessage(msg, metadata) {
     });
   }
 
-  // Find agency by WhatsApp number
-  const agency = await Agency.findOne({
+  const agencyAttributes = [
+    'id',
+    'name',
+    'phone',
+    'email',
+    'whatsappNumber',
+    'whatsappProvider',
+    'whatsappChannelId',
+    'whatsappBusinessAccountId',
+    'whatsappPhoneNumberId',
+    'whatsappDisplayPhoneNumber',
+    'whatsappTripFlowId',
+    'whatsappTripFlowName',
+    'whatsappTripFlowStatus',
+    'whatsappCatalogId',
+    'welcomeMessage',
+    'whatsappMenuLabels',
+    'whatsappMenuConfig',
+    'whatsappFlowConfig',
+    'marketingOsTenantId',
+    'isActive',
+  ];
+
+  // Find agency by the visible number first, then by Meta's stable IDs.
+  let agency = await Agency.findOne({
     where: { whatsappNumber: toPhone },
-    // Keep attributes minimal to tolerate partial production schemas.
-    attributes: [
-      'id',
-      'name',
-      'phone',
-      'email',
-      'whatsappNumber',
-      'whatsappProvider',
-      'whatsappChannelId',
-      'whatsappBusinessAccountId',
-      'whatsappPhoneNumberId',
-      'whatsappDisplayPhoneNumber',
-      'whatsappTripFlowId',
-      'whatsappTripFlowName',
-      'whatsappTripFlowStatus',
-      'whatsappCatalogId',
-      'welcomeMessage',
-      'whatsappMenuLabels',
-      'marketingOsTenantId',
-      'isActive',
-    ],
+    attributes: agencyAttributes,
   });
+
+  if (!agency) {
+    const metadataAgency = await resolveAgencyFromMetadata(metadata);
+    if (metadataAgency?.id) {
+      agency = await Agency.findByPk(metadataAgency.id, { attributes: agencyAttributes });
+    }
+  }
 
   if (!agency) {
     console.error(`[Webhook] No agency found for WhatsApp number: ${toPhone}`);
@@ -588,7 +689,10 @@ async function processMessage(msg, metadata) {
   });
   const isFirstInboundMessage = previousInboundCount === 0;
 
-  const profileName = msg?.contacts?.[0]?.profile?.name || msg?.profile?.name || '';
+  const contact = Array.isArray(contacts)
+    ? contacts.find((item) => normalizePhone(item?.wa_id || item?.phone || item?.id) === fromPhone) || contacts[0]
+    : null;
+  const profileName = contact?.profile?.name || msg?.contacts?.[0]?.profile?.name || msg?.profile?.name || '';
   await applyWhatsAppProfileName({ profileName, customer, agency, session });
 
   // Save incoming message to DB (BEFORE processing — never lose a message)
@@ -602,6 +706,16 @@ async function processMessage(msg, metadata) {
     status: 'DELIVERED',
     timestamp,
   });
+
+  if (!messageText && !incoming.actionId && !incoming.mediaId && incoming.type !== 'ORDER') {
+    console.warn('[Webhook] Empty inbound message payload; ignoring instead of sending menu fallback', {
+      from: fromPhone,
+      to: toPhone,
+      msgType: msg.type || '',
+      waMessageId,
+    });
+    return;
+  }
 
   await ensureLead(session, customer, agency, {
     status: 'JUST_CONTACTED',
@@ -668,6 +782,630 @@ async function processMessage(msg, metadata) {
   }
 }
 
+function normalizeInstagramText(value = '') {
+  return String(value || '').trim();
+}
+
+function lowerInstagramText(value = '') {
+  return normalizeInstagramText(value).toLowerCase();
+}
+
+function buildInstagramCustomerIdentifier(managedAccountId, senderId) {
+  const simple = `ig_${String(senderId || '').trim()}`;
+  if (simple.length > 3 && simple.length <= 20) return simple;
+
+  const digest = crypto
+    .createHash('sha1')
+    .update(`${managedAccountId || 'unknown'}:${senderId || 'unknown'}`)
+    .digest('hex')
+    .slice(0, 17);
+  return `ig_${digest}`;
+}
+
+function parseInstagramBudget(value = '') {
+  const normalized = lowerInstagramText(value).replace(/(?:\u20b9|rs\.?|inr|,|\s)/gi, '');
+  if (normalized.includes('under20') || normalized.includes('<20') || normalized.includes('below20')) return 2000000;
+  if (normalized.includes('20') && normalized.includes('50')) return 5000000;
+  if (normalized.includes('50') && normalized.includes('100')) return 10000000;
+  const amount = parseInt(normalized.replace(/[^0-9]/g, ''), 10);
+  if (!Number.isFinite(amount) || amount <= 0) return null;
+  return amount < 100000 ? amount * 100 : amount;
+}
+
+function parseInstagramTravellers(value = '') {
+  const match = normalizeInstagramText(value).match(/\d+/);
+  if (!match) return null;
+  const count = parseInt(match[0], 10);
+  return Number.isFinite(count) && count > 0 ? count : null;
+}
+
+function parseInstagramPhone(value = '') {
+  const raw = normalizeInstagramText(value);
+  const match = raw.match(/(\+?\d[\d\s().-]{7,}\d)/);
+  if (!match) return null;
+  const digits = match[1].replace(/[^\d+]/g, '');
+  if (digits.startsWith('+')) return digits;
+  if (digits.length === 10) return `+91${digits}`;
+  if (digits.length > 10) return `+${digits}`;
+  return null;
+}
+
+function instagramButton(label, payload) {
+  return { label, title: label, payload };
+}
+
+function cleanInstagramIds(items = []) {
+  if (!Array.isArray(items)) return [];
+  return items.map((item) => String(item || '').trim()).filter(Boolean);
+}
+
+function normalizeWhatsAppDeepLinkNumber(value = '') {
+  const digits = String(value || '').replace(/\D/g, '');
+  if (!digits) return '';
+  if (digits.length === 10) return `91${digits}`;
+  return digits;
+}
+
+function buildWhatsAppPackageDetailsUrl(agency, pkg) {
+  const phone = normalizeWhatsAppDeepLinkNumber(
+    agency.whatsappDisplayPhoneNumber || agency.whatsappNumber || agency.phone
+  );
+  const message = `VIEW_PACKAGE ${pkg.id}`;
+  const fallbackUrl = `https://travelbot.wayon.in/packages/${pkg.id}`;
+  return phone ? `https://wa.me/${phone}?text=${encodeURIComponent(message)}` : fallbackUrl;
+}
+
+async function sendInstagramDm(agency, payload) {
+  const partnerService = require(path.resolve(__dirname, '../../backend/src/services/marketingOsPartnerService.ts'));
+  const tenantToken = await partnerService.getTenantToken(agency.marketingOsTenantId);
+  return partnerService.sendTenantInstagramMessage(tenantToken, {
+    tenantId: agency.marketingOsTenantId,
+    ...payload,
+  });
+}
+
+async function sendInstagramWelcome({ agency, accountId, senderId, session }) {
+  await updateSession(session, {
+    currentStep: 'IG_PACKAGE_INTENT',
+    collectedData: {
+      ...(session.collectedData || {}),
+      igFlow: true,
+    },
+  });
+
+  return sendInstagramDm(agency, {
+    accountId,
+    recipientId: senderId,
+    text: 'Hi! What are you looking for?',
+    buttons: [
+      instagramButton('Show packages', 'ig_pkg_intent:holiday'),
+      instagramButton('Show properties', 'ig_property_intent:show'),
+      instagramButton('Custom trip', 'ig_pkg_intent:custom'),
+    ],
+  });
+}
+
+function inferInstagramPackageIntent(text = '', actionId = '') {
+  const value = lowerInstagramText(actionId || text);
+  if (value.includes('honeymoon')) return 'HONEYMOON';
+  if (value.includes('group')) return 'GROUP';
+  if (value.includes('budget')) return 'BUDGET';
+  if (value.includes('custom')) return 'CUSTOM';
+  return 'HOLIDAY';
+}
+
+function isInstagramCustomTripIntent(text = '', actionId = '') {
+  const value = lowerInstagramText(actionId || text);
+  return value === 'ig_pkg_intent:custom'
+    || value === 'ig_custom_trip'
+    || value === 'custom'
+    || value === 'custom trip'
+    || value === 'plan custom trip'
+    || value === 'plan trip';
+}
+
+function extractInstagramSelectedPackageIds(data = {}, text = '', actionId = '') {
+  const offeredIds = new Set(
+    (Array.isArray(data.packageResults) ? data.packageResults : [])
+      .map((id) => String(id || '').trim())
+      .filter(Boolean)
+  );
+  const explicitIds = [];
+  const push = (id) => {
+    const normalized = String(id || '').trim();
+    if (!normalized) return;
+    if (offeredIds.size > 0 && !offeredIds.has(normalized)) return;
+    if (!explicitIds.includes(normalized)) explicitIds.push(normalized);
+  };
+
+  if (Array.isArray(data.selectedPackageIds)) data.selectedPackageIds.forEach(push);
+  push(data.selectedPackageId);
+
+  [actionId, text].forEach((value) => {
+    const raw = String(value || '').trim();
+    const uuid = raw.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i)?.[0];
+    if (uuid) {
+      push(uuid);
+    } else if (offeredIds.has(raw)) {
+      push(raw);
+    }
+  });
+
+  return explicitIds;
+}
+
+async function sendInstagramPackages({ agency, accountId, senderId, session, intent }) {
+  const automationPackageIds = cleanInstagramIds(session.collectedData?.instagramAutomation?.linkedPackageIds);
+  const where = { agencyId: agency.id, isActive: true };
+  if (automationPackageIds.length) where.id = { [Op.in]: automationPackageIds };
+
+  let packages = await Package.findAll({
+    where,
+    order: [['updatedAt', 'DESC']],
+    limit: 6,
+  });
+
+  if (!packages.length && automationPackageIds.length) {
+    packages = await Package.findAll({
+      where: { agencyId: agency.id, isActive: true },
+      order: [['updatedAt', 'DESC']],
+      limit: 6,
+    });
+  }
+
+  if (!packages.length) {
+    await sendInstagramDm(agency, {
+      accountId,
+      recipientId: senderId,
+      text: 'I could not find active packages right now. Please share your destination and phone number, and our team will help.',
+    });
+    await updateSession(session, { currentStep: 'IG_CAPTURE_NAME' });
+    return;
+  }
+
+  await updateSession(session, {
+    currentStep: 'IG_QUALIFY_BUDGET',
+    collectedData: {
+      ...(session.collectedData || {}),
+      igIntent: intent,
+      packageResults: packages.map((pkg) => pkg.id),
+    },
+  });
+
+  await sendInstagramDm(agency, {
+    accountId,
+    recipientId: senderId,
+    products: packages.map((pkg) => ({
+      id: pkg.id,
+      name: pkg.name,
+      price: Math.round(Number(pkg.basePrice || 0) / 100),
+      currency: 'INR',
+      image: pkg.imageUrl || 'https://travelbot.wayon.in/favicon.ico',
+      url: buildWhatsAppPackageDetailsUrl(agency, pkg),
+      description: pkg.duration || (Array.isArray(pkg.destinations) ? pkg.destinations.slice(0, 2).join(', ') : ''),
+    })),
+    ctaLabel: 'View Details',
+  });
+
+  return sendInstagramDm(agency, {
+    accountId,
+    recipientId: senderId,
+    text: 'What budget per person should I use?',
+    buttons: [
+      instagramButton('Under Rs 20k', 'ig_budget:under20'),
+      instagramButton('Rs 20k-Rs 50k', 'ig_budget:20_50'),
+      instagramButton('Rs 50k+', 'ig_budget:50_plus'),
+    ],
+  });
+}
+
+async function sendInstagramBrochureLinks({ agency, accountId, senderId, session }) {
+  const automationPackageIds = cleanInstagramIds(session.collectedData?.instagramAutomation?.linkedPackageIds);
+  const where = { agencyId: agency.id, isActive: true };
+  if (automationPackageIds.length) where.id = { [Op.in]: automationPackageIds };
+
+  let packages = await Package.findAll({
+    where,
+    order: [['updatedAt', 'DESC']],
+    limit: 4,
+  });
+
+  packages = packages.filter((pkg) => pkg.brochureUrl || pkg.id);
+  if (!packages.length) {
+    await updateSession(session, { currentStep: 'IG_CAPTURE_NAME' });
+    return sendInstagramDm(agency, {
+      accountId,
+      recipientId: senderId,
+      text: 'I do not have a brochure link ready for this post. Please share your name and phone number, and our team will send the best options.',
+      buttons: [
+        instagramButton('Show packages', 'ig_pkg_intent:holiday'),
+        instagramButton('Talk to agent', 'ig_agent_handoff'),
+      ],
+    });
+  }
+
+  const lines = packages.map((pkg, index) => {
+    const url = pkg.brochureUrl || buildWhatsAppPackageDetailsUrl(agency, pkg);
+    return `${index + 1}. ${pkg.name}: ${url}`;
+  });
+
+  await updateSession(session, {
+    currentStep: 'IG_CAPTURE_NAME',
+    collectedData: {
+      ...(session.collectedData || {}),
+      igIntent: 'BROCHURE_LINK',
+      packageResults: packages.map((pkg) => pkg.id),
+      selectedPackageIds: packages.map((pkg) => pkg.id),
+      igLead: {
+        ...(session.collectedData?.igLead || {}),
+        interest: 'BROCHURE_LINK',
+      },
+    },
+  });
+
+  return sendInstagramDm(agency, {
+    accountId,
+    recipientId: senderId,
+    text: `Here are the brochure links:\n\n${lines.join('\n')}\n\nPlease share your full name so our team can help with availability and pricing.`,
+    buttons: [
+      instagramButton('Talk to agent', 'ig_agent_handoff'),
+      instagramButton('Show packages', 'ig_pkg_intent:holiday'),
+    ],
+  });
+}
+
+async function sendInstagramProperties({ agency, accountId, senderId, session }) {
+  const automationPropertyIds = cleanInstagramIds(session.collectedData?.instagramAutomation?.linkedPropertyIds);
+  const where = { agencyId: agency.id, isActive: true };
+  if (automationPropertyIds.length) where.id = { [Op.in]: automationPropertyIds };
+
+  let properties = await Property.findAll({
+    where,
+    order: [['updatedAt', 'DESC']],
+    limit: 4,
+  });
+
+  if (!properties.length && automationPropertyIds.length) {
+    properties = await Property.findAll({
+      where: { agencyId: agency.id, isActive: true },
+      order: [['updatedAt', 'DESC']],
+      limit: 4,
+    });
+  }
+
+  const propertyLines = properties.map((property, index) => {
+    const location = property.location ? ` - ${property.location}` : '';
+    return `${index + 1}. ${property.name}${location}`;
+  });
+
+  await updateSession(session, {
+    currentStep: 'IG_CAPTURE_NAME',
+    collectedData: {
+      ...(session.collectedData || {}),
+      igIntent: 'PROPERTY',
+      selectedPropertyIds: properties.map((property) => property.id),
+      igLead: {
+        ...(session.collectedData?.igLead || {}),
+        interest: 'PROPERTY',
+      },
+    },
+  });
+
+  return sendInstagramDm(agency, {
+    accountId,
+    recipientId: senderId,
+    text: propertyLines.length
+      ? `I found these stays for you:\n\n${propertyLines.join('\n')}\n\nPlease share your full name, phone number, and preferred dates.`
+      : 'Sure. Please share your name, phone number, and preferred location. Our team will send matching properties.',
+    buttons: [
+      instagramButton('Show packages', 'ig_pkg_intent:holiday'),
+      instagramButton('Talk to agent', 'ig_agent_handoff'),
+    ],
+  });
+}
+
+async function saveInstagramLead({ agency, customer, session, accountId, senderId }) {
+  const data = session.collectedData || {};
+  const draft = data.igLead || {};
+  const packageIds = extractInstagramSelectedPackageIds(data);
+  const primaryPackageId = packageIds[0] || null;
+  const propertyIds = cleanInstagramIds(data.selectedPropertyIds);
+  const primaryPropertyId = propertyIds[0] || null;
+  const isCustomTrip = String(data.igIntent || draft.interest || '').toUpperCase() === 'CUSTOM_TRIP';
+  const isProperty = String(data.igIntent || draft.interest || '').toUpperCase() === 'PROPERTY';
+  const interest = data.igIntent || draft.interest || (primaryPropertyId ? 'PROPERTY' : primaryPackageId ? 'PACKAGES' : 'CUSTOM_TRIP');
+  const itemType = isProperty || primaryPropertyId ? 'PROPERTY' : primaryPackageId ? 'PACKAGE' : 'CUSTOM_TRIP';
+  const selectedItems = [
+    ...packageIds.map((id) => ({ itemType: 'PACKAGE', itemId: id })),
+    ...propertyIds.map((id) => ({ itemType: 'PROPERTY', itemId: id })),
+  ];
+
+  if (draft.name && draft.name !== customer.name) {
+    await customer.update({ name: draft.name, source: 'instagram' });
+  } else if (customer.source !== 'instagram') {
+    await customer.update({ source: 'instagram' });
+  }
+
+  const notes = [
+    isCustomTrip ? 'Instagram custom trip enquiry' : isProperty ? 'Instagram property enquiry' : 'Instagram package enquiry',
+    draft.phone ? `Phone: ${draft.phone}` : null,
+    draft.budgetText ? `Budget: ${draft.budgetText}` : null,
+    draft.travelDates ? `Dates: ${draft.travelDates}` : null,
+    draft.travellers ? `Travellers: ${draft.travellers}` : null,
+    interest ? `Intent: ${interest}` : null,
+  ].filter(Boolean).join('\n');
+
+  let lead = await Lead.findOne({
+    where: {
+      customerId: customer.id,
+      agencyId: agency.id,
+      status: ACTIVE_LEAD_STATUSES,
+    },
+    order: [['updatedAt', 'DESC']],
+  });
+
+  if (!lead) {
+    lead = await Lead.create({
+      customerId: customer.id,
+      agencyId: agency.id,
+      status: 'ENQUIRY',
+      source: 'instagram_dm',
+      packageId: itemType === 'PACKAGE' ? primaryPackageId : null,
+      propertyId: itemType === 'PROPERTY' ? primaryPropertyId : null,
+      itemType,
+      interest,
+      travelDates: draft.travelDates || null,
+      travellers: draft.travellers || null,
+      budgetPerPerson: draft.budgetPerPerson || null,
+      notes,
+      customTripDetails: {
+        name: draft.name || customer.name || '',
+        phone: draft.phone || '',
+        budgetText: draft.budgetText || '',
+        budgetPerPerson: draft.budgetPerPerson || null,
+        travelDates: draft.travelDates || '',
+        travellers: draft.travellers || null,
+        interest,
+        instagramSenderId: senderId,
+        instagramAccountId: accountId,
+      },
+      selectedItems,
+    });
+  }
+
+  if (lead) {
+    await lead.update({
+      status: 'ENQUIRY',
+      source: 'instagram_dm',
+      packageId: lead.packageId || (itemType === 'PACKAGE' ? primaryPackageId : null),
+      propertyId: lead.propertyId || (itemType === 'PROPERTY' ? primaryPropertyId : null),
+      itemType: lead.itemType || itemType,
+      interest: interest || lead.interest,
+      travelDates: draft.travelDates || lead.travelDates,
+      travellers: draft.travellers || lead.travellers,
+      budgetPerPerson: draft.budgetPerPerson || lead.budgetPerPerson,
+      notes,
+      customTripDetails: {
+        ...(lead.customTripDetails || {}),
+        name: draft.name || customer.name || '',
+        phone: draft.phone || '',
+        budgetText: draft.budgetText || '',
+        budgetPerPerson: draft.budgetPerPerson || null,
+        travelDates: draft.travelDates || '',
+        travellers: draft.travellers || null,
+        interest,
+        instagramSenderId: senderId,
+        instagramAccountId: accountId,
+      },
+      selectedItems,
+    });
+  }
+
+  return lead;
+}
+
+async function handleInstagramPackageFlow({ agency, accountId, senderId, text, actionId, session, customer }) {
+  const normalized = lowerInstagramText(text);
+  const payload = lowerInstagramText(actionId);
+  const step = session.currentStep;
+  const data = session.collectedData || {};
+
+  const selectedPackageIds = extractInstagramSelectedPackageIds(data, text, actionId);
+  if (selectedPackageIds.length > 0) {
+    await updateSession(session, {
+      currentStep: 'IG_QUALIFY_BUDGET',
+      collectedData: {
+        ...data,
+        selectedPackageId: selectedPackageIds[0],
+        selectedPackageIds,
+        igIntent: data.igIntent || 'PACKAGES',
+      },
+    });
+    return sendInstagramDm(agency, {
+      accountId,
+      recipientId: senderId,
+      text: 'Great choice. What budget per person should I use?',
+      buttons: [
+        instagramButton('Under Rs 20k', 'ig_budget:under20'),
+        instagramButton('Rs 20k-Rs 50k', 'ig_budget:20_50'),
+        instagramButton('Rs 50k+', 'ig_budget:50_plus'),
+      ],
+    });
+  }
+
+  if (isInstagramCustomTripIntent(text, actionId)) {
+    await updateSession(session, {
+      currentStep: 'IG_QUALIFY_BUDGET',
+      collectedData: {
+        ...data,
+        igIntent: 'CUSTOM_TRIP',
+        packageResults: [],
+        selectedPackageId: null,
+        selectedPackageIds: [],
+        igLead: {
+          ...(data.igLead || {}),
+          interest: 'CUSTOM_TRIP',
+        },
+      },
+    });
+    return sendInstagramDm(agency, {
+      accountId,
+      recipientId: senderId,
+      text: 'Sure. I will collect your custom trip details. What budget per person should I use?',
+      buttons: [
+        instagramButton('Under Rs 20k', 'ig_budget:under20'),
+        instagramButton('Rs 20k-Rs 50k', 'ig_budget:20_50'),
+        instagramButton('Rs 50k+', 'ig_budget:50_plus'),
+      ],
+    });
+  }
+
+  if (payload === 'ig_brochure_link' || normalized.includes('brochure')) {
+    return sendInstagramBrochureLinks({ agency, accountId, senderId, session });
+  }
+
+  if (
+    payload.startsWith('ig_pkg_intent:')
+    || normalized.includes('package')
+    || normalized.includes('honeymoon')
+    || normalized.includes('holiday')
+    || normalized.includes('trip')
+  ) {
+    return sendInstagramPackages({
+      agency,
+      accountId,
+      senderId,
+      session,
+      intent: inferInstagramPackageIntent(text, actionId),
+    });
+  }
+
+  if (payload.startsWith('ig_property_intent:') || normalized.includes('property')) {
+    return sendInstagramProperties({ agency, accountId, senderId, session });
+  }
+
+  if (payload === 'ig_agent_handoff' || normalized.includes('agent')) {
+    await updateSession(session, { currentStep: 'IG_CAPTURE_PHONE' });
+    return sendInstagramDm(agency, {
+      accountId,
+      recipientId: senderId,
+      text: 'Please share your phone number. Our team will call you shortly.',
+    });
+  }
+
+  if (step === 'IG_QUALIFY_BUDGET' || payload.startsWith('ig_budget:')) {
+    const budgetPerPerson = parseInstagramBudget(actionId || text);
+    await updateSession(session, {
+      currentStep: 'IG_QUALIFY_DATES',
+      collectedData: {
+        ...(session.collectedData || {}),
+        igLead: {
+          ...(session.collectedData?.igLead || {}),
+          budgetText: text || actionId,
+          budgetPerPerson,
+        },
+      },
+    });
+    return sendInstagramDm(agency, {
+      accountId,
+      recipientId: senderId,
+      text: 'Great. What travel date or month are you planning?',
+    });
+  }
+
+  if (step === 'IG_QUALIFY_DATES') {
+    await updateSession(session, {
+      currentStep: 'IG_QUALIFY_TRAVELLERS',
+      collectedData: {
+        ...(session.collectedData || {}),
+        igLead: {
+          ...(session.collectedData?.igLead || {}),
+          travelDates: text,
+        },
+      },
+    });
+    return sendInstagramDm(agency, {
+      accountId,
+      recipientId: senderId,
+      text: 'How many travellers?',
+    });
+  }
+
+  if (step === 'IG_QUALIFY_TRAVELLERS') {
+    await updateSession(session, {
+      currentStep: 'IG_CAPTURE_NAME',
+      collectedData: {
+        ...(session.collectedData || {}),
+        igLead: {
+          ...(session.collectedData?.igLead || {}),
+          travellers: parseInstagramTravellers(text),
+        },
+      },
+    });
+    return sendInstagramDm(agency, {
+      accountId,
+      recipientId: senderId,
+      text: 'Please share your full name.',
+    });
+  }
+
+  if (step === 'IG_CAPTURE_NAME') {
+    await updateSession(session, {
+      currentStep: 'IG_CAPTURE_PHONE',
+      collectedData: {
+        ...(session.collectedData || {}),
+        igLead: {
+          ...(session.collectedData?.igLead || {}),
+          name: text,
+        },
+      },
+    });
+    return sendInstagramDm(agency, {
+      accountId,
+      recipientId: senderId,
+      text: 'Please share your phone number so our travel expert can call you.',
+    });
+  }
+
+  if (step === 'IG_CAPTURE_PHONE') {
+    const phone = parseInstagramPhone(text) || text;
+    const collectedData = {
+      ...(session.collectedData || {}),
+      igLead: {
+        ...(session.collectedData?.igLead || {}),
+        phone,
+      },
+    };
+    await updateSession(session, {
+      currentStep: 'IG_COMPLETE',
+      collectedData,
+    });
+    session.collectedData = collectedData;
+    const lead = await saveInstagramLead({ agency, customer, session, accountId, senderId });
+    try {
+      const instagramAutomationService = require(path.resolve(__dirname, '../../backend/src/services/instagramAutomationService.ts'));
+      await instagramAutomationService.markLeadCreatedFromDm(agency.id, { accountId, senderId }, lead);
+    } catch (err) {
+      console.warn('[IG Webhook] Could not update automation lead stats:', err.message);
+    }
+    return sendInstagramDm(agency, {
+      accountId,
+      recipientId: senderId,
+      text: 'Thanks. Your package enquiry is saved. Our team will call you soon with the best options.',
+      buttons: [
+        instagramButton('Show packages', 'ig_pkg_intent:holiday'),
+        instagramButton('Talk to agent', 'ig_agent_handoff'),
+      ],
+    });
+  }
+
+  if (step === 'IG_PACKAGE_INTENT' || step === 'IG_COMPLETE') {
+    return sendInstagramWelcome({ agency, accountId, senderId, session });
+  }
+
+  return null;
+}
+
 async function processInstagramMessage(data) {
   const { accountId, igAccountId, senderId, recipientId, messageId, text, attachments, timestamp, tenantId } = data;
   
@@ -681,9 +1419,21 @@ async function processInstagramMessage(data) {
     return;
   }
 
-  // Use account + sender as the unique identifier so the same person can DM multiple managed pages.
+  try {
+    const instagramAutomationService = require(path.resolve(__dirname, '../../backend/src/services/instagramAutomationService.ts'));
+    await instagramAutomationService.markDmReplyReceived(agency.id, {
+      accountId: accountId || igAccountId || recipientId,
+      senderId,
+      messageId,
+      text,
+    });
+  } catch (err) {
+    console.warn('[IG Webhook] Could not update automation DM conversion:', err.message);
+  }
+
+  // Keep the customer key compact because older databases sized this column for phone numbers.
   const managedAccountId = igAccountId || accountId || recipientId || 'unknown';
-  const fromIdentifier = `ig_${managedAccountId}:${senderId}`;
+  const fromIdentifier = buildInstagramCustomerIdentifier(managedAccountId, senderId);
   
   // Create an incoming format similar to WhatsApp
   const incoming = {
@@ -720,19 +1470,46 @@ async function processInstagramMessage(data) {
     type: incoming.type,
     waMessageId: messageId, // Reusing waMessageId field for Instagram message ID
     status: 'DELIVERED',
-    timestamp: timestamp ? new Date(parseInt(timestamp) * 1000) : new Date(),
+    timestamp: timestamp ? new Date(Number(timestamp) > 1000000000000 ? Number(timestamp) : Number(timestamp) * 1000) : new Date(),
   });
 
   // Process through bot with fallback protection
   try {
-    // For Instagram, we can simulate typing indicator via Marketing OS proxy if it's supported.
-    // For now, directly route the message.
-    
-    // We add a flag to identify this as an Instagram channel to botRouter if it needs it.
-    customer.source = 'instagram'; 
+    customer.source = 'instagram';
     await customer.save();
 
-    await routeMessage(session, incoming, customer, agency);
+    const handled = await handleInstagramPackageFlow({
+      agency,
+      accountId: accountId || igAccountId || recipientId,
+      senderId,
+      text: incoming.text,
+      actionId: incoming.actionId,
+      session,
+      customer,
+    });
+
+    if (handled) return;
+
+    if (['hi', 'hello', 'hey', 'hii', 'start', 'menu'].includes(lowerInstagramText(incoming.text))) {
+      await sendInstagramWelcome({
+        agency,
+        accountId: accountId || igAccountId || recipientId,
+        senderId,
+        session,
+      });
+      return;
+    }
+
+    await sendInstagramDm(agency, {
+      accountId: accountId || igAccountId || recipientId,
+      recipientId: senderId,
+      text: 'I can help with holiday packages. Tap below to continue.',
+      buttons: [
+        instagramButton('Show packages', 'ig_pkg_intent:holiday'),
+        instagramButton('Show properties', 'ig_property_intent:show'),
+        instagramButton('Custom trip', 'ig_pkg_intent:custom'),
+      ],
+    });
   } catch (err) {
     console.error('[IG Webhook] Bot processing error:', err.message);
     
@@ -743,7 +1520,8 @@ async function processInstagramMessage(data) {
       const tenantToken = await partnerService.getTenantToken(agency.marketingOsTenantId);
       
       await partnerService.sendTenantInstagramMessage(tenantToken, {
-        accountId: igAccountId,
+        tenantId: agency.marketingOsTenantId,
+        accountId: accountId || igAccountId,
         recipientId: senderId,
         text: `Sorry, we are currently experiencing issues. Please contact us via phone or email.`
       });
@@ -779,19 +1557,24 @@ function extractIncoming(msg) {
   }
 
   const interactive = msg.interactive || {};
+  const typedInteractive = interactive.type && interactive[interactive.type]
+    ? interactive[interactive.type]
+    : null;
 
-  if (interactive.button_reply) {
+  if (interactive.button_reply || (interactive.type === 'button_reply' && typedInteractive)) {
+    const reply = interactive.button_reply || typedInteractive;
     return {
-      text: interactive.button_reply.title || '',
-      actionId: interactive.button_reply.id || '',
+      text: reply.title || reply.text || reply.body || '',
+      actionId: reply.id || reply.payload || '',
       type: 'BUTTON_REPLY',
     };
   }
 
-  if (interactive.list_reply) {
+  if (interactive.list_reply || (interactive.type === 'list_reply' && typedInteractive)) {
+    const reply = interactive.list_reply || typedInteractive;
     return {
-      text: interactive.list_reply.title || '',
-      actionId: interactive.list_reply.id || '',
+      text: reply.title || reply.text || reply.body || '',
+      actionId: reply.id || reply.payload || '',
       type: 'LIST_REPLY',
     };
   }
@@ -815,8 +1598,14 @@ function extractIncoming(msg) {
   }
 
   return {
-    text: msg.text?.body || msg.image?.caption || msg.document?.caption || '',
-    actionId: '',
+    text: (typeof msg.text === 'string' ? msg.text : msg.text?.body)
+      || msg.body
+      || msg.message?.text?.body
+      || msg.message?.body
+      || msg.image?.caption
+      || msg.document?.caption
+      || '',
+    actionId: msg.payload || msg.button?.payload || '',
     type: msg.type?.toUpperCase() || 'TEXT',
     mediaId: msg.image?.id || msg.document?.id || msg.audio?.id || null,
   };

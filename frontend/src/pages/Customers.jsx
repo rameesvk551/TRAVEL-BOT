@@ -35,12 +35,8 @@ export default function Customers() {
 
   return (
     <div className="w-full pb-10">
-      {/* Header */}
+      {/* Actions */}
       <div className="mb-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="page-heading">Customers</h1>
-          <p className="page-subtext">View CONVERTED leads and manually created customers.</p>
-        </div>
         <button
           onClick={() => setIsCreateOpen(true)}
           className="shell-button-primary flex items-center gap-2"

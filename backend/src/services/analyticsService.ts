@@ -953,6 +953,497 @@ async function getBookingReport(agencyId, from, to) {
   };
 }
 
+// ─── 12. CUSTOMER LIFETIME VALUE REPORT ────────────────────────────────────
+
+async function getCustomerLtvReport(agencyId, from, to) {
+  const { start, end } = defaultRange(from, to);
+
+  // Customers with multiple bookings
+  const repeatCustomers = await sequelize.query(`
+    SELECT
+      c.id,
+      c.name,
+      c.phone,
+      COUNT(b.id) AS total_bookings,
+      SUM(b.total_amount) AS total_spent,
+      MIN(b.created_at) AS first_booking,
+      MAX(b.created_at) AS last_booking,
+      AVG(b.total_amount) AS avg_booking_value
+    FROM customers c
+    JOIN bookings b ON b.customer_id = c.id
+    WHERE c.agency_id = :agencyId
+      AND b.created_at BETWEEN :start AND :end
+    GROUP BY c.id, c.name, c.phone
+    HAVING COUNT(b.id) >= 1
+    ORDER BY total_spent DESC
+    LIMIT 50
+  `, {
+    replacements: { agencyId, start, end },
+    type: sequelize.QueryTypes.SELECT,
+  });
+
+  const totalCustomers = repeatCustomers.length;
+  const totalRevenue = repeatCustomers.reduce((s, r) => s + parseInt(r.total_spent || '0', 10), 0);
+  const avgLtv = totalCustomers > 0 ? Math.round(totalRevenue / totalCustomers) : 0;
+
+  const repeatCount = repeatCustomers.filter((r) => parseInt(r.total_bookings, 10) > 1).length;
+  const repeatRate = totalCustomers > 0 ? parseFloat((repeatCount / totalCustomers * 100).toFixed(1)) : 0;
+
+  // Cohort: bookings per month for customers who first booked in each month
+  const cohortData = await sequelize.query(`
+    WITH first_bookings AS (
+      SELECT
+        customer_id,
+        DATE_TRUNC('month', MIN(created_at)) AS cohort_month
+      FROM bookings
+      WHERE agency_id = :agencyId
+      GROUP BY customer_id
+    )
+    SELECT
+      fb.cohort_month,
+      DATE_TRUNC('month', b.created_at) AS booking_month,
+      COUNT(DISTINCT b.customer_id) AS customers,
+      COUNT(b.id) AS bookings,
+      SUM(b.total_amount) AS revenue
+    FROM first_bookings fb
+    JOIN bookings b ON b.customer_id = fb.customer_id
+    WHERE b.agency_id = :agencyId
+      AND b.created_at BETWEEN :start AND :end
+    GROUP BY fb.cohort_month, DATE_TRUNC('month', b.created_at)
+    ORDER BY fb.cohort_month, booking_month
+  `, {
+    replacements: { agencyId, start, end },
+    type: sequelize.QueryTypes.SELECT,
+  });
+
+  return {
+    totalCustomers,
+    avgLtv,
+    repeatRate,
+    topCustomers: repeatCustomers.slice(0, 20).map((r) => ({
+      id: r.id,
+      name: r.name || 'Anonymous',
+      phone: r.phone,
+      totalBookings: parseInt(r.total_bookings, 10),
+      totalSpent: parseInt(r.total_spent, 10),
+      avgBookingValue: Math.round(parseFloat(r.avg_booking_value || '0')),
+      firstBooking: r.first_booking,
+      lastBooking: r.last_booking,
+    })),
+    cohortData: cohortData.map((r) => ({
+      cohortMonth: r.cohort_month,
+      bookingMonth: r.booking_month,
+      customers: parseInt(r.customers, 10),
+      bookings: parseInt(r.bookings, 10),
+      revenue: parseInt(r.revenue, 10),
+    })),
+  };
+}
+
+// ─── 13. CUSTOMER ACQUISITION COST (CAC) REPORT ─────────────────────────────
+
+async function getCacReport(agencyId, from, to) {
+  const { start, end } = defaultRange(from, to);
+
+  // Leads by source in period
+  const leadsBySource = await Lead.findAll({
+    where: { agencyId, createdAt: { [Op.between]: [start, end] } },
+    attributes: ['source', [fn('COUNT', col('id')), 'count']],
+    group: ['source'],
+    raw: true,
+  });
+
+  // Booked leads by source in period
+  const bookedBySource = await Lead.findAll({
+    where: { agencyId, status: 'BOOKED', createdAt: { [Op.between]: [start, end] } },
+    attributes: ['source', [fn('COUNT', col('id')), 'count']],
+    group: ['source'],
+    raw: true,
+  });
+
+  // Revenue by source (through bookings)
+  const revenueBySource = await sequelize.query(`
+    SELECT
+      l.source,
+      SUM(b.total_amount) AS revenue,
+      COUNT(b.id) AS bookings
+    FROM bookings b
+    JOIN leads l ON l.id = b.lead_id
+    WHERE l.agency_id = :agencyId
+      AND b.created_at BETWEEN :start AND :end
+    GROUP BY l.source
+  `, {
+    replacements: { agencyId, start, end },
+    type: sequelize.QueryTypes.SELECT,
+  });
+
+  const bookedMap = {};
+  bookedBySource.forEach((r) => { bookedMap[r.source || 'Unknown'] = parseInt(r.count, 10); });
+  const revenueMap = {};
+  revenueBySource.forEach((r) => { revenueMap[r.source || 'Unknown'] = parseInt(r.revenue || '0', 10); });
+
+  // NOTE: spend data should come from ad spend tracking. For now, we estimate.
+  const sources = leadsBySource.map((r) => {
+    const source = r.source || 'Unknown';
+    const leads = parseInt(r.count, 10);
+    const booked = bookedMap[source] || 0;
+    const revenue = revenueMap[source] || 0;
+    return {
+      source,
+      leads,
+      booked,
+      revenue,
+      conversionRate: leads > 0 ? parseFloat((booked / leads * 100).toFixed(1)) : 0,
+      // Placeholder for when ad spend is tracked
+      estimatedSpend: 0,
+      estimatedCac: booked > 0 ? 0 : 0,
+      roas: 0,
+    };
+  });
+
+  const totalLeads = sources.reduce((s, r) => s + r.leads, 0);
+  const totalBooked = sources.reduce((s, r) => s + r.booked, 0);
+  const totalRevenue = sources.reduce((s, r) => s + r.revenue, 0);
+
+  return {
+    totalLeads,
+    totalBooked,
+    totalRevenue,
+    avgConversionRate: totalLeads > 0 ? parseFloat((totalBooked / totalLeads * 100).toFixed(1)) : 0,
+    sources,
+    note: 'Connect ad spend data to see real CAC and ROAS. Estimated values shown as placeholders.',
+  };
+}
+
+// ─── 14. OPERATIONAL EXCELLENCE REPORT ──────────────────────────────────────
+
+async function getOperationalReport(agencyId, from, to) {
+  const { start, end } = defaultRange(from, to);
+
+  // Response time metrics
+  const responseMetrics = await sequelize.query(`
+    WITH conversations AS (
+      SELECT
+        customer_id,
+        MIN(CASE WHEN direction = 'IN' THEN timestamp END) AS first_in,
+        MIN(CASE WHEN direction = 'OUT' AND agent_id IS NOT NULL THEN timestamp END) AS first_reply
+      FROM messages
+      WHERE agency_id = :agencyId
+        AND timestamp BETWEEN :start AND :end
+      GROUP BY customer_id
+      HAVING MIN(CASE WHEN direction = 'IN' THEN timestamp END) IS NOT NULL
+         AND MIN(CASE WHEN direction = 'OUT' AND agent_id IS NOT NULL THEN timestamp END) IS NOT NULL
+    )
+    SELECT
+      AVG(EXTRACT(EPOCH FROM (first_reply - first_in))) AS avg_response_seconds,
+      PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (first_reply - first_in))) AS median_response_seconds,
+      PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (first_reply - first_in))) AS p90_response_seconds,
+      COUNT(*) AS conversation_count
+    FROM conversations
+    WHERE first_reply > first_in
+  `, {
+    replacements: { agencyId, start, end },
+    type: sequelize.QueryTypes.SELECT,
+  });
+
+  const avgResponseMinutes = Math.round(parseFloat(responseMetrics[0]?.avg_response_seconds || '0') / 60);
+  const medianResponseMinutes = Math.round(parseFloat(responseMetrics[0]?.median_response_seconds || '0') / 60);
+  const p90ResponseMinutes = Math.round(parseFloat(responseMetrics[0]?.p90_response_seconds || '0') / 60);
+
+  // Response distribution buckets
+  const responseDistribution = await sequelize.query(`
+    WITH conversations AS (
+      SELECT
+        customer_id,
+        MIN(CASE WHEN direction = 'IN' THEN timestamp END) AS first_in,
+        MIN(CASE WHEN direction = 'OUT' AND agent_id IS NOT NULL THEN timestamp END) AS first_reply
+      FROM messages
+      WHERE agency_id = :agencyId
+        AND timestamp BETWEEN :start AND :end
+      GROUP BY customer_id
+      HAVING MIN(CASE WHEN direction = 'IN' THEN timestamp END) IS NOT NULL
+         AND MIN(CASE WHEN direction = 'OUT' AND agent_id IS NOT NULL THEN timestamp END) IS NOT NULL
+    )
+    SELECT
+      CASE
+        WHEN EXTRACT(EPOCH FROM (first_reply - first_in)) <= 300 THEN 'Under 5 min'
+        WHEN EXTRACT(EPOCH FROM (first_reply - first_in)) <= 900 THEN '5-15 min'
+        WHEN EXTRACT(EPOCH FROM (first_reply - first_in)) <= 3600 THEN '15-60 min'
+        WHEN EXTRACT(EPOCH FROM (first_reply - first_in)) <= 86400 THEN '1-24 hours'
+        ELSE 'Over 24 hours'
+      END AS bucket,
+      COUNT(*) AS count
+    FROM conversations
+    WHERE first_reply > first_in
+    GROUP BY bucket
+  `, {
+    replacements: { agencyId, start, end },
+    type: sequelize.QueryTypes.SELECT,
+  });
+
+  // Missed follow-ups (leads without any outbound agent message)
+  const missedFollowUps = await sequelize.query(`
+    SELECT COUNT(DISTINCT l.id) AS count
+    FROM leads l
+    LEFT JOIN messages m ON m.customer_id = l.customer_id
+      AND m.agency_id = l.agency_id
+      AND m.direction = 'OUT'
+      AND m.agent_id IS NOT NULL
+      AND m.timestamp BETWEEN :start AND :end
+    WHERE l.agency_id = :agencyId
+      AND l.created_at BETWEEN :start AND :end
+      AND l.status NOT IN ('BOOKED', 'LOST', 'CANCELLED')
+      AND m.id IS NULL
+  `, {
+    replacements: { agencyId, start, end },
+    type: sequelize.QueryTypes.SELECT,
+  });
+
+  // Agent workload distribution
+  const agentWorkload = await sequelize.query(`
+    SELECT
+      a.id,
+      a.name,
+      COUNT(DISTINCT l.id) AS leads_assigned,
+      COUNT(DISTINCT m.id) AS messages_sent,
+      COUNT(DISTINCT CASE WHEN l.status = 'BOOKED' THEN l.id END) AS conversions,
+      COALESCE(SUM(pay.amount), 0) AS revenue
+    FROM agents a
+    LEFT JOIN leads l ON l.assigned_agent_id = a.id AND l.created_at BETWEEN :start AND :end
+    LEFT JOIN messages m ON m.agent_id = a.id AND m.direction = 'OUT' AND m.timestamp BETWEEN :start AND :end
+    LEFT JOIN bookings b ON b.lead_id = l.id
+    LEFT JOIN payments pay ON pay.booking_id = b.id AND pay.status = 'PAID'
+    WHERE a.agency_id = :agencyId
+    GROUP BY a.id, a.name
+    ORDER BY revenue DESC
+  `, {
+    replacements: { agencyId, start, end },
+    type: sequelize.QueryTypes.SELECT,
+  });
+
+  // SLA compliance: % of first replies under 15 minutes
+  const slaCompliance = await sequelize.query(`
+    WITH conversations AS (
+      SELECT
+        customer_id,
+        MIN(CASE WHEN direction = 'IN' THEN timestamp END) AS first_in,
+        MIN(CASE WHEN direction = 'OUT' AND agent_id IS NOT NULL THEN timestamp END) AS first_reply
+      FROM messages
+      WHERE agency_id = :agencyId
+        AND timestamp BETWEEN :start AND :end
+      GROUP BY customer_id
+      HAVING MIN(CASE WHEN direction = 'IN' THEN timestamp END) IS NOT NULL
+         AND MIN(CASE WHEN direction = 'OUT' AND agent_id IS NOT NULL THEN timestamp END) IS NOT NULL
+    )
+    SELECT
+      COUNT(*) AS total,
+      COUNT(CASE WHEN EXTRACT(EPOCH FROM (first_reply - first_in)) <= 900 THEN 1 END) AS within_sla
+    FROM conversations
+    WHERE first_reply > first_in
+  `, {
+    replacements: { agencyId, start, end },
+    type: sequelize.QueryTypes.SELECT,
+  });
+
+  const totalConv = parseInt(slaCompliance[0]?.total || '0', 10);
+  const withinSla = parseInt(slaCompliance[0]?.within_sla || '0', 10);
+  const slaRate = totalConv > 0 ? parseFloat((withinSla / totalConv * 100).toFixed(1)) : 0;
+
+  return {
+    avgResponseMinutes,
+    medianResponseMinutes,
+    p90ResponseMinutes,
+    conversationCount: parseInt(responseMetrics[0]?.conversation_count || '0', 10),
+    missedFollowUps: parseInt(missedFollowUps[0]?.count || '0', 10),
+    slaRate,
+    slaTarget: 80,
+    responseDistribution: responseDistribution.map((r) => ({
+      bucket: r.bucket,
+      count: parseInt(r.count, 10),
+    })),
+    agentWorkload: agentWorkload.map((a) => ({
+      id: a.id,
+      name: a.name,
+      leadsAssigned: parseInt(a.leads_assigned || '0', 10),
+      messagesSent: parseInt(a.messages_sent || '0', 10),
+      conversions: parseInt(a.conversions || '0', 10),
+      revenue: parseInt(a.revenue || '0', 10),
+    })),
+  };
+}
+
+// ─── 15. CAMPAIGN ROI REPORT ────────────────────────────────────────────────
+
+async function getCampaignRoiReport(agencyId, from, to) {
+  const { start, end } = defaultRange(from, to);
+
+  // Campaigns in period
+  const campaigns = await Campaign.findAll({
+    where: { agencyId, sentAt: { [Op.between]: [start, end] } },
+    attributes: ['id', 'name', 'type', 'totalRecipients', 'sent', 'delivered', 'read', 'replied', 'failed', 'createdAt'],
+    order: [['sentAt', 'DESC']],
+    raw: true,
+  });
+
+  // Leads generated by campaign
+  const leadsByCampaign = await Lead.findAll({
+    where: { agencyId, campaignId: { [Op.not]: null }, createdAt: { [Op.between]: [start, end] } },
+    attributes: ['campaignId', [fn('COUNT', col('id')), 'count']],
+    group: ['campaignId'],
+    raw: true,
+  });
+
+  // Bookings from campaign leads
+  const bookingsFromCampaigns = await sequelize.query(`
+    SELECT
+      l.campaign_id,
+      COUNT(b.id) AS bookings,
+      SUM(b.total_amount) AS revenue
+    FROM bookings b
+    JOIN leads l ON l.id = b.lead_id
+    WHERE l.agency_id = :agencyId
+      AND l.campaign_id IS NOT NULL
+      AND b.created_at BETWEEN :start AND :end
+    GROUP BY l.campaign_id
+  `, {
+    replacements: { agencyId, start, end },
+    type: sequelize.QueryTypes.SELECT,
+  });
+
+  const leadMap = {};
+  leadsByCampaign.forEach((r) => { leadMap[r.campaignId] = parseInt(r.count, 10); });
+  const bookingMap = {};
+  bookingsFromCampaigns.forEach((r) => {
+    bookingMap[r.campaign_id] = {
+      bookings: parseInt(r.bookings, 10),
+      revenue: parseInt(r.revenue || '0', 10),
+    };
+  });
+
+  const enrichedCampaigns = campaigns.map((c) => {
+    const leads = leadMap[c.id] || 0;
+    const booked = bookingMap[c.id]?.bookings || 0;
+    const revenue = bookingMap[c.id]?.revenue || 0;
+    return {
+      ...c,
+      leadsGenerated: leads,
+      bookings: booked,
+      revenue,
+      conversionRate: c.totalRecipients > 0 ? parseFloat((leads / c.totalRecipients * 100).toFixed(1)) : 0,
+      bookingRate: c.totalRecipients > 0 ? parseFloat((booked / c.totalRecipients * 100).toFixed(1)) : 0,
+      revenuePerRecipient: c.totalRecipients > 0 ? Math.round(revenue / c.totalRecipients) : 0,
+      readRate: c.delivered > 0 ? parseFloat((c.read / c.delivered * 100).toFixed(1)) : 0,
+      replyRate: c.delivered > 0 ? parseFloat((c.replied / c.delivered * 100).toFixed(1)) : 0,
+    };
+  });
+
+  const totalSent = enrichedCampaigns.reduce((s, c) => s + (c.sent || 0), 0);
+  const totalDelivered = enrichedCampaigns.reduce((s, c) => s + (c.delivered || 0), 0);
+  const totalRead = enrichedCampaigns.reduce((s, c) => s + (c.read || 0), 0);
+  const totalReplied = enrichedCampaigns.reduce((s, c) => s + (c.replied || 0), 0);
+  const totalRevenue = enrichedCampaigns.reduce((s, c) => s + c.revenue, 0);
+  const totalLeads = enrichedCampaigns.reduce((s, c) => s + c.leadsGenerated, 0);
+  const totalBookings = enrichedCampaigns.reduce((s, c) => s + c.bookings, 0);
+
+  return {
+    totalCampaigns: campaigns.length,
+    totalSent,
+    totalDelivered,
+    totalRead,
+    totalReplied,
+    totalRevenue,
+    totalLeads,
+    totalBookings,
+    avgDeliveryRate: totalSent > 0 ? parseFloat((totalDelivered / totalSent * 100).toFixed(1)) : 0,
+    avgReadRate: totalDelivered > 0 ? parseFloat((totalRead / totalDelivered * 100).toFixed(1)) : 0,
+    avgReplyRate: totalDelivered > 0 ? parseFloat((totalReplied / totalDelivered * 100).toFixed(1)) : 0,
+    avgLeadRate: totalSent > 0 ? parseFloat((totalLeads / totalSent * 100).toFixed(1)) : 0,
+    avgBookingRate: totalSent > 0 ? parseFloat((totalBookings / totalSent * 100).toFixed(1)) : 0,
+    campaigns: enrichedCampaigns,
+  };
+}
+
+// ─── 16. GROWTH & PIPELINE VELOCITY REPORT ──────────────────────────────────
+
+async function getGrowthReport(agencyId, from, to) {
+  const { start, end } = defaultRange(from, to);
+  const prev = prevRange(start, end);
+
+  // Current period metrics
+  const totalLeads = await Lead.count({ where: { agencyId, createdAt: { [Op.between]: [start, end] } } });
+  const prevLeads = await Lead.count({ where: { agencyId, createdAt: { [Op.between]: [prev.start, prev.end] } } });
+
+  const totalBookings = await Booking.count({ where: { agencyId, createdAt: { [Op.between]: [start, end] } } });
+  const prevBookings = await Booking.count({ where: { agencyId, createdAt: { [Op.between]: [prev.start, prev.end] } } });
+
+  const totalRevenue = (await Payment.sum('amount', {
+    where: { agencyId, status: 'PAID', paidAt: { [Op.between]: [start, end] } },
+  })) || 0;
+  const prevRevenue = (await Payment.sum('amount', {
+    where: { agencyId, status: 'PAID', paidAt: { [Op.between]: [prev.start, prev.end] } },
+  })) || 0;
+
+  // Conversion funnel velocity: avg days from lead creation to booking
+  const velocityResult = await sequelize.query(`
+    SELECT
+      AVG(EXTRACT(EPOCH FROM (b.created_at - l.created_at)) / 86400) AS avg_days,
+      PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (b.created_at - l.created_at)) / 86400) AS median_days,
+      COUNT(*) AS count
+    FROM bookings b
+    JOIN leads l ON l.id = b.lead_id
+    WHERE l.agency_id = :agencyId
+      AND b.created_at BETWEEN :start AND :end
+      AND b.created_at > l.created_at
+  `, {
+    replacements: { agencyId, start, end },
+    type: sequelize.QueryTypes.SELECT,
+  });
+
+  const avgVelocityDays = parseFloat(parseFloat(velocityResult[0]?.avg_days || '0').toFixed(1));
+  const medianVelocityDays = parseFloat(parseFloat(velocityResult[0]?.median_days || '0').toFixed(1));
+
+  // Pipeline distribution (current snapshot)
+  const pipelineSnapshot = await Lead.findAll({
+    where: { agencyId },
+    attributes: ['status', [fn('COUNT', col('id')), 'count']],
+    group: ['status'],
+    raw: true,
+  });
+
+  // Monthly growth trend
+  const monthlyTrend = await sequelize.query(`
+    SELECT
+      DATE_TRUNC('month', created_at) AS month,
+      COUNT(*) AS leads,
+      SUM(CASE WHEN status = 'BOOKED' THEN 1 ELSE 0 END) AS booked
+    FROM leads
+    WHERE agency_id = :agencyId
+      AND created_at >= DATE_TRUNC('month', NOW() - INTERVAL '11 months')
+    GROUP BY DATE_TRUNC('month', created_at)
+    ORDER BY month
+  `, {
+    replacements: { agencyId },
+    type: sequelize.QueryTypes.SELECT,
+  });
+
+  return {
+    totalLeads,
+    leadsChange: prevLeads > 0 ? parseFloat(((totalLeads - prevLeads) / prevLeads * 100).toFixed(1)) : null,
+    totalBookings,
+    bookingsChange: prevBookings > 0 ? parseFloat(((totalBookings - prevBookings) / prevBookings * 100).toFixed(1)) : null,
+    totalRevenue,
+    revenueChange: prevRevenue > 0 ? parseFloat(((totalRevenue - prevRevenue) / prevRevenue * 100).toFixed(1)) : null,
+    avgVelocityDays,
+    medianVelocityDays,
+    pipelineSnapshot: pipelineSnapshot.map((r) => ({ status: r.status, count: parseInt(r.count, 10) })),
+    monthlyTrend: monthlyTrend.map((r) => ({
+      month: r.month,
+      leads: parseInt(r.leads, 10),
+      booked: parseInt(r.booked, 10),
+    })),
+  };
+}
+
 module.exports = {
   getSummary,
   getSalesReport,
@@ -966,5 +1457,10 @@ module.exports = {
   getProfitReport,
   getSourceReport,
   getBookingReport,
+  getCustomerLtvReport,
+  getCacReport,
+  getOperationalReport,
+  getCampaignRoiReport,
+  getGrowthReport,
   exportReport,
 };

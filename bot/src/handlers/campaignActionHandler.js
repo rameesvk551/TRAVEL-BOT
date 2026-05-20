@@ -2,13 +2,16 @@
 // Handles campaign CTA, carousel, package, property, and custom-trip actions.
 
 const path = require('path');
+const axios = require('axios');
 const { Op } = require('sequelize');
 const {
   Campaign,
   CampaignRecipient,
   MessageTemplate,
+  Agent,
   Package,
   Property,
+  Itinerary,
   WhatsAppFlow,
 } = require(path.resolve(__dirname, '../../../backend/src/models/index.ts'));
 const whatsappService = require(path.resolve(__dirname, '../../../backend/src/services/whatsappService.ts'));
@@ -19,11 +22,14 @@ const {
   buildFlowPackageOptions,
   buildFlowPropertyOptions,
   buildFlowPropertyLocationOptions,
+  buildFlowPropertyTypeOptions,
   getAgencyTripFlowId,
   isMetaTripFlowConfigured,
   PROPERTY_FLOW_FIRST_SCREEN_ID,
   CUSTOM_TRIP_FLOW_FIRST_SCREEN_ID,
 } = require('./travelFlowHandler');
+const templates = require('../utils/messageTemplates');
+const { sendAgentTalkToAgentIntent } = require('../utils/agentNotificationSender');
 
 const CAMPAIGN_PREFIXES = [
   'campaign_view_packages:',
@@ -36,13 +42,45 @@ const CAMPAIGN_PREFIXES = [
   'campaign_carousel_others:',
   'campaign_property_enquire:',
 ];
+const CTA_BUTTON_ACTIONS = new Set([
+  'VIEW_PACKAGES',
+  'VIEW_PROPERTIES',
+  'CUSTOM_TRIP',
+  'VIEW_DETAILS',
+  'SEND_ITINERARY',
+  'CHECK_AVAILABILITY',
+  'TALK_TO_AGENT',
+]);
+const TRAVEL_READINESS_FLOW_NAME = 'Travel Readiness Questionnaire';
 
 function isCampaignAction(actionId = '') {
   return CAMPAIGN_PREFIXES.some((prefix) => String(actionId).startsWith(prefix));
 }
 
 function escapeMarkdown(text = '') {
-  return String(text || '').replace(/\*/g, '').trim();
+  return String(text || '').replace(/\*/g, '＊').trim();
+}
+
+function packageDescriptionText(text = '') {
+  return escapeMarkdown(text);
+}
+
+function phoneDigits(phone = '') {
+  return String(phone || '').replace(/\D/g, '');
+}
+
+function buildWhatsAppChatLink(phone = '', message = '') {
+  const digits = phoneDigits(phone);
+  if (!digits) return '';
+  const query = message ? `?text=${encodeURIComponent(message)}` : '';
+  return `https://wa.me/${digits}${query}`;
+}
+
+function buildSpecialistPrefill({ customer, pkg, campaign, lead }) {
+  return [
+    `Hi, I am ${customer?.name || 'interested customer'}.`,
+    pkg?.name ? `I want to discuss ${pkg.name}.` : 'I want to discuss this campaign.',
+  ].filter(Boolean).join('\n');
 }
 
 function money(amountPaise = 0) {
@@ -67,6 +105,14 @@ function normalizeLooseText(value = '') {
 function textIncludesAny(text, candidates = []) {
   const normalized = normalizeLooseText(text);
   return candidates.some((candidate) => normalized.includes(normalizeLooseText(candidate)));
+}
+
+function normalizeButtonTextKey(value = '') {
+  return normalizeLooseText(value).replace(/\s+/g, '_');
+}
+
+function getButtonActionKey(button, index) {
+  return `${normalizeButtonTextKey(button?.text || button?.title || `button_${index + 1}`)}:${index}`;
 }
 
 async function getCampaign(campaignId, agency) {
@@ -111,9 +157,35 @@ function getTemplateButtonRoute(campaign, text, sections = []) {
 
   const matchingButton = buttons[matchingIndex];
   const route = String(matchingButton?.route || '').toUpperCase();
-  if (['VIEW_PACKAGES', 'VIEW_PROPERTIES', 'CUSTOM_TRIP'].includes(route)) return route;
+  if (CTA_BUTTON_ACTIONS.has(route)) return route;
 
   return getRouteForSection(sections[matchingIndex]);
+}
+
+function getCampaignButtonAction(campaign, text) {
+  const normalizedText = normalizeLooseText(text);
+  if (!normalizedText) return null;
+
+  const buttonActions = campaign?.ctaConfig && typeof campaign.ctaConfig === 'object'
+    ? campaign.ctaConfig.buttonActions || {}
+    : {};
+  if (!buttonActions || typeof buttonActions !== 'object') return null;
+
+  const buttons = Array.isArray(campaign?.template?.buttons) ? campaign.template.buttons : [];
+  const matchingIndex = buttons.findIndex((button) => normalizeLooseText(button.text || button.title) === normalizedText);
+  const keys = [];
+  if (matchingIndex > -1) {
+    const matchingButton = buttons[matchingIndex];
+    keys.push(getButtonActionKey(matchingButton, matchingIndex));
+    keys.push(normalizeButtonTextKey(matchingButton.text || matchingButton.title));
+  }
+  keys.push(normalizeButtonTextKey(text));
+
+  for (const key of keys) {
+    if (buttonActions[key]) return buttonActions[key];
+  }
+
+  return Object.values(buttonActions).find((entry) => normalizeLooseText(entry?.buttonText) === normalizedText) || null;
 }
 
 function getSections(campaign) {
@@ -181,6 +253,28 @@ async function getCustomTripFlowConfig(agency) {
   return {
     flowId: customTripFlow.metaFlowId,
     firstScreenId: customTripFlow.firstScreenId || CUSTOM_TRIP_FLOW_FIRST_SCREEN_ID,
+  };
+}
+
+async function getTravelReadinessFlowConfig(agency) {
+  const readinessFlow = await WhatsAppFlow.findOne({
+    where: {
+      agencyId: agency.id,
+      status: { [Op.in]: ['PUBLISHED', 'DRAFT'] },
+      metaFlowId: { [Op.ne]: null },
+      name: { [Op.iLike]: `%${TRAVEL_READINESS_FLOW_NAME}%` },
+    },
+    order: [
+      ['status', 'DESC'],
+      ['updatedAt', 'DESC'],
+    ],
+  });
+
+  if (!readinessFlow?.metaFlowId) return null;
+  return {
+    flowId: readinessFlow.metaFlowId,
+    firstScreenId: readinessFlow.firstScreenId || 'TRAVELLER_COUNT',
+    name: readinessFlow.name,
   };
 }
 
@@ -356,6 +450,7 @@ async function openCampaignPropertyFlow(campaign, section, items, customer, agen
 
   const propertyOptions = await buildFlowPropertyOptions(items);
   const propertyLocationOptions = buildFlowPropertyLocationOptions(items);
+  const propertyTypeOptions = buildFlowPropertyTypeOptions(items);
   const propSectionLabel = escapeMarkdown(section?.label || 'View Properties');
   return whatsappService.sendFlowMessage(
     customer.phone,
@@ -368,6 +463,7 @@ async function openCampaignPropertyFlow(campaign, section, items, customer, agen
       data: {
         property_category_label: escapeMarkdown(section?.label || 'Featured').slice(0, 20),
         property_locations: propertyLocationOptions,
+        property_types: propertyTypeOptions,
         property_options: propertyOptions,
       },
     },
@@ -567,7 +663,7 @@ async function showCampaignPackageDetail(session, campaignId, packageId, custome
     `${money(pkg.basePrice)}/person`,
     `${escapeMarkdown(pkg.duration || 'Custom itinerary')}`,
     '',
-    escapeMarkdown(pkg.summary || 'Curated holiday package with handpicked stays.').slice(0, 180),
+    packageDescriptionText(pkg.summary || 'Curated holiday package with handpicked stays.').slice(0, 180),
     '',
     'Highlights:',
     buildPackageHighlights(pkg),
@@ -772,6 +868,443 @@ async function startCustomTripLead(session, campaign, customer, agency) {
   );
 }
 
+function safeCampaignPdfName(pkg) {
+  const base = String(pkg?.brochureFileName || pkg?.name || 'package')
+    .trim()
+    .replace(/[^\w\-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    || 'package';
+  return base.toLowerCase().endsWith('.pdf') ? base : `${base}.pdf`;
+}
+
+function safeItineraryPdfName(itinerary, pkg) {
+  const base = String(itinerary?.name || pkg?.name || 'itinerary')
+    .trim()
+    .replace(/[^\w\-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    || 'itinerary';
+  return base.toLowerCase().endsWith('.pdf') ? base : `${base}.pdf`;
+}
+
+async function findPackageItineraryPdf(pkg, agency) {
+  if (!pkg?.id || !agency?.id) return null;
+
+  const itineraries = await Itinerary.findAll({
+    where: {
+      agencyId: agency.id,
+      packageId: pkg.id,
+      pdfUrl: { [Op.ne]: null },
+    },
+    order: [
+      ['updatedAt', 'DESC'],
+      ['createdAt', 'DESC'],
+    ],
+    limit: 10,
+  });
+
+  return itineraries.find((itinerary) => String(itinerary?.pdfUrl || '').trim()) || null;
+}
+
+function buildCampaignItineraryDescription(pkg) {
+  const destinations = Array.isArray(pkg?.destinations) && pkg.destinations.length
+    ? pkg.destinations.slice(0, 3).map(escapeMarkdown).join(', ')
+    : '';
+  const summary = packageDescriptionText(pkg?.summary || 'Here is the itinerary brochure for your selected package.');
+  const highlights = buildPackageHighlights(pkg);
+
+  return [
+    `*${escapeMarkdown(pkg?.name || 'Selected Package')}*`,
+    destinations ? `Destination: ${destinations}` : null,
+    pkg?.duration ? `Duration: ${escapeMarkdown(pkg.duration)}` : null,
+    pkg?.basePrice ? `Starting from ${money(pkg.basePrice)}/person` : null,
+    '',
+    summary.slice(0, 320),
+    '',
+    highlights ? `Highlights:\n${highlights}` : null,
+  ].filter((line) => line !== null && line !== undefined && line !== '').join('\n');
+}
+
+async function isPublicPdfUrl(url) {
+  const target = String(url || '').trim();
+  if (!/^https?:\/\//i.test(target)) return false;
+
+  try {
+    const response = await axios.head(target, {
+      maxRedirects: 3,
+      timeout: 10000,
+      validateStatus: () => true,
+    });
+    if (response.status >= 200 && response.status < 300) return true;
+    console.warn('[CampaignAction] itinerary_pdf_not_public', {
+      status: response.status,
+      url: target,
+      cloudinaryError: response.headers?.['x-cld-error'],
+    });
+    return false;
+  } catch (err) {
+    console.warn('[CampaignAction] itinerary_pdf_preflight_failed', {
+      url: target,
+      error: err.message,
+    });
+    return false;
+  }
+}
+
+async function sendCampaignPackageItinerary(session, campaignId, packageId, customer, agency) {
+  const ctx = { customerId: customer.id, agencyId: agency.id };
+  const [campaign, pkg] = await Promise.all([
+    getCampaign(campaignId, agency),
+    Package.findOne({ where: { id: packageId, agencyId: agency.id, isActive: true } }),
+  ]);
+
+  if (!pkg) {
+    return whatsappService.sendTextMessage(customer.phone, 'This package is no longer available. Send Hi to browse latest packages.', ctx);
+  }
+
+  await trackCampaignClick(campaignId, customer, agency, {
+    clickedAction: 'SEND_ITINERARY',
+    selectedItemType: 'PACKAGE',
+    selectedItemId: pkg.id,
+  });
+
+  const itinerary = await findPackageItineraryPdf(pkg, agency);
+  const packageBrochureUrl = String(pkg.brochureUrl || '').trim();
+  const generatedItineraryUrl = String(itinerary?.pdfUrl || '').trim();
+  const documentUrl = packageBrochureUrl || generatedItineraryUrl;
+
+  if (documentUrl) {
+    const canFetchDocument = await isPublicPdfUrl(documentUrl);
+    if (!canFetchDocument) {
+      return whatsappService.sendTextMessage(
+        customer.phone,
+        `The itinerary PDF for ${escapeMarkdown(pkg.name)} is being prepared. Please try again shortly, or tap See Other to browse more options.`,
+        ctx
+      );
+    }
+
+    await updateSession(session, {
+      currentStep: 'PACKAGE_DETAIL',
+      collectedData: {
+        selectedPackageId: pkg.id,
+        selectedPackageName: pkg.name,
+        packageResults: Array.from(new Set([...(session.collectedData?.packageResults || []), pkg.id])),
+        campaignId,
+        campaignName: campaign?.name || null,
+      },
+    });
+
+    const documentResult = await whatsappService.sendDocumentMessage(
+      customer.phone,
+      documentUrl,
+      packageBrochureUrl ? safeCampaignPdfName(pkg) : safeItineraryPdfName(itinerary, pkg),
+      buildCampaignItineraryDescription(pkg),
+      ctx
+    );
+
+    if (documentResult?.status === 'FAILED') {
+      return showCampaignPackageDetail(session, campaignId, packageId, customer, agency, 'SEND_ITINERARY');
+    }
+
+    return whatsappService.sendButtonsMessage(
+      customer.phone,
+      `I sent the itinerary PDF for ${escapeMarkdown(pkg.name)}. Would you like to see other options?`,
+      [{ id: 'global_main_menu', title: 'See Other' }],
+      ctx,
+      { footerText: 'Tap See Other to return to the welcome menu.' }
+    );
+  }
+
+  return showCampaignPackageDetail(session, campaignId, packageId, customer, agency, 'SEND_ITINERARY');
+}
+
+async function openCampaignAvailabilityFlow(session, campaign, packageId, customer, agency) {
+  const ctx = { customerId: customer.id, agencyId: agency.id };
+  const pkg = await Package.findOne({ where: { id: packageId, agencyId: agency.id, isActive: true } });
+
+  if (!pkg) {
+    return whatsappService.sendTextMessage(customer.phone, 'This package is no longer available. Send Hi to browse latest packages.', ctx);
+  }
+
+  await trackCampaignClick(campaign.id, customer, agency, {
+    clickedAction: 'CHECK_AVAILABILITY',
+    selectedItemType: 'PACKAGE',
+    selectedItemId: pkg.id,
+  });
+
+  const lead = await ensureLead(session, customer, agency, {
+    routingIntentKey: 'packages',
+    packageId: pkg.id,
+    itemType: 'PACKAGE',
+    source: 'whatsapp_campaign',
+    campaignId: campaign.id,
+    campaignName: campaign.name,
+    campaignAction: 'CHECK_AVAILABILITY',
+    destination: pkg.destinations?.[0] || null,
+    status: 'ENQUIRY',
+    notes: `Availability/readiness questionnaire opened from campaign: ${pkg.name}`,
+  });
+  await attachLeadToRecipient(campaign.id, customer, lead, {
+    selectedItemType: 'PACKAGE',
+    selectedItemId: pkg.id,
+  });
+
+  await updateSession(session, {
+    currentStep: 'COMPLETE',
+    collectedData: {
+      activeLeadId: lead.id,
+      selectedPackageId: pkg.id,
+      selectedPackageIds: Array.from(new Set([...(session.collectedData?.selectedPackageIds || []), pkg.id].filter(Boolean))),
+      selectedPackageName: pkg.name,
+      packageResults: Array.from(new Set([...(session.collectedData?.packageResults || []), pkg.id].filter(Boolean))),
+      campaignId: campaign.id,
+      campaignName: campaign.name,
+      enquiryDraft: customer.name ? { name: customer.name } : {},
+    },
+  });
+
+  const readinessFlow = await getTravelReadinessFlowConfig(agency);
+  if (!readinessFlow?.flowId) {
+    console.error('[CampaignAction] travel_readiness_flow_missing', {
+      agencyId: agency.id,
+      flowName: TRAVEL_READINESS_FLOW_NAME,
+    });
+    return showCampaignPackageDetail(session, campaign.id, pkg.id, customer, agency, 'CHECK_AVAILABILITY');
+  }
+
+  return whatsappService.sendFlowMessage(
+    customer.phone,
+    `Check availability for ${escapeMarkdown(pkg.name)} below.`,
+    {
+      flowId: readinessFlow.flowId,
+      firstScreenId: readinessFlow.firstScreenId,
+      flowCta: 'Check Availability',
+      flowToken: `campaign-readiness|${agency.id}|${campaign.id}|${pkg.id}|${customer.id}|${Date.now()}`,
+      data: {
+        package_id: pkg.id,
+        package_name: escapeMarkdown(pkg.name),
+        package_summary: `${money(pkg.basePrice)} / ${escapeMarkdown(pkg.duration || 'Custom itinerary')}`.slice(0, 80),
+        campaign_id: campaign.id,
+        campaign_name: escapeMarkdown(campaign.name).slice(0, 60),
+        customer_name: String(customer.name || '').trim(),
+      },
+    },
+    ctx,
+    {
+      headerText: 'Travel Readiness',
+      footerText: 'Submit the form and our team will confirm availability.',
+    }
+  );
+}
+
+async function resolveCampaignActionPackage(campaign, actionEntry, agency) {
+  if (actionEntry?.itemId && String(actionEntry.itemType || '').toUpperCase() === 'PACKAGE') {
+    const pkg = await Package.findOne({ where: { id: actionEntry.itemId, agencyId: agency.id, isActive: true } });
+    if (pkg) return { package: pkg, section: null, candidates: [pkg] };
+  }
+
+  const groups = await resolveAllCampaignItems(campaign, agency);
+  const packageGroup = groups.find(({ section }) => String(section?.itemType || '').toUpperCase() === 'PACKAGE');
+  const candidates = packageGroup?.items || [];
+  return {
+    package: candidates.length === 1 ? candidates[0] : null,
+    section: packageGroup?.section || null,
+    candidates,
+  };
+}
+
+async function routeTalkToAgentForCampaignPackage(session, campaign, actionEntry, customer, agency) {
+  const ctx = { customerId: customer.id, agencyId: agency.id };
+  const resolved = await resolveCampaignActionPackage(campaign, actionEntry, agency);
+
+  if (!resolved.package && resolved.candidates.length > 1 && resolved.section) {
+    await whatsappService.sendTextMessage(
+      customer.phone,
+      'Please choose the package you want to discuss, then tap Enquiry or Call Now.',
+      ctx
+    );
+    await showCampaignItems(session, campaign, resolved.section, resolved.candidates, customer, agency);
+    return true;
+  }
+
+  const pkg = resolved.package;
+  const lead = await ensureLead(session, customer, agency, {
+    routingIntentKey: 'packages',
+    packageId: pkg?.id || null,
+    itemType: pkg ? 'PACKAGE' : null,
+    source: 'whatsapp_campaign',
+    campaignId: campaign.id,
+    campaignName: campaign.name,
+    campaignAction: 'TALK_TO_AGENT',
+    destination: pkg?.destinations?.[0] || null,
+    status: 'ENQUIRY',
+    notes: `Talk-to-agent clicked from campaign${pkg ? ` for package: ${pkg.name}` : ''}`,
+  });
+
+  await trackCampaignClick(campaign.id, customer, agency, {
+    clickedAction: 'TALK_TO_AGENT',
+    selectedItemType: pkg ? 'PACKAGE' : null,
+    selectedItemId: pkg?.id || null,
+  });
+  await attachLeadToRecipient(campaign.id, customer, lead, {
+    selectedItemType: pkg ? 'PACKAGE' : null,
+    selectedItemId: pkg?.id || null,
+  });
+
+  const assignedAgent = lead?.assignedAgentId
+    ? await Agent.findOne({ where: { id: lead.assignedAgentId, agencyId: agency.id } })
+    : null;
+  const routedPhone = assignedAgent?.phone || agency.phone || agency.whatsappNumber;
+  const routedName = assignedAgent?.name || agency.name || 'our travel expert';
+  const chatLink = buildWhatsAppChatLink(
+    routedPhone,
+    buildSpecialistPrefill({ customer, pkg, campaign, lead })
+  );
+
+  await updateSession(session, {
+    currentStep: 'COMPLETE',
+    collectedData: {
+      activeLeadId: lead?.id || null,
+      selectedPackageId: pkg?.id || session.collectedData?.selectedPackageId || null,
+      selectedPackageIds: pkg
+        ? Array.from(new Set([...(session.collectedData?.selectedPackageIds || []), pkg.id].filter(Boolean)))
+        : session.collectedData?.selectedPackageIds || [],
+      selectedPackageName: pkg?.name || session.collectedData?.selectedPackageName || null,
+      campaignId: campaign.id,
+      campaignName: campaign.name,
+    },
+  });
+
+  if (routedPhone && chatLink) {
+    await whatsappService.sendUrlButtonMessage(
+      customer.phone,
+      `Message or call ${escapeMarkdown(routedName)} for ${pkg ? escapeMarkdown(pkg.name) : 'this campaign'}: ${routedPhone}`,
+      'Chat on WhatsApp',
+      chatLink,
+      ctx
+    );
+  } else {
+    await whatsappService.sendTextMessage(
+      customer.phone,
+      routedPhone
+        ? `Message or call ${escapeMarkdown(routedName)} for ${pkg ? escapeMarkdown(pkg.name) : 'this campaign'}: ${routedPhone}`
+        : 'Our travel expert will contact you shortly.',
+      ctx
+    );
+  }
+
+  if (assignedAgent?.phone && lead?.id) {
+    await sendAgentTalkToAgentIntent(assignedAgent.phone, agency.id, {
+      customerName: customer.name,
+      phone: customer.phone,
+      packageName: pkg?.name,
+    }, ctx).catch((err) => {
+      console.warn('[CampaignAction] Could not notify routed package agent:', err.message);
+    });
+  }
+
+  return true;
+}
+
+async function showConfiguredActionItems(session, campaign, actionEntry, itemType, customer, agency) {
+  const groups = await resolveAllCampaignItems(campaign, agency);
+  const matchingGroups = groups.filter(({ section }) => String(section?.itemType || '').toUpperCase() === itemType);
+  const preferredGroup = matchingGroups[0] || groups[0];
+  if (!preferredGroup) return false;
+
+  if (actionEntry.action === 'VIEW_DETAILS' && preferredGroup.items.length === 1) {
+    const item = preferredGroup.items[0];
+    if (itemType === 'PROPERTY') {
+      await showCampaignPropertyDetail(session, campaign.id, item.id, customer, agency, 'VIEW_DETAILS');
+      return true;
+    }
+    await showCampaignPackageDetail(session, campaign.id, item.id, customer, agency, 'VIEW_DETAILS');
+    return true;
+  }
+
+  await showCampaignItems(session, campaign, preferredGroup.section, preferredGroup.items, customer, agency);
+  return true;
+}
+
+async function handleConfiguredCampaignButtonAction(session, campaign, actionEntry, customer, agency) {
+  if (!actionEntry?.action) return false;
+
+  const action = String(actionEntry.action || '').toUpperCase();
+  const itemType = String(actionEntry.itemType || '').toUpperCase();
+  const itemId = actionEntry.itemId || null;
+  const ctx = { customerId: customer.id, agencyId: agency.id };
+
+  if (action === 'TALK_TO_AGENT') {
+    return routeTalkToAgentForCampaignPackage(session, campaign, actionEntry, customer, agency);
+  }
+
+  if (action === 'CUSTOM_TRIP') {
+    await trackCampaignClick(campaign.id, customer, agency, { clickedAction: 'CUSTOM_TRIP', selectedItemType: 'CUSTOM_TRIP' });
+    await startCustomTripLead(session, campaign, customer, agency);
+    return true;
+  }
+
+  if (action === 'VIEW_DETAILS' && itemId && itemType === 'PROPERTY') {
+    await showCampaignPropertyDetail(session, campaign.id, itemId, customer, agency, 'VIEW_DETAILS');
+    return true;
+  }
+
+  if (action === 'VIEW_DETAILS' && itemId && itemType === 'PACKAGE') {
+    await showCampaignPackageDetail(session, campaign.id, itemId, customer, agency, 'VIEW_DETAILS');
+    return true;
+  }
+
+  if (action === 'SEND_ITINERARY' && itemId && itemType === 'PACKAGE') {
+    await sendCampaignPackageItinerary(session, campaign.id, itemId, customer, agency);
+    return true;
+  }
+
+  if (action === 'CHECK_AVAILABILITY' && itemId && itemType === 'PACKAGE') {
+    await openCampaignAvailabilityFlow(session, campaign, itemId, customer, agency);
+    return true;
+  }
+
+  if (action === 'VIEW_PACKAGES') {
+    return showConfiguredActionItems(session, campaign, actionEntry, 'PACKAGE', customer, agency);
+  }
+
+  if (action === 'VIEW_PROPERTIES') {
+    return showConfiguredActionItems(session, campaign, actionEntry, 'PROPERTY', customer, agency);
+  }
+
+  if (action === 'VIEW_DETAILS') {
+    const preferredType = itemType === 'PROPERTY' ? 'PROPERTY' : itemType === 'PACKAGE' ? 'PACKAGE' : 'PACKAGE';
+    return showConfiguredActionItems(session, campaign, actionEntry, preferredType, customer, agency);
+  }
+
+  if (action === 'SEND_ITINERARY') {
+    const groups = await resolveAllCampaignItems(campaign, agency);
+    const packageGroup = groups.find(({ section }) => String(section?.itemType || '').toUpperCase() === 'PACKAGE');
+    if (!packageGroup?.items?.length) return false;
+    if (packageGroup.items.length === 1) {
+      await sendCampaignPackageItinerary(session, campaign.id, packageGroup.items[0].id, customer, agency);
+      return true;
+    }
+    await showCampaignItems(session, campaign, packageGroup.section, packageGroup.items, customer, agency);
+    return true;
+  }
+
+  if (action === 'CHECK_AVAILABILITY') {
+    const groups = await resolveAllCampaignItems(campaign, agency);
+    const packageGroup = groups.find(({ section }) => String(section?.itemType || '').toUpperCase() === 'PACKAGE');
+    if (!packageGroup?.items?.length) return false;
+    if (packageGroup.items.length === 1) {
+      await openCampaignAvailabilityFlow(session, campaign, packageGroup.items[0].id, customer, agency);
+      return true;
+    }
+    await showCampaignItems(session, campaign, packageGroup.section, packageGroup.items, customer, agency);
+    return true;
+  }
+
+  return false;
+}
+
 async function handleCampaignAction(session, actionId, customer, agency) {
   const ctx = { customerId: customer.id, agencyId: agency.id };
   const parts = parseAction(actionId);
@@ -843,7 +1376,21 @@ async function tryHandleCampaignTextAction(session, text, customer, agency) {
   if (!campaign) return false;
 
   const sections = getSections(campaign);
+  const configuredButtonAction = getCampaignButtonAction(campaign, text);
+  if (configuredButtonAction) {
+    const handled = await handleConfiguredCampaignButtonAction(session, campaign, configuredButtonAction, customer, agency);
+    if (handled) return true;
+  }
+
   const buttonRoute = getTemplateButtonRoute(campaign, text, sections);
+  if (buttonRoute) {
+    const handled = await handleConfiguredCampaignButtonAction(session, campaign, {
+      action: buttonRoute,
+      buttonText: text,
+    }, customer, agency);
+    if (handled) return true;
+  }
+
   const wantsPackages = textIncludesAny(normalized, ['view packages', 'packages', 'show packages', 'see others']);
   const wantsProperties = textIncludesAny(normalized, ['view properties', 'properties', 'show properties']);
 
@@ -939,7 +1486,7 @@ function buildPackageHighlights(pkg) {
         ? pkg.destinations.slice(0, 4)
         : ['Hotel stay', 'Sightseeing', 'Curated support'];
 
-  return items.map((item) => `- ${escapeMarkdown(item)}`).join('\n');
+  return items.map((item) => `* ${packageDescriptionText(item)}`).join('\n');
 }
 
 module.exports = {

@@ -1,7 +1,7 @@
 import { formatCurrency } from '../utils/formatters';
 import { MapPinIcon, ArrowUpRightIcon, ClockIcon } from '@heroicons/react/24/outline';
 
-export default function PackageCard({ pkg, onEdit, onDelete, canManage, onClick }) {
+export default function PackageCard({ pkg, onEdit, onToggleActive, canManage, onClick }) {
   const isActive = pkg.isActive;
 
   const statusLabel = isActive ? 'Available' : 'Inactive';
@@ -95,7 +95,7 @@ export default function PackageCard({ pkg, onEdit, onDelete, canManage, onClick 
               Edit
             </button>
             <button
-              onClick={(e) => { e.stopPropagation(); onDelete(pkg.id); }}
+              onClick={(e) => { e.stopPropagation(); onToggleActive(pkg); }}
               className="flex-1 rounded-md bg-neutral-100 py-1.5 text-[11px] font-bold text-neutral-600 transition hover:bg-neutral-200"
             >
               {isActive ? 'Hide' : 'Show'}

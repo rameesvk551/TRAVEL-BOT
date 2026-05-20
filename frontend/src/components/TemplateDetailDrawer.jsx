@@ -15,12 +15,32 @@ import {
 import { templatesApi } from '../api/templatesApi';
 import toast from 'react-hot-toast';
 
-const BUTTON_ROUTE_OPTIONS = [
-   { value: '', label: 'No route' },
-   { value: 'VIEW_PACKAGES', label: 'View Packages' },
-   { value: 'VIEW_PROPERTIES', label: 'View Properties' },
-   { value: 'CUSTOM_TRIP', label: 'Custom Trip' },
-];
+const normalizeQuickReplyLabel = (value = '') => String(value || '')
+   .trim()
+   .toLowerCase()
+   .replace(/[^\p{L}\p{N}]+/gu, ' ')
+   .replace(/\s+/g, ' ')
+   .trim();
+
+const hasDuplicateQuickReplyLabels = (buttons = []) => {
+   const seen = new Set();
+   return buttons.some((button) => {
+      if (String(button.type || 'QUICK_REPLY').toUpperCase() !== 'QUICK_REPLY') return false;
+      const label = normalizeQuickReplyLabel(button.text);
+      if (!label) return false;
+      if (seen.has(label)) return true;
+      seen.add(label);
+      return false;
+   });
+};
+
+const extractPlaceholderIndexes = (text = '') => {
+   const matches = String(text || '').match(/\{\{\s*\d+\s*\}\}/g) || [];
+   return [...new Set(matches
+      .map((token) => Number(token.replace(/[^\d]/g, '')))
+      .filter((value) => Number.isFinite(value) && value > 0))]
+      .sort((a, b) => a - b);
+};
 
 const VARIABLE_PRESETS = [
    { position: 1, label: 'Name', token: '{{1}}', sample: 'Rahul' },
@@ -30,6 +50,38 @@ const VARIABLE_PRESETS = [
 ];
 
 const normalizeSampleVariables = (value) => (Array.isArray(value) ? [...value] : []);
+
+const sampleForPosition = (position) => (
+   VARIABLE_PRESETS.find((preset) => preset.position === position)?.sample || `Sample ${position}`
+);
+
+const withCompleteBodyExamples = (data) => {
+   const sampleVariables = normalizeSampleVariables(data.sampleVariables);
+   extractPlaceholderIndexes(data.body).forEach((position) => {
+      const index = position - 1;
+      if (!String(sampleVariables[index] || '').trim()) {
+         sampleVariables[index] = sampleForPosition(position);
+      }
+   });
+   return { ...data, sampleVariables };
+};
+
+const stripButtonRoutes = (buttons = []) => (
+   Array.isArray(buttons)
+      ? buttons.map(({ route, action, routing, ...button }) => button)
+      : []
+);
+
+const buildTemplatePayload = (data) => ({
+   ...withCompleteBodyExamples(data),
+   buttons: stripButtonRoutes(data.buttons),
+   carouselCards: Array.isArray(data.carouselCards)
+      ? data.carouselCards.map((card) => ({
+         ...card,
+         buttons: stripButtonRoutes(card.buttons),
+      }))
+      : [],
+});
 
 export default function TemplateDetailDrawer({
    template: initialTemplate,
@@ -113,22 +165,27 @@ export default function TemplateDetailDrawer({
    if (!isOpen) return null;
 
    const handleSave = async () => {
+      if (!hasValidButtons) {
+         toast.error('Add button text, URL values, phone numbers, and unique quick-reply labels before saving.');
+         return;
+      }
       try {
+         const payload = buildTemplatePayload(formData);
          if (initialIsPrebuilt) {
             // "Use Template" flow: fork it
             await usePrebuiltMutation.mutateAsync({
                id: initialTemplate.id,
-               data: formData
+               data: payload
             });
          } else if (initialTemplate?.id) {
             // "Edit" flow: update existing
             await updateMutation.mutateAsync({
                id: initialTemplate.id,
-               data: formData
+               data: payload
             });
          } else {
             // "New" flow: create new
-            await createMutation.mutateAsync(formData);
+            await createMutation.mutateAsync(payload);
          }
          onClose();
       } catch (err) {
@@ -143,8 +200,12 @@ export default function TemplateDetailDrawer({
          toast.error('Add the required header text or media sample URL before submitting.');
          return;
       }
+      if (!hasValidBodyExamples) {
+         toast.error('Add sample values for the variables used in the body before submitting.');
+         return;
+      }
       if (!hasValidButtons) {
-         toast.error('URL buttons need a URL and phone buttons need a phone number.');
+         toast.error('Add button text, URL values, phone numbers, and unique quick-reply labels before submitting.');
          return;
       }
       if (!hasValidCarouselCards) {
@@ -156,7 +217,7 @@ export default function TemplateDetailDrawer({
          if (!initialIsPrebuilt && initialTemplate?.id && mode === 'edit') {
             await updateMutation.mutateAsync({
                id: initialTemplate.id,
-               data: formData
+               data: buildTemplatePayload(formData)
             });
          }
          await submitMutation.mutateAsync(initialTemplate.id);
@@ -252,6 +313,18 @@ export default function TemplateDetailDrawer({
       if (type === 'URL') return !!String(button.url || '').trim();
       if (type === 'PHONE_NUMBER') return !!String(button.phoneNumber || '').trim();
       return true;
+   }) && !hasDuplicateQuickReplyLabels(formData.buttons);
+   const bodyPlaceholderIndexes = extractPlaceholderIndexes(formData.body);
+   const samplePresets = (bodyPlaceholderIndexes.length ? bodyPlaceholderIndexes : [1, 2])
+      .map((position) => VARIABLE_PRESETS.find((preset) => preset.position === position) || {
+         position,
+         label: `Variable ${position}`,
+         token: `{{${position}}}`,
+         sample: `Sample ${position}`,
+      });
+   const hasValidBodyExamples = bodyPlaceholderIndexes.every((position) => {
+      const value = formData.sampleVariables?.[position - 1];
+      return String(value || sampleForPosition(position)).trim();
    });
    const hasValidCarouselCards = !isCarousel || (
       formData.carouselCards.length >= 2
@@ -583,7 +656,7 @@ export default function TemplateDetailDrawer({
                            className="shell-input-rect bg-white py-3 resize-none font-sans leading-relaxed"
                         />
                         <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                           {VARIABLE_PRESETS.slice(0, 2).map((preset) => (
+                           {samplePresets.map((preset) => (
                               <label key={preset.token} className="block">
                                  <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-neutral-400">
                                     Sample for {preset.token} {preset.label}
@@ -619,7 +692,7 @@ export default function TemplateDetailDrawer({
                            <h3 className="text-sm font-bold text-neutral-700 uppercase tracking-wider">Buttons</h3>
                         </div>
                         <button
-                           onClick={() => setFormData({ ...formData, buttons: [...formData.buttons, { type: 'QUICK_REPLY', text: '', route: '' }] })}
+                           onClick={() => setFormData({ ...formData, buttons: [...formData.buttons, { type: 'QUICK_REPLY', text: '' }] })}
                            className="p-1 px-2 text-[10px] bg-neutral-900 text-white rounded font-bold hover:bg-neutral-800 transition-colors"
                         >
                            + Add Button
@@ -639,7 +712,9 @@ export default function TemplateDetailDrawer({
                                     newBtns[idx].type = e.target.value;
                                     if (e.target.value !== 'URL') newBtns[idx].url = '';
                                     if (e.target.value !== 'PHONE_NUMBER') newBtns[idx].phoneNumber = '';
-                                    if (e.target.value !== 'QUICK_REPLY') newBtns[idx].route = '';
+                                    delete newBtns[idx].route;
+                                    delete newBtns[idx].action;
+                                    delete newBtns[idx].routing;
                                     setFormData({ ...formData, buttons: newBtns });
                                  }}
                                  className="w-full rounded border border-neutral-200 bg-white px-2 py-1.5 text-xs focus:outline-none focus:ring-0 sm:w-32"
@@ -659,21 +734,6 @@ export default function TemplateDetailDrawer({
                                  placeholder="Button Text"
                                  className="flex-1 bg-white border border-neutral-200 rounded px-3 py-1.5 text-xs focus:ring-0 focus:outline-none"
                               />
-                              {btn.type === 'QUICK_REPLY' && (
-                                 <select
-                                    value={btn.route || ''}
-                                    onChange={e => {
-                                       const newBtns = [...formData.buttons];
-                                       newBtns[idx].route = e.target.value;
-                                       setFormData({ ...formData, buttons: newBtns });
-                                    }}
-                                    className="w-full rounded border border-neutral-200 bg-white px-2 py-1.5 text-xs focus:outline-none focus:ring-0 sm:w-40"
-                                 >
-                                    {BUTTON_ROUTE_OPTIONS.map((option) => (
-                                       <option key={option.value || 'none'} value={option.value}>{option.label}</option>
-                                    ))}
-                                 </select>
-                              )}
                               {btn.type === 'URL' && (
                                  <input
                                     type="url"

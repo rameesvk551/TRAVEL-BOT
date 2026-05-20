@@ -117,8 +117,9 @@ export default function Login() {
         <section className="hidden lg:block lg:flex-1 bg-[#f8fafc] p-4">
           <div className="relative h-full w-full overflow-hidden rounded-[2rem] shadow-2xl">
             <img 
-              src="/login-hero.png" 
+              src="/login-hero.jpg" 
               alt="Premium Travel Workspace" 
+              fetchPriority="high"
               className="absolute inset-0 h-full w-full object-cover grayscale-[0.1]" 
             />
             <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />

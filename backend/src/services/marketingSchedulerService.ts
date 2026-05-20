@@ -5,9 +5,11 @@ const IORedis = require('ioredis');
 const dripService = require('./dripService');
 const { Campaign, CampaignRecipient, Customer, MessageTemplate, BotSession, Agency, Package, Property, WhatsAppFlow } = require('../models');
 const whatsappService = require('./whatsappService');
+const mediaService = require('./mediaService');
 const { Op } = require('sequelize');
 
 const redisUrl = process.env.REDIS_URL || (process.env.NODE_ENV === 'production' ? null : 'redis://localhost:6379');
+const campaignMediaCache = new Map();
 
 function isRedisUsable(url) {
   if (!url) return false;
@@ -103,6 +105,7 @@ function replacePlaceholderAgencyText(text, agencyName) {
 
 function sanitizeTemplateParameter(value) {
   return String(value || '')
+    .replace(/\*/g, '＊')
     .replace(/[\r\n\t]+/g, ' - ')
     .replace(/ {4,}/g, '   ')
     .replace(/\s+-\s+-\s+/g, ' - ')
@@ -115,7 +118,7 @@ function buildTemplateVariables(template, customer, context = {}) {
   const featuredRecord = featuredItem?.record || null;
   const campaignDescription = sanitizeTemplateParameter(context.campaignDescription || '');
   const featuredDetails = campaignDescription || context.featuredDetails || (featuredRecord
-    ? buildCampaignCarouselCaption(featuredItem.itemType, featuredRecord).replace(/\*/g, '')
+    ? buildCampaignCarouselCaption(featuredItem.itemType, featuredRecord)
     : null);
 
   const count = getTemplateVariableCount(template);
@@ -324,6 +327,30 @@ function getCatalogRecordMediaUrl(record) {
   return link || null;
 }
 
+function isCloudinaryImageUrl(url) {
+  return String(url || '').includes('res.cloudinary.com') && String(url || '').includes('/image/upload/');
+}
+
+async function ensureWhatsAppTemplateImageUrl(mediaUrl, agencyId) {
+  const trimmed = String(mediaUrl || '').trim();
+  if (!trimmed || isCloudinaryImageUrl(trimmed)) return trimmed || null;
+  if (campaignMediaCache.has(trimmed)) return campaignMediaCache.get(trimmed);
+
+  try {
+    const uploaded = await mediaService.uploadRemoteTemplateMedia(trimmed, agencyId, 'image');
+    const stableUrl = uploaded?.secureUrl || trimmed;
+    campaignMediaCache.set(trimmed, stableUrl);
+    return stableUrl;
+  } catch (err) {
+    console.error('[CampaignBroadcast] Failed to normalize campaign image for WhatsApp template header', {
+      agencyId,
+      mediaUrl: trimmed,
+      message: err.message,
+    });
+    return trimmed;
+  }
+}
+
 async function resolveCampaignFeaturedCatalogItem(campaign, agencyId) {
   const featuredType = String(campaign?.ctaConfig?.featuredItemType || '').toUpperCase();
   const featuredId = String(campaign?.ctaConfig?.featuredItemId || '').trim();
@@ -466,7 +493,7 @@ async function buildRuntimeCampaignTemplate(campaign, template, agencyId) {
 
   if (format === 'SECTION_CTA') {
     const featuredItem = await resolveCampaignFeaturedCatalogItem(campaign, agencyId);
-    const mediaUrl = getCatalogRecordMediaUrl(featuredItem?.record);
+    const mediaUrl = await ensureWhatsAppTemplateImageUrl(getCatalogRecordMediaUrl(featuredItem?.record), agencyId);
     const headerType = String(runtimeTemplate.headerType || '').toUpperCase();
     if (headerType === 'IMAGE' && !mediaUrl) {
       throw new Error('CTA campaigns require at least one selected package or property with an image');
@@ -479,7 +506,7 @@ async function buildRuntimeCampaignTemplate(campaign, template, agencyId) {
         itemType: featuredItem.itemType,
         itemId: featuredItem.record.id,
         name: featuredItem.record.name,
-        details: campaignDescription || buildCampaignCarouselCaption(featuredItem.itemType, featuredItem.record).replace(/\*/g, ''),
+        details: campaignDescription || buildCampaignCarouselCaption(featuredItem.itemType, featuredItem.record),
       };
       runtimeTemplate.sampleVariables = Array.isArray(runtimeTemplate.sampleVariables)
         ? [...runtimeTemplate.sampleVariables]

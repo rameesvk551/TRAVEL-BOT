@@ -626,6 +626,24 @@ function countBodyVariables(body) {
   }, 0);
 }
 
+function extractBodyVariablePositions(body) {
+  const matches = String(body || '').match(/\{\{\s*(\d+)\s*\}\}/g) || [];
+  return [...new Set(matches
+    .map((token) => parseInt(token.replace(/[^\d]/g, ''), 10))
+    .filter((value) => Number.isFinite(value) && value > 0))]
+    .sort((a, b) => a - b);
+}
+
+function defaultSampleVariable(position) {
+  const defaults = {
+    1: 'Rahul',
+    2: 'Kashmir 4N 5D - hotels, transfers, sightseeing, from Rs 39,999/person',
+    3: 'Kashmir Family Escape',
+    4: 'Wayon Travels',
+  };
+  return defaults[position] || `Sample ${position}`;
+}
+
 function normalizeStatus(status) {
   const normalized = String(status || 'DRAFT').toUpperCase().replace(/\s+/g, '_');
   if (['APPROVED', 'PENDING', 'REJECTED', 'PAUSED', 'DRAFT'].includes(normalized)) return normalized;
@@ -646,7 +664,15 @@ function normalizeHeaderType(headerType) {
 
 function normalizeButtonRoute(route) {
   const normalized = String(route || '').toUpperCase();
-  return ['VIEW_PACKAGES', 'VIEW_PROPERTIES', 'CUSTOM_TRIP'].includes(normalized) ? normalized : null;
+  return [
+    'VIEW_PACKAGES',
+    'VIEW_PROPERTIES',
+    'CUSTOM_TRIP',
+    'VIEW_DETAILS',
+    'SEND_ITINERARY',
+    'CHECK_AVAILABILITY',
+    'TALK_TO_AGENT',
+  ].includes(normalized) ? normalized : null;
 }
 
 function normalizeButtons(buttons) {
@@ -811,6 +837,16 @@ function extractProviderTemplates(result) {
 function buildTemplateData(data, existing = null) {
   const body = data.body ?? existing?.body ?? '';
   const variableCount = countBodyVariables(body);
+  const rawSampleVariables = Array.isArray(data.sampleVariables)
+    ? data.sampleVariables
+    : (existing?.sampleVariables || []);
+  const sampleVariables = [...rawSampleVariables];
+  extractBodyVariablePositions(body).forEach((position) => {
+    const index = position - 1;
+    if (!String(sampleVariables[index] || '').trim()) {
+      sampleVariables[index] = defaultSampleVariable(position);
+    }
+  });
   const templateType = String(data.templateType ?? data.template_type ?? existing?.templateType ?? 'STANDARD').toUpperCase() === 'CAROUSEL'
     ? 'CAROUSEL'
     : 'STANDARD';
@@ -829,9 +865,7 @@ function buildTemplateData(data, existing = null) {
       ? normalizeCarouselCards(data.carouselCards)
       : normalizeCarouselCards(existing?.carouselCards || []),
     variableCount,
-    sampleVariables: Array.isArray(data.sampleVariables)
-      ? data.sampleVariables
-      : (existing?.sampleVariables || Array.from({ length: variableCount }, (_, index) => `Sample ${index + 1}`)),
+    sampleVariables,
     tags: Array.isArray(data.tags) ? data.tags : (existing?.tags || []),
     icon: data.icon ?? existing?.icon ?? '💬',
   };

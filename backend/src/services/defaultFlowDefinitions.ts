@@ -94,7 +94,8 @@ function propertyFlowDefinition() {
     data_api_version: '3.0',
     routing_model: {
       PROPERTY_FILTER: ['PROPERTY_SELECTOR'],
-      PROPERTY_SELECTOR: [],
+      PROPERTY_SELECTOR: ['PROPERTY_DATES'],
+      PROPERTY_DATES: [],
     },
     screens: [
       {
@@ -116,33 +117,20 @@ function propertyFlowDefinition() {
               { id: 'Munnar', title: 'Munnar' },
             ],
           },
-          property_options: {
+          property_types: {
             type: 'array',
             items: {
               type: 'object',
               properties: {
                 id: { type: 'string' },
                 title: { type: 'string' },
-                description: { type: 'string' },
-                metadata: { type: 'string' },
-                image: { type: 'string' },
               },
             },
             __example__: [
-              {
-                id: 'stay_villa_01',
-                title: 'Private Pool Villa',
-                description: 'INR 12,000 per night\n2 bedrooms, breakfast, and private pool.',
-                metadata: 'Villa',
-                image: EMPTY_PIXEL,
-              },
-              {
-                id: 'stay_resort_01',
-                title: 'Beach Resort',
-                description: 'INR 8,500 per night\nSea view room, breakfast, and resort access.',
-                metadata: 'Resort',
-                image: EMPTY_PIXEL,
-              },
+              { id: 'ALL', title: 'All stay types' },
+              { id: 'Villa', title: 'Villa' },
+              { id: 'Resort', title: 'Resort' },
+              { id: 'Hotel', title: 'Hotel' },
             ],
           },
         },
@@ -154,7 +142,7 @@ function propertyFlowDefinition() {
               name: 'property_filter_form',
               children: [
                 { type: 'TextHeading', text: 'Find Your Stay' },
-                { type: 'TextBody', text: 'Share your stay details to see matching properties.' },
+                { type: 'TextBody', text: 'Choose a place and stay type to see matching properties.' },
                 {
                   type: 'Dropdown',
                   name: 'propertyLocation',
@@ -163,39 +151,20 @@ function propertyFlowDefinition() {
                   'data-source': '${data.property_locations}',
                 },
                 {
-                  type: 'TextInput',
-                  name: 'checkInDate',
-                  label: 'Check-in Date',
+                  type: 'Dropdown',
+                  name: 'propertyType',
+                  label: 'Stay Type',
                   required: true,
-                  'input-type': 'text',
-                  'helper-text': 'Example: 20 May 2026',
-                },
-                {
-                  type: 'TextInput',
-                  name: 'checkOutDate',
-                  label: 'Check-out Date',
-                  required: true,
-                  'input-type': 'text',
-                  'helper-text': 'Example: 23 May 2026',
-                },
-                {
-                  type: 'TextInput',
-                  name: 'guests',
-                  label: 'Guests',
-                  required: true,
-                  'input-type': 'number',
-                  'helper-text': 'Total guests',
+                  'data-source': '${data.property_types}',
                 },
                 {
                   type: 'Footer',
-                  label: 'Search Stays',
+                  label: 'Show Properties',
                   'on-click-action': {
                     name: 'data_exchange',
                     payload: {
                       propertyLocation: '${form.propertyLocation}',
-                      checkInDate: '${form.checkInDate}',
-                      checkOutDate: '${form.checkOutDate}',
-                      guests: '${form.guests}',
+                      propertyType: '${form.propertyType}',
                     },
                   },
                 },
@@ -213,17 +182,9 @@ function propertyFlowDefinition() {
             type: 'string',
             __example__: 'Goa',
           },
-          checkInDate: {
+          propertyType: {
             type: 'string',
-            __example__: '20 May 2026',
-          },
-          checkOutDate: {
-            type: 'string',
-            __example__: '23 May 2026',
-          },
-          guests: {
-            type: 'string',
-            __example__: '2',
+            __example__: 'Villa',
           },
           property_options: {
             type: 'array',
@@ -256,7 +217,6 @@ function propertyFlowDefinition() {
               name: 'property_selector_form',
               children: [
                 { type: 'TextHeading', text: 'Matching Properties' },
-                { type: 'TextBody', text: '${data.propertyLocation} stay options for ${data.guests} guest(s).' },
                 {
                   type: 'RadioButtonsGroup',
                   name: 'propertyId',
@@ -266,15 +226,84 @@ function propertyFlowDefinition() {
                 },
                 {
                   type: 'Footer',
+                  label: 'Select Property',
+                  'on-click-action': {
+                    name: 'data_exchange',
+                    payload: {
+                      propertyId: '${form.propertyId}',
+                      propertyLocation: '${data.propertyLocation}',
+                      propertyType: '${data.propertyType}',
+                    },
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      },
+      {
+        id: 'PROPERTY_DATES',
+        title: 'Stay Details',
+        terminal: true,
+        data: {
+          propertyId: {
+            type: 'string',
+            __example__: 'stay_villa_01',
+          },
+          propertyLocation: {
+            type: 'string',
+            __example__: 'Goa',
+          },
+          propertyType: {
+            type: 'string',
+            __example__: 'Villa',
+          },
+        },
+        layout: {
+          type: 'SingleColumnLayout',
+          children: [
+            {
+              type: 'Form',
+              name: 'property_dates_form',
+              children: [
+                { type: 'TextHeading', text: 'Check Availability' },
+                { type: 'TextBody', text: 'Add your dates and guests for the selected property.' },
+                {
+                  type: 'TextInput',
+                  name: 'checkInDate',
+                  label: 'Check-in Date',
+                  required: true,
+                  'input-type': 'text',
+                  'helper-text': 'Example: 20 May 2026',
+                },
+                {
+                  type: 'TextInput',
+                  name: 'checkOutDate',
+                  label: 'Check-out Date',
+                  required: true,
+                  'input-type': 'text',
+                  'helper-text': 'Example: 23 May 2026',
+                },
+                {
+                  type: 'TextInput',
+                  name: 'guests',
+                  label: 'Guests',
+                  required: true,
+                  'input-type': 'number',
+                  'helper-text': 'Total guests',
+                },
+                {
+                  type: 'Footer',
                   label: 'Request Availability',
                   'on-click-action': {
                     name: 'complete',
                     payload: {
-                      propertyId: '${form.propertyId}',
+                      propertyId: '${data.propertyId}',
                       propertyLocation: '${data.propertyLocation}',
-                      checkInDate: '${data.checkInDate}',
-                      checkOutDate: '${data.checkOutDate}',
-                      guests: '${data.guests}',
+                      propertyType: '${data.propertyType}',
+                      checkInDate: '${form.checkInDate}',
+                      checkOutDate: '${form.checkOutDate}',
+                      guests: '${form.guests}',
                     },
                   },
                 },
@@ -365,6 +394,159 @@ function customTripFlowDefinition() {
                       travellers: '${form.travellers}',
                       budget: '${form.budget}',
                       notes: '${form.notes}',
+                    },
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      },
+    ],
+  };
+}
+
+function travelReadinessQuestionnaireFlowDefinition() {
+  return {
+    version: '7.2',
+    data_api_version: '3.0',
+    routing_model: {
+      TRAVELLER_COUNT: ['BOOKING_READINESS'],
+      BOOKING_READINESS: ['DEPARTURE_AIRPORT'],
+      DEPARTURE_AIRPORT: [],
+    },
+    screens: [
+      {
+        id: 'TRAVELLER_COUNT',
+        title: 'Trip Questionnaire',
+        layout: {
+          type: 'SingleColumnLayout',
+          children: [
+            {
+              type: 'Form',
+              name: 'travel_readiness_form',
+              children: [
+                { type: 'TextHeading', text: 'Plan Your Trip' },
+                {
+                  type: 'TextBody',
+                  text: 'Answer a few quick questions so our team can match the right travel option.',
+                },
+                {
+                  type: 'RadioButtonsGroup',
+                  name: 'travellerCount',
+                  label: 'How many people are planning to travel?',
+                  required: true,
+                  'data-source': [
+                    { id: '1_PERSON', title: '1 person' },
+                    { id: '2_PEOPLE', title: '2 people' },
+                    { id: '3_TO_5_PEOPLE', title: '3-5 people' },
+                    { id: 'FAMILY_OR_GROUP', title: 'Family / Group' },
+                  ],
+                },
+                {
+                  type: 'Footer',
+                  label: 'Next',
+                  'on-click-action': {
+                    name: 'navigate',
+                    next: { type: 'screen', name: 'BOOKING_READINESS' },
+                    payload: {
+                      travellerCount: '${form.travellerCount}',
+                    },
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      },
+      {
+        id: 'BOOKING_READINESS',
+        title: 'Trip Questionnaire',
+        data: {
+          travellerCount: {
+            type: 'string',
+            __example__: '2_PEOPLE',
+          },
+        },
+        layout: {
+          type: 'SingleColumnLayout',
+          children: [
+            {
+              type: 'Form',
+              name: 'travel_readiness_form',
+              children: [
+                { type: 'TextHeading', text: 'Plan Your Trip' },
+                {
+                  type: 'RadioButtonsGroup',
+                  name: 'bookingReadiness',
+                  label: 'Are you ready if the details match?',
+                  required: true,
+                  'data-source': [
+                    { id: 'READY_TO_BOOK', title: 'Yes, ready to book' },
+                    { id: 'NEED_MORE_DETAILS', title: 'Need more details' },
+                    { id: 'JUST_EXPLORING', title: 'Just exploring' },
+                  ],
+                },
+                {
+                  type: 'Footer',
+                  label: 'Next',
+                  'on-click-action': {
+                    name: 'navigate',
+                    next: { type: 'screen', name: 'DEPARTURE_AIRPORT' },
+                    payload: {
+                      travellerCount: '${data.travellerCount}',
+                      bookingReadiness: '${form.bookingReadiness}',
+                    },
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      },
+      {
+        id: 'DEPARTURE_AIRPORT',
+        title: 'Trip Questionnaire',
+        terminal: true,
+        data: {
+          travellerCount: {
+            type: 'string',
+            __example__: '2_PEOPLE',
+          },
+          bookingReadiness: {
+            type: 'string',
+            __example__: 'READY_TO_BOOK',
+          },
+        },
+        layout: {
+          type: 'SingleColumnLayout',
+          children: [
+            {
+              type: 'Form',
+              name: 'travel_readiness_form',
+              children: [
+                { type: 'TextHeading', text: 'Plan Your Trip' },
+                {
+                  type: 'RadioButtonsGroup',
+                  name: 'departureAirport',
+                  label: 'Preferred departure airport',
+                  required: true,
+                  'data-source': [
+                    { id: 'CCJ', title: 'Kozhikode' },
+                    { id: 'COK', title: 'Kochi' },
+                    { id: 'TRV', title: 'Thiruvananthapuram' },
+                    { id: 'FLEXIBLE', title: 'Flexible' },
+                  ],
+                },
+                {
+                  type: 'Footer',
+                  label: 'Submit',
+                  'on-click-action': {
+                    name: 'complete',
+                    payload: {
+                      travellerCount: '${data.travellerCount}',
+                      bookingReadiness: '${data.bookingReadiness}',
+                      departureAirport: '${form.departureAirport}',
                     },
                   },
                 },
@@ -563,6 +745,15 @@ function getDefaultFlowDefinitions(agency) {
       firstScreenId: 'CUSTOM_TRIP_FORM',
       categories: ['OTHER'],
       jsonDefinition: customTripFlowDefinition(),
+    },
+    {
+      name: `${prefix} Travel Readiness Questionnaire`,
+      flowType: 'GENERIC',
+      status: 'DRAFT',
+      endpointUri: DEFAULT_ENDPOINT_URI,
+      firstScreenId: 'TRAVELLER_COUNT',
+      categories: ['OTHER'],
+      jsonDefinition: travelReadinessQuestionnaireFlowDefinition(),
     },
     {
       name: `${prefix} Review Flow`,

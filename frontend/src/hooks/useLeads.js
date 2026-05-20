@@ -74,6 +74,7 @@ export function useAddFollowUp() {
   return useMutation({
     mutationFn: ({ id, data }) => leadsApi.addFollowUp(id, data),
     onSuccess: (_, { id }) => {
+      qc.invalidateQueries({ queryKey: ['leads'] });
       qc.invalidateQueries({ queryKey: ['followups'] });
       qc.invalidateQueries({ queryKey: ['lead', id] });
     },
