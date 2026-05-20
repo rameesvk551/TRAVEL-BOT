@@ -198,12 +198,95 @@ module.exports = (sequelize) => {
       type: DataTypes.BOOLEAN,
       defaultValue: true,
     },
+    // Website Builder fields
+    subdomain: {
+      type: DataTypes.STRING(80),
+      allowNull: true,
+      unique: true,
+      comment: 'Unique subdomain for the agency public website, e.g. myagency',
+    },
+    customDomain: {
+      type: DataTypes.STRING(255),
+      allowNull: true,
+      unique: true,
+      comment: 'Customer-owned domain for the public website, e.g. www.myagency.com',
+    },
+    websiteEnabled: {
+      type: DataTypes.BOOLEAN,
+      defaultValue: false,
+      comment: 'Whether the public website is enabled/published',
+    },
+    websiteTheme: {
+      type: DataTypes.ENUM('MODERN', 'CLASSIC', 'MINIMAL', 'VIBRANT'),
+      defaultValue: 'MODERN',
+      comment: 'Visual theme for the generated public website',
+    },
+    websiteTitle: {
+      type: DataTypes.STRING(255),
+      allowNull: true,
+      comment: 'Public website page title / brand name',
+    },
+    websiteDescription: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+      comment: 'Short description shown on the public website hero',
+    },
+    websiteLogoUrl: {
+      type: DataTypes.STRING(512),
+      allowNull: true,
+      comment: 'Logo image URL for the public website',
+    },
+    websitePrimaryColor: {
+      type: DataTypes.STRING(7),
+      allowNull: true,
+      defaultValue: '#00A884',
+      comment: 'Hex primary brand color for the public website',
+    },
+    websiteHeroImageUrl: {
+      type: DataTypes.STRING(512),
+      allowNull: true,
+      comment: 'Hero background image URL for the public website',
+    },
+    websiteContactPhone: {
+      type: DataTypes.STRING(20),
+      allowNull: true,
+      comment: 'Contact phone shown on the public website',
+    },
+    websiteContactEmail: {
+      type: DataTypes.STRING(255),
+      allowNull: true,
+      comment: 'Contact email shown on the public website',
+    },
+    websiteSocialLinks: {
+      type: DataTypes.JSONB,
+      allowNull: false,
+      defaultValue: {},
+      comment: 'Social media links object {facebook, instagram, twitter, youtube, linkedin}',
+    },
+    websiteSeoMeta: {
+      type: DataTypes.JSONB,
+      allowNull: false,
+      defaultValue: {},
+      comment: 'SEO meta tags object {title, description, keywords}',
+    },
+    websiteCustomCss: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+      comment: 'Optional custom CSS injected into the public website',
+    },
+    websitePublishedAt: {
+      type: DataTypes.DATE,
+      allowNull: true,
+      comment: 'When the website was last published',
+    },
   }, {
     tableName: 'agencies',
     indexes: [
       { fields: ['whatsapp_number'], unique: true },
       { fields: ['email'], unique: true },
       { fields: ['phone'], unique: true },
+      { fields: ['subdomain'], unique: true },
+      { fields: ['custom_domain'], unique: true },
     ],
   });
 

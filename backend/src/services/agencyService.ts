@@ -7,6 +7,7 @@ const { z } = require('zod');
 const marketingOsPartnerService = require('./marketingOsPartnerService');
 const flowService = require('./flowService');
 const templateService = require('./templateService');
+const websiteBuilderService = require('./websiteBuilderService');
 
 const CALLBACK_SECRET = process.env.MARKETING_OS_WEBHOOK_SECRET || '';
 const WEBHOOK_APP_SECRET = process.env.WEBHOOK_APP_SECRET || '';
@@ -301,6 +302,22 @@ async function updateCurrentAgency(agencyId, updates) {
   delete data.razorpayKeySecret;
   data.whatsappConnection = serializeWhatsAppConnection(agency);
   return data;
+}
+
+async function getWebsiteStatus(agencyId) {
+  return websiteBuilderService.getWebsiteStatus(agencyId);
+}
+
+async function updateWebsite(agencyId, updates) {
+  return websiteBuilderService.updateWebsiteSettings(agencyId, updates);
+}
+
+async function publishWebsite(agencyId) {
+  return websiteBuilderService.generateWebsite(agencyId);
+}
+
+async function unpublishWebsite(agencyId) {
+  return websiteBuilderService.unpublishWebsite(agencyId);
 }
 
 async function getWhatsAppConnection(agencyId) {
@@ -617,6 +634,10 @@ async function disconnectInstagram(agencyId, accountId) {
 module.exports = {
   getCurrentAgency,
   updateCurrentAgency,
+  getWebsiteStatus,
+  updateWebsite,
+  publishWebsite,
+  unpublishWebsite,
   getWhatsAppConnection,
   createMarketingOsConnectSession,
   completeMarketingOsConnectSession,

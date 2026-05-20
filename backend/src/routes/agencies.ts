@@ -41,6 +41,36 @@ const updateAgencySchema = z.object({
   whatsappMenuLabels: menuLabelSchema.optional(),
 });
 
+const websiteSocialLinksSchema = z.object({
+  facebook: z.string().trim().max(500).optional().or(z.literal('')),
+  instagram: z.string().trim().max(500).optional().or(z.literal('')),
+  youtube: z.string().trim().max(500).optional().or(z.literal('')),
+  linkedin: z.string().trim().max(500).optional().or(z.literal('')),
+  twitter: z.string().trim().max(500).optional().or(z.literal('')),
+}).partial();
+
+const websiteSeoMetaSchema = z.object({
+  title: z.string().trim().max(120).optional().or(z.literal('')),
+  description: z.string().trim().max(260).optional().or(z.literal('')),
+  keywords: z.string().trim().max(500).optional().or(z.literal('')),
+}).partial();
+
+const websiteSettingsSchema = z.object({
+  subdomain: z.string().trim().max(80).optional().or(z.literal('')),
+  customDomain: z.string().trim().max(255).optional().or(z.literal('')),
+  websiteTheme: z.enum(['MODERN', 'CLASSIC', 'MINIMAL', 'VIBRANT']).optional(),
+  websiteTitle: z.string().trim().max(255).optional().or(z.literal('')),
+  websiteDescription: z.string().trim().max(1200).optional().or(z.literal('')),
+  websiteLogoUrl: z.string().trim().max(512).optional().or(z.literal('')),
+  websitePrimaryColor: z.string().trim().regex(/^#[0-9a-fA-F]{6}$/).optional().or(z.literal('')),
+  websiteHeroImageUrl: z.string().trim().max(512).optional().or(z.literal('')),
+  websiteContactPhone: z.string().trim().max(30).optional().or(z.literal('')),
+  websiteContactEmail: z.string().trim().email().max(255).optional().or(z.literal('')),
+  websiteSocialLinks: websiteSocialLinksSchema.optional(),
+  websiteSeoMeta: websiteSeoMetaSchema.optional(),
+  websiteCustomCss: z.string().trim().max(8000).optional().or(z.literal('')),
+});
+
 const marketingOsCallbackSchema = z.object({
   agencyId: z.string().uuid(),
   status: z.enum(['NOT_CONNECTED', 'PENDING', 'CONNECTED', 'FAILED']),
@@ -78,6 +108,33 @@ router.get('/me', authenticate, requirePermission(PERMISSIONS.AGENCY_VIEW), agen
  * GET /api/agencies/me/whatsapp-connection - Get partner onboarding status
  */
 router.get('/me/whatsapp-connection', authenticate, requirePermission(PERMISSIONS.AGENCY_VIEW), agencyController.getWhatsAppConnection);
+
+router.get('/me/website', authenticate, requirePermission(PERMISSIONS.AGENCY_VIEW), agencyController.getWebsiteStatus);
+
+router.patch(
+  '/me/website',
+  authenticate,
+  requireRole('ADMIN'),
+  requirePermission(PERMISSIONS.AGENCY_MANAGE),
+  validateBody(websiteSettingsSchema),
+  agencyController.updateWebsite
+);
+
+router.post(
+  '/me/website/publish',
+  authenticate,
+  requireRole('ADMIN'),
+  requirePermission(PERMISSIONS.AGENCY_MANAGE),
+  agencyController.publishWebsite
+);
+
+router.post(
+  '/me/website/unpublish',
+  authenticate,
+  requireRole('ADMIN'),
+  requirePermission(PERMISSIONS.AGENCY_MANAGE),
+  agencyController.unpublishWebsite
+);
 
 /**
  * POST /api/agencies/me/whatsapp-connection/connect - Create partner connect session

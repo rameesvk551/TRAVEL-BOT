@@ -36,6 +36,42 @@ async function createWhatsAppConnectSession(req, res, next) {
   }
 }
 
+async function getWebsiteStatus(req, res, next) {
+  try {
+    const data = await agencyService.getWebsiteStatus(req.agency.id);
+    res.json({ success: true, data });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function updateWebsite(req, res, next) {
+  try {
+    const data = await agencyService.updateWebsite(req.agency.id, req.body || {});
+    res.json({ success: true, data, message: 'Website settings updated' });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function publishWebsite(req, res, next) {
+  try {
+    const data = await agencyService.publishWebsite(req.agency.id);
+    res.json({ success: true, data, message: 'Website published' });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function unpublishWebsite(req, res, next) {
+  try {
+    const data = await agencyService.unpublishWebsite(req.agency.id);
+    res.json({ success: true, data, message: 'Website unpublished' });
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function completeWhatsAppConnectSession(req, res, next) {
   try {
     const data = await agencyService.completeMarketingOsConnectSession(req.agency.id, req.body);
@@ -88,6 +124,10 @@ async function disconnectInstagram(req, res, next) {
 module.exports = {
   me,
   updateMe,
+  getWebsiteStatus,
+  updateWebsite,
+  publishWebsite,
+  unpublishWebsite,
   getWhatsAppConnection,
   createWhatsAppConnectSession,
   completeWhatsAppConnectSession,

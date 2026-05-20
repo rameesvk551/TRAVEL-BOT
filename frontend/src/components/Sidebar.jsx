@@ -14,6 +14,7 @@ import {
   DocumentDuplicateIcon,
   ChartBarIcon,
   Cog6ToothIcon,
+  GlobeAltIcon,
   ArrowRightOnRectangleIcon,
   PlusIcon,
   ClockIcon,
@@ -39,6 +40,7 @@ const utilityItems = [
   { to: '/properties', icon: HomeModernIcon, label: 'Properties' },
   { to: '/itineraries', icon: DocumentDuplicateIcon, label: 'Itineraries' },
   { to: '/packages', icon: CubeIcon, label: 'Packages' },
+  { to: '/website-builder', icon: GlobeAltIcon, label: 'Website' },
   { to: '/analytics', icon: ChartBarIcon, label: 'Reports' },
 ];
 

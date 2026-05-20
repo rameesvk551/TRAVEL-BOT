@@ -29,6 +29,21 @@ async function ensureColumn(tableName, columnName, definition) {
   console.log(`[SchemaBootstrap] Added ${tableName}.${columnName}`);
 }
 
+async function ensureIndex(indexName, createSql) {
+  const [rows] = await sequelize.query(
+    `select exists (
+      select 1
+      from pg_indexes
+      where schemaname = 'public' and indexname = :indexName
+    ) as exists`,
+    { replacements: { indexName } }
+  );
+
+  if (rows?.[0]?.exists) return;
+  await sequelize.query(createSql);
+  console.log(`[SchemaBootstrap] Created index ${indexName}`);
+}
+
 async function ensureEnumValues(typeName, values) {
   const [existsRows] = await sequelize.query(
     `select exists (select 1 from pg_type where typname = :typeName) as exists`,
@@ -49,6 +64,13 @@ async function ensureEnumValues(typeName, values) {
 }
 
 async function ensureAgenciesSchema() {
+  await ensureEnumValues('enum_agencies_website_theme', [
+    'MODERN',
+    'CLASSIC',
+    'MINIMAL',
+    'VIBRANT',
+  ]);
+
   await ensureColumn('agencies', 'auto_review_collection_enabled', {
     type: Sequelize.BOOLEAN,
     allowNull: false,
@@ -83,6 +105,95 @@ async function ensureAgenciesSchema() {
     allowNull: false,
     defaultValue: {},
   });
+
+  await ensureColumn('agencies', 'subdomain', {
+    type: Sequelize.STRING(80),
+    allowNull: true,
+  });
+
+  await ensureColumn('agencies', 'custom_domain', {
+    type: Sequelize.STRING(255),
+    allowNull: true,
+  });
+
+  await ensureColumn('agencies', 'website_enabled', {
+    type: Sequelize.BOOLEAN,
+    allowNull: false,
+    defaultValue: false,
+  });
+
+  await ensureColumn('agencies', 'website_theme', {
+    type: Sequelize.ENUM('MODERN', 'CLASSIC', 'MINIMAL', 'VIBRANT'),
+    allowNull: false,
+    defaultValue: 'MODERN',
+  });
+
+  await ensureColumn('agencies', 'website_title', {
+    type: Sequelize.STRING(255),
+    allowNull: true,
+  });
+
+  await ensureColumn('agencies', 'website_description', {
+    type: Sequelize.TEXT,
+    allowNull: true,
+  });
+
+  await ensureColumn('agencies', 'website_logo_url', {
+    type: Sequelize.STRING(512),
+    allowNull: true,
+  });
+
+  await ensureColumn('agencies', 'website_primary_color', {
+    type: Sequelize.STRING(7),
+    allowNull: true,
+    defaultValue: '#00A884',
+  });
+
+  await ensureColumn('agencies', 'website_hero_image_url', {
+    type: Sequelize.STRING(512),
+    allowNull: true,
+  });
+
+  await ensureColumn('agencies', 'website_contact_phone', {
+    type: Sequelize.STRING(20),
+    allowNull: true,
+  });
+
+  await ensureColumn('agencies', 'website_contact_email', {
+    type: Sequelize.STRING(255),
+    allowNull: true,
+  });
+
+  await ensureColumn('agencies', 'website_social_links', {
+    type: Sequelize.JSONB,
+    allowNull: false,
+    defaultValue: {},
+  });
+
+  await ensureColumn('agencies', 'website_seo_meta', {
+    type: Sequelize.JSONB,
+    allowNull: false,
+    defaultValue: {},
+  });
+
+  await ensureColumn('agencies', 'website_custom_css', {
+    type: Sequelize.TEXT,
+    allowNull: true,
+  });
+
+  await ensureColumn('agencies', 'website_published_at', {
+    type: Sequelize.DATE,
+    allowNull: true,
+  });
+
+  await ensureIndex(
+    'agencies_subdomain_unique',
+    'CREATE UNIQUE INDEX agencies_subdomain_unique ON agencies (subdomain) WHERE subdomain IS NOT NULL'
+  );
+  await ensureIndex(
+    'agencies_custom_domain_unique',
+    'CREATE UNIQUE INDEX agencies_custom_domain_unique ON agencies (custom_domain) WHERE custom_domain IS NOT NULL'
+  );
 }
 
 async function ensureLeadsSchema() {

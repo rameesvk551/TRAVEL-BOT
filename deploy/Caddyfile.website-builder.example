@@ -1,0 +1,44 @@
+{
+    # Free custom-domain TLS for agency websites.
+    # Replace the email and admin host before using this file.
+    email admin@example.com
+    on_demand_tls {
+        ask http://127.0.0.1:3005/public/domain/allowed
+    }
+}
+
+travelbot.yourdomain.com {
+    root * /var/www/travel-bot
+    encode gzip
+
+    handle /api/* {
+        reverse_proxy 127.0.0.1:3005
+    }
+
+    handle /public/* {
+        reverse_proxy 127.0.0.1:3005
+    }
+
+    handle /health {
+        reverse_proxy 127.0.0.1:3005
+    }
+
+    handle /webhook {
+        reverse_proxy 127.0.0.1:3001
+    }
+
+    handle {
+        try_files {path} /index.html
+        file_server
+    }
+}
+
+# Agency custom domains and wildcard site subdomains.
+# Caddy preserves the Host header, so TravelBot can map domain -> agency.
+:443 {
+    tls {
+        on_demand
+    }
+
+    reverse_proxy 127.0.0.1:3005
+}

@@ -18,6 +18,7 @@ import PropertyForm from './pages/PropertyForm';
 import Payments from './pages/Payments';
 import Analytics from './pages/Analytics';
 import Settings from './pages/Settings';
+import WebsiteBuilder from './pages/WebsiteBuilder';
 import Templates from './pages/Templates';
 import Flows from './pages/Flows';
 import Itineraries from './pages/Itineraries';
@@ -119,6 +120,7 @@ export default function App() {
                   <Route path="/analytics" element={<Analytics />} />
                   <Route path="/agents" element={<Agents />} />
                   <Route path="/settings" element={<Settings />} />
+                  <Route path="/website-builder" element={<WebsiteBuilder />} />
                   <Route path="*" element={<Navigate to="/" replace />} />
                 </Routes>
               </AppLayout>

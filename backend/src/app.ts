@@ -5,9 +5,12 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
+const expressStatic = require('express').static;
 const { apiLimiter } = require('./middleware/rateLimiter');
 const errorHandler = require('./middleware/errorHandler');
 const { registerApiRoutes } = require('./routes');
+const resolveAgencyDomain = require('./middleware/resolveAgencyDomain');
+const { SITES_ROOT } = require('./services/websiteBuilderService');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -39,6 +42,19 @@ app.use('/api', apiLimiter);
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
+
+// Static previews for generated agency websites.
+app.use('/sites', (req, res, next) => {
+  res.setHeader(
+    'Content-Security-Policy',
+    "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self';"
+  );
+  next();
+}, expressStatic(SITES_ROOT));
+
+// Custom-domain website serving. Runs before API route registration so agency
+// domains can serve generated static files from their own host.
+app.use(resolveAgencyDomain);
 
 // API routes
 registerApiRoutes(app);
