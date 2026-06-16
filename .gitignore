@@ -7,6 +7,12 @@
 **/build/
 **/coverage/
 **/*.log
+.codex-temp/
+.codex-remote-edit/
+tmp/
+*.tgz
+*.zip
 
 .DS_Store
 Thumbs.db
+.worktrees/
