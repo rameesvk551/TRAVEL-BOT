@@ -1,7 +1,21 @@
 const nodemailer = require('nodemailer');
 
 let transporter;
-const BRAND_NAME = 'WAYON';
+const DEFAULT_BRAND_NAME = 'WAYON';
+
+/**
+ * Resolves the brand/sender identity for an email. When a white-label partner
+ * branding object is supplied, the partner's name and reply-to are used so the
+ * recipient never sees the platform's brand. Falls back to Wayon defaults.
+ */
+function resolveEmailBrand(branding) {
+  const brandName = (branding && (branding.emailFromName || branding.brandName)) || DEFAULT_BRAND_NAME;
+  const replyTo = (branding && branding.emailReplyTo) || undefined;
+  const footer = (branding && branding.emailFooterText) || '';
+  const from = process.env.SMTP_FROM_OVERRIDE
+    || `"${brandName}" <${process.env.SMTP_FROM_ADDRESS || process.env.SMTP_USER}>`;
+  return { brandName, from, replyTo, footer };
+}
 
 function hasEmailConfig() {
   return Boolean(process.env.SMTP_HOST && process.env.SMTP_PORT && process.env.SMTP_USER && process.env.SMTP_PASS);
@@ -41,8 +55,13 @@ function buildLoginUrl() {
   return `${baseUrl}/login`;
 }
 
-async function sendUserWelcomePasswordEmail({ to, userName, ownerName, agencyName, password }) {
-  const from = process.env.SMTP_FROM || `"${BRAND_NAME}" <${process.env.SMTP_USER}>`;
+function buildResetUrl(token) {
+  const baseUrl = String(process.env.BASE_URL || 'https://travelbot.wayon.in').replace(/\/+$/, '');
+  return `${baseUrl}/reset-password?token=${encodeURIComponent(token)}`;
+}
+
+async function sendUserWelcomePasswordEmail({ to, userName, ownerName, agencyName, password, branding }) {
+  const { brandName: BRAND_NAME, from, replyTo } = resolveEmailBrand(branding);
   const loginUrl = buildLoginUrl();
   const safeUserName = escapeHtml(userName || 'there');
   const safeOwnerName = escapeHtml(ownerName || 'Your administrator');
@@ -144,6 +163,81 @@ async function sendUserWelcomePasswordEmail({ to, userName, ownerName, agencyNam
 
   await getTransporter().sendMail({
     from,
+    ...(replyTo ? { replyTo } : {}),
+    to,
+    subject,
+    text,
+    html,
+  });
+}
+
+async function sendPasswordResetEmail({ to, userName, token, branding }) {
+  const { brandName: BRAND_NAME, from, replyTo } = resolveEmailBrand(branding);
+  const resetUrl = buildResetUrl(token);
+  const safeUserName = escapeHtml(userName || 'there');
+  const safeResetUrl = escapeHtml(resetUrl);
+  const subject = `Reset your ${BRAND_NAME} password`;
+
+  const text = [
+    `Hi ${userName || 'there'},`,
+    '',
+    `We received a request to reset your ${BRAND_NAME} password.`,
+    `Reset your password: ${resetUrl}`,
+    '',
+    'This link expires in 30 minutes and can only be used once.',
+    'If you did not request this, you can ignore this email.',
+    '',
+    'Thanks,',
+    `${BRAND_NAME} Team`,
+  ].join('\n');
+
+  const html = `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>${escapeHtml(subject)}</title>
+  </head>
+  <body style="margin:0;padding:0;background:#f4f1eb;color:#17202a;font-family:Arial,Helvetica,sans-serif;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f4f1eb;margin:0;padding:32px 12px;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:620px;background:#ffffff;border:1px solid #e5ded2;border-radius:22px;overflow:hidden;box-shadow:0 18px 45px rgba(39,37,31,0.10);">
+            <tr>
+              <td style="background:#141414;padding:28px 32px;color:#ffffff;font-size:24px;font-weight:800;letter-spacing:3px;">${BRAND_NAME}</td>
+            </tr>
+            <tr>
+              <td style="padding:38px 32px 18px;">
+                <p style="margin:0 0 12px;font-size:13px;font-weight:700;letter-spacing:1.4px;text-transform:uppercase;color:#b48745;">Password Reset</p>
+                <h1 style="margin:0;color:#141414;font-size:30px;line-height:1.18;font-weight:800;">Create a new password</h1>
+                <p style="margin:18px 0 0;color:#59616d;font-size:16px;line-height:1.65;">Hi ${safeUserName}, use the secure button below to reset your ${BRAND_NAME} password. The link expires in 30 minutes and works once.</p>
+              </td>
+            </tr>
+            <tr>
+              <td align="center" style="padding:24px 32px;">
+                <a href="${safeResetUrl}" style="display:inline-block;background:#141414;color:#ffffff;text-decoration:none;border-radius:999px;padding:15px 28px;font-size:15px;font-weight:800;letter-spacing:.3px;">Reset password</a>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:0 32px 36px;">
+                <p style="margin:0;color:#8a8176;font-size:12px;line-height:1.7;word-break:break-word;">If the button does not work, paste this URL into your browser:<br>${safeResetUrl}</p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:22px 32px;background:#fbfaf8;border-top:1px solid #eee8dd;">
+                <p style="margin:0;color:#8a8176;font-size:12px;line-height:1.6;">If you did not request this password reset, you can safely ignore this email.</p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`;
+
+  await getTransporter().sendMail({
+    from,
+    ...(replyTo ? { replyTo } : {}),
     to,
     subject,
     text,
@@ -153,4 +247,5 @@ async function sendUserWelcomePasswordEmail({ to, userName, ownerName, agencyNam
 
 module.exports = {
   sendUserWelcomePasswordEmail,
+  sendPasswordResetEmail,
 };

@@ -5,13 +5,16 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
-const { Agency, Agent, RefreshToken } = require('../models');
+const { Agency, Agent, RefreshToken, Partner } = require('../models');
 const { normalizePhone } = require('../utils/phoneUtils');
 const { ALL_PERMISSIONS } = require('../constants/permissions');
+const { sendPasswordResetEmail } = require('./emailService');
+const brandingService = require('./brandingService');
 
 const ACCESS_TOKEN_EXPIRY = '15m';
 const REFRESH_TOKEN_EXPIRY_DAYS = 7;
 const BCRYPT_ROUNDS = 12;
+const PASSWORD_RESET_EXPIRY_MINUTES = 30;
 
 /**
  * Generates a JWT access token.
@@ -49,7 +52,7 @@ async function generateRefreshToken(agentId) {
  * @returns {Promise<object>} { agent, agency, accessToken, refreshToken }
  */
 async function register(data) {
-  const { agencyName, agencyPhone, agencyEmail, whatsappNumber, agentName, agentEmail, agentPassword } = data;
+  const { agencyName, agencyPhone, agencyEmail, whatsappNumber, agentName, agentEmail, agentPassword, industry } = data;
 
   // Check uniqueness
   const existingAgency = await Agency.findOne({
@@ -72,6 +75,8 @@ async function register(data) {
     phone: normalizePhone(agencyPhone),
     email: agencyEmail.toLowerCase(),
     whatsappNumber: normalizePhone(whatsappNumber),
+    // Passive vertical marker; column defaults to TRAVEL when omitted.
+    ...(industry ? { industry } : {}),
   });
 
   // Hash password and create admin agent
@@ -125,6 +130,19 @@ async function login(email, password) {
     throw Object.assign(new Error('Your agency account is inactive'), { statusCode: 403, code: 'AGENCY_INACTIVE' });
   }
 
+  // White-label cascade: a suspended/inactive reseller blocks its agencies' logins.
+  if (agent.agency.partnerId) {
+    const partner = await Partner.findByPk(agent.agency.partnerId, {
+      attributes: ['id', 'isActive', 'billingStatus'],
+    });
+    if (partner && (!partner.isActive || partner.billingStatus === 'SUSPENDED')) {
+      throw Object.assign(new Error('This account is temporarily unavailable. Please contact support.'), {
+        statusCode: 403,
+        code: 'PARTNER_SUSPENDED',
+      });
+    }
+  }
+
   // Update last seen
   await agent.update({ lastSeenAt: new Date(), isOnline: true });
 
@@ -138,7 +156,9 @@ async function login(email, password) {
   const agentData = agent.toJSON();
   delete agentData.passwordHash;
 
-  return { agent: agentData, agency: agent.agency, accessToken, refreshToken };
+  const branding = await brandingService.brandingForAgency(agent.agency);
+
+  return { agent: agentData, agency: agent.agency, accessToken, refreshToken, branding };
 }
 
 /**
@@ -193,6 +213,80 @@ async function logout(rawRefreshToken) {
   }
 }
 
+function hashPasswordResetToken(token) {
+  return crypto.createHash('sha256').update(token).digest('hex');
+}
+
+/**
+ * Creates a one-time password reset token and emails it to the agent.
+ * Always returns a generic success response to avoid account enumeration.
+ */
+async function requestPasswordReset(email) {
+  const normalizedEmail = String(email || '').trim().toLowerCase();
+  const agent = await Agent.findOne({
+    where: { email: normalizedEmail },
+    include: [{ model: Agency, as: 'agency' }],
+  });
+
+  if (!agent) {
+    return { emailSent: false };
+  }
+
+  const rawToken = crypto.randomBytes(32).toString('base64url');
+  const resetPasswordTokenHash = hashPasswordResetToken(rawToken);
+  const resetPasswordExpiresAt = new Date(Date.now() + PASSWORD_RESET_EXPIRY_MINUTES * 60 * 1000);
+
+  await agent.update({
+    resetPasswordTokenHash,
+    resetPasswordExpiresAt,
+  });
+
+  const branding = await brandingService.brandingForAgency(agent.agency);
+  await sendPasswordResetEmail({
+    to: agent.email,
+    userName: agent.name,
+    token: rawToken,
+    branding,
+  });
+
+  return { emailSent: true };
+}
+
+/**
+ * Resets an agent password using a valid one-time reset token.
+ */
+async function resetPassword(token, password) {
+  const rawToken = String(token || '').trim();
+  if (!rawToken) {
+    throw Object.assign(new Error('Reset link is invalid or expired'), { statusCode: 400, code: 'INVALID_RESET_TOKEN' });
+  }
+
+  const tokenHash = hashPasswordResetToken(rawToken);
+  const agent = await Agent.findOne({
+    where: {
+      resetPasswordTokenHash: tokenHash,
+    },
+  });
+
+  if (!agent || !agent.resetPasswordExpiresAt || new Date() > new Date(agent.resetPasswordExpiresAt)) {
+    throw Object.assign(new Error('Reset link is invalid or expired'), { statusCode: 400, code: 'INVALID_RESET_TOKEN' });
+  }
+
+  const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
+  await agent.update({
+    passwordHash,
+    resetPasswordTokenHash: null,
+    resetPasswordExpiresAt: null,
+  });
+
+  await RefreshToken.update(
+    { revokedAt: new Date() },
+    { where: { agentId: agent.id, revokedAt: null } }
+  );
+
+  return { success: true };
+}
+
 /**
  * Gets the current agent profile with agency info.
  * @param {string} agentId - The agent ID
@@ -212,6 +306,8 @@ async function getProfile(agentId) {
 module.exports = {
   register,
   login,
+  requestPasswordReset,
+  resetPassword,
   refreshAccessToken,
   logout,
   getProfile,

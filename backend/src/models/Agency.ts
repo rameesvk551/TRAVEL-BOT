@@ -29,6 +29,12 @@ module.exports = (sequelize) => {
       allowNull: false,
       unique: true,
     },
+    industry: {
+      type: DataTypes.ENUM('TRAVEL', 'RESORT', 'CLEANING', 'LAUNDRY'),
+      allowNull: false,
+      defaultValue: 'TRAVEL',
+      comment: 'Business vertical. Drives frontend labels/menu only; backend logic is industry-agnostic. Defaults to TRAVEL so existing tenants are unchanged.',
+    },
     whatsappNumber: {
       type: DataTypes.STRING(20),
       allowNull: false,
@@ -153,6 +159,11 @@ module.exports = (sequelize) => {
       type: DataTypes.ENUM('FREE', 'STARTER', 'PRO'),
       defaultValue: 'FREE',
     },
+    partnerId: {
+      type: DataTypes.UUID,
+      allowNull: true,
+      comment: 'White-label reseller this agency belongs to. Null = direct agency owned by the platform.',
+    },
     googleReviewLink: {
       type: DataTypes.STRING(255),
       allowNull: true,
@@ -206,11 +217,48 @@ module.exports = (sequelize) => {
       defaultValue: {},
       comment: 'Tenant-controlled nested WhatsApp menu tree and response flow routing',
     },
+    instagramFlowConfig: {
+      type: DataTypes.JSONB,
+      allowNull: false,
+      defaultValue: {},
+      comment: 'Tenant-controlled Instagram DM conversational flow graph (mirrors whatsappFlowConfig; executed over IG DMs via Marketing OS, never published to Meta)',
+    },
+    sidebarPreferences: {
+      type: DataTypes.JSONB,
+      allowNull: true,
+      comment: 'Array of enabled sidebar module paths, e.g. ["/properties", "/packages"]',
+    },
+    leadRoutingStrategy: {
+      type: DataTypes.STRING(20),
+      allowNull: false,
+      defaultValue: 'INTENT',
+      comment: "Lead auto-assignment strategy: 'INTENT' (route by enquiry type) or 'ROUND_ROBIN' (rotate new contacts across all staff). When ROUND_ROBIN, manual assignment is hidden in the UI.",
+    },
+    roundRobinCursorAgentId: {
+      type: DataTypes.UUID,
+      allowNull: true,
+      comment: 'Last agent assigned via round-robin rotation; the next new contact goes to the agent after this one.',
+    },
+    companyLogoUrl: {
+      type: DataTypes.STRING(1000),
+      allowNull: true,
+      comment: 'URL of the agency company logo',
+    },
+    companySealUrl: {
+      type: DataTypes.STRING(1000),
+      allowNull: true,
+      comment: 'URL of the agency company seal',
+    },
+    authorizedSignatureUrl: {
+      type: DataTypes.STRING(1000),
+      allowNull: true,
+      comment: 'URL of the agency authorized signature',
+    },
     isActive: {
       type: DataTypes.BOOLEAN,
       defaultValue: true,
     },
-    // ── Website Builder fields ──
+    // Website Builder fields
     subdomain: {
       type: DataTypes.STRING(80),
       allowNull: true,
@@ -229,7 +277,18 @@ module.exports = (sequelize) => {
       comment: 'Whether the public website is enabled/published',
     },
     websiteTheme: {
-      type: DataTypes.ENUM('MODERN', 'CLASSIC', 'MINIMAL', 'VIBRANT'),
+      type: DataTypes.ENUM(
+        'MODERN',
+        'CLASSIC',
+        'MINIMAL',
+        'VIBRANT',
+        'LUXURY_ESCAPE',
+        'ADVENTURE_TREK',
+        'FAMILY_HOLIDAY',
+        'HONEYMOON',
+        'CORPORATE_TRAVEL',
+        'PILGRIMAGE'
+      ),
       defaultValue: 'MODERN',
       comment: 'Visual theme for the generated public website',
     },

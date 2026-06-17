@@ -7,6 +7,7 @@ import {
 } from '@heroicons/react/24/outline';
 import { useUiStore } from '../store/uiStore';
 import { useAuthStore } from '../store/authStore';
+import { useBrandingStore } from '../store/brandingStore';
 import { useLogout } from '../hooks/useAuth';
 import NotificationBell from './NotificationBell';
 
@@ -96,6 +97,7 @@ export default function AppTopbar() {
   const location = useLocation();
   const toggleSidebar = useUiStore((state) => state.toggleSidebar);
   const agent = useAuthStore((state) => state.agent);
+  const brandName = useBrandingStore((state) => state.branding.brandName);
   const logoutMutation = useLogout();
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const profileMenuRef = useRef(null);
@@ -140,7 +142,7 @@ export default function AppTopbar() {
         </button>
 
         <div className="min-w-0 flex-1">
-          <p className="truncate text-[11px] font-bold uppercase tracking-[0.16em] text-neutral-400">WayOn</p>
+          <p className="truncate text-[11px] font-bold uppercase tracking-[0.16em] text-neutral-400">{brandName}</p>
           <h1 className="truncate text-base font-extrabold tracking-tight text-neutral-900">{meta.title}</h1>
         </div>
 

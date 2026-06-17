@@ -311,6 +311,150 @@ async function uploadRemoteTemplateMedia(mediaUrl, agencyId, resourceType = 'ima
   };
 }
 
+async function uploadCompanyAsset(fileBuffer, agencyId, assetType) {
+  assertCloudinaryConfigured();
+
+  const rootFolder = process.env.CLOUDINARY_FOLDER || 'travel-bot';
+  const folder = `${rootFolder}/agencies/${agencyId}/assets`;
+
+  return new Promise((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(
+      {
+        folder,
+        public_id: `${assetType}-${Date.now()}`,
+        resource_type: 'image',
+      },
+      (err, result) => {
+        if (err) {
+          reject(Object.assign(new Error(err.message || 'Cloudinary asset upload failed'), {
+            statusCode: 502,
+            code: 'CLOUDINARY_UPLOAD_FAILED',
+          }));
+          return;
+        }
+
+        resolve({
+          secureUrl: result.secure_url,
+          publicId: result.public_id,
+        });
+      }
+    );
+
+    stream.end(fileBuffer);
+  });
+}
+
+/**
+ * Uploads a white-label partner branding asset (logo, favicon, login image).
+ * Not scoped to a partner id so it works during partner creation (before an id
+ * exists); the returned URL is then saved onto the partner record.
+ */
+async function uploadPartnerAsset(fileBuffer, assetType) {
+  assertCloudinaryConfigured();
+
+  const rootFolder = process.env.CLOUDINARY_FOLDER || 'travel-bot';
+  const folder = `${rootFolder}/partners/assets`;
+  const safeType = String(assetType || 'asset').replace(/[^a-z0-9_-]/gi, '').slice(0, 40) || 'asset';
+
+  return new Promise((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(
+      {
+        folder,
+        public_id: `${safeType}-${Date.now()}`,
+        resource_type: 'image',
+      },
+      (err, result) => {
+        if (err) {
+          reject(Object.assign(new Error(err.message || 'Cloudinary asset upload failed'), {
+            statusCode: 502,
+            code: 'CLOUDINARY_UPLOAD_FAILED',
+          }));
+          return;
+        }
+
+        resolve({
+          secureUrl: result.secure_url,
+          publicId: result.public_id,
+        });
+      }
+    );
+
+    stream.end(fileBuffer);
+  });
+}
+
+async function uploadInvoicePdf(fileBuffer, agencyId, invoiceNumber) {
+  assertCloudinaryConfigured();
+
+  const rootFolder = process.env.CLOUDINARY_FOLDER || 'travel-bot';
+  const folder = `${rootFolder}/agencies/${agencyId}/invoices`;
+
+  return new Promise((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(
+      {
+        folder,
+        public_id: `invoice-${invoiceNumber}-${Date.now()}`,
+        resource_type: 'raw',
+      },
+      (err, result) => {
+        if (err) {
+          reject(Object.assign(new Error(err.message || 'Cloudinary invoice pdf upload failed'), {
+            statusCode: 502,
+            code: 'CLOUDINARY_UPLOAD_FAILED',
+          }));
+          return;
+        }
+
+        resolve({
+          secureUrl: result.secure_url,
+          publicId: result.public_id,
+        });
+      }
+    );
+
+    stream.end(fileBuffer);
+  });
+}
+
+async function uploadCustomerDocument(fileBuffer, agencyId, customerId, originalName) {
+  assertCloudinaryConfigured();
+
+  const rootFolder = process.env.CLOUDINARY_FOLDER || 'travel-bot';
+  const folder = `${rootFolder}/agencies/${agencyId}/customers/${customerId}`;
+  const safeName = String(originalName || 'document')
+    .replace(/\.[^.]+$/, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80) || 'document';
+
+  return new Promise((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(
+      {
+        folder,
+        public_id: `${safeName}-${Date.now()}`,
+        resource_type: 'auto',
+      },
+      (err, result) => {
+        if (err) {
+          reject(Object.assign(new Error(err.message || 'Cloudinary document upload failed'), {
+            statusCode: 502,
+            code: 'CLOUDINARY_UPLOAD_FAILED',
+          }));
+          return;
+        }
+
+        resolve({
+          secureUrl: result.secure_url,
+          publicId: result.public_id,
+        });
+      }
+    );
+
+    stream.end(fileBuffer);
+  });
+}
+
 module.exports = {
   uploadPackageImage,
   uploadPropertyImage,
@@ -318,4 +462,8 @@ module.exports = {
   uploadItineraryPdf,
   uploadTemplateMedia,
   uploadRemoteTemplateMedia,
+  uploadCompanyAsset,
+  uploadPartnerAsset,
+  uploadInvoicePdf,
+  uploadCustomerDocument,
 };

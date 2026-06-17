@@ -3,6 +3,7 @@ const agentRepository = require('../repositories/agentRepository');
 const { DEFAULT_AGENT_PERMISSIONS, ALL_PERMISSIONS, normalizePermissions } = require('../constants/permissions');
 const { sendUserWelcomePasswordEmail } = require('./emailService');
 const { generateTemporaryPassword } = require('../utils/password');
+const brandingService = require('./brandingService');
 
 async function listAgents(agencyId) {
   return agentRepository.findAllByAgency(agencyId);
@@ -32,12 +33,14 @@ async function createAgent(data, agencyId, requester, agency) {
   let welcomeEmailSent = false;
   let emailWarning;
   try {
+    const branding = await brandingService.brandingForAgency(agency);
     await sendUserWelcomePasswordEmail({
       to: safe.email,
       userName: safe.name,
       ownerName: requester?.name,
       agencyName: agency?.name || 'your agency',
       password: rawPassword,
+      branding,
     });
     welcomeEmailSent = true;
   } catch (err) {

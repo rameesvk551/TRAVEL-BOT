@@ -3,7 +3,9 @@
 import { NavLink, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import { useUiStore } from '../store/uiStore';
+import { useBrandingStore } from '../store/brandingStore';
 import { useLogout } from '../hooks/useAuth';
+import { useIndustry } from '../hooks/useIndustry';
 import {
   HomeIcon,
   CalendarDaysIcon,
@@ -13,6 +15,7 @@ import {
   HomeModernIcon,
   DocumentDuplicateIcon,
   ChartBarIcon,
+  CurrencyRupeeIcon,
   Cog6ToothIcon,
   GlobeAltIcon,
   ArrowRightOnRectangleIcon,
@@ -20,9 +23,14 @@ import {
   ClockIcon,
   MegaphoneIcon,
   QueueListIcon,
+  ChatBubbleLeftRightIcon,
   StarIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
+  WrenchScrewdriverIcon,
+  LifebuoyIcon,
+  IdentificationIcon,
+  BriefcaseIcon,
 } from '@heroicons/react/24/outline';
 import { getInitials } from './uiHelpers';
 
@@ -32,6 +40,7 @@ const navItems = [
   { to: '/follow-ups', icon: ClockIcon, label: 'Follow-ups' },
   { to: '/bookings', icon: CalendarDaysIcon, label: 'Bookings' },
   { to: '/customers', icon: UserGroupIcon, label: 'Customers' },
+  { to: '/whatsapp', icon: ChatBubbleLeftRightIcon, label: 'WhatsApp' },
   { to: '/agents', icon: UsersIcon, label: 'Users' },
   { to: '/settings', icon: Cog6ToothIcon, label: 'Settings' },
 ];
@@ -40,7 +49,14 @@ const utilityItems = [
   { to: '/properties', icon: HomeModernIcon, label: 'Properties' },
   { to: '/itineraries', icon: DocumentDuplicateIcon, label: 'Itineraries' },
   { to: '/packages', icon: CubeIcon, label: 'Packages' },
+  { to: '/cruises', icon: LifebuoyIcon, label: 'Cruises' },
+  { to: '/visas', icon: IdentificationIcon, label: 'Visas' },
+  { to: '/services', icon: WrenchScrewdriverIcon, label: 'Services' },
+  { to: '/vendors', icon: UsersIcon, label: 'Vendors' },
+  { to: '/vendor-payments', icon: CurrencyRupeeIcon, label: 'Vendor Payments' },
+  { to: '/accounts', icon: CurrencyRupeeIcon, label: 'Accounts' },
   { to: '/website-builder', icon: GlobeAltIcon, label: 'Website' },
+  { to: '/hrm', icon: BriefcaseIcon, label: 'HR & Payroll' },
   { to: '/analytics', icon: ChartBarIcon, label: 'Reports' },
 ];
 
@@ -55,6 +71,7 @@ const marketingItems = [
 
 export default function Sidebar() {
   const { agent, agency, updateAgent } = useAuthStore();
+  const branding = useBrandingStore((s) => s.branding);
   const {
     sidebarOpen,
     toggleSidebar,
@@ -65,11 +82,28 @@ export default function Sidebar() {
   } = useUiStore();
   const logoutMutation = useLogout();
   const location = useLocation();
+  const { navLabel, moduleVisible } = useIndustry();
 
   const isDesktop = typeof window !== 'undefined' && window.innerWidth >= 1024;
   const collapsed = isDesktop ? (sidebarCollapsed && !sidebarHovered) : false; // only collapse on desktop
 
+  const prefs = agency?.sidebarPreferences || [];
+  const hasPrefs = prefs.length > 0;
+
+  // Visibility precedence: an explicit per-tenant preference wins; otherwise the
+  // industry profile decides which modules show. Dashboard is always visible.
+  const isVisible = (to) => {
+    if (to === '/') return true;
+    if (hasPrefs) return prefs.includes(to);
+    return moduleVisible(to);
+  };
+
+  const visibleNavItems = navItems.filter((item) => isVisible(item.to));
+  const visibleUtilityItems = utilityItems.filter((item) => isVisible(item.to));
+  const visibleMarketingItems = marketingItems.filter((item) => isVisible(item.to));
+
   const renderNavItem = ({ to, icon: Icon, label }, exactEnd = false) => {
+    label = navLabel(to, label);
     const active = exactEnd
       ? location.pathname === to
       : location.pathname.startsWith(to);
@@ -116,11 +150,11 @@ export default function Sidebar() {
           {!collapsed && (
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-neutral-900 shadow-xl overflow-hidden p-1.5 shrink-0">
-                <img src="/wayon-logo.svg" alt="Logo" className="h-full w-full object-contain" />
+                <img src={branding.logoUrl || '/wayon-logo.svg'} alt="Logo" className="h-full w-full object-contain" />
               </div>
               <div>
                 <p className="text-[15px] font-bold tracking-tight text-neutral-900 leading-tight">
-                  {agency?.name || 'WAYON'}
+                  {agency?.name || branding.brandName}
                 </p>
                 <p className="text-[10px] font-medium text-neutral-400 uppercase tracking-wider">Platform</p>
               </div>
@@ -146,31 +180,31 @@ export default function Sidebar() {
 
         {/* Main nav */}
         <nav className="mt-6 space-y-1">
-          {navItems.map((item) =>
+          {visibleNavItems.map((item) =>
             renderNavItem(item, item.to === '/')
           )}
         </nav>
 
         {/* Workspace section */}
-        {!collapsed && (
+        {visibleUtilityItems.length > 0 && !collapsed && (
           <div className="mt-6 px-3">
             <p className="eyebrow">Workspace</p>
           </div>
         )}
-        {collapsed && <hr className="mx-auto mt-6 w-8 border-neutral-200" />}
+        {visibleUtilityItems.length > 0 && collapsed && <hr className="mx-auto mt-6 w-8 border-neutral-200" />}
         <nav className="mt-2 space-y-1">
-          {utilityItems.map((item) => renderNavItem(item))}
+          {visibleUtilityItems.map((item) => renderNavItem(item))}
         </nav>
 
         {/* Marketing section */}
-        {!collapsed && (
+        {visibleMarketingItems.length > 0 && !collapsed && (
           <div className="mt-6 px-3">
             <p className="eyebrow">Marketing</p>
           </div>
         )}
-        {collapsed && <hr className="mx-auto mt-6 w-8 border-neutral-200" />}
+        {visibleMarketingItems.length > 0 && collapsed && <hr className="mx-auto mt-6 w-8 border-neutral-200" />}
         <nav className="mt-2 space-y-1">
-          {marketingItems.map((item) => renderNavItem(item))}
+          {visibleMarketingItems.map((item) => renderNavItem(item))}
         </nav>
 
         {/* Bottom actions */}
@@ -179,9 +213,9 @@ export default function Sidebar() {
             {!collapsed && <span className="text-[9px] font-bold uppercase tracking-[0.2em] text-neutral-400">Powered By</span>}
             <div className={`flex items-center justify-center ${collapsed ? 'flex-col gap-1' : 'gap-2.5'}`}>
               <div className={`flex items-center justify-center rounded-lg bg-neutral-900 shadow-sm overflow-hidden ${collapsed ? 'h-8 w-8 p-1.5' : 'h-7 w-7 p-1.5'}`}>
-                <img src="/wayon-logo.svg" alt="WAYON Logo" className="h-full w-full object-contain" />
+                <img src={branding.logoUrl || '/wayon-logo.svg'} alt={`${branding.brandName} logo`} className="h-full w-full object-contain" />
               </div>
-              {!collapsed && <span className="text-[14px] font-bold tracking-tight text-neutral-900 italic">WAYON</span>}
+              {!collapsed && <span className="text-[14px] font-bold tracking-tight text-neutral-900 italic">{branding.brandName}</span>}
             </div>
           </div>
 
