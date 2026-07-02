@@ -10,6 +10,7 @@ router.post('/', authenticate, campaignController.create);
 router.post('/preview-audience', authenticate, campaignController.previewAudience);
 router.post('/import-contacts', authenticate, campaignController.importContacts);
 router.get('/analytics', authenticate, campaignController.analytics);
+router.get('/reports', authenticate, campaignController.reports);
 router.get('/:id', authenticate, campaignController.getById);
 router.get('/:id/stats', authenticate, campaignController.getStats);
 router.get('/:id/report', authenticate, campaignController.getReport);

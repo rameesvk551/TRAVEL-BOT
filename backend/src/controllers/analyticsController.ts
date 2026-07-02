@@ -11,6 +11,30 @@ async function summary(req, res, next) {
   }
 }
 
+async function callingReport(req, res, next) {
+  try {
+    const { from, to, agentId, leadId } = req.query;
+    const data = await analyticsService.getCallingReport(req.agency.id, from, to, {
+      requester: req.agent,
+      agentId: agentId && agentId !== 'all' ? agentId : null,
+      leadId: leadId && leadId !== 'all' ? leadId : null,
+    });
+    res.json({ success: true, data });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function crmReport(req, res, next) {
+  try {
+    const { from, to } = req.query;
+    const data = await analyticsService.getCrmReport(req.agency.id, from, to);
+    res.json({ success: true, data });
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function salesReport(req, res, next) {
   try {
     const { from, to } = req.query;
@@ -110,6 +134,16 @@ async function sourceReport(req, res, next) {
   }
 }
 
+async function leadsByAdReport(req, res, next) {
+  try {
+    const { from, to } = req.query;
+    const data = await analyticsService.getLeadsByAd(req.agency.id, from, to);
+    res.json({ success: true, data });
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function bookingReport(req, res, next) {
   try {
     const { from, to } = req.query;
@@ -186,6 +220,8 @@ async function exportReport(req, res, next) {
 
 module.exports = {
   summary,
+  callingReport,
+  crmReport,
   salesReport,
   leadFunnelReport,
   agentPerformanceReport,
@@ -196,6 +232,7 @@ module.exports = {
   seasonalReport,
   profitReport,
   sourceReport,
+  leadsByAdReport,
   bookingReport,
   customerLtvReport,
   cacReport,

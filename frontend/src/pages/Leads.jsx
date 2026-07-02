@@ -4,6 +4,7 @@ import LeadCard from '../components/LeadCard';
 import { useQuery } from '@tanstack/react-query';
 import {
   ArrowPathIcon,
+  ArrowDownTrayIcon,
   BanknotesIcon,
   BriefcaseIcon,
   CalendarDaysIcon,
@@ -18,10 +19,12 @@ import {
   PhoneIcon,
   PlusIcon,
   TagIcon,
+  TrashIcon,
   TrophyIcon,
   UserPlusIcon,
   XCircleIcon,
   XMarkIcon,
+  ChevronDownIcon,
 } from '@heroicons/react/24/outline';
 import Pagination from '../components/Pagination';
 import client from '../api/client';
@@ -29,15 +32,19 @@ import {
   useAddFollowUp,
   useAddNote,
   useBulkAssignLeads,
+  useBulkDeleteLeads,
   useLead,
   useLeads,
+  usePipelineStages,
   useUpdateFollowUp,
   useUpdateLead,
 } from '../hooks/useLeads';
+import { useCallLogs } from '../hooks/useCalls';
+import { useLeadsByAdReport } from '../hooks/useAnalytics';
+import { callsApi } from '../api/callsApi';
 import { useAuthStore } from '../store/authStore';
 import { formatCurrency, formatDate, formatDateTime, formatPhone, timeAgo } from '../utils/formatters';
 import { mergeAssignedAgentOption } from '../utils/agentOptions';
-import { LEAD_STATUS_OPTIONS, LEAD_PIPELINE_COLUMNS } from '../utils/leadStatuses';
 import {
   DATE_RANGE_OPTIONS,
   SORT_OPTIONS,
@@ -48,6 +55,8 @@ import {
   getAttentionBadges,
   getLeadScore,
   getLeadScoreTone,
+  getLeadStageColor,
+  getLeadStageLabel,
   getLeadValueLabel,
   getNextAction,
   getNextFollowUp,
@@ -58,20 +67,140 @@ import {
   needsAttention,
   sortLeads,
 } from '../utils/leadInsights';
-import { getInitials, getStatusTone } from '../components/uiHelpers';
+import { getInitials, getStatusTone, getStagePillStyle } from '../components/uiHelpers';
 import LeadPipeline from '../components/LeadPipeline';
 import NewLeadModal from '../components/NewLeadModal';
+import ActivityTimeline from '../components/ActivityTimeline';
 
-const TABS = [
+const BASE_TABS = [
   { key: 'Needs Attention', label: 'Needs Attention' },
   { key: 'All Leads', label: 'All Leads' },
-  ...LEAD_PIPELINE_COLUMNS.map((column) => ({ key: column.key, label: column.label })),
 ];
 
 const PAGE_SIZE_DEFAULT = 12;
 const PAGE_SIZE_OPTIONS = [10, 12, 25, 50];
+const EXPORT_PAGE_SIZE = 200;
+const MAX_EXPORT_PAGES = 100;
 
 const EMPTY = '-';
+
+function isWeakAdLabel(value) {
+  const label = String(value || '').trim().toLowerCase();
+  return !label || label === 'api.whatsapp.com' || label === 'whatsapp' || label === 'www.whatsapp.com' || label.includes('api.whatsapp.com');
+}
+
+function summarizeAdBody(value) {
+  const firstLine = String(value || '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find(Boolean);
+  if (!firstLine) return '';
+  return firstLine.length > 72 ? `${firstLine.slice(0, 69)}...` : firstLine;
+}
+
+function getCtwaReferral(lead) {
+  return lead?.metaRawPayload?.ctwaReferral || lead?.metaRawPayload?.ctwa_referral || {};
+}
+
+// Readable label for the Meta ad a lead came from (Click-to-WhatsApp attribution).
+// Prefer stable Ads Manager grouping names over noisy CTWA headlines like api.whatsapp.com.
+function getLeadAdLabel(lead) {
+  if (!lead?.adId) return '';
+  const referral = getCtwaReferral(lead);
+  return lead.metaAdSetName
+    || lead.metaCampaignName
+    || (!isWeakAdLabel(lead.metaAdName) ? lead.metaAdName : '')
+    || (!isWeakAdLabel(lead.adHeadline) ? lead.adHeadline : '')
+    || summarizeAdBody(referral.body)
+    || `Ad ${String(lead.adId).slice(-6)}`;
+}
+
+function getLeadAdSubLabel(lead) {
+  if (!lead?.adId) return '';
+  const label = getLeadAdLabel(lead);
+  const parts = [];
+
+  if (lead.metaCampaignName && lead.metaCampaignName !== label) parts.push(lead.metaCampaignName);
+  if (lead.metaAdSetName && lead.metaAdSetName !== label) parts.push(lead.metaAdSetName);
+  parts.push(`ID ${lead.adId}`);
+
+  return parts.join(' | ');
+}
+
+function formatAdOptionLabel(option) {
+  const label = option.label || `Ad ${String(option.value || '').slice(-6)}`;
+  const shortId = String(option.value || '').slice(-6);
+  const withId = shortId && !label.includes(shortId) ? `${label} | ${shortId}` : label;
+  return option.leads ? `${withId} (${option.leads})` : withId;
+}
+
+function getAdOptionBaseLabel(ad) {
+  const adId = ad.adId || ad.value || '';
+  return ad.adSetName
+    || ad.campaignName
+    || (!isWeakAdLabel(ad.adName) ? ad.adName : '')
+    || summarizeAdBody(ad.adBody)
+    || `Ad ${String(adId).slice(-6)}`;
+}
+
+function escapeExcelCell(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function getLeadExportRows(leads = []) {
+  return leads.map((lead, index) => {
+    const nextFollowUp = getNextFollowUp(lead);
+    const travellers = Number(lead.travellers || 1);
+    const budget = Number(lead.budgetPerPerson || 0);
+
+    return {
+      'SL No': index + 1,
+      Created: formatDateTime(lead.createdAt),
+      Name: lead.customer?.name || '',
+      Phone: formatPhone(lead.customer?.phone) || '',
+      Email: lead.customer?.email || '',
+      Source: formatSource(lead.source),
+      'Source Ad': getLeadAdLabel(lead),
+      'Source Ad ID': lead.adId || '',
+      'Ad Set': lead.metaAdSetName || '',
+      Status: formatStatus(lead.status),
+      Destination: lead.destination || '',
+      'Travel Dates': lead.travelDates || '',
+      Travellers: lead.travellers || '',
+      'Budget / Person': budget ? formatCurrency(budget) : '',
+      'Lead Value': budget ? formatCurrency(budget * travellers) : '',
+      'Assigned To': lead.assignedAgent?.name || '',
+      'Next Follow-Up': nextFollowUp ? formatDateTime(nextFollowUp.scheduledAt) : '',
+      Campaign: lead.campaignName || lead.metaCampaignName || '',
+      Tags: Array.isArray(lead.tags) ? lead.tags.join(', ') : '',
+      Notes: lead.notes || '',
+    };
+  });
+}
+
+function downloadExcelFile(filename, rows) {
+  const headers = rows.length ? Object.keys(rows[0]) : ['SL No'];
+  const tableRows = [
+    `<tr>${headers.map((header) => `<th>${escapeExcelCell(header)}</th>`).join('')}</tr>`,
+    ...rows.map((row) => (
+      `<tr>${headers.map((header) => `<td>${escapeExcelCell(row[header])}</td>`).join('')}</tr>`
+    )),
+  ].join('');
+  const html = `<!doctype html><html><head><meta charset="utf-8" /></head><body><table>${tableRows}</table></body></html>`;
+  const blob = new Blob([html], { type: 'application/vnd.ms-excel;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
 
 function getDefaultFollowupDateTime() {
   const date = new Date(Date.now() + 60 * 60 * 1000);
@@ -89,6 +218,18 @@ function formatServiceLabel(value = '') {
   return String(value || '').replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase()) || EMPTY;
 }
 
+function selectedItemTypeMeta(itemType = '') {
+  const type = String(itemType || '').toUpperCase();
+  const meta = {
+    PACKAGE: ['Package', 'bg-emerald-50 text-emerald-700'],
+    PROPERTY: ['Property', 'bg-sky-50 text-sky-700'],
+    SERVICE: ['Service', 'bg-purple-50 text-purple-700'],
+    VISA: ['Visa', 'bg-amber-50 text-amber-700'],
+    CRUISE: ['Cruise', 'bg-cyan-50 text-cyan-700'],
+  };
+  return meta[type] || [formatServiceLabel(type || 'Item'), 'bg-neutral-100 text-neutral-600'];
+}
+
 function formatReadinessAnswer(value = '') {
   if (Array.isArray(value)) return value.map(formatReadinessAnswer).filter(Boolean).join(', ') || EMPTY;
   return String(value || '')
@@ -99,15 +240,27 @@ function formatReadinessAnswer(value = '') {
 }
 
 function hasCustomTripDetails(details = {}) {
+  const hasFlowAnswers = Boolean(details.flowAnswers && Object.keys(details.flowAnswers).length);
+  const hasFlowSubmissions = Boolean(Array.isArray(details.flowSubmissions) && details.flowSubmissions.length);
+  const hasStructuredAnswers = ['packageEnquiry', 'propertyEnquiry', 'serviceEnquiry', 'visaEnquiry', 'cruiseEnquiry', 'customTripEnquiry', 'flowEnquiry']
+    .some((key) => details[key]?.answers && Object.keys(details[key].answers).length);
+
   return Boolean(
     details.serviceCategory
     || details.service
     || details.serviceDetails
     || details.propertyName
     || details.propertyLocation
+    || details.propertyType
+    || details.stayType
     || details.destination
     || details.checkInDate
     || details.checkOutDate
+    || details.groupType
+    || details.adults
+    || details.children6To12
+    || details.childrenBelow5
+    || details.rooms
     || details.travelDate
     || details.travellersText
     || details.travellers
@@ -117,7 +270,159 @@ function hasCustomTripDetails(details = {}) {
     || details.submittedAt
     || details.notes
     || details.staycationInterest
+    || hasFlowAnswers
+    || hasFlowSubmissions
+    || hasStructuredAnswers
   );
+}
+
+const FLOW_ANSWER_LABELS = {
+  from: 'From',
+  to: 'To',
+  destination: 'Destination',
+  where: 'Where',
+  city: 'City',
+  propertyType: 'Stay Type',
+  stayType: 'Stay Type',
+  groupType: 'Group Type',
+  checkInDate: 'Check-in',
+  checkOutDate: 'Checkout',
+  travelDate: 'Travel Date',
+  date: 'Date',
+  when: 'When',
+  people: 'People',
+  travellers: 'Travellers',
+  passengers: 'Passengers',
+  guests: 'Guests',
+  adults: 'Adults',
+  children6To12: 'Children 6-12',
+  childrenBelow5: 'Children Below 5',
+  rooms: 'Rooms',
+  budget: 'Budget',
+  notes: 'Notes',
+};
+
+function formatFlowAnswerLabel(key = '') {
+  if (FLOW_ANSWER_LABELS[key]) return FLOW_ANSWER_LABELS[key];
+  return String(key || '')
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function cleanAnswerEntries(answers = {}) {
+  if (!answers || typeof answers !== 'object' || Array.isArray(answers)) return [];
+  const hiddenKeys = new Set(['selectedItemType', 'selectedItemId', 'selectedItemName', 'token', 'flow_token', 'flowToken']);
+  return Object.entries(answers)
+    .filter(([, value]) => value !== undefined && value !== null && String(value).trim())
+    .filter(([key]) => !hiddenKeys.has(key))
+    .map(([key, value]) => [formatFlowAnswerLabel(key), String(value).trim()]);
+}
+
+function pickAnswers(answers = {}, keys = []) {
+  return keys.reduce((picked, key) => {
+    if (answers[key] !== undefined && answers[key] !== null && String(answers[key]).trim()) {
+      picked[key] = answers[key];
+    }
+    return picked;
+  }, {});
+}
+
+function splitLegacyFlowAnswers(details = {}) {
+  const answers = details.flowAnswers;
+  if (!answers || typeof answers !== 'object' || Array.isArray(answers)) return [];
+
+  const sections = [];
+  const hasPropertyAnswers = Boolean(answers.destination || answers.propertyType || answers.checkInDate || answers.checkOutDate || answers.rooms);
+  const serviceAnswers = pickAnswers(
+    answers,
+    hasPropertyAnswers
+      ? ['from', 'to', 'travelDate', 'passengers']
+      : ['from', 'to', 'travelDate', 'people', 'passengers', 'travellers', 'notes']
+  );
+  const propertyAnswers = pickAnswers(answers, ['destination', 'propertyType', 'checkInDate', 'checkOutDate', 'rooms', 'people', 'guests', 'notes']);
+
+  if (Object.keys(serviceAnswers).length) {
+    sections.push({
+      key: 'legacy-service-answers',
+      title: 'Service Answers',
+      subtitle: answers.selectedItemName || details.serviceEnquiry?.itemName || details.serviceEnquiry?.name || '',
+      entries: cleanAnswerEntries(serviceAnswers),
+    });
+  }
+
+  if (Object.keys(propertyAnswers).length) {
+    sections.push({
+      key: 'legacy-property-answers',
+      title: 'Property Answers',
+      subtitle: details.propertyEnquiry?.itemName || details.propertyEnquiry?.name || details.propertyName || '',
+      entries: cleanAnswerEntries(propertyAnswers),
+    });
+  }
+
+  if (!sections.length) {
+    const fallbackEntries = cleanAnswerEntries(answers);
+    if (fallbackEntries.length) {
+      sections.push({
+        key: 'flowAnswers',
+        title: 'Flow Answers',
+        subtitle: answers.selectedItemName || '',
+        entries: fallbackEntries,
+      });
+    }
+  }
+
+  return sections;
+}
+
+function getFlowAnswerSections(details = {}) {
+  const submissionSections = Array.isArray(details.flowSubmissions)
+    ? details.flowSubmissions
+      .map((submission, index) => {
+        const entries = cleanAnswerEntries(submission.answers);
+        if (!entries.length) return null;
+        return {
+          key: `flow-submission-${index}-${submission.submittedAt || ''}`,
+          title: submission.title || 'Flow Answers',
+          subtitle: submission.itemName || submission.category || '',
+          entries,
+        };
+      })
+      .filter(Boolean)
+    : [];
+  if (submissionSections.length) return submissionSections;
+
+  const configs = [
+    ['serviceEnquiry', 'Service Answers'],
+    ['packageEnquiry', 'Package Answers'],
+    ['propertyEnquiry', 'Property Answers'],
+    ['visaEnquiry', 'Visa Answers'],
+    ['cruiseEnquiry', 'Cruise Answers'],
+    ['customTripEnquiry', 'Custom Trip Answers'],
+    ['flowEnquiry', 'Flow Answers'],
+  ];
+
+  const sections = configs
+    .map(([key, title]) => {
+      const enquiry = details[key];
+      const entries = cleanAnswerEntries(enquiry?.answers);
+      if (!entries.length) return null;
+      return {
+        key,
+        title,
+        subtitle: enquiry.itemName || enquiry.name || enquiry.category || enquiry.propertyType || enquiry.country || '',
+        entries,
+      };
+    })
+    .filter(Boolean);
+
+  if (sections.length === 0) {
+    sections.push(...splitLegacyFlowAnswers(details));
+  }
+
+  return sections;
 }
 
 function getLeadRequestSummaries(lead, details = {}) {
@@ -125,6 +430,11 @@ function getLeadRequestSummaries(lead, details = {}) {
   const notes = String(lead.notes || '').toLowerCase();
   const summaries = [];
   const readinessDetails = details.travelReadiness || {};
+  const serviceAnswers = details.serviceEnquiry?.answers || {};
+  const propertyAnswers = details.propertyEnquiry?.answers || {};
+  const isCustomTripRequest = String(lead.itemType || '').toUpperCase() === 'CUSTOM_TRIP'
+    || String(lead.interest || '').toUpperCase().includes('CUSTOM_TRIP')
+    || notes.includes('custom trip');
   const isPropertyRequest = Boolean(
     lead.propertyId
     || details.propertyName
@@ -134,22 +444,28 @@ function getLeadRequestSummaries(lead, details = {}) {
     || String(details.source || '').includes('property')
   );
 
-  if (details.serviceCategory || details.service || String(lead.interest || '').includes('TICKETING')) {
+  if (details.serviceCategory || details.service || details.serviceEnquiry || String(lead.interest || '').includes('TICKETING')) {
     summaries.push({
       key: 'ticketing',
       title: 'Visa & Ticketing',
       tone: 'border-sky-200 bg-sky-50 text-sky-700',
-      meta: [formatServiceLabel(details.service || lead.interest?.replace('_TICKETING', '')), details.serviceDetails || 'Awaiting route/date/passenger details'].filter(Boolean).join(' - '),
+      meta: [
+        details.serviceEnquiry?.itemName || details.serviceEnquiry?.name || formatServiceLabel(details.service || lead.interest?.replace('_TICKETING', '')),
+        serviceAnswers.from && serviceAnswers.to ? `${serviceAnswers.from} to ${serviceAnswers.to}` : '',
+        serviceAnswers.travelDate || '',
+        serviceAnswers.people ? `${serviceAnswers.people} people` : '',
+        details.serviceDetails || '',
+      ].filter(Boolean).join(' - ') || 'Service enquiry captured',
     });
   }
 
   if (details.staycationInterest || notes.includes('properties viewed from whatsapp menu') || isPropertyRequest) {
     const stayMeta = [
       details.propertyName || lead.property?.name,
-      details.propertyLocation || details.destination || lead.destination,
-      details.checkInDate ? `Check-in ${details.checkInDate}` : '',
-      details.checkOutDate ? `Checkout ${details.checkOutDate}` : '',
-      details.travellersText || (details.travellers ? `${details.travellers} guests` : ''),
+      details.propertyLocation || propertyAnswers.destination || details.destination || lead.destination,
+      (details.checkInDate || propertyAnswers.checkInDate) ? `Check-in ${details.checkInDate || propertyAnswers.checkInDate}` : '',
+      (details.checkOutDate || propertyAnswers.checkOutDate) ? `Checkout ${details.checkOutDate || propertyAnswers.checkOutDate}` : '',
+      propertyAnswers.people || details.travellersText || (details.travellers ? `${details.travellers} guests` : ''),
     ].filter(Boolean).join(' - ');
 
     summaries.push({
@@ -176,12 +492,40 @@ function getLeadRequestSummaries(lead, details = {}) {
     });
   }
 
-  if (!isPropertyRequest && (details.destination || details.travelDate || details.travellers || details.budgetPerPerson || notes.includes('custom trip requested'))) {
+  if (details.stayrouteOnam?.travellerCount || details.stayrouteOnam?.departureAirport || details.stayrouteOnam?.roomType) {
+    const onamMeta = [
+      details.stayrouteOnam.travellerCount ? `${formatReadinessAnswer(details.stayrouteOnam.travellerCount)} travellers` : '',
+      details.stayrouteOnam.departureAirport ? `From ${formatReadinessAnswer(details.stayrouteOnam.departureAirport)}` : '',
+      details.stayrouteOnam.roomType ? formatReadinessAnswer(details.stayrouteOnam.roomType) : '',
+    ].filter(Boolean).join(' - ');
+
+    summaries.push({
+      key: 'stayroute-onam',
+      title: 'Onam Trip',
+      tone: 'border-teal-200 bg-teal-50 text-teal-700',
+      meta: onamMeta || 'Questionnaire submitted',
+    });
+  }
+
+  if (!isPropertyRequest && (
+    details.destination
+    || details.travelDate
+    || details.travellers
+    || details.budgetPerPerson
+    || readinessDetails.travellerCount
+    || isCustomTripRequest
+  )) {
     summaries.push({
       key: 'custom-trip',
       title: 'Custom Trip',
       tone: 'border-amber-200 bg-amber-50 text-amber-700',
-      meta: [details.destination, details.travelDate, details.travellersText || (details.travellers ? `${details.travellers} travellers` : '')].filter(Boolean).join(' - ') || 'Custom trip flow opened',
+      meta: [
+        details.destination,
+        details.travelDate,
+        details.travellersText
+          || (details.travellers ? `${details.travellers} travellers` : '')
+          || (readinessDetails.travellerCount ? `${formatReadinessAnswer(readinessDetails.travellerCount)} travellers` : ''),
+      ].filter(Boolean).join(' - ') || 'Custom trip flow submitted',
     });
   }
 
@@ -198,10 +542,12 @@ export default function Leads() {
   const [view, setView] = useState('list');
   const [selectedLeadId, setSelectedLeadId] = useState(null);
   const [sourceFilter, setSourceFilter] = useState('all');
+  const [adFilter, setAdFilter] = useState('all');
   const [sortBy, setSortBy] = useState('overdue');
   const [dateRange, setDateRange] = useState('all');
   const [agentFilter, setAgentFilter] = useState('all');
   const [tagFilter, setTagFilter] = useState('all');
+  const [channelFilter, setChannelFilter] = useState('all');
   const [selectedLeadIds, setSelectedLeadIds] = useState(new Set());
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
   const [assigningLead, setAssigningLead] = useState(null);
@@ -212,25 +558,32 @@ export default function Leads() {
   const [followupNote, setFollowupNote] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(PAGE_SIZE_DEFAULT);
+  const [isExporting, setIsExporting] = useState(false);
+  const [showExportMenu, setShowExportMenu] = useState(false);
+  const [exportType, setExportType] = useState(null);
   useEffect(() => {
     const tab = searchParams.get('tab');
     const q = searchParams.get('q');
     const source = searchParams.get('source');
+    const ad = searchParams.get('ad');
     const sort = searchParams.get('sort');
     const range = searchParams.get('range');
     const agent = searchParams.get('agent');
     const tag = searchParams.get('tag');
+    const channel = searchParams.get('channel');
     const viewParam = searchParams.get('view');
     const page = Number(searchParams.get('page') || 1);
     const size = Number(searchParams.get('size') || PAGE_SIZE_DEFAULT);
 
-    if (tab && TABS.some((item) => item.key === tab)) setActiveTab(tab);
+    if (tab) setActiveTab(tab);
     if (q) setSearch(q);
     if (source) setSourceFilter(source);
+    if (ad) setAdFilter(ad);
     if (sort) setSortBy(sort);
     if (range) setDateRange(range);
     if (agent) setAgentFilter(agent);
     if (tag) setTagFilter(tag);
+    if (channel) setChannelFilter(channel);
     if (viewParam === 'list' || viewParam === 'kanban') setView(viewParam);
     if (Number.isInteger(page) && page > 0) setCurrentPage(page);
     if (PAGE_SIZE_OPTIONS.includes(size)) setPageSize(size);
@@ -240,6 +593,14 @@ export default function Leads() {
 
 
   const currentAgent = useAuthStore((state) => state.agent);
+  const stagesQuery = usePipelineStages();
+  const stages = useMemo(() => stagesQuery.data?.data || [], [stagesQuery.data]);
+  const activeStages = useMemo(() => stages.filter((stage) => stage.isActive), [stages]);
+  const TABS = useMemo(
+    () => [...BASE_TABS, ...activeStages.map((stage) => ({ key: stage.id, label: stage.name }))],
+    [activeStages]
+  );
+
   const leadQueryParams = useMemo(() => {
     const params = {
       page: currentPage,
@@ -247,14 +608,16 @@ export default function Leads() {
       sortBy,
     };
     if (activeTab === 'Needs Attention') params.attention = true;
-    else if (activeTab !== 'All Leads') params.status = activeTab;
+    else if (activeTab !== 'All Leads') params.pipelineStageId = activeTab;
     if (search.trim()) params.search = search.trim();
     if (sourceFilter !== 'all') params.source = sourceFilter;
+    if (adFilter !== 'all') params.adId = adFilter;
     if (dateRange !== 'all') params.dateRange = dateRange;
     if (agentFilter !== 'all') params.agentId = agentFilter;
     if (tagFilter !== 'all') params.tag = tagFilter;
+    if (channelFilter !== 'all') params.channelId = channelFilter;
     return params;
-  }, [activeTab, agentFilter, currentPage, dateRange, pageSize, search, sortBy, sourceFilter, tagFilter]);
+  }, [activeTab, adFilter, agentFilter, currentPage, dateRange, pageSize, search, sortBy, sourceFilter, tagFilter, channelFilter]);
   const leadsQuery = useLeads(leadQueryParams);
   const leadsResponse = leadsQuery.data?.data || {};
   const leads = leadsResponse.data || [];
@@ -263,13 +626,27 @@ export default function Leads() {
   const safeCurrentPage = Math.min(currentPage, totalPages);
   const pageStartIndex = (safeCurrentPage - 1) * pageSize;
 
+  // Ad filter options come straight from the leads-by-ad report: every Click-to-WhatsApp
+  // ad that has produced at least one lead, labelled with its resolved name (or headline).
+  // Users never type an ad name — they pick from this auto-built list.
+  const { data: adReport } = useLeadsByAdReport({});
+  const adOptions = useMemo(() => (adReport?.data?.ads || [])
+    .map((a) => ({ value: a.adId, label: getAdOptionBaseLabel(a), leads: a.leads }))
+    .sort((a, b) => (b.leads || 0) - (a.leads || 0)), [adReport]);
+
   const { data: agentsResponse } = useQuery({
     queryKey: ['agents'],
     queryFn: () => client.get('/agents').then((response) => response.data),
   });
   const agents = agentsResponse?.data || [];
+  const whatsappChannelsQuery = useQuery({
+    queryKey: ['whatsapp-channels'],
+    queryFn: () => client.get('/agencies/me/whatsapp-channels').then((res) => res.data.data),
+  });
+  const whatsappChannels = Array.isArray(whatsappChannelsQuery.data) ? whatsappChannelsQuery.data : [];
   const updateLead = useUpdateLead();
   const bulkAssign = useBulkAssignLeads();
+  const bulkDelete = useBulkDeleteLeads();
   const addFollowup = useAddFollowUp();
   const tagOptions = useMemo(() => {
     const tags = new Set();
@@ -294,21 +671,118 @@ export default function Leads() {
     );
   }, [selectedLeadIds, bulkAssign]);
 
+  const handleBulkDelete = useCallback(() => {
+    const count = selectedLeadIds.size;
+    if (count === 0) return;
+    const label = count === 1 ? 'lead' : 'leads';
+    const confirmed = window.confirm(`Delete ${count} selected ${label}? This will mark ${label} as cancelled.`);
+    if (!confirmed) return;
+
+    bulkDelete.mutate([...selectedLeadIds], {
+      onSuccess: () => setSelectedLeadIds(new Set()),
+      onError: (error) => window.alert(error?.message || 'Could not delete selected leads'),
+    });
+  }, [bulkDelete, selectedLeadIds]);
+
+  const handleExportExcel = useCallback(async () => {
+    if (isExporting) return;
+    setIsExporting(true);
+
+    try {
+      const exportedLeads = [];
+      let page = 1;
+      let total = 0;
+
+      while (page <= MAX_EXPORT_PAGES) {
+        const response = await client.get('/leads', {
+          params: {
+            ...leadQueryParams,
+            page,
+            pageSize: EXPORT_PAGE_SIZE,
+          },
+        });
+        const payload = response.data?.data || {};
+        const pageLeads = payload.data || [];
+        exportedLeads.push(...pageLeads);
+        total = Number(payload.total || exportedLeads.length);
+
+        if (pageLeads.length === 0 || exportedLeads.length >= total) break;
+        page += 1;
+      }
+
+      if (exportedLeads.length === 0) {
+        window.alert('No leads match the current filters.');
+        return;
+      }
+
+      const rows = getLeadExportRows(exportedLeads);
+      downloadExcelFile(`leads-export-${new Date().toISOString().slice(0, 10)}.xls`, rows);
+    } catch (error) {
+      window.alert(error?.response?.data?.message || error?.message || 'Could not export leads');
+    } finally {
+      setIsExporting(false);
+    }
+  }, [isExporting, leadQueryParams]);
+
+  const handleExportReport = useCallback(async (type) => {
+    if (isExporting) return;
+    setIsExporting(true);
+    setExportType(type);
+    setShowExportMenu(false);
+
+    try {
+      const params = { ...leadQueryParams };
+      delete params.page;
+      delete params.pageSize;
+
+      const response = type === 'pdf'
+        ? await client.get('/leads/export/pdf', { params, responseType: 'blob', timeout: 120000 })
+        : await client.get('/leads/export/excel', { params, responseType: 'blob', timeout: 120000 });
+
+      const blob = response.data;
+      const ext = type === 'pdf' ? 'pdf' : 'xlsx';
+      const mimeType = type === 'pdf' ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+      const url = URL.createObjectURL(new Blob([blob], { type: mimeType }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `lead-report-${new Date().toISOString().slice(0, 10)}.${ext}`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      window.alert(error?.response?.data?.message || error?.message || `Could not export ${type.toUpperCase()} report`);
+    } finally {
+      setIsExporting(false);
+      setExportType(null);
+    }
+  }, [isExporting, leadQueryParams]);
+
+  useEffect(() => {
+    if (!showExportMenu) return;
+    const handleClick = (e) => {
+      if (e.target.closest('.export-menu-container')) return;
+      setShowExportMenu(false);
+    };
+    document.addEventListener('click', handleClick);
+    return () => document.removeEventListener('click', handleClick);
+  }, [showExportMenu]);
+
   const tabCounts = useMemo(() => {
     const counts = leadsResponse.counts || {};
     return {
       'Needs Attention': counts['Needs Attention'] ?? 0,
       'All Leads': counts['All Leads'] ?? totalItems,
-      ...LEAD_PIPELINE_COLUMNS.reduce((acc, column) => {
-        acc[column.key] = counts[column.key] ?? 0;
+      ...activeStages.reduce((acc, stage) => {
+        acc[stage.id] = counts[stage.id] ?? 0;
         return acc;
       }, {}),
     };
-  }, [leadsResponse.counts, totalItems]);
+  }, [leadsResponse.counts, totalItems, activeStages]);
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [activeTab, agentFilter, dateRange, search, sortBy, sourceFilter, tagFilter, view, pageSize]);
+  }, [activeTab, adFilter, agentFilter, dateRange, search, sortBy, sourceFilter, tagFilter, channelFilter, view, pageSize]);
 
   useEffect(() => {
     if (currentPage !== safeCurrentPage) {
@@ -322,10 +796,12 @@ export default function Leads() {
     if (activeTab !== 'Needs Attention') params.set('tab', activeTab);
     if (search.trim()) params.set('q', search.trim());
     if (sourceFilter !== 'all') params.set('source', sourceFilter);
+    if (adFilter !== 'all') params.set('ad', adFilter);
     if (sortBy !== 'overdue') params.set('sort', sortBy);
     if (dateRange !== 'all') params.set('range', dateRange);
     if (agentFilter !== 'all') params.set('agent', agentFilter);
     if (tagFilter !== 'all') params.set('tag', tagFilter);
+    if (channelFilter !== 'all') params.set('channel', channelFilter);
     if (view !== 'list') params.set('view', view);
     if (safeCurrentPage > 1) params.set('page', String(safeCurrentPage));
     if (pageSize !== PAGE_SIZE_DEFAULT) params.set('size', String(pageSize));
@@ -341,7 +817,9 @@ export default function Leads() {
     setSearchParams,
     sortBy,
     sourceFilter,
+    adFilter,
     tagFilter,
+    channelFilter,
     view,
   ]);
 
@@ -386,10 +864,12 @@ export default function Leads() {
     setSearch('');
     setActiveTab('All Leads');
     setSourceFilter('all');
+    setAdFilter('all');
     setSortBy('newest');
     setDateRange('all');
     setAgentFilter('all');
     setTagFilter('all');
+    setChannelFilter('all');
     setCurrentPage(1);
     setPageSize(PAGE_SIZE_DEFAULT);
   }
@@ -398,14 +878,21 @@ export default function Leads() {
     updateLead.mutate({ id: leadId, data });
   }
 
-  function handleStatusChange(lead, status) {
-    if (status === 'LOST' && !lead.lostReason) {
-      const lostReason = window.prompt('Why was this lead lost?');
-      if (!lostReason?.trim()) return;
-      updateLeadField(lead.id, { status, lostReason: lostReason.trim() });
+  // Moving a lead to a stage writes pipelineStageId (the source of truth); the
+  // backend keeps the internal status in sync. Lost-kind stages need a reason.
+  function handleStageChange(lead, stageId) {
+    if (!stageId) {
+      updateLeadField(lead.id, { pipelineStageId: null });
       return;
     }
-    updateLeadField(lead.id, { status });
+    const stage = stages.find((item) => item.id === stageId);
+    if (stage?.kind === 'LOST' && !lead.lostReason) {
+      const lostReason = window.prompt('Why was this lead lost?');
+      if (!lostReason?.trim()) return;
+      updateLeadField(lead.id, { pipelineStageId: stageId, lostReason: lostReason.trim() });
+      return;
+    }
+    updateLeadField(lead.id, { pipelineStageId: stageId });
   }
 
   function openFollowupScheduler(lead) {
@@ -439,31 +926,63 @@ export default function Leads() {
   }
 
   return (
-    <div className={`w-full ${selectedLeadIds.size > 0 ? 'pb-24' : 'pb-10'}`}>
+    <div className={`min-w-0 w-full overflow-x-hidden ${selectedLeadIds.size > 0 ? 'pb-24' : 'pb-10'}`}>
       {/* ── Header ── */}
       <div className="mb-4 md:hidden">
         <div className="sr-only">Leads</div>
 
         {/* Mobile quick actions */}
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => setIsStatsDrawerOpen(true)}
-            className="shell-button-secondary h-10 px-4 rounded-xl text-sm font-medium border border-neutral-200 bg-white hover:bg-neutral-50"
-          >
-            Summary
-          </button>
+          <div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto hide-scrollbar">
+            <button
+              onClick={() => setIsStatsDrawerOpen(true)}
+              className="shell-button-secondary h-10 flex-none px-4 rounded-xl text-sm font-medium border border-neutral-200 bg-white hover:bg-neutral-50"
+            >
+              Summary
+            </button>
 
-          <button
-            onClick={() => setIsFilterDrawerOpen(true)}
-            className="shell-button-secondary h-10 px-4 rounded-xl text-sm font-medium border border-neutral-200 bg-white hover:bg-neutral-50 md:hidden"
-          >
-            <FunnelIcon className="h-4 w-4 inline mr-2" />
-            Filter
-          </button>
+            <button
+              onClick={() => setIsFilterDrawerOpen(true)}
+              className="shell-button-secondary h-10 flex-none px-4 rounded-xl text-sm font-medium border border-neutral-200 bg-white hover:bg-neutral-50 md:hidden"
+            >
+              <FunnelIcon className="h-4 w-4 inline mr-2" />
+              Filter
+            </button>
+          </div>
+
+          <div className="export-menu-container relative z-50 flex-none">
+            <button
+              onClick={(e) => { e.stopPropagation(); setShowExportMenu(!showExportMenu); }}
+              disabled={isExporting || leadsQuery.isLoading}
+              className="shell-button-secondary flex items-center h-10 flex-none rounded-xl border border-neutral-200 bg-white px-3 text-sm font-medium hover:bg-neutral-50 disabled:opacity-60"
+            >
+              {isExporting ? <ArrowPathIcon className="mr-1.5 h-4 w-4 animate-spin" /> : <ArrowDownTrayIcon className="mr-1.5 h-4 w-4" />}
+              {isExporting ? (exportType === 'pdf' ? 'PDF...' : 'Excel...') : 'Export'}
+              <ChevronDownIcon className="ml-1 h-4 w-4" />
+            </button>
+            {showExportMenu && (
+              <div className="absolute right-0 top-full z-50 mt-1 w-56 overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-xl">
+                <button onClick={() => handleExportReport('pdf')} className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm font-medium text-neutral-700 hover:bg-neutral-50">
+                  <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-red-50 text-red-500"><ArrowDownTrayIcon className="h-4 w-4" /></span>
+                  <div><div className="text-sm font-semibold">PDF Report</div><div className="text-xs text-neutral-400">Full report with all details</div></div>
+                </button>
+                <div className="border-t border-neutral-100" />
+                <button onClick={() => handleExportReport('excel')} className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm font-medium text-neutral-700 hover:bg-neutral-50">
+                  <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-green-50 text-green-600"><ArrowDownTrayIcon className="h-4 w-4" /></span>
+                  <div><div className="text-sm font-semibold">Excel Report</div><div className="text-xs text-neutral-400">Multi-sheet with notes & follow-ups</div></div>
+                </button>
+                <div className="border-t border-neutral-100" />
+                <button onClick={() => { setShowExportMenu(false); handleExportExcel(); }} className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm font-medium text-neutral-700 hover:bg-neutral-50">
+                  <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-50 text-blue-500"><ArrowDownTrayIcon className="h-4 w-4" /></span>
+                  <div><div className="text-sm font-semibold">Quick Excel</div><div className="text-xs text-neutral-400">Basic lead list export</div></div>
+                </button>
+              </div>
+            )}
+          </div>
 
           <button
             onClick={() => setIsNewLeadModalOpen(true)}
-            className="shell-button-primary h-10 px-4 rounded-xl text-sm font-semibold bg-neutral-900 hover:bg-black flex items-center gap-1 ml-auto"
+            className="shell-button-primary h-10 flex-none px-4 rounded-xl text-sm font-semibold bg-neutral-900 hover:bg-black flex items-center gap-1"
           >
             <PlusIcon className="h-4 w-4" />
             Add Lead
@@ -473,7 +992,7 @@ export default function Leads() {
 
       {/* ── Filters ── */}
       {/* ── Metrics ── */}
-      <div className="mb-5 hidden lg:grid -mx-1 gap-3 overflow-x-auto pb-1 hide-scrollbar md:mx-0 md:mb-6 md:grid-cols-3 xl:grid-cols-6">
+      <div className="mb-5 hidden min-w-0 lg:grid -mx-1 gap-3 overflow-x-auto pb-1 hide-scrollbar md:mx-0 md:mb-6 md:grid-cols-3 xl:grid-cols-6">
         <MetricCard icon={ExclamationTriangleIcon} tone="bg-amber-50 text-amber-600" value={metrics.attention} label="Attention" />
         <MetricCard icon={ClockIcon} tone="bg-rose-50 text-rose-600" value={metrics.overdue} label="Overdue" />
         <MetricCard icon={TrophyIcon} tone="bg-red-50 text-red-600" value={metrics.hot} label="Hot" />
@@ -495,12 +1014,19 @@ export default function Leads() {
               className="shell-input-rect h-10 rounded-xl border-neutral-200 bg-white pl-10 text-sm shadow-sm focus:border-neutral-400 focus:ring-0 md:h-12 md:pl-11"
             />
           </div>
-          <div className="hidden min-w-0 flex-1 items-center gap-3 md:flex">
+          <div className="hidden min-w-0 flex-1 items-center gap-3 overflow-x-auto pb-1 hide-scrollbar md:flex">
             <select value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value)} className="shell-input-rect h-12 w-32 flex-none bg-white py-2 text-sm lg:w-40">
               {SOURCE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
+            {adOptions.length > 0 && (
+              <select value={adFilter} onChange={(e) => setAdFilter(e.target.value)} className="shell-input-rect h-12 w-36 flex-none bg-white py-2 text-sm lg:w-48" title="Filter by the Meta ad a lead came from">
+                <option value="all">All Ads</option>
+                <option value="any">Any ad (CTWA)</option>
+                {adOptions.map((o) => <option key={o.value} value={o.value}>{formatAdOptionLabel(o)}</option>)}
+              </select>
+            )}
             <select value={agentFilter} onChange={(e) => setAgentFilter(e.target.value)} className="shell-input-rect h-12 w-36 flex-none bg-white py-2 text-sm lg:w-44">
-              <option value="all">All Agents</option>
+              <option value="all">All Staff</option>
               {currentAgent?.id && <option value="mine">Assigned To Me</option>}
               <option value="unassigned">Unassigned</option>
               {agents.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
@@ -509,9 +1035,48 @@ export default function Leads() {
               <option value="all">All Labels</option>
               {tagOptions.map((t) => <option key={t} value={t}>{t}</option>)}
             </select>
+            {whatsappChannels.length > 0 && (
+              <select value={channelFilter} onChange={(e) => setChannelFilter(e.target.value)} className="shell-input-rect h-12 w-36 flex-none bg-white py-2 text-sm lg:w-44">
+                <option value="all">All Channels</option>
+                {whatsappChannels.map((c) => <option key={c.id} value={c.id}>{c.label || c.displayPhoneNumber || c.whatsappNumber}</option>)}
+              </select>
+            )}
             <button onClick={clearFilters} className="shell-button-secondary h-11 px-3 text-xs">
               <FunnelIcon className="h-3.5 w-3.5" /> Clear
             </button>
+          </div>
+          <div className="hidden items-center gap-3 md:flex flex-none">
+            <div className="export-menu-container relative z-50">
+              <button
+                onClick={(e) => { e.stopPropagation(); setShowExportMenu(!showExportMenu); }}
+                disabled={isExporting || leadsQuery.isLoading}
+                className="shell-button-secondary flex items-center h-11 flex-none gap-1.5 px-3 text-xs disabled:opacity-60"
+              >
+                {isExporting ? <ArrowPathIcon className="h-3.5 w-3.5 animate-spin" /> : <ArrowDownTrayIcon className="h-3.5 w-3.5" />}
+                {isExporting
+                  ? exportType === 'pdf' ? 'Generating PDF...' : exportType === 'excel' ? 'Generating Excel...' : 'Exporting...'
+                  : 'Export Report'}
+                <ChevronDownIcon className="ml-0.5 h-3.5 w-3.5" />
+              </button>
+              {showExportMenu && (
+                <div className="absolute right-0 top-full z-50 mt-1 w-56 overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-xl">
+                  <button onClick={() => handleExportReport('pdf')} className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-50">
+                    <span className="flex h-8 w-8 flex-none items-center justify-center rounded-lg bg-red-50 text-red-500"><ArrowDownTrayIcon className="h-4 w-4" /></span>
+                    <div><div className="text-sm font-semibold">PDF Report</div><div className="text-xs text-neutral-400">Full report with all details</div></div>
+                  </button>
+                  <div className="border-t border-neutral-100" />
+                  <button onClick={() => handleExportReport('excel')} className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-50">
+                    <span className="flex h-8 w-8 flex-none items-center justify-center rounded-lg bg-green-50 text-green-600"><ArrowDownTrayIcon className="h-4 w-4" /></span>
+                    <div><div className="text-sm font-semibold">Excel Report</div><div className="text-xs text-neutral-400">Multi-sheet with notes & follow-ups</div></div>
+                  </button>
+                  <div className="border-t border-neutral-100" />
+                  <button onClick={() => { setShowExportMenu(false); handleExportExcel(); }} className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-50">
+                    <span className="flex h-8 w-8 flex-none items-center justify-center rounded-lg bg-blue-50 text-blue-500"><ArrowDownTrayIcon className="h-4 w-4" /></span>
+                    <div><div className="text-sm font-semibold">Quick Excel</div><div className="text-xs text-neutral-400">Basic lead list export</div></div>
+                  </button>
+                </div>
+              )}
+            </div>
             <button
               onClick={() => setIsNewLeadModalOpen(true)}
               className="shell-button-primary ml-auto h-11 flex-none rounded-xl bg-neutral-900 px-4 text-sm font-semibold hover:bg-black"
@@ -592,7 +1157,7 @@ export default function Leads() {
           </div>
 
           {/* Desktop table */}
-          <div className="hidden md:block">
+          <div className="hidden min-w-0 md:block">
             <LeadTable
               agents={agents}
               clearFilters={clearFilters}
@@ -602,8 +1167,9 @@ export default function Leads() {
               onLeadClick={(lead) => setSelectedLeadId(lead.id)}
               onRetry={() => leadsQuery.refetch()}
               onScheduleFollowUp={openFollowupScheduler}
-              onStatusChange={handleStatusChange}
+              onStatusChange={handleStageChange}
               onUpdateLead={updateLeadField}
+              stages={activeStages}
               selectedLeadIds={selectedLeadIds}
               onToggleSelect={toggleSelectLead}
               onToggleSelectAll={toggleSelectAll}
@@ -627,9 +1193,11 @@ export default function Leads() {
       <BulkActionBar
         agents={agents}
         count={selectedLeadIds.size}
+        isDeleting={bulkDelete.isPending}
         isPending={bulkAssign.isPending}
         onAssign={handleBulkAssign}
         onClear={() => setSelectedLeadIds(new Set())}
+        onDelete={handleBulkDelete}
       />
 
       {/* Assign modal (mobile & desktop) */}
@@ -638,7 +1206,7 @@ export default function Leads() {
           <div className="absolute inset-0 bg-black/30" onClick={() => setIsAssignModalOpen(false)} />
           <div className="relative z-10 w-[90%] max-w-sm rounded-2xl bg-white p-4 shadow-2xl">
             <h3 className="text-lg font-bold text-neutral-900">Assign Lead</h3>
-            <p className="text-sm text-neutral-500 mt-1">Assign "{assigningLead.customer?.name || 'Unnamed'}" to an agent</p>
+            <p className="text-sm text-neutral-500 mt-1">Assign "{assigningLead.customer?.name || 'Unnamed'}" to staff</p>
             <div className="mt-4">
               <select className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm" defaultValue={assigningLead.assignedAgentId || ''} onChange={(e) => {
                 const agentId = e.target.value || null;
@@ -664,13 +1232,13 @@ export default function Leads() {
             <h3 className="text-lg font-bold text-neutral-900">Update Status</h3>
             <p className="text-sm text-neutral-500 mt-1">Change status for "{statusLead.customer?.name || 'Unnamed'}"</p>
             <div className="mt-4">
-              <select className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm" defaultValue={statusLead.status || ''} onChange={(e) => {
-                const newStatus = e.target.value;
-                handleStatusChange(statusLead, newStatus);
+              <select className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm" defaultValue={statusLead.pipelineStageId || ''} onChange={(e) => {
+                handleStageChange(statusLead, e.target.value || null);
                 setIsStatusModalOpen(false);
               }}>
-                {LEAD_STATUS_OPTIONS.map((opt) => (
-                  <option key={opt} value={opt}>{formatStatus(opt)}</option>
+                <option value="">No status</option>
+                {activeStages.map((stage) => (
+                  <option key={stage.id} value={stage.id}>{stage.name}</option>
                 ))}
               </select>
             </div>
@@ -711,6 +1279,9 @@ export default function Leads() {
         onClose={() => setIsFilterDrawerOpen(false)}
         sourceFilter={sourceFilter}
         setSourceFilter={setSourceFilter}
+        adFilter={adFilter}
+        setAdFilter={setAdFilter}
+        adOptions={adOptions}
         agentFilter={agentFilter}
         setAgentFilter={setAgentFilter}
         tagFilter={tagFilter}
@@ -734,7 +1305,7 @@ export default function Leads() {
   );
 }
 
-function FilterDrawer({ isOpen, onClose, sourceFilter, setSourceFilter, agentFilter, setAgentFilter, tagFilter, setTagFilter, sortBy, setSortBy, dateRange, setDateRange, agents, tagOptions, currentAgent, clearFilters }) {
+function FilterDrawer({ isOpen, onClose, sourceFilter, setSourceFilter, adFilter, setAdFilter, adOptions = [], agentFilter, setAgentFilter, tagFilter, setTagFilter, sortBy, setSortBy, dateRange, setDateRange, agents, tagOptions, currentAgent, clearFilters }) {
   if (!isOpen) return null;
 
   return (
@@ -758,10 +1329,21 @@ function FilterDrawer({ isOpen, onClose, sourceFilter, setSourceFilter, agentFil
             </select>
           </div>
 
+          {adOptions.length > 0 && (
+            <div className="space-y-2">
+              <label className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">Source Ad</label>
+              <select value={adFilter} onChange={(e) => setAdFilter(e.target.value)} className="shell-input-rect w-full h-11 bg-neutral-50 text-sm">
+                <option value="all">All Ads</option>
+                <option value="any">Any ad (CTWA)</option>
+                {adOptions.map((o) => <option key={o.value} value={o.value}>{formatAdOptionLabel(o)}</option>)}
+              </select>
+            </div>
+          )}
+
           <div className="space-y-2">
-            <label className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">Agent</label>
+            <label className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">Staff</label>
             <select value={agentFilter} onChange={(e) => setAgentFilter(e.target.value)} className="shell-input-rect w-full h-11 bg-neutral-50 text-sm">
-              <option value="all">All Agents</option>
+              <option value="all">All Staff</option>
               {currentAgent?.id && <option value="mine">Assigned To Me</option>}
               <option value="unassigned">Unassigned</option>
               {agents.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
@@ -871,7 +1453,7 @@ function FollowupScheduleModal({
           </label>
 
           <label className="block">
-            <span className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-neutral-500">Note</span>
+            <span className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-neutral-500">Note <span className="text-rose-500">*</span></span>
             <textarea
               required
               rows="3"
@@ -887,8 +1469,54 @@ function FollowupScheduleModal({
           <button type="button" onClick={onClose} className="shell-button-secondary h-10 px-4 text-sm">
             Cancel
           </button>
-          <button type="submit" disabled={isSaving} className="shell-button-primary h-10 px-5 text-sm disabled:opacity-60">
+          <button type="submit" disabled={isSaving || !followupNote.trim()} className="shell-button-primary h-10 px-5 text-sm disabled:opacity-60">
             {isSaving ? 'Scheduling...' : 'Schedule'}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function AddNoteModal({ addNote, lead, noteContent, setNoteContent, onClose }) {
+  const handleSave = (e) => {
+    e.preventDefault();
+    if (!noteContent.trim()) return;
+    addNote.mutate({ id: lead.id, data: { content: noteContent.trim() } }, {
+      onSuccess: () => {
+        setNoteContent('');
+        onClose();
+      }
+    });
+  };
+
+  return (
+    <div className="fixed inset-0 z-[80] flex items-center justify-center px-4">
+      <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={onClose} />
+      <form onSubmit={handleSave} className="relative z-10 w-full max-w-md rounded-2xl border border-neutral-200 bg-white p-5 shadow-2xl">
+        <div className="flex items-start justify-between gap-4 border-b border-neutral-100 pb-4">
+          <div>
+            <h3 className="text-lg font-bold text-neutral-900">Add Note</h3>
+            <p className="mt-1 text-sm text-neutral-500">{lead.customer?.name || 'Unnamed Lead'}</p>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-lg p-2 text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-700">
+            <XMarkIcon className="h-5 w-5" />
+          </button>
+        </div>
+        <div className="mt-4">
+          <textarea
+            placeholder="Add a new note..."
+            className="w-full resize-none rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-3 text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+            rows="4"
+            value={noteContent}
+            onChange={(event) => setNoteContent(event.target.value)}
+            autoFocus
+          />
+        </div>
+        <div className="mt-5 flex justify-end gap-3">
+          <button type="button" onClick={onClose} className="shell-button-secondary h-10 px-4 text-sm">Cancel</button>
+          <button type="submit" disabled={addNote.isPending || !noteContent.trim()} className="shell-button-primary h-10 px-5 text-sm disabled:opacity-60">
+            {addNote.isPending ? 'Adding...' : 'Add Note'}
           </button>
         </div>
       </form>
@@ -912,11 +1540,11 @@ function MetricCard({ icon: Icon, tone, value, label, fullWidth }) {
   );
 }
 
-function LeadTable({ agents, clearFilters, isError, isLoading, leads, onLeadClick, onRetry, onScheduleFollowUp, onStatusChange, onUpdateLead, selectedLeadIds, onToggleSelect, onToggleSelectAll, rowOffset = 0 }) {
+function LeadTable({ agents, clearFilters, isError, isLoading, leads, onLeadClick, onRetry, onScheduleFollowUp, onStatusChange, onUpdateLead, stages = [], selectedLeadIds, onToggleSelect, onToggleSelectAll, rowOffset = 0 }) {
   const selectedOnPage = leads.filter((lead) => selectedLeadIds.has(lead.id)).length;
   const allSelected = leads.length > 0 && selectedOnPage === leads.length;
   const someSelected = selectedOnPage > 0 && selectedOnPage < leads.length;
-  const colSpan = 10;
+  const colSpan = 11;
 
   return (
     <div className="data-table-wrapper">
@@ -944,6 +1572,7 @@ function LeadTable({ agents, clearFilters, isError, isLoading, leads, onLeadClic
               <th className="data-table-th">Attention</th>
               <th className="data-table-th">Contact</th>
               <th className="data-table-th">Trip</th>
+              <th className="data-table-th">Source Ad</th>
               <th className="data-table-th">Next Action</th>
               <th className="data-table-th">Last Activity</th>
               <th className="data-table-th">Assigned To</th>
@@ -1007,6 +1636,7 @@ function LeadTable({ agents, clearFilters, isError, isLoading, leads, onLeadClic
                   onStatusChange={onStatusChange}
                   onToggleSelect={onToggleSelect}
                   onUpdateLead={onUpdateLead}
+                  stages={stages}
                 />
               ))}
           </tbody>
@@ -1028,7 +1658,7 @@ function LeadTableSkeleton({ colSpan = 10 }) {
   ));
 }
 
-function LeadTableRow({ agents, index, isSelected, lead, onLeadClick, onScheduleFollowUp, onStatusChange, onToggleSelect, onUpdateLead }) {
+function LeadTableRow({ agents, index, isSelected, lead, onLeadClick, onScheduleFollowUp, onStatusChange, onToggleSelect, onUpdateLead, stages = [] }) {
   const attentionBadges = getAttentionBadges(lead);
   const nextFollowUp = getNextFollowUp(lead);
   const agentOptions = mergeAssignedAgentOption(agents, lead);
@@ -1088,6 +1718,21 @@ function LeadTableRow({ agents, index, isSelected, lead, onLeadClick, onSchedule
         </div>
       </td>
       <td className="data-table-td">
+        {getLeadAdLabel(lead) ? (
+          <div className="flex flex-col items-start gap-0.5 text-xs">
+            <span className="inline-flex max-w-[180px] items-center gap-1 rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 font-semibold text-sky-700">
+              <span className="rounded bg-sky-600 px-1 text-[9px] font-bold uppercase tracking-wide text-white">Ad</span>
+              <span className="truncate">{getLeadAdLabel(lead)}</span>
+            </span>
+            {getLeadAdSubLabel(lead) && (
+              <span className="max-w-[180px] truncate text-neutral-400">{getLeadAdSubLabel(lead)}</span>
+            )}
+          </div>
+        ) : (
+          <span className="text-xs text-neutral-300">{EMPTY}</span>
+        )}
+      </td>
+      <td className="data-table-td">
         <div className="flex flex-col items-start gap-1 text-xs">
           <span className="font-semibold text-neutral-700">{getNextAction(lead)}</span>
           <span className="text-neutral-400">
@@ -1123,13 +1768,15 @@ function LeadTableRow({ agents, index, isSelected, lead, onLeadClick, onSchedule
       </td>
       <td className="data-table-td" onClick={(event) => event.stopPropagation()}>
         <select
-          className={`cursor-pointer appearance-none rounded-full border-0 px-3 py-1 text-[10px] font-bold focus:ring-0 ${getStatusTone(lead.status)}`}
-          value={lead.status}
-          onChange={(event) => onStatusChange?.(lead, event.target.value)}
+          className="cursor-pointer appearance-none rounded-full border-0 px-3 py-1 text-[10px] font-bold focus:ring-0"
+          style={getStagePillStyle(getLeadStageColor(lead))}
+          value={lead.pipelineStageId || ''}
+          onChange={(event) => onStatusChange?.(lead, event.target.value || null)}
         >
-          {LEAD_STATUS_OPTIONS.map((option) => (
-            <option key={option} value={option}>
-              {formatStatus(option)}
+          <option value="">— No status —</option>
+          {stages.map((stage) => (
+            <option key={stage.id} value={stage.id}>
+              {stage.name}
             </option>
           ))}
         </select>
@@ -1140,20 +1787,45 @@ function LeadTableRow({ agents, index, isSelected, lead, onLeadClick, onSchedule
 
 function LeadDrawer({ leadId, onClose, agents }) {
   const { data, isLoading } = useLead(leadId);
+  const callLogsQuery = useCallLogs({ leadId, limit: 20 });
   const lead = data?.data;
+  const callLogs = callLogsQuery.data?.data || [];
   const selectedCatalogItems = lead?.selectedCatalogItems || [];
   const customTripDetails = lead?.customTripDetails && Object.keys(lead.customTripDetails).length
     ? lead.customTripDetails
     : null;
   const readinessDetails = customTripDetails?.travelReadiness || null;
+  const stayrouteOnamDetails = customTripDetails?.stayrouteOnam || null;
+  const flowAnswerSections = getFlowAnswerSections(customTripDetails || {});
   const hasReadinessDetails = Boolean(
     readinessDetails?.travellerCount
     || readinessDetails?.bookingReadiness
     || readinessDetails?.departureAirport
   );
-  const shouldShowCustomTripDetails = Boolean(customTripDetails && hasCustomTripDetails(customTripDetails));
+  const hasStayrouteOnamDetails = Boolean(
+    stayrouteOnamDetails?.travellerCount
+    || stayrouteOnamDetails?.departureAirport
+    || stayrouteOnamDetails?.roomType
+  );
+  const isCustomTripLead = String(lead?.itemType || '').toUpperCase() === 'CUSTOM_TRIP'
+    || String(lead?.interest || '').toUpperCase().includes('CUSTOM_TRIP')
+    || String(lead?.notes || '').toLowerCase().includes('custom trip');
+  const shouldShowCustomTripDetails = Boolean(
+    customTripDetails && (hasCustomTripDetails(customTripDetails) || isCustomTripLead)
+  );
+  const hasDetailedCustomTripPreferences = Boolean(customTripDetails && hasCustomTripDetails(customTripDetails));
   const requestSummaries = getLeadRequestSummaries(lead, customTripDetails || {});
-  const requestSourceLabel = formatSource(lead?.source);
+  const hasWhatsAppFlowAnswers = Boolean(
+    flowAnswerSections.length
+    || customTripDetails?.flowSubmissions
+    || customTripDetails?.flowAnswers
+    || customTripDetails?.serviceEnquiry
+    || customTripDetails?.propertyEnquiry
+    || customTripDetails?.packageEnquiry
+  );
+  const requestSourceLabel = hasWhatsAppFlowAnswers ? 'WhatsApp Flow' : formatSource(lead?.source);
+  const enquiryDetailsTitle = isCustomTripLead ? 'Custom Trip Details' : 'Captured Enquiry Details';
+  const enquiryDetailsSubtitle = hasWhatsAppFlowAnswers ? 'Answers captured from WhatsApp flow' : `Preferences submitted from ${requestSourceLabel}`;
   const hasMetaAttribution = Boolean(
     lead?.metaLeadgenId
     || lead?.metaCampaignId
@@ -1166,10 +1838,31 @@ function LeadDrawer({ leadId, onClose, agents }) {
   const [followupDate, setFollowupDate] = useState('');
   const [followupNote, setFollowupNote] = useState('');
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isDrawerEditing, setIsDrawerEditing] = useState(false);
+  const [isNoteModalOpen, setIsNoteModalOpen] = useState(false);
+  const [isFollowupModalOpen, setIsFollowupModalOpen] = useState(false);
   const [editState, setEditState] = useState({});
 
   const updateLead = useUpdateLead();
+  const drawerStagesQuery = usePipelineStages();
+  const drawerStages = (drawerStagesQuery.data?.data || []).filter((stage) => stage.isActive);
   const addNote = useAddNote();
+
+  function handleDrawerStageChange(stageId) {
+    if (!lead) return;
+    if (!stageId) {
+      updateLead.mutate({ id: lead.id, data: { pipelineStageId: null } });
+      return;
+    }
+    const stage = drawerStages.find((item) => item.id === stageId);
+    if (stage?.kind === 'LOST' && !lead.lostReason) {
+      const lostReason = window.prompt('Why was this lead lost?');
+      if (!lostReason?.trim()) return;
+      updateLead.mutate({ id: lead.id, data: { pipelineStageId: stageId, lostReason: lostReason.trim() } });
+      return;
+    }
+    updateLead.mutate({ id: lead.id, data: { pipelineStageId: stageId } });
+  }
   const addFollowup = useAddFollowUp();
   const updateFollowup = useUpdateFollowUp();
 
@@ -1179,8 +1872,7 @@ function LeadDrawer({ leadId, onClose, agents }) {
   const tabItems = [
     { key: 'Notes', label: `Notes ${lead?.notesList?.length || 0}` },
     { key: 'Follow-ups', label: `Follow-ups ${lead?.followUps?.length || 0}` },
-    { key: 'Activity', label: 'Activity' },
-    { key: 'Timeline', label: 'Timeline' },
+    { key: 'Timeline', label: `Timeline ${lead?.timeline?.length || callLogs.length || ''}`.trim() },
   ];
 
   const handleEditClick = () => {
@@ -1191,10 +1883,11 @@ function LeadDrawer({ leadId, onClose, agents }) {
       source: lead?.source || '',
       budgetPerPerson: lead?.budgetPerPerson || 0,
       destination: lead?.destination || '',
+      place: lead?.place || '',
       assignedAgentId: lead?.assignedAgentId || '',
       tagsText: (lead?.tags || []).join(', '),
     });
-    setIsEditModalOpen(true);
+    setIsDrawerEditing(true);
   };
 
   const handleSave = () => {
@@ -1214,7 +1907,10 @@ function LeadDrawer({ leadId, onClose, agents }) {
         },
       },
       {
-        onSuccess: () => setIsEditModalOpen(false),
+        onSuccess: () => {
+          setIsEditModalOpen(false);
+          setIsDrawerEditing(false);
+        },
       }
     );
   };
@@ -1225,7 +1921,10 @@ function LeadDrawer({ leadId, onClose, agents }) {
   };
 
   const openCall = () => {
-    if (lead?.customer?.phone) window.location.href = `tel:${lead.customer.phone}`;
+    // Open the device's native dialer with the customer's number pre-filled.
+    const sanitized = String(lead?.customer?.phone || '').trim().replace(/[^\d+]/g, '');
+    if (!sanitized) return;
+    window.location.href = `tel:${sanitized}`;
   };
 
   if (!leadId) return null;
@@ -1236,8 +1935,8 @@ function LeadDrawer({ leadId, onClose, agents }) {
     <div className="fixed inset-0 z-50 pointer-events-auto">
       <div className="absolute inset-0 bg-black/20 backdrop-blur-sm transition-opacity" onClick={onClose} />
 
-      <aside className="absolute right-0 top-0 flex h-full w-full max-w-[560px] flex-col border-l border-neutral-200 bg-white shadow-2xl">
-        <div className="border-b border-neutral-100 p-6">
+      <aside className="absolute right-0 top-0 flex h-full w-full max-w-[560px] flex-col border-l border-neutral-200 bg-white shadow-2xl lg:max-w-[720px] xl:max-w-[840px]">
+        <div className="border-b border-neutral-100 p-4 sm:p-6">
           <div className="flex items-start justify-between gap-4">
             {isLoading ? (
               <div className="flex w-full animate-pulse gap-4">
@@ -1257,9 +1956,18 @@ function LeadDrawer({ leadId, onClose, agents }) {
                     {lead?.customer?.name || 'Unnamed Lead'}
                   </h2>
                   <div className="mt-1 flex flex-wrap items-center gap-2">
-                    <span className={`badge ${getStatusTone(lead?.status)} px-2 py-0.5 text-[10px]`}>
-                      {formatStatus(lead?.status)}
-                    </span>
+                    <select
+                      value={lead?.pipelineStageId || ''}
+                      onChange={(event) => handleDrawerStageChange(event.target.value || null)}
+                      style={getStagePillStyle(getLeadStageColor(lead))}
+                      className="cursor-pointer appearance-none rounded-full border-0 px-2.5 py-0.5 text-[10px] font-bold focus:ring-0"
+                      title="Change status"
+                    >
+                      <option value="">No status</option>
+                      {drawerStages.map((stage) => (
+                        <option key={stage.id} value={stage.id}>{stage.name}</option>
+                      ))}
+                    </select>
                     <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${getLeadScoreTone(leadScore)}`}>
                       Score {leadScore}
                     </span>
@@ -1277,12 +1985,30 @@ function LeadDrawer({ leadId, onClose, agents }) {
             )}
 
             <div className="flex shrink-0 items-center gap-2">
-              <button
-                onClick={handleEditClick}
-                className="rounded-lg p-2 text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-600"
-              >
-                <PencilIcon className="h-5 w-5" />
-              </button>
+              {isDrawerEditing ? (
+                <>
+                  <button
+                    onClick={() => setIsDrawerEditing(false)}
+                    className="rounded-lg px-3 py-1.5 text-xs font-semibold text-neutral-500 transition-colors hover:bg-neutral-100"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleSave}
+                    disabled={updateLead.isPending}
+                    className="rounded-lg bg-neutral-900 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-black disabled:opacity-60"
+                  >
+                    {updateLead.isPending ? 'Saving...' : 'Save'}
+                  </button>
+                </>
+              ) : (
+                <button
+                  onClick={handleEditClick}
+                  className="rounded-lg p-2 text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-600"
+                >
+                  <PencilIcon className="h-5 w-5" />
+                </button>
+              )}
               <button onClick={onClose} className="rounded-lg p-2 text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-600">
                 <XMarkIcon className="h-5 w-5" />
               </button>
@@ -1290,23 +2016,37 @@ function LeadDrawer({ leadId, onClose, agents }) {
           </div>
 
           {!isLoading && lead && (
-            <div className="mt-5 grid grid-cols-4 gap-2">
+            <div className="mt-4 grid grid-cols-5 gap-1.5 sm:mt-5 sm:gap-2">
               <QuickAction icon={ChatBubbleLeftRightIcon} label="WhatsApp" onClick={openWhatsApp} />
-              <QuickAction icon={PhoneIcon} label="Call" onClick={openCall} />
-              <QuickAction icon={CalendarDaysIcon} label="Follow-up" onClick={() => setActiveTab('Follow-ups')} />
+              <QuickAction
+                icon={PhoneIcon}
+                label="Call"
+                onClick={openCall}
+                disabled={!lead?.customer?.phone}
+              />
+              <QuickAction icon={CalendarDaysIcon} label="Follow-up" onClick={() => {
+                setFollowupDate(getDefaultFollowupDateTime());
+                setFollowupNote('');
+                setIsFollowupModalOpen(true);
+              }} />
               <QuickAction icon={UserPlusIcon} label="Assign" onClick={handleEditClick} />
-              <QuickAction icon={PencilIcon} label="Note" onClick={() => setActiveTab('Notes')} />
+              <QuickAction icon={PencilIcon} label="Note" onClick={() => {
+                setNoteContent('');
+                setIsNoteModalOpen(true);
+              }} />
             </div>
           )}
+
         </div>
 
         <div className="flex-1 overflow-y-auto hide-scrollbar">
         {!isLoading && lead && (
-          <div className="border-b border-neutral-100 px-6 py-4 text-sm">
-            <div className="grid grid-cols-2 gap-x-6 gap-y-4">
+          <div className="border-b border-neutral-100 px-4 py-4 text-sm sm:px-6">
+            <div className="grid grid-cols-2 gap-x-4 gap-y-4 sm:gap-x-6">
               <LeadField
                 label="Destination"
                 value={lead.destination || EMPTY}
+                isEditing={isDrawerEditing}
                 editControl={
                   <input
                     type="text"
@@ -1319,6 +2059,7 @@ function LeadDrawer({ leadId, onClose, agents }) {
               <LeadField
                 label="Source"
                 value={formatSource(lead.source)}
+                isEditing={isDrawerEditing}
                 editControl={
                   <select
                     value={editState.source}
@@ -1338,6 +2079,7 @@ function LeadDrawer({ leadId, onClose, agents }) {
               <LeadField
                 label="Contact Person"
                 value={lead.customer?.name || EMPTY}
+                isEditing={isDrawerEditing}
                 editControl={
                   <input
                     type="text"
@@ -1350,6 +2092,7 @@ function LeadDrawer({ leadId, onClose, agents }) {
               <LeadField
                 label="Phone"
                 value={formatPhone(lead.customer?.phone) || EMPTY}
+                isEditing={isDrawerEditing}
                 editControl={
                   <input
                     type="text"
@@ -1362,6 +2105,7 @@ function LeadDrawer({ leadId, onClose, agents }) {
               <LeadField
                 label="Email"
                 value={lead.customer?.email || EMPTY}
+                isEditing={isDrawerEditing}
                 editControl={
                   <input
                     type="email"
@@ -1374,6 +2118,7 @@ function LeadDrawer({ leadId, onClose, agents }) {
               <LeadField
                 label="Budget / Person"
                 value={lead.budgetPerPerson ? formatCurrency(lead.budgetPerPerson) : EMPTY}
+                isEditing={isDrawerEditing}
                 editControl={
                   <input
                     type="number"
@@ -1390,6 +2135,7 @@ function LeadDrawer({ leadId, onClose, agents }) {
               <LeadField
                 label="Assigned To"
                 value={lead.assignedAgent?.name || 'Unassigned'}
+                isEditing={isDrawerEditing}
                 editControl={
                   <select
                     className="w-full rounded-md border-neutral-200 bg-neutral-50 px-2 py-1 text-sm focus:ring-0"
@@ -1403,6 +2149,19 @@ function LeadDrawer({ leadId, onClose, agents }) {
                       </option>
                     ))}
                   </select>
+                }
+              />
+              <LeadField
+                label="Place"
+                value={lead.place || EMPTY}
+                isEditing={isDrawerEditing}
+                editControl={
+                  <input
+                    type="text"
+                    value={editState.place || ''}
+                    onChange={(event) => setEditState({ ...editState, place: event.target.value })}
+                    className="w-full rounded-md border-neutral-200 bg-neutral-50 px-2 py-1 text-sm focus:ring-0"
+                  />
                 }
               />
             </div>
@@ -1467,9 +2226,9 @@ function LeadDrawer({ leadId, onClose, agents }) {
               <div className="mt-5 rounded-2xl border border-neutral-200 bg-neutral-50 p-4">
                 <div className="mb-3 flex items-center justify-between gap-3">
                   <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-neutral-400">Selected Items</p>
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-neutral-400">Customer Selections</p>
                     <p className="mt-1 text-sm font-semibold text-neutral-900">
-                      {selectedCatalogItems.length} selected item{selectedCatalogItems.length === 1 ? '' : 's'}
+                      {selectedCatalogItems.length} catalog selection{selectedCatalogItems.length === 1 ? '' : 's'} in this conversation
                     </p>
                   </div>
                 </div>
@@ -1478,12 +2237,8 @@ function LeadDrawer({ leadId, onClose, agents }) {
                     <div key={`${item.itemType}-${item.id}`} className="flex items-start justify-between gap-3 rounded-xl border border-white bg-white px-3 py-2 shadow-sm">
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
-                          <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
-                            item.itemType === 'PROPERTY'
-                              ? 'bg-sky-50 text-sky-700'
-                              : 'bg-emerald-50 text-emerald-700'
-                          }`}>
-                            {item.itemType === 'PROPERTY' ? 'Property' : 'Package'}
+                          <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${selectedItemTypeMeta(item.itemType)[1]}`}>
+                            {selectedItemTypeMeta(item.itemType)[0]}
                           </span>
                           <p className="truncate text-sm font-semibold text-neutral-900">{item.name || EMPTY}</p>
                         </div>
@@ -1519,25 +2274,86 @@ function LeadDrawer({ leadId, onClose, agents }) {
               </div>
             )}
 
+            {hasStayrouteOnamDetails && (
+              <div className="mt-5 rounded-2xl border border-teal-200 bg-teal-50/70 p-4">
+                <div className="mb-3">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-teal-600">Onam Trip Questionnaire</p>
+                  <p className="mt-1 text-sm font-semibold text-neutral-900">
+                    Answers submitted from WhatsApp welcome chat
+                  </p>
+                </div>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+                  <DetailValue label="Trip" value={lead.campaignName || 'Onam trip'} />
+                  <DetailValue label="Travellers" value={formatReadinessAnswer(stayrouteOnamDetails.travellerCount || lead.travellers)} />
+                  <DetailValue label="Departure Airport" value={formatReadinessAnswer(stayrouteOnamDetails.departureAirport)} />
+                  <DetailValue label="Preferred Room Type" value={formatReadinessAnswer(stayrouteOnamDetails.roomType)} />
+                  {lead.assignedAgent?.name && <DetailValue label="Specialist" value={lead.assignedAgent.name} />}
+                </div>
+              </div>
+            )}
+
+            {(lead?.adId || hasMetaAttribution) && (
+              <div className="mt-5 rounded-2xl border border-sky-200 bg-sky-50/70 p-4">
+                <div className="mb-3 flex items-center gap-2">
+                  <span className="rounded bg-sky-600 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">Ad</span>
+                  <p className="text-sm font-semibold text-neutral-900">Came from a Meta ad</p>
+                </div>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+                  <DetailValue label="Ad" value={getLeadAdLabel(lead) || EMPTY} />
+                  {lead.metaCampaignName && <DetailValue label="Campaign" value={lead.metaCampaignName} />}
+                  {lead.metaAdSetName && <DetailValue label="Ad Set" value={lead.metaAdSetName} />}
+                  {lead.metaPlatform && <DetailValue label="Platform" value={formatSource(`${lead.metaPlatform}_ad`)} />}
+                  {lead.adId && <DetailValue label="Ad ID" value={lead.adId} />}
+                </div>
+                {lead.adSourceUrl && (
+                  <a
+                    href={lead.adSourceUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-sky-700 hover:text-sky-900 hover:underline"
+                  >
+                    View the ad on Meta ↗
+                  </a>
+                )}
+              </div>
+            )}
+
             {shouldShowCustomTripDetails && (
               <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50/70 p-4">
                 <div className="mb-3">
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-600">Custom Trip Details</p>
-                  <p className="mt-1 text-sm font-semibold text-neutral-900">Preferences submitted from {requestSourceLabel}</p>
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-600">{enquiryDetailsTitle}</p>
+                  <p className="mt-1 text-sm font-semibold text-neutral-900">{enquiryDetailsSubtitle}</p>
                 </div>
                 <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
                   {(customTripDetails.serviceCategory || customTripDetails.service) && (
                     <>
-                      <DetailValue label="Service" value={formatServiceLabel(customTripDetails.serviceCategory)} />
-                      <DetailValue label="Ticketing Type" value={formatServiceLabel(customTripDetails.service)} />
+                      <DetailValue label="Service Category" value={formatServiceLabel(customTripDetails.serviceCategory)} />
+                      <DetailValue label="Selected Service" value={formatServiceLabel(customTripDetails.service)} />
                     </>
                   )}
                   {customTripDetails.propertyName && <DetailValue label="Property" value={customTripDetails.propertyName} />}
                   <DetailValue label="Destination" value={customTripDetails.propertyLocation || customTripDetails.destination || lead.destination || EMPTY} />
+                  {(customTripDetails.propertyType || customTripDetails.stayType) && (
+                    <DetailValue label="Stay Type" value={customTripDetails.propertyType || customTripDetails.stayType} />
+                  )}
                   {customTripDetails.checkInDate && <DetailValue label="Check-in" value={customTripDetails.checkInDate} />}
                   {customTripDetails.checkOutDate && <DetailValue label="Checkout" value={customTripDetails.checkOutDate} />}
+                  {customTripDetails.groupType && <DetailValue label="Group Type" value={customTripDetails.groupType} />}
+                  {customTripDetails.rooms && <DetailValue label="Rooms" value={customTripDetails.rooms} />}
                   <DetailValue label="Travel Date" value={customTripDetails.travelDate || lead.travelDates || EMPTY} />
-                  <DetailValue label="Travellers" value={customTripDetails.travellersText || customTripDetails.travellers || lead.travellers || EMPTY} />
+                  <DetailValue
+                    label="Travellers"
+                    value={
+                      customTripDetails.travellersText
+                      || customTripDetails.travellers
+                      || (readinessDetails?.travellerCount ? formatReadinessAnswer(readinessDetails.travellerCount) : '')
+                      || lead.travellers
+                      || EMPTY
+                    }
+                  />
+                  {customTripDetails.adults !== undefined && customTripDetails.adults !== null && <DetailValue label="Adults" value={customTripDetails.adults} />}
+                  {customTripDetails.children6To12 !== undefined && customTripDetails.children6To12 !== null && <DetailValue label="Children 6-12" value={customTripDetails.children6To12} />}
+                  {customTripDetails.childrenBelow5 !== undefined && customTripDetails.childrenBelow5 !== null && <DetailValue label="Children Below 5" value={customTripDetails.childrenBelow5} />}
                   <DetailValue
                     label="Budget / Person"
                     value={customTripDetails.budgetText || (customTripDetails.budgetPerPerson ? formatCurrency(customTripDetails.budgetPerPerson) : lead.budgetPerPerson ? formatCurrency(lead.budgetPerPerson) : EMPTY)}
@@ -1545,12 +2361,31 @@ function LeadDrawer({ leadId, onClose, agents }) {
                   {customTripDetails.campaignName && <DetailValue label="Campaign" value={customTripDetails.campaignName} />}
                   {customTripDetails.submittedAt && <DetailValue label="Submitted" value={formatDateTime(customTripDetails.submittedAt)} />}
                 </div>
+                {!hasDetailedCustomTripPreferences && (
+                  <div className="mt-3 rounded-xl border border-amber-100 bg-white/70 p-3">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-amber-600">Captured Status</p>
+                    <p className="mt-1 text-sm font-medium text-neutral-800">
+                      Custom trip flow was submitted, but destination, date, budget, and notes were not received in the WhatsApp flow payload.
+                    </p>
+                  </div>
+                )}
                 {customTripDetails.serviceDetails && (
                   <div className="mt-3 rounded-xl border border-sky-100 bg-white/70 p-3">
                     <p className="text-xs font-semibold uppercase tracking-wide text-sky-600">Ticketing Details</p>
                     <p className="mt-1 whitespace-pre-wrap text-sm font-medium text-neutral-800">{customTripDetails.serviceDetails}</p>
                   </div>
                 )}
+                {flowAnswerSections.map((section) => (
+                  <div key={section.key} className="mt-3 rounded-xl border border-amber-100 bg-white/80 p-3">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-amber-600">{section.title}</p>
+                    {section.subtitle && <p className="mt-1 text-sm font-bold text-neutral-900">{section.subtitle}</p>}
+                    <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+                      {section.entries.map(([label, value]) => (
+                        <DetailValue key={`${section.key}-${label}`} label={label} value={value} />
+                      ))}
+                    </div>
+                  </div>
+                ))}
                 {customTripDetails.notes && (
                   <div className="mt-3 rounded-xl border border-amber-100 bg-white/70 p-3">
                     <p className="text-xs font-semibold uppercase tracking-wide text-amber-600">Trip Notes</p>
@@ -1562,7 +2397,7 @@ function LeadDrawer({ leadId, onClose, agents }) {
           </div>
         )}
 
-        <div className="flex shrink-0 gap-6 overflow-x-auto border-b border-neutral-100 px-6 hide-scrollbar">
+        <div className="flex shrink-0 gap-5 overflow-x-auto border-b border-neutral-100 px-4 hide-scrollbar sm:gap-6 sm:px-6">
           {tabItems.map((tab) => (
             <button
               key={tab.key}
@@ -1576,36 +2411,34 @@ function LeadDrawer({ leadId, onClose, agents }) {
           ))}
         </div>
 
-        <div className="bg-neutral-50/50 px-6 py-6">
+        <div className="bg-neutral-50/50 px-4 py-5 sm:px-6 sm:py-6">
           {!isLoading && lead && (
             <>
               {activeTab === 'Notes' && (
                 <NotesPanel
-                  addNote={addNote}
                   lead={lead}
-                  noteContent={noteContent}
-                  setNoteContent={setNoteContent}
+                  onAddClick={() => {
+                    setNoteContent('');
+                    setIsNoteModalOpen(true);
+                  }}
                 />
               )}
 
               {activeTab === 'Follow-ups' && (
                 <FollowUpsPanel
-                  addFollowup={addFollowup}
-                  followupDate={followupDate}
-                  followupNote={followupNote}
+                  addNote={addNote}
                   lead={lead}
-                  setFollowupDate={setFollowupDate}
-                  setFollowupNote={setFollowupNote}
                   updateFollowup={updateFollowup}
+                  onAddClick={() => {
+                    setFollowupDate(getDefaultFollowupDateTime());
+                    setFollowupNote('');
+                    setIsFollowupModalOpen(true);
+                  }}
                 />
               )}
 
-              {activeTab === 'Activity' && (
-                <ActivityPanel lead={lead} />
-              )}
-
               {activeTab === 'Timeline' && (
-                <TimelinePanel lead={lead} />
+                <TimelinePanel callLogs={callLogs} lead={lead} />
               )}
             </>
           )}
@@ -1623,19 +2456,52 @@ function LeadDrawer({ leadId, onClose, agents }) {
           onSave={handleSave}
         />
       )}
+
+      {isNoteModalOpen && lead && (
+        <AddNoteModal
+          addNote={addNote}
+          lead={lead}
+          noteContent={noteContent}
+          setNoteContent={setNoteContent}
+          onClose={() => setIsNoteModalOpen(false)}
+        />
+      )}
+
+      {isFollowupModalOpen && lead && (
+        <FollowupScheduleModal
+          followupDate={followupDate}
+          followupNote={followupNote}
+          isSaving={addFollowup.isPending}
+          lead={lead}
+          onClose={() => setIsFollowupModalOpen(false)}
+          onDateChange={setFollowupDate}
+          onNoteChange={setFollowupNote}
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (!followupNote.trim()) return;
+            addFollowup.mutate({
+              id: lead.id,
+              data: { scheduledAt: followupDate, note: followupNote.trim(), agentId: lead.assignedAgent?.id },
+            }, {
+              onSuccess: () => setIsFollowupModalOpen(false)
+            });
+          }}
+        />
+      )}
     </div>
   );
 }
 
-function QuickAction({ icon: Icon, label, onClick }) {
+function QuickAction({ disabled = false, icon: Icon, label, onClick }) {
   return (
     <button
       onClick={onClick}
-      className="flex min-h-[64px] flex-col items-center justify-center gap-1 rounded-[var(--radius-md)] border border-neutral-200 bg-neutral-50 px-2 py-2 text-xs font-bold text-neutral-600 transition-all hover:border-neutral-300 hover:bg-white hover:text-neutral-900"
+      disabled={disabled}
+      className="flex min-h-[58px] flex-col items-center justify-center gap-1 rounded-[var(--radius-md)] border border-neutral-200 bg-neutral-50 px-1 py-2 text-center text-[11px] font-bold leading-tight text-neutral-600 transition-all hover:border-neutral-300 hover:bg-white hover:text-neutral-900 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-neutral-200 disabled:hover:bg-neutral-50 disabled:hover:text-neutral-600 sm:min-h-[64px] sm:text-xs"
       type="button"
     >
-      <Icon className="h-5 w-5" />
-      <span className="truncate">{label}</span>
+      <Icon className="h-5 w-5 shrink-0" />
+      <span className="w-full">{label}</span>
     </button>
   );
 }
@@ -1711,6 +2577,14 @@ function EditLeadModal({ agentOptions, editState, isSaving, onChange, onClose, o
               className="shell-input-rect h-11 bg-neutral-50 text-sm"
             />
           </ModalField>
+          <ModalField label="Place">
+            <input
+              value={editState.place || ''}
+              onChange={(event) => updateField('place', event.target.value)}
+              className="shell-input-rect h-11 bg-neutral-50 text-sm"
+              placeholder="e.g. Kochi, Kerala"
+            />
+          </ModalField>
           <ModalField label="Budget / Person">
             <input
               type="number"
@@ -1773,7 +2647,7 @@ function LeadField({ editControl, isEditing = false, label, value }) {
       {isEditing && editControl ? (
         editControl
       ) : (
-        <div className="truncate font-medium text-neutral-900">{value}</div>
+        <div className="break-words font-medium text-neutral-900">{value}</div>
       )}
     </div>
   );
@@ -1788,40 +2662,37 @@ function DetailValue({ label, value }) {
   );
 }
 
-function NotesPanel({ addNote, lead, noteContent, setNoteContent }) {
+function NotesPanel({ lead, onAddClick }) {
+  const manualNotes = (lead.notesList || []).filter((note) => {
+    return !(
+      note.content.startsWith('Lead status updated:') || 
+      note.content.startsWith('Assignment updated:') || 
+      note.content.startsWith('Lead details updated:') ||
+      note.content.startsWith('Follow-up Outcome:') ||
+      note.content.startsWith('Follow-up assigned') ||
+      note.content.startsWith('Follow-up completed') ||
+      note.content.startsWith('Follow-up cancelled')
+    );
+  });
+
   return (
     <div className="space-y-4">
-      <div className="flex flex-col gap-2 rounded-[var(--radius-md)] border border-neutral-200 bg-white p-1 shadow-sm">
-        <textarea
-          placeholder="Add a new note..."
-          className="w-full resize-none border-0 bg-transparent px-3 py-2 text-sm outline-none focus:ring-0"
-          rows="3"
-          value={noteContent}
-          onChange={(event) => setNoteContent(event.target.value)}
-        />
-        <div className="flex justify-end px-2 pb-2">
-          <button
-            disabled={addNote.isPending || !noteContent.trim()}
-            onClick={() => {
-              addNote.mutate({ id: lead.id, data: { content: noteContent.trim() } });
-              setNoteContent('');
-            }}
-            className="shell-button-primary px-4 py-1.5 text-xs disabled:opacity-60"
-          >
-            {addNote.isPending ? 'Adding...' : 'Add Note'}
-          </button>
-        </div>
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-bold text-neutral-900">Notes</h3>
+        <button onClick={onAddClick} className="shell-button-primary h-8 px-3 text-xs">
+          <PlusIcon className="h-3.5 w-3.5 mr-1" /> Add Note
+        </button>
       </div>
 
-      {(!lead.notesList || lead.notesList.length === 0) ? (
-        <EmptyPanel text="No notes yet. Add your first note above." />
+      {manualNotes.length === 0 ? (
+        <EmptyPanel text="No manual notes yet. Add your first note above." />
       ) : (
         <div className="mt-4 space-y-3">
-          {lead.notesList.map((note) => (
+          {manualNotes.map((note) => (
             <div key={note.id} className="rounded-[var(--radius-md)] border border-neutral-200 bg-white p-4 text-sm shadow-sm">
               <div className="whitespace-pre-wrap text-neutral-600">{note.content}</div>
               <div className="mt-3 flex justify-between text-xs font-medium text-neutral-400">
-                <span>{note.agent?.name || 'Agent'}</span>
+                <span>{note.agent?.name || 'Staff'}</span>
                 <span>{formatDateTime(note.createdAt)}</span>
               </div>
             </div>
@@ -1833,48 +2704,33 @@ function NotesPanel({ addNote, lead, noteContent, setNoteContent }) {
 }
 
 function FollowUpsPanel({
-  addFollowup,
-  followupDate,
-  followupNote,
+  addNote,
   lead,
-  setFollowupDate,
-  setFollowupNote,
   updateFollowup,
+  onAddClick
 }) {
+  const [resolvingId, setResolvingId] = useState(null);
+  const [resolvingStatus, setResolvingStatus] = useState(null);
+  const [outcomeNote, setOutcomeNote] = useState('');
+
+  const handleResolve = (followUpId) => {
+    const trimmed = outcomeNote.trim();
+    if (!trimmed) return;
+    updateFollowup.mutate({ id: lead.id, followUpId, data: { status: resolvingStatus, outcome: trimmed } });
+    addNote.mutate({ id: lead.id, data: { content: `Follow-up Outcome: ${trimmed}` } });
+    setResolvingId(null);
+    setOutcomeNote('');
+    setResolvingStatus(null);
+  };
+
   return (
     <div className="space-y-4">
-      <form
-        className="flex flex-col gap-3 rounded-[var(--radius-md)] border border-neutral-200 bg-white p-4 shadow-sm"
-        onSubmit={(event) => {
-          event.preventDefault();
-          addFollowup.mutate({
-            id: lead.id,
-            data: { scheduledAt: new Date(followupDate).toISOString(), note: followupNote },
-          });
-          setFollowupDate('');
-          setFollowupNote('');
-        }}
-      >
-        <h4 className="text-sm font-bold text-neutral-800">Schedule Follow-Up</h4>
-        <input
-          type="datetime-local"
-          required
-          value={followupDate}
-          onChange={(event) => setFollowupDate(event.target.value)}
-          className="shell-input-rect bg-neutral-50 text-sm"
-        />
-        <textarea
-          placeholder="Follow-up note (e.g. Call back regarding pricing)"
-          className="shell-input-rect resize-none bg-neutral-50 py-2 text-sm"
-          rows="2"
-          required
-          value={followupNote}
-          onChange={(event) => setFollowupNote(event.target.value)}
-        />
-        <button type="submit" disabled={addFollowup.isPending} className="shell-button-primary w-full disabled:opacity-60">
-          {addFollowup.isPending ? 'Scheduling...' : 'Schedule Follow-Up'}
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-bold text-neutral-900">Follow-Ups</h3>
+        <button onClick={onAddClick} className="shell-button-primary h-8 px-3 text-xs">
+          <PlusIcon className="h-3.5 w-3.5 mr-1" /> Schedule
         </button>
-      </form>
+      </div>
 
       {(!lead.followUps || lead.followUps.length === 0) ? (
         <EmptyPanel text="No follow-ups scheduled" />
@@ -1894,23 +2750,78 @@ function FollowUpsPanel({
                 {followUp.status === 'Scheduled' && (
                   <div className={`absolute left-0 top-0 h-full w-1 ${isOverdue ? 'bg-rose-500' : 'bg-indigo-500'}`} />
                 )}
-                <div className="flex items-center justify-between gap-3">
-                  <div className={`text-xs font-bold uppercase tracking-wider ${isOverdue ? 'text-rose-600' : 'text-neutral-400'}`}>
+                <div className="flex items-start justify-between gap-3">
+                  <div className={`mt-0.5 text-xs font-bold uppercase tracking-wider ${isOverdue ? 'text-rose-600' : 'text-neutral-400'}`}>
                     {isOverdue ? 'Overdue' : followUp.status}
                   </div>
-                  <div className="text-sm font-semibold text-neutral-700">{formatDateTime(followUp.scheduledAt)}</div>
+                  <div className="flex flex-col items-end">
+                    <div className="text-sm font-semibold text-neutral-700">{formatDateTime(followUp.scheduledAt)}</div>
+                    {(isDone || followUp.status === 'Cancelled') && (
+                      <div className="mt-0.5 text-[10px] font-medium text-neutral-400">
+                        {followUp.status === 'Done' ? 'Completed: ' : 'Cancelled: '}{formatDateTime(followUp.updatedAt)}
+                      </div>
+                    )}
+                  </div>
                 </div>
                 <p className="text-sm text-neutral-600">{followUp.note}</p>
-                {followUp.status === 'Scheduled' && (
-                  <div className="mt-2 flex justify-end">
-                    <button
-                      className="flex items-center gap-1 rounded-lg bg-neutral-100 px-3 py-1.5 text-xs font-semibold text-neutral-600 transition-colors hover:bg-neutral-200"
-                      onClick={() => updateFollowup.mutate({ id: lead.id, followUpId: followUp.id, data: { status: 'Done' } })}
-                    >
-                      <CheckCircleIcon className="h-4 w-4" />
-                      Mark Done
-                    </button>
+                
+                {resolvingId === followUp.id ? (
+                  <div className="mt-3 flex flex-col gap-2 rounded-lg border border-neutral-200 bg-neutral-50 p-3">
+                    <div className="text-xs font-bold text-neutral-600">
+                      {resolvingStatus === 'Done' ? 'Complete Follow-up' : 'Cancel Follow-up'}
+                    </div>
+                    <textarea
+                      placeholder="Add an outcome note (required)..."
+                      className="w-full resize-none rounded-md border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+                      rows="2"
+                      value={outcomeNote}
+                      onChange={(e) => setOutcomeNote(e.target.value)}
+                    />
+                    <div className="mt-1 flex justify-end gap-2">
+                      <button
+                        className="min-h-10 rounded-md px-4 py-2 text-xs font-semibold text-neutral-500 transition-colors hover:bg-neutral-200 active:scale-[0.98]"
+                        onClick={() => setResolvingId(null)}
+                      >
+                        Back
+                      </button>
+                      <button
+                        disabled={!outcomeNote.trim()}
+                        className={`min-h-10 rounded-md px-4 py-2 text-xs font-semibold text-white transition-colors active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 ${
+                          resolvingStatus === 'Done' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-rose-600 hover:bg-rose-700'
+                        }`}
+                        onClick={() => handleResolve(followUp.id)}
+                      >
+                        Confirm
+                      </button>
+                    </div>
                   </div>
+                ) : (
+                  followUp.status === 'Scheduled' && (
+                    <div className="mt-2 grid grid-cols-2 gap-2 sm:flex sm:justify-end">
+                      <button
+                        className="flex min-h-10 items-center justify-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-600 transition-colors hover:bg-rose-100 active:scale-[0.98]"
+                        onClick={() => {
+                          setResolvingId(followUp.id);
+                          setResolvingStatus('Cancelled');
+                          setOutcomeNote('');
+                        }}
+                      >
+                        <XMarkIcon className="h-4 w-4" />
+                        Cancel
+                      </button>
+                      <button
+                        className="flex min-h-10 items-center justify-center gap-1 rounded-lg bg-emerald-100 px-3 py-2 text-xs font-semibold text-emerald-700 transition-colors hover:bg-emerald-200 active:scale-[0.98]"
+                        onClick={() => {
+                          setResolvingId(followUp.id);
+                          setResolvingStatus('Done');
+                          setOutcomeNote('');
+                        }}
+                      >
+                        <CheckCircleIcon className="h-4 w-4" />
+                        Mark Done
+                      </button>
+                    </div>
+                  )
                 )}
               </div>
             );
@@ -1921,84 +2832,114 @@ function FollowUpsPanel({
   );
 }
 
-function ActivityPanel({ lead }) {
-  const score = getLeadScore(lead);
+
+
+function formatCallStatusLabel(status = '') {
+  return String(status || '')
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (char) => char.toUpperCase()) || 'Call';
+}
+
+function formatDuration(seconds) {
+  const total = Number(seconds || 0);
+  if (!Number.isFinite(total) || total <= 0) return '';
+  const mins = Math.floor(total / 60);
+  const secs = total % 60;
+  if (!mins) return `${secs}s`;
+  return `${mins}m ${secs}s`;
+}
+
+function RecordingPlayer({ callLogId }) {
+  const [audioUrl, setAudioUrl] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => () => {
+    if (audioUrl) URL.revokeObjectURL(audioUrl);
+  }, [audioUrl]);
+
+  const load = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const blob = await callsApi.recording(callLogId);
+      setAudioUrl(URL.createObjectURL(blob));
+    } catch (err) {
+      setError('Recording could not be loaded.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (audioUrl) {
+    return <audio controls src={audioUrl} className="mt-2 w-full max-w-xs" />;
+  }
 
   return (
-    <div className="space-y-3">
-      <div className="rounded-[var(--radius-md)] border border-neutral-200 bg-white p-4 shadow-sm">
-        <div className="text-xs font-bold uppercase tracking-wider text-neutral-400">Recommended Next Action</div>
-        <div className="mt-2 text-lg font-bold text-neutral-900">{getNextAction(lead)}</div>
-        <p className="mt-1 text-sm text-neutral-500">
-          Based on owner, follow-up timing, status, and recent inbound activity.
-        </p>
-      </div>
-      <div className="grid grid-cols-2 gap-3">
-        <ActivityStat label="Lead Score" value={`${score}/100`} />
-        <ActivityStat label="Lead Value" value={getLeadValueLabel(lead)} />
-        <ActivityStat label="Last Activity" value={getActivityLabel(lead)} />
-        <ActivityStat label="Created" value={timeAgo(lead.createdAt)} />
-        <ActivityStat label="Source" value={formatSource(lead.source)} />
-        {lead.status === 'LOST' && <ActivityStat label="Lost Reason" value={lead.lostReason || EMPTY} />}
-      </div>
+    <div className="mt-2">
+      <button
+        type="button"
+        onClick={load}
+        disabled={loading}
+        className="inline-flex items-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-100 disabled:opacity-60"
+      >
+        <PhoneIcon className="h-3 w-3" />
+        {loading ? 'Loading…' : 'Play recording'}
+      </button>
+      {error ? <span className="ml-2 text-xs text-red-500">{error}</span> : null}
     </div>
   );
 }
 
-function ActivityStat({ label, value }) {
+function TimelinePanel({ callLogs = [], lead }) {
+  const serverTimeline = Array.isArray(lead.timeline) ? lead.timeline : [];
+  const fallbackTimeline = [
+    {
+      id: `lead-created-${lead.id}`,
+      type: 'lead_created',
+      title: 'Lead Created',
+      description: `Lead ${lead.customer?.name || 'Unnamed Lead'} created via ${formatSource(lead.source)}`,
+      time: lead.createdAt,
+    },
+    ...(lead.messages || []).map((message) => ({
+      id: message.id,
+      type: 'message',
+      title: message.direction === 'IN' ? 'Message Received' : 'Message Sent',
+      description: message.content,
+      time: message.timestamp,
+      status: message.status,
+      actor: message.direction === 'IN' ? lead.customer?.name : message.agent?.name,
+    })),
+    ...callLogs.map((callLog) => {
+      const duration = formatDuration(callLog.durationSeconds);
+      return {
+        id: callLog.id,
+        type: 'call',
+        title: `Call ${formatCallStatusLabel(callLog.status)}`,
+        description: [
+          `${callLog.agent?.name || 'Staff'} called ${callLog.customer?.name || lead.customer?.name || 'customer'}`,
+          duration ? `Duration ${duration}` : '',
+        ].filter(Boolean).join(' - '),
+        actor: callLog.agent?.name,
+        time: callLog.startedAt || callLog.createdAt,
+        source: { id: callLog.id, recordingUrl: callLog.recordingUrl },
+      };
+    }),
+  ];
+  const timeline = serverTimeline.length ? serverTimeline : fallbackTimeline;
+
   return (
-    <div className="rounded-[var(--radius-md)] border border-neutral-200 bg-white p-4 shadow-sm">
-      <div className="text-xs font-bold uppercase tracking-wider text-neutral-400">{label}</div>
-      <div className="mt-1 text-sm font-semibold text-neutral-800">{value}</div>
-    </div>
+    <ActivityTimeline
+      events={timeline}
+      emptyText="No lead timeline activity yet."
+      renderFooter={(event) => {
+        const recordingId = event.type === 'call' && event.source?.recordingUrl ? event.source.id : null;
+        return recordingId ? <RecordingPlayer callLogId={recordingId} /> : null;
+      }}
+    />
   );
 }
 
-function TimelinePanel({ lead }) {
-  return (
-    <div className="space-y-4">
-      <TimelineItem
-        icon={<CheckCircleIcon className="h-4 w-4" />}
-        iconClass="bg-emerald-100 text-emerald-600"
-        title="Lead Created"
-        description={`Lead ${lead.customer?.name || 'Unnamed Lead'} created via ${formatSource(lead.source)}`}
-        time={formatDateTime(lead.createdAt)}
-      />
-
-      {lead.messages?.map((message) => (
-        <TimelineItem
-          key={message.id}
-          icon={message.direction === 'IN' ? 'IN' : 'OUT'}
-          iconClass={message.direction === 'IN' ? 'bg-sky-100 text-sky-600' : 'bg-violet-100 text-violet-600'}
-          title={message.direction === 'IN' ? 'Message Received' : 'Message Sent'}
-          description={message.content}
-          time={formatDateTime(message.timestamp)}
-        />
-      ))}
-    </div>
-  );
-}
-
-function TimelineItem({ description, icon, iconClass, time, title }) {
-  return (
-    <div className="flex gap-4 rounded-[var(--radius-md)] border border-neutral-200 bg-white p-4 shadow-sm">
-      <div className="flex w-6 shrink-0 flex-col items-center">
-        <div className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${iconClass}`}>
-          {icon}
-        </div>
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0 flex-1">
-            <h4 className="text-sm font-bold text-neutral-800">{title}</h4>
-            <p className="mt-1 line-clamp-3 break-words text-sm text-neutral-500">{description}</p>
-          </div>
-          <span className="shrink-0 text-xs text-neutral-400">{time}</span>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 function EmptyPanel({ text }) {
   return (
@@ -2008,8 +2949,9 @@ function EmptyPanel({ text }) {
   );
 }
 
-function BulkActionBar({ agents, count, isPending, onAssign, onClear }) {
+function BulkActionBar({ agents, count, isDeleting, isPending, onAssign, onClear, onDelete }) {
   const [bulkAgentId, setBulkAgentId] = useState('');
+  const isBusy = isPending || isDeleting;
 
   if (count === 0) return null;
 
@@ -2029,14 +2971,15 @@ function BulkActionBar({ agents, count, isPending, onAssign, onClear }) {
         {/* Divider (desktop only) */}
         <div className="hidden md:block h-8 w-px bg-neutral-200" />
 
-        {/* Agent picker */}
+        {/* Staff picker */}
         <div className="flex items-center gap-2 flex-1 min-w-0">
           <select
             value={bulkAgentId}
             onChange={(e) => setBulkAgentId(e.target.value)}
+            disabled={isBusy}
             className="h-9 flex-1 min-w-0 md:w-48 md:flex-none cursor-pointer rounded-lg border border-neutral-200 bg-neutral-50 px-2 md:px-3 text-xs md:text-sm font-medium text-neutral-700 transition-colors hover:border-neutral-400 focus:border-neutral-500 focus:ring-0"
           >
-            <option value="">Select Agent</option>
+            <option value="">Select Staff</option>
             {agents.map((agent) => (
               <option key={agent.id} value={agent.id}>
                 {agent.name}
@@ -2052,7 +2995,7 @@ function BulkActionBar({ agents, count, isPending, onAssign, onClear }) {
             onAssign(bulkAgentId);
             setBulkAgentId('');
           }}
-          disabled={!bulkAgentId || isPending}
+          disabled={!bulkAgentId || isBusy}
           className="flex h-9 items-center gap-1.5 rounded-lg bg-neutral-900 px-3 md:px-5 text-xs md:text-sm font-bold text-white shadow-sm transition-all hover:bg-black disabled:cursor-not-allowed disabled:opacity-40"
         >
           {isPending ? (
@@ -2074,15 +3017,34 @@ function BulkActionBar({ agents, count, isPending, onAssign, onClear }) {
             onAssign(null);
             setBulkAgentId('');
           }}
-          disabled={isPending}
+          disabled={isBusy}
           className="hidden md:flex h-9 items-center gap-1.5 rounded-lg border border-neutral-200 bg-white px-4 text-sm font-semibold text-neutral-600 transition-all hover:bg-neutral-50 hover:border-neutral-300 disabled:opacity-40"
         >
           Unassign
         </button>
 
+        <button
+          onClick={onDelete}
+          disabled={isBusy}
+          className="flex h-9 items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-3 text-xs font-bold text-rose-700 shadow-sm transition-all hover:border-rose-300 hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-40 md:px-4 md:text-sm"
+        >
+          {isDeleting ? (
+            <>
+              <ArrowPathIcon className="h-3.5 w-3.5 animate-spin" />
+              <span className="hidden md:inline">Deleting...</span>
+            </>
+          ) : (
+            <>
+              <TrashIcon className="h-3.5 w-3.5" />
+              Delete
+            </>
+          )}
+        </button>
+
         {/* Clear selection */}
         <button
           onClick={onClear}
+          disabled={isBusy}
           className="flex h-7 w-7 md:h-8 md:w-8 items-center justify-center rounded-full text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-600"
           title="Clear selection"
         >

@@ -1,7 +1,8 @@
 // FILE: /frontend/src/hooks/useAnalytics.js
 
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { analyticsApi } from '../api/analyticsApi';
+import { crmApi } from '../api/crmApi';
 
 export function useAnalyticsSummary() {
   return useQuery({
@@ -9,6 +10,44 @@ export function useAnalyticsSummary() {
     queryFn: () => analyticsApi.getSummary(),
     staleTime: 60 * 1000,
   });
+}
+
+export function useCrmReport(params) {
+  return useQuery({
+    queryKey: ['analytics-crm', params],
+    queryFn: () => analyticsApi.getCrm(params),
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useCallingReport(params) {
+  return useQuery({
+    queryKey: ['analytics-calling', params],
+    queryFn: () => analyticsApi.getCalling(params),
+    staleTime: 60 * 1000,
+  });
+}
+
+export function usePipelineStages() {
+  return useQuery({
+    queryKey: ['pipeline-stages'],
+    queryFn: () => crmApi.listStages(),
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+export function usePipelineStageMutations() {
+  const qc = useQueryClient();
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ['pipeline-stages'] });
+    qc.invalidateQueries({ queryKey: ['analytics-crm'] });
+  };
+  return {
+    create: useMutation({ mutationFn: (body) => crmApi.createStage(body), onSuccess: invalidate }),
+    update: useMutation({ mutationFn: ({ id, body }) => crmApi.updateStage(id, body), onSuccess: invalidate }),
+    remove: useMutation({ mutationFn: (id) => crmApi.deleteStage(id), onSuccess: invalidate }),
+    reorder: useMutation({ mutationFn: (orderedIds) => crmApi.reorderStages(orderedIds), onSuccess: invalidate }),
+  };
 }
 
 export function useSalesReport(params) {
@@ -91,6 +130,14 @@ export function useSourceReport(params) {
   });
 }
 
+export function useLeadsByAdReport(params) {
+  return useQuery({
+    queryKey: ['analytics-leads-by-ad', params],
+    queryFn: () => analyticsApi.getLeadsByAd(params),
+    staleTime: 60 * 1000,
+  });
+}
+
 export function useBookingReport(params) {
   return useQuery({
     queryKey: ['analytics-bookings', params],
@@ -135,6 +182,14 @@ export function useGrowthReport(params) {
   return useQuery({
     queryKey: ['analytics-growth', params],
     queryFn: () => analyticsApi.getGrowth(params),
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useLeadHeatmapReport(params) {
+  return useQuery({
+    queryKey: ['analytics-lead-heatmap', params],
+    queryFn: () => analyticsApi.getLeadHeatmap(params),
     staleTime: 60 * 1000,
   });
 }

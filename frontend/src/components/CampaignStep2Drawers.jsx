@@ -1,5 +1,54 @@
 import React from 'react';
-import { Check, Search, X, ChevronDown, ChevronRight, Package, Home, UserPlus, Image, Video, Plus, Send, Layers, Type } from 'lucide-react';
+import { Check, Search, X, ChevronDown, ChevronRight, Package, Home, UserPlus, Image, Video, Plus, Send, Layers, Type, Workflow } from 'lucide-react';
+import CampaignFlowBinding from './CampaignFlowBinding';
+import { templatesApi } from '../api/templatesApi';
+
+// Per-card media upload — lets the agency replace a carousel card's catalog image
+// with their own uploaded image/video. Meta requires one media type per carousel,
+// so `mediaMode` (the campaign-level choice) fixes what can be uploaded.
+function CardMediaUpload({ card, mediaMode, onUploaded }) {
+  const [uploading, setUploading] = React.useState(false);
+  const [error, setError] = React.useState('');
+  const isVideo = String(mediaMode || 'IMAGE').toUpperCase() === 'VIDEO';
+  const accept = isVideo ? 'video/mp4,video/3gpp' : 'image/*';
+
+  const handleChange = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    setError('');
+    setUploading(true);
+    try {
+      const res = await templatesApi.uploadMedia(file);
+      const url = res?.data?.url;
+      if (!url) throw new Error('Upload failed');
+      onUploaded({ mediaUrl: url, mediaName: file.name, mediaType: isVideo ? 'VIDEO' : 'IMAGE' });
+    } catch (err) {
+      setError(err?.response?.data?.error || err?.message || 'Upload failed');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center gap-2">
+        <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-dashed border-slate-300 px-3 py-2 text-xs font-semibold text-slate-600 hover:border-slate-400">
+          {isVideo ? <Video className="h-3.5 w-3.5" /> : <Image className="h-3.5 w-3.5" />}
+          <input type="file" accept={accept} onChange={handleChange} className="hidden" />
+          {uploading ? 'Uploading…' : card?.mediaUrl ? `Replace ${isVideo ? 'video' : 'image'}` : `Upload ${isVideo ? 'video' : 'image'}`}
+        </label>
+        {card?.mediaUrl ? (
+          <button type="button" onClick={() => onUploaded({ mediaUrl: '', mediaName: '', mediaType: null })} className="rounded-lg border border-slate-200 p-2 text-slate-400 hover:text-rose-500" aria-label="Remove uploaded media">
+            <X className="h-3.5 w-3.5" />
+          </button>
+        ) : null}
+      </div>
+      {card?.mediaUrl ? <p className="truncate text-[11px] font-medium text-emerald-700">Using uploaded {card.mediaType === 'VIDEO' ? 'video' : 'image'}{card.mediaName ? `: ${card.mediaName}` : ''}</p> : null}
+      {error ? <p className="text-[11px] font-medium text-rose-600">{error}</p> : null}
+    </div>
+  );
+}
 
 /* ── Reusable Bottom Drawer Shell ── */
 function BottomDrawer({ open, onClose, title, subtitle, children }) {
@@ -84,10 +133,23 @@ export function ConfigContent({
   ctaTemplateButtons = [], ctaProviderButtons = [], ctaButtonActions = {},
   ctaButtonActionOptions = [], ctaButtonActionLabels = {},
   duplicateCtaButtonLabels = [], selectedCtaCatalogRecords = [], allCatalogRecords = [],
+  ctaFlowOptions = [],
+  carouselCards = [], updateCarouselCard,
+  onConfigureCampaignFlow, campaignFlowConfigured = false,
+  onConfigureCarouselFlow, carouselFlowConfigured = false,
+  carouselMode = 'CATALOG', setCarouselMode, addUploadCard, updateUploadCard, removeUploadCard, addUploadCardsFromFiles,
+  carouselHasButtons = false,
   getButtonActionKey, updateButtonAction, onDone
 }) {
   const hasTemplateButtonActions = builderMode === 'cta' && ctaTemplateButtons.length > 0;
   const actionItemOptions = allCatalogRecords.filter((item) => ['PACKAGE', 'PROPERTY'].includes(item.itemType));
+  // Named template variables the campaign-creator fills (excludes per-recipient contact vars).
+  const templateVariableMap = Array.isArray(selectedTemplate?.variableMap) ? selectedTemplate.variableMap : [];
+  const templateStaticVariables = templateVariableMap.filter((entry) => entry && entry.source === 'STATIC' && entry.name);
+  const humanizeVariableLabel = (name) => String(name || '')
+    .replace(/[_-]+/g, ' ')
+    .replace(/\b\w/g, (c) => c.toUpperCase())
+    .trim();
 
   return (
     <div className="flex h-full flex-col">
@@ -119,8 +181,61 @@ export function ConfigContent({
           </div>
         )}
 
-        {/* Description */}
-        {builderMode === 'cta' && (
+        {/* Header Video (CTA Video mode) — optional per-campaign override */}
+        {builderMode === 'cta' && formData.mediaType === 'VIDEO' && (
+          <div>
+            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-2">Header Video</p>
+            <button onClick={() => setShowMediaModal(true)} className={`w-full rounded-2xl border-2 border-dashed p-4 text-center transition hover:border-slate-300 ${formData.ctaConfig?.featuredMediaUrl ? 'border-slate-300 bg-slate-50' : 'border-slate-200'}`}>
+              {formData.ctaConfig?.featuredMediaUrl ? (
+                <div className="flex items-center gap-3">
+                  <video src={formData.ctaConfig.featuredMediaUrl} className="h-14 w-14 rounded-xl object-cover" muted />
+                  <div className="text-left flex-1 min-w-0">
+                    <p className="text-sm font-bold text-slate-900 truncate">{formData.ctaConfig?.featuredMediaName || 'Custom video'}</p>
+                    <p className="text-xs text-slate-500">Tap to change · overrides template video</p>
+                  </div>
+                  <Check className="h-4 w-4 text-emerald-500" />
+                </div>
+              ) : (
+                <div className="flex flex-col items-center py-2">
+                  <div className="h-10 w-10 rounded-full bg-slate-100 flex items-center justify-center mb-2"><Plus className="h-5 w-5 text-slate-500" /></div>
+                  <p className="text-xs font-bold text-slate-600">Upload campaign video (optional)</p>
+                  <p className="text-[11px] text-slate-400 mt-0.5">Max 16 MB · uses the template’s video if left empty</p>
+                </div>
+              )}
+            </button>
+          </div>
+        )}
+
+        {/* Template variables (named) — one labeled field per static variable */}
+        {builderMode === 'cta' && templateStaticVariables.length > 0 && (
+          <div>
+            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-2">Template Variables</p>
+            <div className="space-y-3">
+              {templateStaticVariables.map((variable) => (
+                <label key={variable.name} className="block">
+                  <span className="mb-1 block text-[11px] font-semibold text-slate-600">{humanizeVariableLabel(variable.name)}</span>
+                  <textarea
+                    rows={variable.name === 'description' ? 3 : 2}
+                    value={formData.ctaConfig?.variableValues?.[variable.name] || ''}
+                    onChange={e => setFormData(p => ({
+                      ...p,
+                      ctaConfig: {
+                        ...(p.ctaConfig || {}),
+                        variableValues: { ...(p.ctaConfig?.variableValues || {}), [variable.name]: e.target.value },
+                      },
+                    }))}
+                    placeholder={`Value for {{${variable.name}}}`}
+                    className="w-full resize-none rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-slate-400 focus:bg-white transition"
+                  />
+                </label>
+              ))}
+            </div>
+            <p className="mt-2 text-[11px] text-slate-400">Contact variables (name, phone) fill automatically for each recipient.</p>
+          </div>
+        )}
+
+        {/* Description (legacy positional {{2}} templates) */}
+        {builderMode === 'cta' && templateStaticVariables.length === 0 && (
           <div>
             <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-2">Campaign Description</p>
             <textarea rows={3} value={formData.ctaConfig?.description || ''}
@@ -134,6 +249,26 @@ export function ConfigContent({
         {builderMode === 'cta' && (
           <div>
             <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-2">Action Buttons</p>
+            {hasTemplateButtonActions && onConfigureCampaignFlow && (
+              <button
+                type="button"
+                onClick={onConfigureCampaignFlow}
+                className="mb-3 flex w-full items-center gap-3 rounded-2xl border border-[#008069]/30 bg-[#008069]/[0.04] px-4 py-3 text-left transition hover:bg-[#008069]/[0.08]"
+              >
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#008069] text-white">
+                  <Workflow className="h-4 w-4" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-bold text-slate-900">
+                    {campaignFlowConfigured ? 'Edit campaign flow' : 'Configure flow'}
+                  </span>
+                  <span className="block text-[11px] text-slate-500">
+                    Build one flow with a starter node for each of the {ctaTemplateButtons.length} template buttons.
+                  </span>
+                </span>
+                <ChevronRight className="h-4 w-4 shrink-0 text-[#008069]" />
+              </button>
+            )}
             {hasTemplateButtonActions ? (
               <div className="space-y-2">
                 {duplicateCtaButtonLabels.length > 0 && (
@@ -141,6 +276,7 @@ export function ConfigContent({
                     Duplicate quick-reply labels found. WhatsApp sends back button text, so make each quick reply unique before continuing.
                   </div>
                 )}
+                {false && (
                 <div className="rounded-2xl border border-slate-200 bg-white divide-y divide-slate-100">
                   {ctaTemplateButtons.map((button, index) => {
                     const key = getButtonActionKey?.(button, index) || `${button.text || button.title}-${index}`;
@@ -191,7 +327,7 @@ export function ConfigContent({
                             }}
                             className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none transition focus:border-slate-400"
                           >
-                            <option value="">{hasSelectedPool ? 'Auto: show matching selected items' : 'Select an item or choose items below'}</option>
+                            <option value="">{hasSelectedPool ? 'Auto: show matching selected items' : 'Auto: show all active matching items'}</option>
                             {itemOptions.map((item) => (
                               <option key={`${item.itemType}:${item.id}`} value={`${item.itemType}:${item.id}`}>
                                 {item.itemType === 'PROPERTY' ? 'Property' : 'Package'}: {item.name}
@@ -202,10 +338,31 @@ export function ConfigContent({
                         {needsItemPicker && selectedItemLabel && (
                           <p className="text-[11px] font-semibold text-emerald-600">Configured for {selectedItemLabel}</p>
                         )}
+                        {action === 'OPEN_FLOW' && (
+                          <CampaignFlowBinding
+                            value={{ flowKind: current.flowKind, flowId: current.flowId, keyword: current.keyword }}
+                            onChange={(next) => updateButtonAction?.(button, index, {
+                              flowKind: next.flowKind,
+                              flowId: next.flowId || null,
+                              keyword: next.keyword || null,
+                            })}
+                          />
+                        )}
+                        {action === 'OPEN_URL' && (
+                          <input
+                            type="url"
+                            inputMode="url"
+                            value={current.url || ''}
+                            onChange={(event) => updateButtonAction?.(button, index, { url: event.target.value })}
+                            placeholder="https://example.com/landing"
+                            className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none transition focus:border-slate-400"
+                          />
+                        )}
                       </div>
                     );
                   })}
                 </div>
+                )}
                 {ctaProviderButtons.length > 0 && (
                   <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
                     <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Provider Buttons</p>
@@ -221,28 +378,7 @@ export function ConfigContent({
                 )}
               </div>
             ) : (
-              <div className="rounded-2xl border border-slate-200 bg-white divide-y divide-slate-100">
-                {(formData.campaignSections || []).map(section => {
-                  const Icon = section.itemType === 'PROPERTY' ? Home : section.itemType === 'CUSTOM_TRIP' ? UserPlus : Package;
-                  const count = section.itemType === 'PACKAGE' ? selectedPackageRecords.length : section.itemType === 'PROPERTY' ? selectedPropertyRecords.length : 0;
-                  return (
-                    <button key={section.key} type="button"
-                      onClick={() => updateSection(section.key, { enabled: !section.enabled, selectionMode: 'MANUAL', selectedItemIds: section.itemType === 'CUSTOM_TRIP' ? [] : section.selectedItemIds || [] })}
-                      className="flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors hover:bg-slate-50/60">
-                      <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition ${section.enabled ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-400'}`}>
-                        <Icon className="h-4 w-4" />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-semibold text-slate-900">{section.label}</p>
-                        <p className="text-xs text-slate-400">{section.itemType === 'CUSTOM_TRIP' ? 'Opens custom-trip flow' : `${count} selected`}</p>
-                      </div>
-                      <div className={`relative h-6 w-11 shrink-0 rounded-full transition-colors duration-200 ${section.enabled ? 'bg-slate-900' : 'bg-slate-200'}`}>
-                        <div className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${section.enabled ? 'translate-x-[22px]' : 'translate-x-0.5'}`} />
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
+              <p className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-xs text-slate-500">This template has no buttons, so there's nothing to configure. Choose a template with buttons to build a flow.</p>
             )}
           </div>
         )}
@@ -250,7 +386,9 @@ export function ConfigContent({
         {/* Inline Package Picker */}
         {builderMode === 'cta' && packageSection.enabled && (
           <div className="rounded-2xl border border-slate-200 bg-white p-4">
-            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-3">Select Packages <span className="text-slate-300 normal-case">({selectedPackageRecords.length}/{activePackages.length})</span></p>
+            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-3">
+              Select Packages <span className="text-slate-300 normal-case">({selectedPackageRecords.length > 0 ? `${selectedPackageRecords.length}/${activePackages.length}` : `all ${activePackages.length} active`})</span>
+            </p>
             <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
               {activePackages.map(pkg => {
                 const sel = (packageSection.selectedItemIds || []).includes(pkg.id);
@@ -275,7 +413,9 @@ export function ConfigContent({
         {/* Inline Property Picker */}
         {builderMode === 'cta' && propertySection.enabled && (
           <div className="rounded-2xl border border-slate-200 bg-white p-4">
-            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-3">Select Properties <span className="text-slate-300 normal-case">({selectedPropertyRecords.length}/{activeProperties.length})</span></p>
+            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-3">
+              Select Properties <span className="text-slate-300 normal-case">({selectedPropertyRecords.length > 0 ? `${selectedPropertyRecords.length}/${activeProperties.length}` : `all ${activeProperties.length} active`})</span>
+            </p>
             <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
               {activeProperties.map(prop => {
                 const sel = (propertySection.selectedItemIds || []).includes(prop.id);
@@ -298,7 +438,93 @@ export function ConfigContent({
         )}
 
         {/* Carousel Item Picker */}
-        {builderMode === 'carousel' && (
+        {/* Carousel source: catalog items vs free-form uploaded cards */}
+        {builderMode === 'carousel' && setCarouselMode && (
+          <div>
+            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-2">Carousel source</p>
+            <div className="inline-flex overflow-hidden rounded-xl border border-slate-200 text-xs">
+              {[{ k: 'CATALOG', l: 'From catalog' }, { k: 'UPLOAD', l: 'Upload media' }].map((o) => (
+                <button key={o.k} type="button" onClick={() => setCarouselMode(o.k)}
+                  className={`px-3 py-2 font-semibold transition ${carouselMode === o.k ? 'bg-slate-900 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>
+                  {o.l}
+                </button>
+              ))}
+            </div>
+            {carouselMode === 'UPLOAD' && <p className="mt-1.5 text-[11px] text-slate-400">Build cards by uploading your own images/videos — no packages needed.</p>}
+          </div>
+        )}
+
+        {/* UPLOAD-mode: free-form cards (media + title + keyword + flow buttons) */}
+        {builderMode === 'carousel' && carouselMode === 'UPLOAD' && addUploadCard && (
+          <div>
+            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-2">Uploaded cards <span className="text-slate-300 normal-case">({(carouselCards || []).length}/10, 2-10 required)</span></p>
+            {!carouselHasButtons && (
+              <p className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-semibold text-amber-800">This template has no buttons, so there's nothing to open a flow. Pick a carousel template with buttons to configure flows.</p>
+            )}
+            {onConfigureCarouselFlow && carouselHasButtons && (carouselCards || []).length > 0 && (
+              <button type="button" onClick={onConfigureCarouselFlow}
+                className="mb-3 flex w-full items-center gap-3 rounded-2xl border border-[#008069]/30 bg-[#008069]/[0.04] px-4 py-3 text-left transition hover:bg-[#008069]/[0.08]">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#008069] text-white"><Workflow className="h-4 w-4" /></span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-bold text-slate-900">{carouselFlowConfigured ? 'Edit carousel flow' : 'Configure flow'}</span>
+                  <span className="block text-[11px] text-slate-500">One flow with a starter node per button. Each tap knows which card it came from.</span>
+                </span>
+                <ChevronRight className="h-4 w-4 shrink-0 text-[#008069]" />
+              </button>
+            )}
+            <div className="space-y-3">
+              {(carouselCards || []).map((card, index) => {
+                const buttons = Array.isArray(card.buttons) ? card.buttons : [];
+                return (
+                  <div key={card.id} className="rounded-xl border border-slate-200 p-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-sm font-bold text-slate-800">Card {index + 1}</p>
+                      <button type="button" onClick={() => removeUploadCard(card.id)} className="rounded-lg border border-slate-200 p-1.5 text-slate-400 hover:text-rose-500" aria-label="Remove card"><X className="h-4 w-4" /></button>
+                    </div>
+                    <div className="mb-2">
+                      <CardMediaUpload card={card} mediaMode={formData?.carouselConfig?.mediaMode} onUploaded={(media) => updateUploadCard(card.id, media)} />
+                    </div>
+                    <input value={card.title || ''} onChange={(e) => updateUploadCard(card.id, { title: e.target.value.slice(0, 120) })} placeholder="Card title" className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#008069] mb-2" />
+                    <textarea rows={2} value={card.body || ''} onChange={(e) => updateUploadCard(card.id, { body: e.target.value.slice(0, 1024) })} placeholder="Card text" className="w-full resize-none rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#008069] mb-2" />
+                    <input value={card.keyword || ''} onChange={(e) => updateUploadCard(card.id, { keyword: e.target.value.slice(0, 60) })} placeholder="Keyword (passed to flow as {campaign_keyword})" className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#008069] mb-2" />
+                    {/* Buttons are fixed by the approved template (same on every card);
+                        their flow is set in one place via "Configure flow" above. */}
+                    {carouselHasButtons && buttons.length > 0 && (
+                      <>
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Buttons (from template)</p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {buttons.map((button, i) => (
+                            <span key={i} className="rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-600">{button.buttonText || `Button ${i + 1}`}</span>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                );
+              })}
+              {(carouselCards || []).length < 10 && (
+                <div className="flex gap-2">
+                  <button type="button" onClick={addUploadCard} className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-dashed border-slate-300 px-3 py-3 text-sm font-semibold text-slate-600 hover:border-slate-400"><Plus className="h-4 w-4" />Add card</button>
+                  {addUploadCardsFromFiles && (
+                    <label className="flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-xl border border-dashed border-[#008069]/40 bg-[#008069]/[0.03] px-3 py-3 text-sm font-semibold text-[#0b6b59] hover:border-[#008069]">
+                      <Image className="h-4 w-4" />
+                      Upload multiple
+                      <input
+                        type="file"
+                        multiple
+                        accept={(formData?.carouselConfig?.mediaMode || 'IMAGE') === 'VIDEO' ? 'video/mp4,video/3gpp' : 'image/*'}
+                        onChange={(e) => { addUploadCardsFromFiles(e.target.files); e.target.value = ''; }}
+                        className="hidden"
+                      />
+                    </label>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {builderMode === 'carousel' && carouselMode !== 'UPLOAD' && (
           <div>
             <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-2">Carousel Items <span className="text-slate-300 normal-case">({selectedCarouselRecords.length} selected, 2-10 required)</span></p>
             <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
@@ -317,6 +543,94 @@ export function ConfigContent({
                       {sel && <Check className="h-3 w-3" strokeWidth={3} />}
                     </div>
                   </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Per-image keyword + flow buttons (catalog carousel) */}
+        {builderMode === 'carousel' && carouselMode !== 'UPLOAD' && selectedCarouselRecords.length > 0 && updateCarouselCard && (
+          <div>
+            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-2">Per-image keyword & buttons <span className="text-slate-300 normal-case">(optional — up to 3 buttons that open a flow)</span></p>
+            {onConfigureCarouselFlow && carouselHasButtons && selectedCarouselRecords.length > 0 && (
+              <button
+                type="button"
+                onClick={onConfigureCarouselFlow}
+                className="mb-3 flex w-full items-center gap-3 rounded-2xl border border-[#008069]/30 bg-[#008069]/[0.04] px-4 py-3 text-left transition hover:bg-[#008069]/[0.08]"
+              >
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#008069] text-white">
+                  <Workflow className="h-4 w-4" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-bold text-slate-900">{carouselFlowConfigured ? 'Edit carousel flow' : 'Configure flow'}</span>
+                  <span className="block text-[11px] text-slate-500">One flow with a starter node per button. Each tap knows which card it came from.</span>
+                </span>
+                <ChevronRight className="h-4 w-4 shrink-0 text-[#008069]" />
+              </button>
+            )}
+            <div className="space-y-3">
+              {selectedCarouselRecords.map((record) => {
+                const card = (carouselCards || []).find((entry) => String(entry.itemId || entry.id || '') === String(record.id)) || {};
+                const buttons = Array.isArray(card.buttons) ? card.buttons : [];
+                const writeButtons = (next) => updateCarouselCard(record.id, record.itemType, {
+                  buttons: next.map((btn, i) => ({ ...btn, buttonKey: `btn_${i + 1}`, action: 'OPEN_FLOW' })),
+                });
+                return (
+                  <div key={`${record.itemType}-${record.id}`} className="rounded-xl border border-slate-100 p-3">
+                    <div className="flex items-center gap-2 mb-2">
+                      {(card.mediaType !== 'VIDEO' && (card.mediaUrl || record.imageUrl)) ? <img src={card.mediaUrl || record.imageUrl} alt="" className="h-8 w-8 rounded-lg object-cover" /> : <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100">{card.mediaType === 'VIDEO' ? <Video className="h-4 w-4 text-slate-400" /> : <Image className="h-4 w-4 text-slate-400" />}</div>}
+                      <p className="truncate text-sm font-semibold text-slate-800">{record.name}</p>
+                    </div>
+
+                    <div className="mb-2">
+                      <CardMediaUpload
+                        card={card}
+                        mediaMode={formData?.carouselConfig?.mediaMode}
+                        onUploaded={(media) => updateCarouselCard(record.id, record.itemType, media)}
+                      />
+                    </div>
+
+                    <input
+                      value={card.keyword || ''}
+                      onChange={(event) => updateCarouselCard(record.id, record.itemType, { keyword: event.target.value.slice(0, 60) })}
+                      placeholder="Keyword for this image (passed to the flow as {campaign_keyword})"
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#008069] mb-2"
+                    />
+
+                    <div className="space-y-3">
+                      {buttons.map((button, index) => (
+                        <div key={index} className="rounded-lg border border-slate-100 bg-slate-50/60 p-2.5 space-y-2">
+                          <div className="flex items-center gap-2">
+                            <input
+                              value={button.buttonText || ''}
+                              onChange={(event) => writeButtons(buttons.map((b, i) => (i === index ? { ...b, buttonText: event.target.value.slice(0, 20) } : b)))}
+                              placeholder="Button label (max 20 chars)"
+                              className="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#008069]"
+                            />
+                            <button type="button" onClick={() => writeButtons(buttons.filter((_, i) => i !== index))} className="rounded-lg border border-slate-200 p-2 text-slate-400 hover:text-rose-500" aria-label="Remove button">
+                              <X className="h-4 w-4" />
+                            </button>
+                          </div>
+                          <CampaignFlowBinding
+                            showKeyword={false}
+                            value={{ flowKind: button.flowKind, flowId: button.flowId }}
+                            onChange={(next) => writeButtons(buttons.map((b, i) => (i === index ? { ...b, flowKind: next.flowKind, flowId: next.flowId } : b)))}
+                          />
+                        </div>
+                      ))}
+                      {buttons.length < 3 && (
+                        <button
+                          type="button"
+                          onClick={() => writeButtons([...buttons, { buttonText: 'Learn more', flowKind: 'GRAPH', flowId: '' }])}
+                          className="inline-flex items-center gap-1 rounded-lg border border-dashed border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-500 hover:border-slate-400"
+                        >
+                          <Plus className="h-3.5 w-3.5" />
+                          Add button
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 );
               })}
             </div>
@@ -356,6 +670,12 @@ export function ConfigDrawer({
   ctaTemplateButtons = [], ctaProviderButtons = [], ctaButtonActions = {},
   ctaButtonActionOptions = [], ctaButtonActionLabels = {},
   duplicateCtaButtonLabels = [], selectedCtaCatalogRecords = [], allCatalogRecords = [],
+  ctaFlowOptions = [],
+  carouselCards = [], updateCarouselCard,
+  onConfigureCampaignFlow, campaignFlowConfigured = false,
+  onConfigureCarouselFlow, carouselFlowConfigured = false,
+  carouselMode = 'CATALOG', setCarouselMode, addUploadCard, updateUploadCard, removeUploadCard, addUploadCardsFromFiles,
+  carouselHasButtons = false,
   getButtonActionKey, updateButtonAction,
 }) {
   return (
@@ -376,6 +696,12 @@ export function ConfigDrawer({
         ctaButtonActions={ctaButtonActions} ctaButtonActionOptions={ctaButtonActionOptions}
         ctaButtonActionLabels={ctaButtonActionLabels} duplicateCtaButtonLabels={duplicateCtaButtonLabels}
         selectedCtaCatalogRecords={selectedCtaCatalogRecords} allCatalogRecords={allCatalogRecords}
+        ctaFlowOptions={ctaFlowOptions}
+        carouselCards={carouselCards} updateCarouselCard={updateCarouselCard}
+        onConfigureCampaignFlow={onConfigureCampaignFlow} campaignFlowConfigured={campaignFlowConfigured}
+        onConfigureCarouselFlow={onConfigureCarouselFlow} carouselFlowConfigured={carouselFlowConfigured}
+        carouselMode={carouselMode} setCarouselMode={setCarouselMode} addUploadCard={addUploadCard} updateUploadCard={updateUploadCard} removeUploadCard={removeUploadCard} addUploadCardsFromFiles={addUploadCardsFromFiles}
+        carouselHasButtons={carouselHasButtons}
         getButtonActionKey={getButtonActionKey} updateButtonAction={updateButtonAction}
         onDone={onClose}
       />

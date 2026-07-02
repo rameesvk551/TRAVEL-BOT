@@ -276,6 +276,7 @@ async function listPackages(agencyId, options = false) {
     activeOnly = active === 'true',
     tab = 'ALL',
     category,
+    tourType,
     search,
     sortBy = 'newest',
     page,
@@ -291,6 +292,7 @@ async function listPackages(agencyId, options = false) {
   else if (tab === 'INACTIVE') where.isActive = false;
 
   if (category && category !== 'ALL') where.category = category;
+  if (tourType && tourType !== 'ALL') where.tourType = { [Op.iLike]: String(tourType) };
 
   if (search) {
     where[Op.or] = [

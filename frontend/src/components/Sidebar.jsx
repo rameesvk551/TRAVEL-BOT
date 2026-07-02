@@ -27,6 +27,7 @@ import {
   StarIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
+  ClipboardDocumentListIcon,
   WrenchScrewdriverIcon,
   LifebuoyIcon,
   IdentificationIcon,
@@ -58,6 +59,7 @@ const utilityItems = [
   { to: '/website-builder', icon: GlobeAltIcon, label: 'Website' },
   { to: '/hrm', icon: BriefcaseIcon, label: 'HR & Payroll' },
   { to: '/analytics', icon: ChartBarIcon, label: 'Reports' },
+  { to: '/activity', icon: ClipboardDocumentListIcon, label: 'Activity Log' },
 ];
 
 const marketingItems = [

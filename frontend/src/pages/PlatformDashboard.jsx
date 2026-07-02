@@ -53,10 +53,12 @@ const FALLBACK_MODULES = [
   { path: '/leads', label: 'Leads', group: 'Core' },
   { path: '/follow-ups', label: 'Follow-ups', group: 'Core' },
   { path: '/bookings', label: 'Bookings', group: 'Core' },
+  { path: '/quotations', label: 'Quotations', group: 'Core' },
   { path: '/customers', label: 'Customers', group: 'Core' },
   { path: '/whatsapp', label: 'WhatsApp', group: 'Core' },
   { path: '/agents', label: 'Users', group: 'Core' },
   { path: '/settings', label: 'Settings', group: 'Core' },
+  { path: '/settings/vendor-types', label: 'Vendor Types', group: 'Settings' },
   // Workspace
   { path: '/properties', label: 'Properties', group: 'Workspace' },
   { path: '/itineraries', label: 'Itineraries', group: 'Workspace' },
@@ -70,6 +72,8 @@ const FALLBACK_MODULES = [
   { path: '/website-builder', label: 'Website', group: 'Workspace' },
   { path: '/hrm', label: 'HR & Payroll', group: 'Workspace' },
   { path: '/analytics', label: 'Reports', group: 'Workspace' },
+  { path: '/activity', label: 'Activity Log', group: 'Workspace' },
+  { path: '/revenue', label: 'Revenue Reports', group: 'Workspace' },
   // Marketing
   { path: '/templates', label: 'Templates', group: 'Marketing' },
   { path: '/flows', label: 'Flows', group: 'Marketing' },
@@ -622,7 +626,7 @@ export default function PlatformDashboard() {
           <KpiCard label="Bookings" value={overviewLoading ? '-' : compactNumber(totals.bookings30d)} note={`${totals.bookingsToday || 0} today, ${totals.bookings7d || 0} in 7D`} icon={CheckCircle2} tone="bg-emerald-50 text-emerald-700" />
           <KpiCard label="Paid Revenue" value={overviewLoading ? '-' : formatCurrency(totals.paidRevenue)} note={`${formatCurrency(totals.pendingPaymentValue)} pending`} icon={CreditCard} tone="bg-amber-50 text-amber-700" />
           <KpiCard label="Live Customers" value={overviewLoading ? '-' : compactNumber(totals.activeCustomers)} note="Active in last 15 minutes" icon={MessageCircle} tone="bg-purple-50 text-purple-700" />
-          <KpiCard label="Agents Online" value={overviewLoading ? '-' : compactNumber(totals.agentsOnline)} note={`${totals.staleOnlineAgents || 0} stale-online agents`} icon={Users} tone="bg-cyan-50 text-cyan-700" />
+          <KpiCard label="Staff Online" value={overviewLoading ? '-' : compactNumber(totals.agentsOnline)} note={`${totals.staleOnlineAgents || 0} stale-online staff`} icon={Users} tone="bg-cyan-50 text-cyan-700" />
           <KpiCard label="Ops Risk" value={overviewLoading ? '-' : compactNumber((totals.failedMessages24h || 0) + (totals.overdueFollowUps || 0))} note={`${totals.failedMessages24h || 0} failed messages, ${totals.overdueFollowUps || 0} overdue`} icon={AlertTriangle} tone="bg-rose-50 text-rose-700" />
         </section>
 
@@ -766,7 +770,7 @@ export default function PlatformDashboard() {
                 <table className="min-w-[1260px] w-full text-left">
                   <thead>
                     <tr className="data-table-head">
-                      {['Agency', 'Status', 'Health', 'WhatsApp', 'Leads', 'Bookings', 'Revenue', 'Agents', 'Failures', 'Modules', 'Last Activity'].map((heading) => (
+                      {['Agency', 'Status', 'Health', 'WhatsApp', 'Leads', 'Bookings', 'Revenue', 'Staff', 'Failures', 'Modules', 'Last Activity'].map((heading) => (
                         <th key={heading} className="data-table-th">{heading}</th>
                       ))}
                     </tr>

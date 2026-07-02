@@ -8,8 +8,35 @@ const requirePermission = require('../middleware/requirePermission');
 const validateBody = require('../middleware/validateBody');
 const agencyController = require('../controllers/agencyController');
 const { PERMISSIONS } = require('../constants/permissions');
+const multer = require('multer');
+const path = require('path');
 
 const router = Router();
+
+const IMAGE_FILE_SIZE_LIMIT = 5 * 1024 * 1024;
+const imageExtensions = new Set(['.avif', '.gif', '.heic', '.heif', '.jpg', '.jpeg', '.png', '.webp']);
+
+function hasAllowedExtension(file, allowedExtensions) {
+  return allowedExtensions.has(path.extname(file.originalname || '').toLowerCase());
+}
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: IMAGE_FILE_SIZE_LIMIT,
+  },
+  fileFilter: (_req, file, cb) => {
+    const isImageMime = String(file.mimetype || '').startsWith('image/');
+    if (!isImageMime && !hasAllowedExtension(file, imageExtensions)) {
+      cb(Object.assign(new Error('Only image files are allowed'), {
+        statusCode: 400,
+        code: 'INVALID_FILE_TYPE',
+      }));
+      return;
+    }
+    cb(null, true);
+  },
+});
 
 const menuLabelSchema = z.object({
   visaTicketing: z.string().trim().max(20).optional(),
@@ -74,6 +101,42 @@ const updateAgencySchema = z.object({
   whatsappMenuLabels: menuLabelSchema.optional(),
   whatsappMenuConfig: z.array(menuConfigItemSchema).max(10).optional(),
   whatsappFlowConfig: whatsappFlowConfigSchema.optional(),
+  instagramFlowConfig: whatsappFlowConfigSchema.optional(),
+  sidebarPreferences: z.array(z.string()).optional(),
+  companyLogoUrl: z.string().url().max(1000).nullable().optional(),
+  companySealUrl: z.string().url().max(1000).nullable().optional(),
+  authorizedSignatureUrl: z.string().url().max(1000).nullable().optional(),
+  gstin: z.string().trim().max(32).nullable().optional(),
+  upiId: z.string().trim().max(120).nullable().optional(),
+  stateCode: z.string().trim().regex(/^\d{2}$/).nullable().optional(),
+  accountingSettings: z.object({
+    gst: z.object({
+      defaultSalesRateBps: z.number().int().min(0).max(4000).optional(),
+      taxInclusive: z.boolean().optional(),
+      defaultTreatment: z.enum(['REGISTERED', 'UNREGISTERED', 'EXPORT', 'SEZ', 'EXEMPT']).optional(),
+    }).partial().optional(),
+  }).passthrough().optional(),
+  documentSettings: z.object({
+    autoSend: z.object({
+      booking: z.boolean().optional(),
+      quotation: z.boolean().optional(),
+      invoice: z.boolean().optional(),
+      receipt: z.boolean().optional(),
+      itinerary: z.boolean().optional(),
+    }).partial().passthrough().optional(),
+    captions: z.object({
+      quotation: z.string().max(900).optional(),
+      invoice: z.string().max(900).optional(),
+      receipt: z.string().max(900).optional(),
+      itinerary: z.string().max(900).optional(),
+    }).partial().passthrough().optional(),
+    templates: z.object({
+      booking: z.string().max(120).optional(),
+      quotation: z.string().max(120).optional(),
+      invoice: z.string().max(120).optional(),
+      receipt: z.string().max(120).optional(),
+    }).partial().passthrough().optional(),
+  }).passthrough().optional(),
 });
 
 const websiteSocialLinksSchema = z.object({
@@ -93,7 +156,18 @@ const websiteSeoMetaSchema = z.object({
 const websiteSettingsSchema = z.object({
   subdomain: z.string().trim().max(80).optional().or(z.literal('')),
   customDomain: z.string().trim().max(255).optional().or(z.literal('')),
-  websiteTheme: z.enum(['MODERN', 'CLASSIC', 'MINIMAL', 'VIBRANT']).optional(),
+  websiteTheme: z.enum([
+    'MODERN',
+    'CLASSIC',
+    'MINIMAL',
+    'VIBRANT',
+    'LUXURY_ESCAPE',
+    'ADVENTURE_TREK',
+    'FAMILY_HOLIDAY',
+    'HONEYMOON',
+    'CORPORATE_TRAVEL',
+    'PILGRIMAGE',
+  ]).optional(),
   websiteTitle: z.string().trim().max(255).optional().or(z.literal('')),
   websiteDescription: z.string().trim().max(1200).optional().or(z.literal('')),
   websiteLogoUrl: z.string().trim().max(512).optional().or(z.literal('')),
@@ -143,6 +217,29 @@ router.get('/me', authenticate, requirePermission(PERMISSIONS.AGENCY_VIEW), agen
  * GET /api/agencies/me/whatsapp-connection - Get partner onboarding status
  */
 router.get('/me/whatsapp-connection', authenticate, requirePermission(PERMISSIONS.AGENCY_VIEW), agencyController.getWhatsAppConnection);
+
+/**
+ * GET /api/agencies/me/whatsapp-channels - Get all connected WhatsApp numbers
+ */
+router.get('/me/whatsapp-channels', authenticate, requirePermission(PERMISSIONS.AGENCY_VIEW), agencyController.getWhatsAppChannels);
+
+/**
+ * POST /api/agencies/me/whatsapp-channels
+ */
+router.post('/me/whatsapp-channels', authenticate, validateBody(z.object({
+  marketingOsTenantId: z.string().optional(),
+})), agencyController.completeWhatsAppConnectSession);
+
+/**
+ * DELETE /api/agencies/me/whatsapp-channels/:channelId - Disable a non-default WhatsApp number
+ */
+router.delete(
+  '/me/whatsapp-channels/:channelId',
+  authenticate,
+  requireRole('ADMIN'),
+  requirePermission(PERMISSIONS.AGENCY_MANAGE),
+  agencyController.deleteWhatsAppChannel
+);
 
 router.get('/me/website', authenticate, requirePermission(PERMISSIONS.AGENCY_VIEW), agencyController.getWebsiteStatus);
 
@@ -234,5 +331,25 @@ router.post(
   '/whatsapp/marketing-os/callback',
   agencyController.handleMarketingOsCallback
 );
+
+/**
+ * POST /api/agencies/me/upload-logo
+ */
+router.post('/me/upload-logo', authenticate, requireRole('ADMIN'), upload.single('image'), agencyController.uploadCompanyLogo);
+
+/**
+ * POST /api/agencies/me/upload-asset - generic branding image upload (returns URL only)
+ */
+router.post('/me/upload-asset', authenticate, requireRole('ADMIN'), upload.single('image'), agencyController.uploadDocumentAsset);
+
+/**
+ * POST /api/agencies/me/upload-seal
+ */
+router.post('/me/upload-seal', authenticate, requireRole('ADMIN'), upload.single('image'), agencyController.uploadCompanySeal);
+
+/**
+ * POST /api/agencies/me/upload-signature
+ */
+router.post('/me/upload-signature', authenticate, requireRole('ADMIN'), upload.single('image'), agencyController.uploadAuthorizedSignature);
 
 module.exports = router;

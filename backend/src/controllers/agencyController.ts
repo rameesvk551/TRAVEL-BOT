@@ -27,6 +27,24 @@ async function getWhatsAppConnection(req, res, next) {
   }
 }
 
+async function getWhatsAppChannels(req, res, next) {
+  try {
+    const data = await agencyService.getWhatsAppChannels(req.agency.id);
+    res.json({ success: true, data });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function deleteWhatsAppChannel(req, res, next) {
+  try {
+    const data = await agencyService.deleteWhatsAppChannel(req.agency.id, req.params.channelId);
+    res.json({ success: true, data, message: 'WhatsApp channel removed' });
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function createWhatsAppConnectSession(req, res, next) {
   try {
     const data = await agencyService.createMarketingOsConnectSession(req.agency.id, req.body || {});
@@ -121,18 +139,69 @@ async function disconnectInstagram(req, res, next) {
   }
 }
 
+async function uploadCompanyLogo(req, res, next) {
+  try {
+    if (!req.file) throw Object.assign(new Error('Image file is required'), { statusCode: 400, code: 'MISSING_FILE' });
+    const mediaService = require('../services/mediaService');
+    const agencyService = require('../services/agencyService');
+    const uploaded = await mediaService.uploadCompanyAsset(req.file.buffer, req.agency.id, 'logo');
+    await agencyService.updateCurrentAgency(req.agency.id, { companyLogoUrl: uploaded.secureUrl });
+    res.status(201).json({ success: true, data: { url: uploaded.secureUrl }, message: 'Logo uploaded' });
+  } catch (err) { next(err); }
+}
+
+async function uploadCompanySeal(req, res, next) {
+  try {
+    if (!req.file) throw Object.assign(new Error('Image file is required'), { statusCode: 400, code: 'MISSING_FILE' });
+    const mediaService = require('../services/mediaService');
+    const agencyService = require('../services/agencyService');
+    const uploaded = await mediaService.uploadCompanyAsset(req.file.buffer, req.agency.id, 'seal');
+    await agencyService.updateCurrentAgency(req.agency.id, { companySealUrl: uploaded.secureUrl });
+    res.status(201).json({ success: true, data: { url: uploaded.secureUrl }, message: 'Seal uploaded' });
+  } catch (err) { next(err); }
+}
+
+async function uploadAuthorizedSignature(req, res, next) {
+  try {
+    if (!req.file) throw Object.assign(new Error('Image file is required'), { statusCode: 400, code: 'MISSING_FILE' });
+    const mediaService = require('../services/mediaService');
+    const agencyService = require('../services/agencyService');
+    const uploaded = await mediaService.uploadCompanyAsset(req.file.buffer, req.agency.id, 'signature');
+    await agencyService.updateCurrentAgency(req.agency.id, { authorizedSignatureUrl: uploaded.secureUrl });
+    res.status(201).json({ success: true, data: { url: uploaded.secureUrl }, message: 'Signature uploaded' });
+  } catch (err) { next(err); }
+}
+
+// Uploads an arbitrary branding image (e.g. a per-document logo) and just
+// returns the hosted URL without binding it to a fixed agency column. The
+// caller stores the URL wherever it likes (e.g. a template's config.brand.logoUrl).
+async function uploadDocumentAsset(req, res, next) {
+  try {
+    if (!req.file) throw Object.assign(new Error('Image file is required'), { statusCode: 400, code: 'MISSING_FILE' });
+    const mediaService = require('../services/mediaService');
+    const uploaded = await mediaService.uploadCompanyAsset(req.file.buffer, req.agency.id, 'doc-asset');
+    res.status(201).json({ success: true, data: { url: uploaded.secureUrl }, message: 'Asset uploaded' });
+  } catch (err) { next(err); }
+}
+
 module.exports = {
   me,
   updateMe,
+  uploadDocumentAsset,
   getWebsiteStatus,
   updateWebsite,
   publishWebsite,
   unpublishWebsite,
   getWhatsAppConnection,
+  getWhatsAppChannels,
+  deleteWhatsAppChannel,
   createWhatsAppConnectSession,
   completeWhatsAppConnectSession,
   handleMarketingOsCallback,
   getInstagramConnection,
   connectInstagram,
   disconnectInstagram,
+  uploadCompanyLogo,
+  uploadCompanySeal,
+  uploadAuthorizedSignature,
 };

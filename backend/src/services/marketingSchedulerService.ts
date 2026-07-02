@@ -123,6 +123,34 @@ function buildTemplateVariables(template, customer, context = {}) {
 
   const count = getTemplateVariableCount(template);
   const defaultVariables = ['there', 'travel', 'our offer', 'today'];
+
+  // Named-variable templates: route each position by its mapped name + source.
+  const variableMap = Array.isArray(template?.variableMap) ? template.variableMap : [];
+  if (variableMap.length) {
+    const staticValues = context.variableValues && typeof context.variableValues === 'object'
+      ? context.variableValues
+      : {};
+    const resolveContactValue = (name) => {
+      if (/(phone|mobile|number)/.test(name)) return customer.phone || customer.phoneNumber || '';
+      return customer.name || 'there';
+    };
+    return Array.from({ length: count }, (_, index) => {
+      const mapping = variableMap[index];
+      if (mapping && mapping.source === 'CONTACT') {
+        return sanitizeTemplateParameter(resolveContactValue(String(mapping.name || '').toLowerCase()));
+      }
+      if (mapping) {
+        const provided = staticValues[mapping.name];
+        if (String(provided ?? '').trim()) return sanitizeTemplateParameter(provided);
+        // 'description'-like static var falls back to the campaign description.
+        if (/(description|details|offer|caption)/.test(String(mapping.name)) && featuredDetails) {
+          return sanitizeTemplateParameter(featuredDetails);
+        }
+      }
+      return sanitizeTemplateParameter(template.sampleVariables?.[index] || defaultVariables[index] || defaultVariables[defaultVariables.length - 1]);
+    });
+  }
+
   const variables = Array.from({ length: count }, (_, index) => {
     if (index === 0) return sanitizeTemplateParameter(customer.name || 'there');
     if (index === 1 && featuredDetails) return sanitizeTemplateParameter(featuredDetails);
@@ -442,6 +470,45 @@ async function buildRuntimeCampaignTemplate(campaign, template, agencyId) {
   runtimeTemplate.footer = replacePlaceholderAgencyText(runtimeTemplate.footer, agencyName);
 
   if (format === 'ITEM_CAROUSEL' || templateType === 'CAROUSEL') {
+    // Free-form UPLOAD carousel: cards carry their own uploaded media (no catalog).
+    // Map them onto the approved template's cards (Meta requires the sent card count
+    // to equal the template's card count, so we index per template card).
+    if (String(campaign.carouselConfig?.mode || 'CATALOG').toUpperCase() === 'UPLOAD') {
+      const uploadCards = (Array.isArray(campaign.carouselConfig?.cards) ? campaign.carouselConfig.cards : [])
+        .filter((card) => String(card?.mediaUrl || '').trim());
+      if (uploadCards.length < 2) {
+        throw new Error('Upload carousels require 2 to 10 cards, each with an image or video');
+      }
+      const baseCards = Array.isArray(runtimeTemplate.carouselCards) && runtimeTemplate.carouselCards.length > 0
+        ? runtimeTemplate.carouselCards
+        : uploadCards.map(() => ({}));
+      const carouselMediaType = String(campaign.carouselConfig?.mediaMode || campaign.mediaType || 'IMAGE').toUpperCase() === 'VIDEO'
+        ? 'VIDEO'
+        : 'IMAGE';
+      runtimeTemplate.carouselCards = baseCards.map((baseCard, index) => {
+        const card = uploadCards[index] || uploadCards[uploadCards.length - 1];
+        const description = replacePlaceholderAgencyText(card.body || card.title || `Card ${index + 1}`, agencyName).slice(0, 1024);
+        const templateBody = String(baseCard.body || '');
+        const hasVariable = /\{\{\s*\d+\s*\}\}/.test(templateBody);
+        return {
+          ...baseCard,
+          itemType: 'UPLOAD',
+          itemId: card.id,
+          title: card.title || baseCard.title || `Card ${index + 1}`,
+          // If the approved card body is a variable (e.g. "{{1}}"), keep that
+          // structure and supply this card's text as its own variable value so each
+          // card shows a distinct, agency-written description. If the template body
+          // is fixed text, Meta shows that fixed text (variables are ignored).
+          body: hasVariable ? templateBody : (templateBody || description),
+          bodyVariables: hasVariable ? [description] : [],
+          mediaType: carouselMediaType,
+          mediaUrl: card.mediaUrl,
+          imageUrl: card.mediaUrl,
+        };
+      });
+      return runtimeTemplate;
+    }
+
     const items = await resolveCampaignCarouselItems(campaign, agencyId);
     if (items.length < 2) {
       throw new Error('Carousel campaigns require 2 to 10 selected packages or properties');
@@ -470,19 +537,36 @@ async function buildRuntimeCampaignTemplate(campaign, template, agencyId) {
       return runtimeTemplate;
     }
 
+    // Per-card uploaded media (image/video) the agency set in the builder overrides
+    // the catalog item's own image. Keyed by catalog item id. Meta requires a single
+    // media type across the carousel, so the type follows the campaign's mediaMode.
+    const configuredCards = Array.isArray(campaign.carouselConfig?.cards) ? campaign.carouselConfig.cards : [];
+    const cardByItemId = new Map(
+      configuredCards.map((card) => [String(card?.itemId || card?.id || ''), card]).filter(([key]) => key)
+    );
+    const carouselMediaType = String(runtimeTemplate.mediaType || campaign.carouselConfig?.mediaMode || campaign.mediaType || 'IMAGE').toUpperCase() === 'VIDEO'
+      ? 'VIDEO'
+      : 'IMAGE';
+
     runtimeTemplate.carouselCards = items.map((item, index) => {
       const baseCard = baseCards[index] || baseCards[baseCards.length - 1] || {};
-      const mediaUrl = getCatalogRecordMediaUrl(item.record);
+      const configured = cardByItemId.get(String(item.record.id));
+      const uploadedMediaUrl = String(configured?.mediaUrl || '').trim();
+      const mediaUrl = uploadedMediaUrl || getCatalogRecordMediaUrl(item.record);
 
+      const caption = replacePlaceholderAgencyText(buildCampaignCarouselCaption(item.itemType, item.record), agencyName).slice(0, 1024);
+      const templateBody = String(baseCard.body || '');
+      const hasVariable = /\{\{\s*\d+\s*\}\}/.test(templateBody);
       return {
         ...baseCard,
         itemType: item.itemType,
         itemId: item.record.id,
         title: item.record.name || baseCard.title || `Card ${index + 1}`,
-        body: replacePlaceholderAgencyText(baseCard.body || buildCampaignCarouselCaption(item.itemType, item.record), agencyName).slice(0, 1024),
-        mediaType: String(baseCard.mediaType || runtimeTemplate.mediaType || campaign.mediaType || 'IMAGE').toUpperCase() === 'VIDEO'
-          ? 'VIDEO'
-          : 'IMAGE',
+        // Variable card body → fill {{1}} with this item's caption (distinct per card).
+        // Fixed card body → keep as-is (Meta shows the approved text).
+        body: hasVariable ? templateBody : (templateBody || caption),
+        bodyVariables: hasVariable ? [caption] : [],
+        mediaType: carouselMediaType,
         mediaUrl,
         imageUrl: mediaUrl,
       };
@@ -493,13 +577,25 @@ async function buildRuntimeCampaignTemplate(campaign, template, agencyId) {
 
   if (format === 'SECTION_CTA') {
     const featuredItem = await resolveCampaignFeaturedCatalogItem(campaign, agencyId);
-    const mediaUrl = await ensureWhatsAppTemplateImageUrl(getCatalogRecordMediaUrl(featuredItem?.record), agencyId);
+    const uploadedHeaderMediaUrl = String(campaign?.ctaConfig?.featuredMediaUrl || '').trim();
     const headerType = String(runtimeTemplate.headerType || '').toUpperCase();
-    if (headerType === 'IMAGE' && !mediaUrl) {
-      throw new Error('CTA campaigns require at least one selected package or property with an image');
-    }
-    if (headerType === 'IMAGE') {
-      runtimeTemplate.headerContent = mediaUrl;
+    if (headerType === 'VIDEO') {
+      // Optional per-campaign video: if the user uploaded one in the builder, it
+      // overrides the template's approved sample video; otherwise keep the sample.
+      if (uploadedHeaderMediaUrl) {
+        runtimeTemplate.headerContent = uploadedHeaderMediaUrl;
+      }
+    } else {
+      const mediaUrl = await ensureWhatsAppTemplateImageUrl(
+        uploadedHeaderMediaUrl || getCatalogRecordMediaUrl(featuredItem?.record),
+        agencyId
+      );
+      if (headerType === 'IMAGE' && !mediaUrl) {
+        throw new Error('CTA campaigns require an uploaded header image or at least one selected package/property with an image');
+      }
+      if (headerType === 'IMAGE') {
+        runtimeTemplate.headerContent = mediaUrl;
+      }
     }
     if (featuredItem?.record) {
       runtimeTemplate.featuredItem = {
@@ -520,24 +616,82 @@ async function buildRuntimeCampaignTemplate(campaign, template, agencyId) {
 
   runtimeTemplate.agencyName = agencyName;
   runtimeTemplate.campaignDescription = campaignDescription;
+  runtimeTemplate.variableValues = campaign?.ctaConfig?.variableValues
+    && typeof campaign.ctaConfig.variableValues === 'object'
+    ? campaign.ctaConfig.variableValues
+    : {};
   return runtimeTemplate;
 }
 
 async function sendCampaignCarouselEntry(customer, campaign, agencyId) {
   const context = { customerId: customer.id, agencyId };
+
+  // Free-form UPLOAD carousel: send each uploaded card as its own media+buttons
+  // message (no catalog), carrying that card's configured flow buttons.
+  if (String(campaign.carouselConfig?.mode || 'CATALOG').toUpperCase() === 'UPLOAD') {
+    const uploadCards = (Array.isArray(campaign.carouselConfig?.cards) ? campaign.carouselConfig.cards : [])
+      .filter((card) => String(card?.mediaUrl || '').trim());
+    if (!uploadCards.length) return null;
+    for (const card of uploadCards) {
+      const configuredButtons = Array.isArray(card?.buttons)
+        ? card.buttons.filter((btn) => btn?.action && String(btn?.buttonText || '').trim())
+        : [];
+      const buttons = configuredButtons.length > 0
+        ? configuredButtons.slice(0, 3).map((btn) => ({
+            id: `campaign_card_btn:${campaign.id}:${card.id}:${btn.buttonKey}`,
+            title: String(btn.buttonText).trim().slice(0, 20),
+          }))
+        : [{ id: `campaign_call_now:${campaign.id}`, title: 'Contact Us' }];
+      // NOTE: this interactive path renders an image header only; video upload cards
+      // are delivered via the approved-template carousel path (buildRuntimeCampaignTemplate).
+      await whatsappService.sendMediaButtonsMessage(
+        customer.phone,
+        String(card.title ? `*${card.title}*\n` : '') + String(card.body || ''),
+        card.mediaUrl,
+        buttons,
+        context,
+        {}
+      );
+    }
+    return uploadCards.length;
+  }
+
   const items = await resolveCampaignCarouselItems(campaign, agencyId);
   if (!items.length) return null;
 
+  // Per-card buttons the agency bound in the builder (open flow / url), keyed by
+  // the card's catalog item id so we stay aligned even if some records were filtered.
+  const cards = Array.isArray(campaign.carouselConfig?.cards) ? campaign.carouselConfig.cards : [];
+  const cardByItemId = new Map(
+    cards.map((card) => [String(card?.itemId || card?.id || ''), card]).filter(([key]) => key)
+  );
+
   for (const item of items) {
-    const buttons = [
-      { id: `campaign_carousel_enquire:${campaign.id}:${item.itemType}:${item.record.id}`, title: 'View Details' },
-      { id: `campaign_carousel_others:${campaign.id}:${item.itemType}`, title: 'View Others' },
-    ];
+    const card = cardByItemId.get(String(item.record.id));
+    const configuredButtons = Array.isArray(card?.buttons)
+      ? card.buttons.filter((btn) => btn?.action && String(btn?.buttonText || '').trim())
+      : [];
+
+    // WhatsApp interactive messages allow at most 3 reply buttons. When the agency
+    // configured their own card buttons, use those (up to 3) so they fully control
+    // the card's actions; otherwise fall back to the default View Details / Others.
+    let buttons;
+    if (configuredButtons.length > 0) {
+      buttons = configuredButtons.slice(0, 3).map((btn) => ({
+        id: `campaign_card_btn:${campaign.id}:${item.record.id}:${btn.buttonKey}`,
+        title: String(btn.buttonText).trim().slice(0, 20),
+      }));
+    } else {
+      buttons = [
+        { id: `campaign_carousel_enquire:${campaign.id}:${item.itemType}:${item.record.id}`, title: 'View Details' },
+        { id: `campaign_carousel_others:${campaign.id}:${item.itemType}`, title: 'View Others' },
+      ];
+    }
 
     await whatsappService.sendMediaButtonsMessage(
       customer.phone,
       buildCampaignCarouselCaption(item.itemType, item.record),
-      item.record.imageUrl,
+      String(card?.mediaUrl || '').trim() || item.record.imageUrl,
       buttons,
       context,
       { footerText: 'Tap View Details to know more.' }
@@ -580,6 +734,7 @@ async function sendToRecipient(recipient, campaign, template, agencyId) {
         } : null,
         featuredDetails: runtimeTemplate.featuredItem?.details,
         campaignDescription: runtimeTemplate.campaignDescription,
+        variableValues: runtimeTemplate.variableValues,
       });
 
       // Campaigns should send the actual approved template so Meta renders
@@ -752,9 +907,9 @@ async function processCampaignBroadcast(campaignId, agencyId, options = {}) {
       }
     }
 
-    const finalSent = await CampaignRecipient.count({ where: { campaignId, status: 'SENT' } });
-    const finalDelivered = await CampaignRecipient.count({ where: { campaignId, status: 'DELIVERED' } });
-    const finalRead = await CampaignRecipient.count({ where: { campaignId, status: 'READ' } });
+    const finalSent = await CampaignRecipient.count({ where: { campaignId, status: { [Op.in]: ['SENT', 'DELIVERED', 'READ', 'REPLIED'] } } });
+    const finalDelivered = await CampaignRecipient.count({ where: { campaignId, status: { [Op.in]: ['DELIVERED', 'READ', 'REPLIED'] } } });
+    const finalRead = await CampaignRecipient.count({ where: { campaignId, status: { [Op.in]: ['READ', 'REPLIED'] } } });
     const finalReplied = await CampaignRecipient.count({ where: { campaignId, status: 'REPLIED' } });
     const finalFailed = await CampaignRecipient.count({ where: { campaignId, status: 'FAILED' } });
 

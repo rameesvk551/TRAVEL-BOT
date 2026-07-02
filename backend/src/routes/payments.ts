@@ -30,4 +30,19 @@ router.post('/webhook', paymentController.webhook);
  */
 router.get('/booking/:bookingId', authenticate, requirePermission(PERMISSIONS.PAYMENTS_VIEW), paymentController.byBooking);
 
+/**
+ * GET /api/payments - List all payments with filtering and pagination
+ */
+router.get('/', authenticate, requirePermission(PERMISSIONS.PAYMENTS_VIEW), paymentController.list);
+
+/**
+ * GET /api/payments/:id/receipt - download the receipt PDF
+ */
+router.get('/:id/receipt', authenticate, requirePermission(PERMISSIONS.PAYMENTS_VIEW), paymentController.downloadReceipt);
+
+/**
+ * POST /api/payments/:id/receipt/send-whatsapp - send the receipt to the customer
+ */
+router.post('/:id/receipt/send-whatsapp', authenticate, requirePermission(PERMISSIONS.PAYMENTS_MANAGE), paymentController.sendReceipt);
+
 module.exports = router;

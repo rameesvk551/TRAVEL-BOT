@@ -1,25 +1,35 @@
+import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Link } from 'react-router-dom';
-import { 
-  EnvelopeIcon, 
-  LockClosedIcon, 
-  BuildingOfficeIcon, 
-  PhoneIcon, 
+import {
+  EnvelopeIcon,
+  LockClosedIcon,
+  BuildingOfficeIcon,
+  PhoneIcon,
   UserIcon,
   DevicePhoneMobileIcon,
-  ChevronRightIcon
+  BriefcaseIcon,
+  ChevronRightIcon,
+  EyeIcon,
+  EyeSlashIcon
 } from '@heroicons/react/24/outline';
 import { useRegister } from '../hooks/useAuth';
 import { registerSchema } from '../utils/validators';
+import { displayText } from '../utils/displayText';
+import { INDUSTRY_OPTIONS } from '../config/industryProfiles';
 
 import metaBadge from '../assets/meta_tech_provider_badge.png';
 
 export default function Signup() {
+  const [showPassword, setShowPassword] = useState(false);
   const registerMutation = useRegister();
-  const registerForm = useForm({ resolver: zodResolver(registerSchema) });
+  const registerForm = useForm({
+    resolver: zodResolver(registerSchema),
+    defaultValues: { industry: 'TRAVEL' },
+  });
 
-  const error = registerMutation.error?.response?.data?.error;
+  const error = displayText(registerMutation.error?.response?.data?.error || registerMutation.error?.message, '');
 
   return (
     <div className="min-h-dvh bg-[#f8fafc] font-inter selection:bg-indigo-100 selection:text-indigo-900 lg:h-dvh lg:overflow-hidden">
@@ -53,7 +63,20 @@ export default function Signup() {
             <form onSubmit={registerForm.handleSubmit((values) => registerMutation.mutate(values))} className="space-y-3">
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="sm:col-span-2">
-                  <label className="mb-1.5 block text-xs font-bold uppercase tracking-widest text-neutral-400">Agency Name</label>
+                  <label className="mb-1.5 block text-xs font-bold uppercase tracking-widest text-neutral-400">Business Type</label>
+                  <div className="input-icon-wrapper">
+                    <BriefcaseIcon className="icon-left h-5 w-5 absolute left-3" />
+                    <select {...registerForm.register('industry')} className="shell-input-rect input-with-icon border-neutral-200/60 bg-white focus:bg-white">
+                      {INDUSTRY_OPTIONS.map((opt) => (
+                        <option key={opt.value} value={opt.value}>{opt.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  {registerForm.formState.errors.industry ? <p className="mt-1 text-xs text-rose-500">{registerForm.formState.errors.industry.message}</p> : null}
+                </div>
+
+                <div className="sm:col-span-2">
+                  <label className="mb-1.5 block text-xs font-bold uppercase tracking-widest text-neutral-400">Business Name</label>
                   <div className="input-icon-wrapper">
                     <BuildingOfficeIcon className="icon-left h-5 w-5 absolute left-3" />
                     <input {...registerForm.register('agencyName')} className="shell-input-rect input-with-icon border-neutral-200/60 bg-white focus:bg-white" placeholder="Elite Travels" />
@@ -108,9 +131,25 @@ export default function Signup() {
 
                 <div className="sm:col-span-2">
                   <label className="mb-1.5 block text-xs font-bold uppercase tracking-widest text-neutral-400">Password</label>
-                  <div className="input-icon-wrapper">
+                  <div className="input-icon-wrapper relative">
                     <LockClosedIcon className="icon-left h-5 w-5 absolute left-3" />
-                    <input {...registerForm.register('agentPassword')} type="password" className="shell-input-rect input-with-icon border-neutral-200/60 bg-white focus:bg-white" placeholder="Minimum 8 characters" />
+                    <input 
+                      {...registerForm.register('agentPassword')} 
+                      type={showPassword ? "text" : "password"} 
+                      className="shell-input-rect input-with-icon border-neutral-200/60 bg-white focus:bg-white pr-10" 
+                      placeholder="Minimum 8 characters" 
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600 focus:outline-none"
+                    >
+                      {showPassword ? (
+                        <EyeSlashIcon className="h-5 w-5" />
+                      ) : (
+                        <EyeIcon className="h-5 w-5" />
+                      )}
+                    </button>
                   </div>
                   {registerForm.formState.errors.agentPassword ? <p className="mt-1 text-xs text-rose-500">{registerForm.formState.errors.agentPassword.message}</p> : null}
                 </div>

@@ -304,103 +304,244 @@ const DEFAULT_TEMPLATE_MEDIA = {
 };
 
 const PREBUILT_TEMPLATE_NAMES = [
-  'review_collection_campaign',
-  'cta_image_actions',
-  'cta_video_actions',
-  'carousel_image_enquiry',
-  'carousel_video_enquiry',
+  'lead_assignment_alert',
+  'image_cta_1btn',
+  'image_cta_2btn',
+  'video_cta_1btn',
+  'video_cta_2btn',
+  'image_carousel_1btn',
+  'image_carousel_2btn',
+  'video_carousel_1btn',
+  'video_carousel_2btn',
+  // Document-attachment templates for the "Send documents to WhatsApp" page.
+  'document_quotation',
+  'document_invoice',
+  'document_receipt',
 ];
+
+// Generic placeholder values so every field is customer-editable in the editor.
+const PLACEHOLDER_URL = 'https://example.com';
+const PLACEHOLDER_PHONE = '+10000000000';
+// Public sample PDF used only so Meta has a header media sample at approval time.
+// Each agency replaces it with its own document when cloning the template.
+const PLACEHOLDER_DOC_URL = 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf';
+
+// Mixed-CTA button sets reused across the generic presets.
+const CTA_BUTTONS_1 = [
+  { type: 'URL', text: 'Visit Website', url: PLACEHOLDER_URL },
+];
+const CTA_BUTTONS_2 = [
+  { type: 'URL', text: 'Visit Website', url: PLACEHOLDER_URL },
+  { type: 'PHONE_NUMBER', text: 'Call Us', phoneNumber: PLACEHOLDER_PHONE },
+];
+
+/**
+ * Builds 10 identical-structure carousel cards (Meta requires every card in a
+ * carousel to share the same media type and button layout).
+ */
+function genericCarouselCards(mediaType, cardButtons) {
+  const media = mediaType === 'VIDEO'
+    ? [DEFAULT_TEMPLATE_MEDIA.video1, DEFAULT_TEMPLATE_MEDIA.video2]
+    : [DEFAULT_TEMPLATE_MEDIA.image1, DEFAULT_TEMPLATE_MEDIA.image2, DEFAULT_TEMPLATE_MEDIA.image3];
+
+  return Array.from({ length: 10 }, (_, i) => ({
+    id: `card_${i + 1}`,
+    mediaType,
+    mediaUrl: media[i % media.length],
+    title: '',
+    body: `Headline ${i + 1} goes here — edit this text and replace the ${mediaType.toLowerCase()}.`,
+    buttons: cardButtons.map((b) => ({ ...b })),
+  }));
+}
 
 function curatedPrebuiltTemplates() {
   return [
     {
-      name: 'review_collection_campaign',
-      displayName: 'Review Collection',
-      category: 'MARKETING',
+      name: 'lead_assignment_alert',
+      displayName: 'Lead Assignment Alert',
+      category: 'UTILITY',
       headerType: 'NONE',
-      body: 'Hi {{1}}, welcome back from {{2}}!\n\nWe hope you had a fantastic trip. Could you take 2 minutes to share your experience with us? Reply with a rating from 1 to 5.',
-      variableCount: 2,
-      sampleVariables: ['Rohit', 'Switzerland'],
-      tags: ['review', 'collection', 'automated'],
-      icon: 'STAR',
+      body: '🔔 New lead assigned to you\n\nName: {{1}}\nPhone: {{2}}\nSource: {{3}}\nNotes: {{4}}\n\nPlease follow up promptly.',
+      variableCount: 4,
+      sampleVariables: ['John Doe', '+1 555 0100', 'Website', 'Requested a callback'],
+      tags: ['lead', 'assignment', 'internal', 'notification'],
+      icon: '🔔',
       buttons: [],
       templateType: 'STANDARD',
       carouselCards: [],
     },
     {
-      name: 'cta_image_actions',
-      displayName: 'CTA Image - Packages, Properties, Custom Trip',
+      name: 'image_cta_1btn',
+      displayName: 'Image with CTA (1 Button)',
       category: 'MARKETING',
       headerType: 'IMAGE',
       headerContent: DEFAULT_TEMPLATE_MEDIA.image1,
-      body: 'Hi {{1}}, explore handpicked travel options from us.\n\n{{2}}\n\nTap below to view packages, view properties, or request a custom trip.',
-      footer: 'Travel options',
+      body: 'Hi {{1}},\n\n{{2}}\n\nTap below to learn more.',
+      footer: 'Your brand here',
       variableCount: 2,
-      sampleVariables: ['there', 'Featured trip details'],
-      tags: ['cta', 'image', 'packages', 'properties', 'custom-trip'],
-      icon: 'IMAGE',
-      buttons: [
-        { type: 'QUICK_REPLY', text: 'View Properties' },
-        { type: 'QUICK_REPLY', text: 'View Packages' },
-        { type: 'QUICK_REPLY', text: 'Custom Trip' },
-      ],
+      sampleVariables: ['there', 'Add your message here'],
+      tags: ['cta', 'image', 'generic'],
+      icon: '🖼️',
+      buttons: CTA_BUTTONS_1.map((b) => ({ ...b })),
       templateType: 'STANDARD',
       carouselCards: [],
     },
     {
-      name: 'cta_video_actions',
-      displayName: 'CTA Video - Packages, Properties, Custom Trip',
+      name: 'image_cta_2btn',
+      displayName: 'Image with CTA (2 Buttons)',
+      category: 'MARKETING',
+      headerType: 'IMAGE',
+      headerContent: DEFAULT_TEMPLATE_MEDIA.image1,
+      body: 'Hi {{1}},\n\n{{2}}\n\nTap below to learn more or get in touch.',
+      footer: 'Your brand here',
+      variableCount: 2,
+      sampleVariables: ['there', 'Add your message here'],
+      tags: ['cta', 'image', 'generic'],
+      icon: '🖼️',
+      buttons: CTA_BUTTONS_2.map((b) => ({ ...b })),
+      templateType: 'STANDARD',
+      carouselCards: [],
+    },
+    {
+      name: 'video_cta_1btn',
+      displayName: 'Video with CTA (1 Button)',
       category: 'MARKETING',
       headerType: 'VIDEO',
       headerContent: DEFAULT_TEMPLATE_MEDIA.video1,
-      body: 'Hi {{1}}, watch this quick travel preview and choose what you want next: properties, packages, or a custom trip plan.',
-      footer: 'Travel options',
-      variableCount: 1,
-      sampleVariables: ['there'],
-      tags: ['cta', 'video', 'packages', 'properties', 'custom-trip'],
-      icon: 'VIDEO',
-      buttons: [
-        { type: 'QUICK_REPLY', text: 'View Properties' },
-        { type: 'QUICK_REPLY', text: 'View Packages' },
-        { type: 'QUICK_REPLY', text: 'Custom Trip' },
-      ],
+      body: 'Hi {{1}},\n\n{{2}}\n\nTap below to learn more.',
+      footer: 'Your brand here',
+      variableCount: 2,
+      sampleVariables: ['there', 'Add your message here'],
+      tags: ['cta', 'video', 'generic'],
+      icon: '🎬',
+      buttons: CTA_BUTTONS_1.map((b) => ({ ...b })),
       templateType: 'STANDARD',
       carouselCards: [],
     },
     {
-      name: 'carousel_image_enquiry',
-      displayName: 'Carousel Image - Enquiry & See Others',
+      name: 'video_cta_2btn',
+      displayName: 'Video with CTA (2 Buttons)',
       category: 'MARKETING',
-      headerType: 'NONE',
-      body: 'Hi {{1}}, browse these featured travel options and choose Enquiry or See Others.',
-      variableCount: 1,
-      sampleVariables: ['there'],
-      tags: ['carousel', 'image', 'enquiry', 'see-others'],
-      icon: 'CAROUSEL',
-      buttons: [],
-      templateType: 'CAROUSEL',
-      carouselCards: [
-        { id: 'card_1', mediaType: 'IMAGE', mediaUrl: DEFAULT_TEMPLATE_MEDIA.image1, body: 'Featured package with curated stays and sightseeing. Tap Enquiry for details.', buttons: [{ type: 'QUICK_REPLY', text: 'Enquiry' }, { type: 'QUICK_REPLY', text: 'See Others' }] },
-        { id: 'card_2', mediaType: 'IMAGE', mediaUrl: DEFAULT_TEMPLATE_MEDIA.image2, body: 'Premium holiday option with flexible dates and custom support.', buttons: [{ type: 'QUICK_REPLY', text: 'Enquiry' }, { type: 'QUICK_REPLY', text: 'See Others' }] },
-        { id: 'card_3', mediaType: 'IMAGE', mediaUrl: DEFAULT_TEMPLATE_MEDIA.image3, body: 'Popular getaway plan selected by our travel experts.', buttons: [{ type: 'QUICK_REPLY', text: 'Enquiry' }, { type: 'QUICK_REPLY', text: 'See Others' }] },
-      ],
+      headerType: 'VIDEO',
+      headerContent: DEFAULT_TEMPLATE_MEDIA.video1,
+      body: 'Hi {{1}},\n\n{{2}}\n\nTap below to learn more or get in touch.',
+      footer: 'Your brand here',
+      variableCount: 2,
+      sampleVariables: ['there', 'Add your message here'],
+      tags: ['cta', 'video', 'generic'],
+      icon: '🎬',
+      buttons: CTA_BUTTONS_2.map((b) => ({ ...b })),
+      templateType: 'STANDARD',
+      carouselCards: [],
     },
     {
-      name: 'carousel_video_enquiry',
-      displayName: 'Carousel Video - Enquiry & See Others',
+      name: 'image_carousel_1btn',
+      displayName: 'Image Carousel (1 Button)',
       category: 'MARKETING',
       headerType: 'NONE',
-      body: 'Hi {{1}}, watch these featured travel ideas and choose Enquiry or See Others.',
+      body: 'Hi {{1}}, take a look at these options.',
       variableCount: 1,
       sampleVariables: ['there'],
-      tags: ['carousel', 'video', 'enquiry', 'see-others'],
-      icon: 'CAROUSEL',
+      tags: ['carousel', 'image', 'generic'],
+      icon: '🎞️',
       buttons: [],
       templateType: 'CAROUSEL',
-      carouselCards: [
-        { id: 'card_1', mediaType: 'VIDEO', mediaUrl: DEFAULT_TEMPLATE_MEDIA.video1, body: 'Video preview of a featured package. Tap Enquiry for dates and pricing.', buttons: [{ type: 'QUICK_REPLY', text: 'Enquiry' }, { type: 'QUICK_REPLY', text: 'See Others' }] },
-        { id: 'card_2', mediaType: 'VIDEO', mediaUrl: DEFAULT_TEMPLATE_MEDIA.video2, body: 'Video preview of another travel option from our team.', buttons: [{ type: 'QUICK_REPLY', text: 'Enquiry' }, { type: 'QUICK_REPLY', text: 'See Others' }] },
-      ],
+      carouselCards: genericCarouselCards('IMAGE', CTA_BUTTONS_1),
+    },
+    {
+      name: 'image_carousel_2btn',
+      displayName: 'Image Carousel (2 Buttons)',
+      category: 'MARKETING',
+      headerType: 'NONE',
+      body: 'Hi {{1}}, take a look at these options.',
+      variableCount: 1,
+      sampleVariables: ['there'],
+      tags: ['carousel', 'image', 'generic'],
+      icon: '🎞️',
+      buttons: [],
+      templateType: 'CAROUSEL',
+      carouselCards: genericCarouselCards('IMAGE', CTA_BUTTONS_2),
+    },
+    {
+      name: 'video_carousel_1btn',
+      displayName: 'Video Carousel (1 Button)',
+      category: 'MARKETING',
+      headerType: 'NONE',
+      body: 'Hi {{1}}, take a look at these options.',
+      variableCount: 1,
+      sampleVariables: ['there'],
+      tags: ['carousel', 'video', 'generic'],
+      icon: '🎞️',
+      buttons: [],
+      templateType: 'CAROUSEL',
+      carouselCards: genericCarouselCards('VIDEO', CTA_BUTTONS_1),
+    },
+    {
+      name: 'video_carousel_2btn',
+      displayName: 'Video Carousel (2 Buttons)',
+      category: 'MARKETING',
+      headerType: 'NONE',
+      body: 'Hi {{1}}, take a look at these options.',
+      variableCount: 1,
+      sampleVariables: ['there'],
+      tags: ['carousel', 'video', 'generic'],
+      icon: '🎞️',
+      buttons: [],
+      templateType: 'CAROUSEL',
+      carouselCards: genericCarouselCards('VIDEO', CTA_BUTTONS_2),
+    },
+
+    // ── DOCUMENT-ATTACHMENT TEMPLATES (Send documents to WhatsApp) ──
+    // headerType DOCUMENT → the generated PDF is attached as the header media at
+    // send time; the placeholder URL is only a Meta approval sample. One per
+    // document type, tagged so the Document Sending page can surface exactly one.
+    {
+      name: 'document_quotation',
+      displayName: 'Quotation Document',
+      category: 'UTILITY',
+      headerType: 'DOCUMENT',
+      headerContent: PLACEHOLDER_DOC_URL,
+      body: 'Hi {{1}}, 👋\n\nThank you for your interest! Please find your travel quotation attached.\n\nReview the details and reply here if you have any questions — we are happy to help you plan the perfect trip.',
+      footer: 'Your travel team',
+      variableCount: 1,
+      sampleVariables: ['Rahul'],
+      tags: ['document-send', 'quotation'],
+      icon: '📄',
+      buttons: [],
+      templateType: 'STANDARD',
+      carouselCards: [],
+    },
+    {
+      name: 'document_invoice',
+      displayName: 'Invoice Document',
+      category: 'UTILITY',
+      headerType: 'DOCUMENT',
+      headerContent: PLACEHOLDER_DOC_URL,
+      body: 'Hi {{1}},\n\nPlease find your invoice attached for your records. 🧾\n\nIf you have any questions about the charges or need assistance with payment, just reply to this message.',
+      footer: 'Your travel team',
+      variableCount: 1,
+      sampleVariables: ['Rahul'],
+      tags: ['document-send', 'invoice'],
+      icon: '🧾',
+      buttons: [],
+      templateType: 'STANDARD',
+      carouselCards: [],
+    },
+    {
+      name: 'document_receipt',
+      displayName: 'Payment Receipt Document',
+      category: 'UTILITY',
+      headerType: 'DOCUMENT',
+      headerContent: PLACEHOLDER_DOC_URL,
+      body: 'Hi {{1}}, ✅\n\nThank you! We have received your payment. Your receipt is attached for your records.\n\nWe look forward to making your trip a memorable one. Reply here anytime you need us.',
+      footer: 'Your travel team',
+      variableCount: 1,
+      sampleVariables: ['Rahul'],
+      tags: ['document-send', 'receipt'],
+      icon: '🧾',
+      buttons: [],
+      templateType: 'STANDARD',
+      carouselCards: [],
     },
   ];
 }
@@ -413,147 +554,8 @@ function defaultApprovalTemplatesForAgency(agencyName = 'your travel team') {
     ...template,
     name: `${brandSlug}_${template.name}`,
     displayName: `${brand} ${template.displayName}`,
-    footer: template.footer === 'Travel options' ? brand : template.footer,
-    body: String(template.body || '')
-      .replace('from us', `from ${brand}`)
-      .replace('our team', brand),
+    footer: template.footer === 'Your brand here' ? brand : template.footer,
   }));
-
-  return [
-    {
-      name: `${brandSlug}_review_request`,
-      displayName: 'Review Request',
-      category: 'MARKETING',
-      language: 'en',
-      headerType: 'NONE',
-      body: "Welcome back, {{1}}! 🏡\n\nHow was your {{2}} trip? We'd love to hear about it!\n\n⭐ Rate your experience from 1-5\n📝 Share a quick review\n\nYour feedback helps us serve you better!",
-      buttons: [],
-      variableCount: 2,
-      sampleVariables: ['there', 'holiday'],
-      templateType: 'STANDARD',
-      carouselCards: [],
-    },
-    {
-      name: `${brandSlug}_abandoned_inquiry_2`,
-      displayName: 'Abandoned Inquiry 2',
-      category: 'MARKETING',
-      language: 'en',
-      headerType: 'NONE',
-      body: "Hi {{1}},\n\nLooks like we didn't finish planning your {{2}} trip! 🗺️\n\nNo worries — I'm here whenever you're ready. Your details are saved, so we can pick up right where we left off.\n\nJust reply START to continue.",
-      buttons: [
-        { type: 'QUICK_REPLY', text: 'Continue' },
-        { type: 'QUICK_REPLY', text: 'Start Over' },
-      ],
-      variableCount: 2,
-      sampleVariables: ['there', 'holiday'],
-      templateType: 'STANDARD',
-      carouselCards: [],
-    },
-    {
-      name: `${brandSlug}_carousel_image`,
-      displayName: `${brand} Carousel Image`,
-      category: 'MARKETING',
-      language: 'en',
-      headerType: 'NONE',
-      body: `Hi {{1}}, browse a few popular trips from ${brand} and choose the one you want details for.`,
-      buttons: [],
-      variableCount: 1,
-      sampleVariables: ['there'],
-      templateType: 'CAROUSEL',
-      carouselCards: [
-        { id: 'card_1', mediaType: 'IMAGE', mediaUrl: DEFAULT_TEMPLATE_MEDIA.image1, body: 'Paris City Romance. 5 Nights 6 Days. Starting from Rs 148999 per person.', buttons: [{ type: 'QUICK_REPLY', text: 'Enquiry' }, { type: 'QUICK_REPLY', text: 'See Others' }] },
-        { id: 'card_2', mediaType: 'IMAGE', mediaUrl: DEFAULT_TEMPLATE_MEDIA.image2, body: 'Maldives Water Villa Escape. 3 Nights 4 Days. Starting from Rs 135999 per person.', buttons: [{ type: 'QUICK_REPLY', text: 'Enquiry' }, { type: 'QUICK_REPLY', text: 'See Others' }] },
-        { id: 'card_3', mediaType: 'IMAGE', mediaUrl: DEFAULT_TEMPLATE_MEDIA.image3, body: 'Bali Island Bliss. 5 Nights 6 Days. Starting from Rs 67999 per person.', buttons: [{ type: 'QUICK_REPLY', text: 'Enquiry' }, { type: 'QUICK_REPLY', text: 'See Others' }] },
-      ],
-    },
-    {
-      name: `${brandSlug}_carousel_video`,
-      displayName: `${brand} Carousel Video`,
-      category: 'MARKETING',
-      language: 'en',
-      headerType: 'NONE',
-      body: `Hi {{1}}, explore featured travel ideas from ${brand} in this video carousel and reply to continue.`,
-      buttons: [],
-      variableCount: 1,
-      sampleVariables: ['there'],
-      templateType: 'CAROUSEL',
-      carouselCards: [
-        { id: 'card_1', mediaType: 'VIDEO', mediaUrl: DEFAULT_TEMPLATE_MEDIA.video1, body: `Beach Escape packages from ${brand}. Tap enquiry to get dates and pricing.`, buttons: [{ type: 'QUICK_REPLY', text: 'Enquiry' }, { type: 'QUICK_REPLY', text: 'See Others' }] },
-        { id: 'card_2', mediaType: 'VIDEO', mediaUrl: DEFAULT_TEMPLATE_MEDIA.video2, body: `Mountain Escape packages from ${brand}. Tap enquiry to get dates and pricing.`, buttons: [{ type: 'QUICK_REPLY', text: 'Enquiry' }, { type: 'QUICK_REPLY', text: 'See Others' }] },
-      ],
-    },
-    {
-      name: `${brandSlug}_cta_image`,
-      displayName: `${brand} CTA Image`,
-      category: 'MARKETING',
-      language: 'en',
-      headerType: 'IMAGE',
-      headerContent: DEFAULT_TEMPLATE_MEDIA.image1,
-      body: `Hi {{1}}, explore handpicked holiday packages from ${brand}.\n\n{{2}}\n\nTap below and our team will help you with pricing, dates, and a custom plan.`,
-      footer: brand,
-      buttons: [
-        { type: 'QUICK_REPLY', text: 'View Packages' },
-        { type: 'QUICK_REPLY', text: 'View Properties' },
-        { type: 'QUICK_REPLY', text: 'Custom Trip' },
-      ],
-      variableCount: 2,
-      sampleVariables: ['there', 'Maldives'],
-      templateType: 'STANDARD',
-      carouselCards: [],
-    },
-    {
-      name: `${brandSlug}_cta_video`,
-      displayName: `${brand} CTA Video`,
-      category: 'MARKETING',
-      language: 'en',
-      headerType: 'VIDEO',
-      headerContent: DEFAULT_TEMPLATE_MEDIA.video1,
-      body: `Hi {{1}}, take a quick look at the kind of trips ${brand} can plan for you. Tell us your dream destination like {{2}} and we will share the best options.`,
-      footer: brand,
-      buttons: [
-        { type: 'QUICK_REPLY', text: 'View Packages' },
-        { type: 'QUICK_REPLY', text: 'View Properties' },
-        { type: 'QUICK_REPLY', text: 'Custom Trip' },
-      ],
-      variableCount: 2,
-      sampleVariables: ['there', 'Dubai'],
-      templateType: 'STANDARD',
-      carouselCards: [],
-    },
-    {
-      name: `${brandSlug}_carousel_image_v2`,
-      displayName: `${brand} Carousel Image V2`,
-      category: 'MARKETING',
-      language: 'en',
-      headerType: 'NONE',
-      body: `Hi {{1}}, browse a few popular trips from ${brand} and choose the one you want details for.`,
-      buttons: [],
-      variableCount: 1,
-      sampleVariables: ['there'],
-      templateType: 'CAROUSEL',
-      carouselCards: [
-        { id: 'card_1', mediaType: 'IMAGE', mediaUrl: DEFAULT_TEMPLATE_MEDIA.image1, body: 'Paris City Romance. 5 Nights 6 Days. Starting from Rs 148999 per person.', buttons: [{ type: 'QUICK_REPLY', text: 'View Packages' }, { type: 'QUICK_REPLY', text: 'View Properties' }] },
-        { id: 'card_2', mediaType: 'IMAGE', mediaUrl: DEFAULT_TEMPLATE_MEDIA.image2, body: 'Maldives Water Villa Escape. 3 Nights 4 Days. Starting from Rs 135999 per person.', buttons: [{ type: 'QUICK_REPLY', text: 'View Packages' }, { type: 'QUICK_REPLY', text: 'View Properties' }] },
-        { id: 'card_3', mediaType: 'IMAGE', mediaUrl: DEFAULT_TEMPLATE_MEDIA.image3, body: 'Bali Island Bliss. 5 Nights 6 Days. Starting from Rs 67999 per person.', buttons: [{ type: 'QUICK_REPLY', text: 'View Packages' }, { type: 'QUICK_REPLY', text: 'View Properties' }] },
-      ],
-    },
-    {
-      name: `${brandSlug}_carousel_video_v2`,
-      displayName: `${brand} Carousel Video V2`,
-      category: 'MARKETING',
-      language: 'en',
-      headerType: 'NONE',
-      body: `Hi {{1}}, explore featured travel ideas from ${brand} in this video carousel and reply to continue.`,
-      buttons: [],
-      variableCount: 1,
-      sampleVariables: ['there'],
-      templateType: 'CAROUSEL',
-      carouselCards: [
-        { id: 'card_1', mediaType: 'VIDEO', mediaUrl: DEFAULT_TEMPLATE_MEDIA.video1, body: `Beach Escape packages from ${brand}. Tap enquiry to get dates and pricing.`, buttons: [{ type: 'QUICK_REPLY', text: 'View Packages' }, { type: 'QUICK_REPLY', text: 'View Properties' }] },
-        { id: 'card_2', mediaType: 'VIDEO', mediaUrl: DEFAULT_TEMPLATE_MEDIA.video2, body: `Mountain Escape packages from ${brand}. Tap enquiry to get dates and pricing.`, buttons: [{ type: 'QUICK_REPLY', text: 'View Packages' }, { type: 'QUICK_REPLY', text: 'View Properties' }] },
-      ],
-    },
-  ];
 }
 
 /**
@@ -632,6 +634,74 @@ function extractBodyVariablePositions(body) {
     .map((token) => parseInt(token.replace(/[^\d]/g, ''), 10))
     .filter((value) => Number.isFinite(value) && value > 0))]
     .sort((a, b) => a - b);
+}
+
+// Names that resolve from the contact per-recipient (not filled at campaign time).
+const RESERVED_CONTACT_VARIABLES = new Set([
+  'name', 'firstname', 'first_name', 'fullname', 'full_name',
+  'customer', 'customername', 'customer_name',
+  'phone', 'mobile', 'number', 'phone_number',
+]);
+
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Compile a body that may contain NAMED tokens ({{description}}, {{destination}})
+ * into Meta-safe positional placeholders ({{1}}, {{2}}) and produce an ordered
+ * variableMap. Numeric-only bodies are returned unchanged with an empty map
+ * (legacy behaviour). Tokens are positioned by order of first appearance.
+ */
+function compileNamedVariables(rawBody, existingSamples = []) {
+  const body = String(rawBody || '');
+  const tokenRe = /\{\{\s*([a-zA-Z][a-zA-Z0-9_]*|\d+)\s*\}\}/g;
+  const order = [];
+  let match;
+  while ((match = tokenRe.exec(body)) !== null) {
+    const key = match[1];
+    if (!order.includes(key)) order.push(key);
+  }
+
+  const hasNamed = order.some((key) => !/^\d+$/.test(key));
+  if (!hasNamed) {
+    return { body, variableMap: [] };
+  }
+
+  const variableMap = order.map((key, index) => ({
+    name: /^\d+$/.test(key) ? `var${index + 1}` : key.toLowerCase(),
+    source: RESERVED_CONTACT_VARIABLES.has(key.toLowerCase()) ? 'CONTACT' : 'STATIC',
+  }));
+
+  let positionalBody = body;
+  order.forEach((key, index) => {
+    const re = new RegExp(`\\{\\{\\s*${escapeRegExp(key)}\\s*\\}\\}`, 'g');
+    positionalBody = positionalBody.replace(re, `{{${index + 1}}}`);
+  });
+
+  // Realign provided sample values to the new positions where possible.
+  const sampleVariables = order.map((key, index) => {
+    const provided = existingSamples[index];
+    return String(provided || '').trim() ? provided : '';
+  });
+
+  return { body: positionalBody, variableMap, sampleVariables };
+}
+
+function normalizeVariableMap(value) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((entry) => {
+      if (!entry || typeof entry !== 'object') return null;
+      const name = String(entry.name || '').trim().toLowerCase();
+      if (!name) return null;
+      const source = String(entry.source || '').toUpperCase() === 'CONTACT'
+        || RESERVED_CONTACT_VARIABLES.has(name)
+        ? 'CONTACT'
+        : 'STATIC';
+      return { name, source };
+    })
+    .filter(Boolean);
 }
 
 function defaultSampleVariable(position) {
@@ -801,7 +871,11 @@ function normalizeProviderTemplate(mt) {
   return {
     id: mt.id || mt.metaTemplateId || mt.meta_template_id || name,
     name,
-    displayName: mt.displayName || mt.display_name || String(name || '').replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase()),
+    displayName: mt.displayName || mt.display_name || String(name || '')
+      .replace(/_corrected$/i, '')
+      .replace(/_3btn$/i, '')
+      .replace(/_/g, ' ')
+      .replace(/\b\w/g, (l) => l.toUpperCase()),
     category: normalizeCategory(mt.category),
     language: mt.language || mt.languageCode || mt.language_code || 'en',
     headerType: normalizeHeaderType(mt.headerType || mt.header_type || header?.format),
@@ -835,12 +909,21 @@ function extractProviderTemplates(result) {
 }
 
 function buildTemplateData(data, existing = null) {
-  const body = data.body ?? existing?.body ?? '';
-  const variableCount = countBodyVariables(body);
+  const rawBody = data.body ?? existing?.body ?? '';
   const rawSampleVariables = Array.isArray(data.sampleVariables)
     ? data.sampleVariables
     : (existing?.sampleVariables || []);
-  const sampleVariables = [...rawSampleVariables];
+
+  // Compile any named tokens ({{description}}) into Meta-safe positional ones.
+  const compiled = compileNamedVariables(rawBody, rawSampleVariables);
+  const body = compiled.body;
+  const variableMap = compiled.variableMap.length
+    ? compiled.variableMap
+    : normalizeVariableMap(data.variableMap ?? existing?.variableMap);
+  const variableCount = countBodyVariables(body);
+  const sampleVariables = Array.isArray(compiled.sampleVariables)
+    ? [...compiled.sampleVariables]
+    : [...rawSampleVariables];
   extractBodyVariablePositions(body).forEach((position) => {
     const index = position - 1;
     if (!String(sampleVariables[index] || '').trim()) {
@@ -866,6 +949,7 @@ function buildTemplateData(data, existing = null) {
       : normalizeCarouselCards(existing?.carouselCards || []),
     variableCount,
     sampleVariables,
+    variableMap,
     tags: Array.isArray(data.tags) ? data.tags : (existing?.tags || []),
     icon: data.icon ?? existing?.icon ?? '💬',
   };

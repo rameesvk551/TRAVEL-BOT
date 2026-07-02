@@ -1,7 +1,7 @@
 // FILE: /frontend/src/pages/CreateCampaign.jsx
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import React, { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   ChevronRight, ChevronLeft, Check, Users, Calendar,
   Send, Search, Megaphone, RotateCcw, Sparkles, Gift,
@@ -11,11 +11,16 @@ import {
   Home, Layers, Image, Video, Plus, X, ChevronDown, Type,
 } from 'lucide-react';
 import { useCreateCampaign, useUpdateCampaign, usePreviewAudience, useCampaign } from '../hooks/useCampaigns';
+import { useFlows } from '../hooks/useFlows';
 import { useAgencyTemplates, useCreateTemplate, useSubmitTemplate } from '../hooks/useTemplates';
+import { templatesApi } from '../api/templatesApi';
 import { packagesApi } from '../api/packagesApi';
 import { campaignsApi } from '../api/campaignsApi';
 import { propertiesApi } from '../api/propertiesApi';
 import { TemplatePickerDrawer, ConfigDrawer, TemplatePickerContent, ConfigContent } from '../components/CampaignStep2Drawers';
+
+// Heavy visual builder — only loaded when the user opens "Configure campaign flow".
+const SettingsFlowBuilder = lazy(() => import('./settings/SettingsFlowBuilder'));
 
 const CAMPAIGN_TYPES = [
   { value: 'BROADCAST', label: 'Broadcast', icon: Megaphone, desc: 'General announcement to all or filtered audiences', gradient: 'from-blue-500 to-indigo-600' },
@@ -366,12 +371,17 @@ const CTA_BUTTON_ACTIONS = [
   { value: 'SEND_ITINERARY', label: 'Send itinerary', itemTypes: ['PACKAGE'] },
   { value: 'CHECK_AVAILABILITY', label: 'Check availability', itemTypes: ['PACKAGE'] },
   { value: 'TALK_TO_AGENT', label: 'WhatsApp / talk to agent', itemTypes: ['PACKAGE'] },
+  { value: 'OPEN_FLOW', label: 'Open a WhatsApp flow', itemTypes: [] },
+  { value: 'OPEN_URL', label: 'Open a link / URL', itemTypes: [] },
 ];
 
 const CTA_BUTTON_ACTION_LABELS = CTA_BUTTON_ACTIONS.reduce((acc, action) => {
   acc[action.value] = action.label;
   return acc;
 }, {});
+
+// WhatsApp/Meta caps header videos at 16 MB.
+const MAX_HEADER_VIDEO_BYTES = 16 * 1024 * 1024;
 
 const normalizeButtonTextKey = (value = '') => String(value || '')
   .trim()
@@ -409,6 +419,8 @@ const buildDefaultButtonActions = (buttons = [], existing = {}) => buttons.reduc
     action: existing[key]?.action || '',
     itemType: existing[key]?.itemType || null,
     itemId: existing[key]?.itemId || null,
+    flowId: existing[key]?.flowId || null,
+    url: existing[key]?.url || '',
   };
   return acc;
 }, {});
@@ -428,6 +440,7 @@ const getDuplicateQuickReplyLabels = (buttons = []) => {
 export default function CreateCampaign() {
   const navigate = useNavigate();
   const { id: editId } = useParams();
+  const [searchParams] = useSearchParams();
 
   // If editing, fetch the campaign
   const { data: editData } = useCampaign(editId);
@@ -471,10 +484,21 @@ export default function CreateCampaign() {
   const [approvalStatus, setApprovalStatus] = useState(null);
   const [prebuiltPreviewId, setPrebuiltPreviewId] = useState('show_properties');
   const [showMediaModal, setShowMediaModal] = useState(false);
+  const [campaignFlowBuilderOpen, setCampaignFlowBuilderOpen] = useState(false);
+  const [campaignFlowSeed, setCampaignFlowSeed] = useState(null);
   const [mediaSearch, setMediaSearch] = useState('');
+  const [headerMediaUploading, setHeaderMediaUploading] = useState(false);
+  const [headerMediaUploadError, setHeaderMediaUploadError] = useState('');
   const [showTemplateDrawer, setShowTemplateDrawer] = useState(false);
   const [showConfigDrawer, setShowConfigDrawer] = useState(false);
   const fileInputRef = useRef(null);
+  const headerMediaInputRef = useRef(null);
+
+  useEffect(() => {
+    if (!isEdit && searchParams.get('audience') === 'import') {
+      setAudienceMode('import');
+    }
+  }, [isEdit, searchParams]);
 
   // Load edit data when available
   useEffect(() => {
@@ -677,6 +701,12 @@ export default function CreateCampaign() {
     ? buildDefaultButtonActions(ctaTemplateButtons, rawCtaButtonActions)
     : rawCtaButtonActions;
 
+  // Published WhatsApp flows the agency can bind to a button via the OPEN_FLOW action.
+  const { data: flowsData } = useFlows({});
+  const ctaFlowOptions = (flowsData?.data || [])
+    .filter((flow) => String(flow.status || '').toUpperCase() === 'PUBLISHED' && flow.metaFlowId)
+    .map((flow) => ({ id: flow.id, name: flow.name || 'Untitled flow', flowType: flow.flowType }));
+
   const getSectionByKey = useCallback(
     (key) => (formData.campaignSections || []).find((section) => section.key === key) || createDefaultCampaignSections().find((section) => section.key === key),
     [formData.campaignSections]
@@ -684,6 +714,15 @@ export default function CreateCampaign() {
 
   const selectedPackagesForSection = (section) => activePackages.filter((pkg) => (section?.selectedItemIds || []).includes(pkg.id));
   const selectedPropertiesForSection = (section) => activeProperties.filter((property) => (section?.selectedItemIds || []).includes(property.id));
+  const isAutoSection = (section) => String(section?.selectionMode || '').toUpperCase() !== 'MANUAL';
+  const sectionHasCatalogItems = (section) => {
+    if (!section) return false;
+    if ((section.selectedItemIds || []).length > 0) return true;
+    if (!isAutoSection(section)) return false;
+    if (section.itemType === 'PACKAGE') return activePackages.length > 0;
+    if (section.itemType === 'PROPERTY') return activeProperties.length > 0;
+    return false;
+  };
 
   const selectMessageExperience = (experience) => {
     setFormData((prev) => {
@@ -716,9 +755,173 @@ export default function CreateCampaign() {
       : [...selectedIds, itemId];
 
     updateSection(key, {
-      selectionMode: 'MANUAL',
+      selectionMode: nextSelectedIds.length > 0 ? 'MANUAL' : 'AUTO',
       selectedItemIds: nextSelectedIds,
     });
+  };
+
+  // Open ONE flow builder for the whole campaign, seeded with a starter node per
+  // template button. Each button is bound to the shared flow + its own entry node,
+  // so tapping it on WhatsApp enters the flow at that node.
+  const configureCampaignFlow = () => {
+    const buttons = ctaTemplateButtons;
+    if (!buttons.length) return;
+    const existingFlowId = formData.ctaConfig?.flowGraphId;
+    const flowId = existingFlowId || `campaign_flow_${Date.now()}`;
+
+    setFormData((prev) => {
+      const currentActions = prev.ctaConfig?.buttonActions || {};
+      const nextActions = { ...currentActions };
+      buttons.forEach((button, index) => {
+        const key = getButtonActionKey(button, index);
+        nextActions[key] = {
+          ...(currentActions[key] || {}),
+          buttonKey: key,
+          buttonText: String(button.text || button.title || `Button ${index + 1}`).trim(),
+          buttonIndex: index,
+          action: 'OPEN_FLOW',
+          flowKind: 'GRAPH',
+          flowId,
+          entryNodeId: `entry_${index + 1}`,
+          itemType: null,
+          itemId: null,
+          url: '',
+        };
+      });
+      return {
+        ...prev,
+        ctaConfig: { ...(prev.ctaConfig || {}), flowGraphId: flowId, buttonActions: nextActions },
+      };
+    });
+
+    setCampaignFlowSeed({
+      flowId,
+      buttons: buttons.map((button, index) => ({
+        label: String(button.text || button.title || `Button ${index + 1}`).trim(),
+        nodeId: `entry_${index + 1}`,
+      })),
+    });
+    setCampaignFlowBuilderOpen(true);
+  };
+
+  // Free-form UPLOAD carousel cards (no catalog needed).
+  const carouselMode = formData.carouselConfig?.mode || 'CATALOG';
+  const setCarouselMode = (mode) => setFormData((prev) => ({ ...prev, carouselConfig: { ...(prev.carouselConfig || {}), mode } }));
+  // Buttons every carousel card carries come ONLY from the approved template's card
+  // buttons. WhatsApp buttons must be template-defined, so if the template has none
+  // there are no buttons and no flow to configure. The agency doesn't add buttons.
+  const carouselTemplateButtonLabels = (() => {
+    const tplCards = selectedTemplate?.carouselCards;
+    return (Array.isArray(tplCards) && Array.isArray(tplCards[0]?.buttons) ? tplCards[0].buttons : [])
+      .map((b) => String(b.text || b.title || '').trim()).filter(Boolean).slice(0, 3);
+  })();
+  const carouselHasButtons = carouselTemplateButtonLabels.length > 0;
+  const carouselDefaultButtons = () => carouselTemplateButtonLabels.map((label, i) => ({ buttonKey: `btn_${i + 1}`, buttonText: label }));
+  const addUploadCard = () => setFormData((prev) => {
+    const cards = Array.isArray(prev.carouselConfig?.cards) ? prev.carouselConfig.cards : [];
+    if (cards.length >= 10) return prev;
+    const id = `card_${Date.now()}_${cards.length + 1}`;
+    const mediaType = (prev.carouselConfig?.mediaMode || prev.mediaType) === 'VIDEO' ? 'VIDEO' : 'IMAGE';
+    return { ...prev, carouselConfig: { ...(prev.carouselConfig || {}), mode: 'UPLOAD', cards: [...cards, { id, mediaUrl: '', mediaName: '', mediaType, title: '', body: '', keyword: '', buttons: carouselDefaultButtons() }] } };
+  });
+  const updateUploadCard = (id, updates) => setFormData((prev) => ({
+    ...prev,
+    carouselConfig: { ...(prev.carouselConfig || {}), cards: (prev.carouselConfig?.cards || []).map((c) => (c.id === id ? { ...c, ...updates } : c)) },
+  }));
+  // Bulk upload: pick several images/videos at once → one card per file.
+  const addUploadCardsFromFiles = async (files) => {
+    const list = Array.from(files || []);
+    const mediaType = (formData.carouselConfig?.mediaMode || formData.mediaType) === 'VIDEO' ? 'VIDEO' : 'IMAGE';
+    for (let i = 0; i < list.length; i += 1) {
+      const file = list[i];
+      try {
+        const res = await templatesApi.uploadMedia(file);
+        const url = res?.data?.url;
+        if (!url) continue;
+        // eslint-disable-next-line no-loop-func
+        setFormData((prev) => {
+          const cards = Array.isArray(prev.carouselConfig?.cards) ? prev.carouselConfig.cards : [];
+          if (cards.length >= 10) return prev;
+          const id = `card_${Date.now()}_${cards.length + 1}_${Math.round(Math.random() * 1e4)}`;
+          return { ...prev, carouselConfig: { ...(prev.carouselConfig || {}), mode: 'UPLOAD', cards: [...cards, { id, mediaUrl: url, mediaName: file.name, mediaType, title: '', body: '', keyword: '', buttons: carouselDefaultButtons() }] } };
+        });
+      } catch (err) { /* skip a failed file, keep going */ }
+    }
+  };
+  // Keep every upload card's buttons in sync with the approved template's buttons.
+  useEffect(() => {
+    if (carouselMode !== 'UPLOAD') return;
+    const cards = formData.carouselConfig?.cards;
+    if (!Array.isArray(cards) || cards.length === 0) return;
+    const desired = carouselTemplateButtonLabels;
+    const needsSync = cards.some((c) => {
+      const b = Array.isArray(c.buttons) ? c.buttons : [];
+      return b.length !== desired.length || b.some((x, i) => String(x.buttonText || '') !== desired[i]);
+    });
+    if (!needsSync) return;
+    setFormData((prev) => ({
+      ...prev,
+      carouselConfig: {
+        ...(prev.carouselConfig || {}),
+        cards: (prev.carouselConfig?.cards || []).map((c) => ({
+          ...c,
+          buttons: desired.map((label, i) => ({ ...((Array.isArray(c.buttons) && c.buttons[i]) || {}), buttonKey: `btn_${i + 1}`, buttonText: label })),
+        })),
+      },
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [carouselMode, selectedTemplate?.id]);
+
+  const removeUploadCard = (id) => setFormData((prev) => ({
+    ...prev,
+    carouselConfig: { ...(prev.carouselConfig || {}), cards: (prev.carouselConfig?.cards || []).filter((c) => c.id !== id) },
+  }));
+
+  // Carousel: ONE shared flow with a starter node per button slot. Every card's
+  // button[i] binds to the same flow + entry node `entry_{i+1}`. At runtime the
+  // tapped card's item + keyword are seeded into the flow, so replies always know
+  // which card the customer came from.
+  const configureCarouselFlow = () => {
+    const mode = formData.carouselConfig?.mode || 'CATALOG';
+    let cards = formData.carouselConfig?.cards || [];
+    // Catalog mode: cards are created lazily, so seed them from the selected items
+    // if the agency hasn't touched a card yet.
+    if (mode !== 'UPLOAD' && cards.length === 0) {
+      cards = selectedCarouselRecords.map((record) => ({ id: record.id, itemId: record.id, itemType: record.itemType, buttons: [] }));
+    }
+    if (cards.length === 0) return;
+    // If no card has buttons yet, give every card one default button so the flow
+    // still seeds with a starter node (matches the CTA "Configure flow" behaviour).
+    const existingMax = cards.reduce((max, card) => Math.max(max, Array.isArray(card.buttons) ? card.buttons.length : 0), 0);
+    const ensureDefault = existingMax === 0;
+    const maxButtons = ensureDefault ? 1 : existingMax;
+    const flowId = formData.carouselConfig?.flowGraphId || `carousel_flow_${Date.now()}`;
+    const slotLabels = Array.from({ length: maxButtons }, (_, i) => {
+      const card = cards.find((c) => Array.isArray(c.buttons) && String(c.buttons[i]?.buttonText || '').trim());
+      return String(card?.buttons[i]?.buttonText || (i === 0 ? 'Learn more' : `Button ${i + 1}`)).trim();
+    });
+
+    setFormData((prev) => {
+      const nextCards = cards.map((card) => {
+        const base = (Array.isArray(card.buttons) && card.buttons.length) ? card.buttons : (ensureDefault ? [{ buttonText: 'Learn more' }] : []);
+        return {
+          ...card,
+          buttons: base.map((btn, i) => ({
+            ...btn,
+            buttonKey: `btn_${i + 1}`,
+            buttonText: String(btn.buttonText || slotLabels[i] || `Button ${i + 1}`).trim(),
+            action: 'OPEN_FLOW',
+            flowKind: 'GRAPH',
+            flowId,
+            entryNodeId: `entry_${i + 1}`,
+          })),
+        };
+      });
+      return { ...prev, carouselConfig: { ...(prev.carouselConfig || {}), flowGraphId: flowId, cards: nextCards } };
+    });
+
+    setCampaignFlowSeed({ flowId, buttons: slotLabels.map((label, i) => ({ label, nodeId: `entry_${i + 1}` })) });
+    setCampaignFlowBuilderOpen(true);
   };
 
   const updateButtonAction = (button, index, updates = {}) => {
@@ -745,6 +948,14 @@ export default function CreateCampaign() {
         nextAction.itemType = allowedItemTypes[0] || null;
       }
 
+      // Targets are mutually exclusive per action type.
+      if (nextAction.action !== 'OPEN_FLOW') {
+        nextAction.flowId = null;
+        nextAction.flowKind = null;
+        nextAction.keyword = null;
+      }
+      if (nextAction.action !== 'OPEN_URL') nextAction.url = '';
+
       const sectionKey = getSectionKeyForButtonAction(nextAction.action, nextAction.itemType);
 
       const nextSections = ((prev.campaignSections || []).length ? prev.campaignSections : createDefaultCampaignSections()).map((section) => {
@@ -755,7 +966,7 @@ export default function CreateCampaign() {
         return {
           ...section,
           enabled: true,
-          selectionMode: 'MANUAL',
+          selectionMode: selectedItemIds.length > 0 ? 'MANUAL' : 'AUTO',
           selectedItemIds: section.itemType === 'CUSTOM_TRIP' ? [] : selectedItemIds,
         };
       });
@@ -795,6 +1006,19 @@ export default function CreateCampaign() {
     });
   };
 
+  // Upsert per-image card config (keyword + flow button), keyed by catalog item id.
+  const updateCarouselCard = (itemId, itemType, updates) => {
+    setFormData((prev) => {
+      const cards = Array.isArray(prev.carouselConfig?.cards) ? prev.carouselConfig.cards : [];
+      const idx = cards.findIndex((card) => String(card.itemId || card.id || '') === String(itemId));
+      const base = idx >= 0 ? cards[idx] : { itemId, itemType };
+      const nextCard = { ...base, itemId, itemType, ...updates };
+      const nextCards = idx >= 0 ? cards.map((card, i) => (i === idx ? nextCard : card)) : [...cards, nextCard];
+      return { ...prev, carouselConfig: { ...(prev.carouselConfig || {}), cards: nextCards } };
+    });
+  };
+  const carouselCards = formData.carouselConfig?.cards || [];
+
   const selectedCarouselRecords = carouselItems.map((item) => {
     const record = item.itemType === 'PROPERTY'
       ? activeProperties.find((property) => property.id === item.itemId)
@@ -823,9 +1047,19 @@ export default function CreateCampaign() {
     item.itemType === formData.ctaConfig?.featuredItemType
     && item.id === formData.ctaConfig?.featuredItemId
   ) || null;
-  const featuredCtaRecord = configuredFeaturedCtaRecord && getCatalogItemMediaUrl(configuredFeaturedCtaRecord)
-    ? configuredFeaturedCtaRecord
+  const uploadedHeaderMediaUrl = String(formData.ctaConfig?.featuredMediaUrl || '').trim();
+  const uploadedHeaderMediaName = String(formData.ctaConfig?.featuredMediaName || '').trim();
+  const uploadedHeaderMediaRecord = uploadedHeaderMediaUrl
+    ? {
+        id: 'uploaded-header-media',
+        itemType: 'UPLOAD',
+        name: uploadedHeaderMediaName || 'Uploaded header image',
+        imageUrl: uploadedHeaderMediaUrl,
+      }
     : null;
+  const featuredCtaRecord = uploadedHeaderMediaRecord || (configuredFeaturedCtaRecord && getCatalogItemMediaUrl(configuredFeaturedCtaRecord)
+    ? configuredFeaturedCtaRecord
+    : null);
   const ctaNeedsFeaturedMedia = builderMode === 'cta' && formData.mediaType === 'IMAGE';
   const compatibleApprovedTemplates = approvedTemplates.filter((template) =>
     isTemplateMediaCompatible(template, builderMode, formData.mediaType)
@@ -834,8 +1068,72 @@ export default function CreateCampaign() {
     (template.displayName || template.name || '').toLowerCase().includes(templateSearch.toLowerCase())
   );
   const campaignDescription = String(formData.ctaConfig?.description || '').trim();
+  // Named template variables filled at campaign time (excludes per-recipient contact vars).
+  const templateVariableMap = Array.isArray(selectedTemplate?.variableMap) ? selectedTemplate.variableMap : [];
+  const templateStaticVariables = templateVariableMap.filter((entry) => entry && entry.source === 'STATIC' && entry.name);
+  const campaignVariableValues = formData.ctaConfig?.variableValues || {};
+  const missingStaticVariables = templateStaticVariables.filter((entry) => !String(campaignVariableValues[entry.name] || '').trim());
+  const humanizeVariableName = (name) => String(name || '').replace(/[_-]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()).trim();
+  // Named templates resolve variables via variableValues; legacy positional ones use {{2}} = description.
   const templateNeedsCampaignDescription = builderMode === 'cta'
+    && templateStaticVariables.length === 0
     && /\{\{\s*2\s*\}\}/.test(formData.messageBody || selectedTemplate?.body || '');
+  const previewTemplateBody = (text) => {
+    if (templateVariableMap.length) {
+      return String(text || '').replace(/\{\{\s*(\d+)\s*\}\}/g, (_match, pos) => {
+        const entry = templateVariableMap[Number(pos) - 1];
+        if (!entry) return `Sample ${pos}`;
+        if (entry.source === 'CONTACT') return 'Rahul';
+        return String(campaignVariableValues[entry.name] || '').trim()
+          || selectedTemplate?.sampleVariables?.[Number(pos) - 1]
+          || humanizeVariableName(entry.name);
+      });
+    }
+    return renderTemplatePreviewText(text, campaignDescription);
+  };
+
+  const handleHeaderMediaUpload = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    const isVideoMode = formData.mediaType === 'VIDEO';
+    if (isVideoMode && !file.type.startsWith('video/')) {
+      setHeaderMediaUploadError('Please upload a video file.');
+      return;
+    }
+    if (!isVideoMode && !file.type.startsWith('image/')) {
+      setHeaderMediaUploadError('Please upload an image file.');
+      return;
+    }
+    if (file.type.startsWith('video/') && file.size > MAX_HEADER_VIDEO_BYTES) {
+      setHeaderMediaUploadError('Video is too large. WhatsApp allows videos up to 16 MB. Please compress it and try again.');
+      return;
+    }
+
+    setHeaderMediaUploading(true);
+    setHeaderMediaUploadError('');
+    try {
+      const response = await templatesApi.uploadMedia(file);
+      const url = response?.data?.url;
+      if (!url) throw new Error('Upload did not return a media URL');
+      setFormData((prev) => ({
+        ...prev,
+        ctaConfig: {
+          ...(prev.ctaConfig || {}),
+          featuredMediaUrl: url,
+          featuredMediaName: file.name,
+          featuredItemType: null,
+          featuredItemId: null,
+        },
+      }));
+      setMediaSearch('');
+      setShowMediaModal(false);
+    } catch (err) {
+      setHeaderMediaUploadError(err.response?.data?.error || err.message || 'Failed to upload image.');
+    } finally {
+      setHeaderMediaUploading(false);
+    }
+  };
 
   const applyApprovedTemplateSelection = useCallback((template) => {
     if (!template) {
@@ -883,7 +1181,9 @@ export default function CreateCampaign() {
         return {
           ...section,
           enabled: true,
-          selectionMode: section.itemType === 'CUSTOM_TRIP' ? section.selectionMode : 'MANUAL',
+          selectionMode: section.itemType === 'CUSTOM_TRIP' || (section.selectedItemIds || []).length > 0
+            ? section.selectionMode
+            : 'AUTO',
         };
       }),
       ctaConfig: {
@@ -926,13 +1226,22 @@ export default function CreateCampaign() {
     }
   }, [builderMode, approvedTemplates, formData.templateId, formData.type, formData.mediaType, applyApprovedTemplateSelection]);
 
-  const previewCarouselCards = builderMode === 'carousel'
-    ? buildCarouselPreviewCards(
-        selectedCarouselRecords,
-        selectedTemplate && normalizeTemplateType(selectedTemplate) === 'CAROUSEL' ? (selectedTemplate.carouselCards || []) : [],
-        formData.mediaType
-      )
-    : [];
+  const previewCarouselCards = builderMode !== 'carousel'
+    ? []
+    : carouselMode === 'UPLOAD'
+      ? (formData.carouselConfig?.cards || []).slice(0, 10).map((c, i) => ({
+          id: c.id,
+          title: c.title || `Card ${i + 1}`,
+          body: c.body || '',
+          mediaType: c.mediaType || 'IMAGE',
+          imageUrl: c.mediaType === 'VIDEO' ? '' : c.mediaUrl,
+          buttons: (Array.isArray(c.buttons) ? c.buttons : []).map((b) => ({ text: b.buttonText, title: b.buttonText })),
+        }))
+      : buildCarouselPreviewCards(
+          selectedCarouselRecords,
+          selectedTemplate && normalizeTemplateType(selectedTemplate) === 'CAROUSEL' ? (selectedTemplate.carouselCards || []) : [],
+          formData.mediaType
+        );
   const previewButtons = selectedTemplate && normalizeTemplateType(selectedTemplate) !== 'CAROUSEL'
     ? ctaTemplateButtons
     : [];
@@ -943,16 +1252,16 @@ export default function CreateCampaign() {
 
   const isCtaButtonActionReady = (entry = {}) => {
     if (!CTA_BUTTON_ACTION_LABELS[entry.action]) return false;
-    if (entry.action === 'VIEW_PACKAGES') return selectedPackageRecords.length > 0;
-    if (entry.action === 'VIEW_PROPERTIES') return selectedPropertyRecords.length > 0;
+    if (entry.action === 'VIEW_PACKAGES') return sectionHasCatalogItems(packageSection);
+    if (entry.action === 'VIEW_PROPERTIES') return sectionHasCatalogItems(propertySection);
     if (entry.action === 'VIEW_DETAILS') {
-      return !!entry.itemId || selectedPackageRecords.length + selectedPropertyRecords.length > 0;
+      return !!entry.itemId || sectionHasCatalogItems(packageSection) || sectionHasCatalogItems(propertySection);
     }
     if (entry.action === 'SEND_ITINERARY') {
-      return (entry.itemType === 'PACKAGE' && !!entry.itemId) || selectedPackageRecords.length > 0;
+      return (entry.itemType === 'PACKAGE' && !!entry.itemId) || sectionHasCatalogItems(packageSection);
     }
     if (entry.action === 'CHECK_AVAILABILITY') {
-      return (entry.itemType === 'PACKAGE' && !!entry.itemId) || selectedPackageRecords.length > 0;
+      return (entry.itemType === 'PACKAGE' && !!entry.itemId) || sectionHasCatalogItems(packageSection);
     }
     return true;
   };
@@ -962,6 +1271,7 @@ export default function CreateCampaign() {
     if (step === 1) {
       if (!(formData.templateId || formData.messageBody.trim().length > 0)) return false;
       if (templateNeedsCampaignDescription && !campaignDescription) return false;
+      if (templateStaticVariables.length && missingStaticVariables.length) return false;
       if (formData.format === 'SECTION_CTA') {
         if (hasTemplateButtonActions) {
           if (duplicateCtaButtonLabels.length > 0) return false;
@@ -970,19 +1280,21 @@ export default function CreateCampaign() {
             && (!ctaNeedsFeaturedMedia || !!featuredCtaRecord);
         }
 
-        if (activeSections.length === 0) return false;
+        if (activeSections.length === 0) {
+          if (ctaNeedsFeaturedMedia) return !!featuredCtaRecord;
+          return true;
+        }
         const catalogSections = activeSections.filter((section) => section.itemType === 'PACKAGE' || section.itemType === 'PROPERTY');
-        if (catalogSections.length === 0) return false;
-
-        const hasSelectionsForEnabledSections = catalogSections.every((section) => {
-          if (section.itemType === 'CUSTOM_TRIP') return true;
-          return (section.selectedItemIds || []).length > 0;
-        });
-        if (!hasSelectionsForEnabledSections) return false;
+        const hasItemsForEnabledSections = catalogSections.every(sectionHasCatalogItems);
+        if (!hasItemsForEnabledSections) return false;
         if (ctaNeedsFeaturedMedia) return !!featuredCtaRecord;
         return true;
       }
       if (formData.format === 'ITEM_CAROUSEL') {
+        if (carouselMode === 'UPLOAD') {
+          const mediaCards = (formData.carouselConfig?.cards || []).filter((card) => String(card?.mediaUrl || '').trim());
+          return mediaCards.length >= 2 && mediaCards.length <= 10;
+        }
         return carouselItems.length >= 2
           && carouselItems.length <= 10
           && selectedCarouselRecords.every((item) => getCatalogItemMediaUrl(item));
@@ -1268,7 +1580,7 @@ export default function CreateCampaign() {
                       </div>
                       {selectedTemplate && (
                         <p className="mt-2 text-xs text-slate-500 line-clamp-2 pl-[52px]">
-                          {renderTemplatePreviewText(selectedTemplate.body || '', campaignDescription)}
+                          {previewTemplateBody(selectedTemplate.body || '')}
                         </p>
                       )}
                     </button>
@@ -1321,11 +1633,16 @@ export default function CreateCampaign() {
                           </div>
                         )}
                         <p className="whitespace-pre-line leading-relaxed">
-                          {renderTemplatePreviewText(formData.messageBody || 'Your campaign message will appear here.', campaignDescription)}
+                          {previewTemplateBody(formData.messageBody || 'Your campaign message will appear here.')}
                         </p>
                         {templateNeedsCampaignDescription && !campaignDescription && (
                           <p className="mt-2 rounded-md bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-700">
                             This template uses {'{{2}}'}, so add a campaign description before continuing.
+                          </p>
+                        )}
+                        {templateStaticVariables.length > 0 && missingStaticVariables.length > 0 && (
+                          <p className="mt-2 rounded-md bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-700">
+                            Fill in {missingStaticVariables.map((entry) => `{{${entry.name}}}`).join(', ')} before continuing.
                           </p>
                         )}
                         {builderMode === 'cta' && (
@@ -1352,7 +1669,9 @@ export default function CreateCampaign() {
                                   <div className="flex aspect-[4/3] items-center justify-center bg-slate-100">{getCatalogItemMediaUrl(card) ? <img src={getCatalogItemMediaUrl(card)} alt="" className="h-full w-full object-cover" /> : <Image className="h-6 w-6 text-slate-400" />}</div>
                                   <div className="p-2">
                                     <p className="truncate text-[11px] font-bold text-slate-900">{card.title || card.name || `Card ${index + 1}`}</p>
-                                    <div className="mt-1.5 rounded border border-sky-100 px-2 py-0.5 text-center text-[9px] font-bold text-sky-700">{card.buttons?.[0]?.text || 'Enquiry'}</div>
+                                    {(card.buttons && card.buttons.length ? card.buttons : [{ text: 'Enquiry' }]).slice(0, 3).map((b, bi) => (
+                                      <div key={bi} className="mt-1.5 rounded border border-sky-100 px-2 py-0.5 text-center text-[9px] font-bold text-sky-700">{b.text || b.title || 'Button'}</div>
+                                    ))}
                                   </div>
                                 </div>
                               ))}
@@ -1401,6 +1720,16 @@ export default function CreateCampaign() {
                       ctaButtonActionLabels={CTA_BUTTON_ACTION_LABELS} duplicateCtaButtonLabels={duplicateCtaButtonLabels}
                       selectedCtaCatalogRecords={selectedCtaCatalogRecords} allCatalogRecords={allCatalogRecords}
                       getButtonActionKey={getButtonActionKey} updateButtonAction={updateButtonAction}
+                      ctaFlowOptions={ctaFlowOptions}
+                      carouselCards={carouselCards} updateCarouselCard={updateCarouselCard}
+                      onConfigureCampaignFlow={configureCampaignFlow}
+                      campaignFlowConfigured={!!formData.ctaConfig?.flowGraphId}
+                      onConfigureCarouselFlow={configureCarouselFlow}
+                      carouselFlowConfigured={!!formData.carouselConfig?.flowGraphId}
+                      carouselMode={carouselMode} setCarouselMode={setCarouselMode}
+                      addUploadCard={addUploadCard} updateUploadCard={updateUploadCard} removeUploadCard={removeUploadCard}
+                      addUploadCardsFromFiles={addUploadCardsFromFiles}
+                      carouselHasButtons={carouselHasButtons}
                     />
                   </div>
                 </div>
@@ -1410,7 +1739,7 @@ export default function CreateCampaign() {
               {/* ── Bottom Drawers (Mobile Only) ── */}
               <div className="lg:hidden">
                 <TemplatePickerDrawer open={showTemplateDrawer} onClose={() => setShowTemplateDrawer(false)} templates={filteredCompatibleTemplates} templateSearch={templateSearch} setTemplateSearch={setTemplateSearch} selectedId={formData.templateId} onSelect={applyApprovedTemplateSelection} builderMode={builderMode} />
-                <ConfigDrawer open={showConfigDrawer} onClose={() => setShowConfigDrawer(false)} builderMode={builderMode} formData={formData} setFormData={setFormData} selectedTemplate={selectedTemplate} activeSections={activeSections} packageSection={packageSection} propertySection={propertySection} customTripSection={customTripSection} activePackages={activePackages} activeProperties={activeProperties} selectedPackageRecords={selectedPackageRecords} selectedPropertyRecords={selectedPropertyRecords} updateSection={updateSection} toggleSectionItem={toggleSectionItem} ctaNeedsFeaturedMedia={ctaNeedsFeaturedMedia} featuredCtaRecord={featuredCtaRecord} getCatalogItemMediaUrl={getCatalogItemMediaUrl} setShowMediaModal={setShowMediaModal} selectMessageExperience={selectMessageExperience} MESSAGE_EXPERIENCES={MESSAGE_EXPERIENCES} currentExperience={currentExperience} carouselItems={carouselItems} toggleCarouselItem={toggleCarouselItem} selectedCarouselRecords={selectedCarouselRecords} ctaTemplateButtons={ctaTemplateButtons} ctaProviderButtons={ctaProviderButtons} ctaButtonActions={ctaButtonActions} ctaButtonActionOptions={CTA_BUTTON_ACTIONS} ctaButtonActionLabels={CTA_BUTTON_ACTION_LABELS} duplicateCtaButtonLabels={duplicateCtaButtonLabels} selectedCtaCatalogRecords={selectedCtaCatalogRecords} allCatalogRecords={allCatalogRecords} getButtonActionKey={getButtonActionKey} updateButtonAction={updateButtonAction} />
+                <ConfigDrawer open={showConfigDrawer} onClose={() => setShowConfigDrawer(false)} builderMode={builderMode} formData={formData} setFormData={setFormData} selectedTemplate={selectedTemplate} activeSections={activeSections} packageSection={packageSection} propertySection={propertySection} customTripSection={customTripSection} activePackages={activePackages} activeProperties={activeProperties} selectedPackageRecords={selectedPackageRecords} selectedPropertyRecords={selectedPropertyRecords} updateSection={updateSection} toggleSectionItem={toggleSectionItem} ctaNeedsFeaturedMedia={ctaNeedsFeaturedMedia} featuredCtaRecord={featuredCtaRecord} getCatalogItemMediaUrl={getCatalogItemMediaUrl} setShowMediaModal={setShowMediaModal} selectMessageExperience={selectMessageExperience} MESSAGE_EXPERIENCES={MESSAGE_EXPERIENCES} currentExperience={currentExperience} carouselItems={carouselItems} toggleCarouselItem={toggleCarouselItem} selectedCarouselRecords={selectedCarouselRecords} ctaTemplateButtons={ctaTemplateButtons} ctaProviderButtons={ctaProviderButtons} ctaButtonActions={ctaButtonActions} ctaButtonActionOptions={CTA_BUTTON_ACTIONS} ctaButtonActionLabels={CTA_BUTTON_ACTION_LABELS} duplicateCtaButtonLabels={duplicateCtaButtonLabels} selectedCtaCatalogRecords={selectedCtaCatalogRecords} allCatalogRecords={allCatalogRecords} getButtonActionKey={getButtonActionKey} updateButtonAction={updateButtonAction} ctaFlowOptions={ctaFlowOptions} carouselCards={carouselCards} updateCarouselCard={updateCarouselCard} onConfigureCampaignFlow={configureCampaignFlow} campaignFlowConfigured={!!formData.ctaConfig?.flowGraphId} onConfigureCarouselFlow={configureCarouselFlow} carouselFlowConfigured={!!formData.carouselConfig?.flowGraphId} carouselMode={carouselMode} setCarouselMode={setCarouselMode} addUploadCard={addUploadCard} updateUploadCard={updateUploadCard} removeUploadCard={removeUploadCard} addUploadCardsFromFiles={addUploadCardsFromFiles} carouselHasButtons={carouselHasButtons} />
               </div>
             </div>
           )}
@@ -1957,6 +2286,34 @@ export default function CreateCampaign() {
         </div>
       </div>
       {/* ── Media Selection Modal ── */}
+      {campaignFlowBuilderOpen && (
+        <div className="fixed inset-0 z-[120] flex flex-col bg-white">
+          <div className="flex items-center justify-between border-b border-slate-200 px-4 py-2.5">
+            <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
+              <Zap className="h-4 w-4 text-[#008069]" />
+              Campaign flow — one entry per template button
+            </div>
+            <button
+              type="button"
+              onClick={() => setCampaignFlowBuilderOpen(false)}
+              className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50"
+            >
+              <X className="h-4 w-4" />
+              Done
+            </button>
+          </div>
+          <div className="min-h-0 flex-1 overflow-hidden">
+            <Suspense fallback={<div className="p-8 text-sm text-slate-500">Loading builder…</div>}>
+              <SettingsFlowBuilder
+                fullScreen
+                initialFlowId={campaignFlowSeed?.flowId || null}
+                initialButtons={campaignFlowSeed?.buttons || null}
+              />
+            </Suspense>
+          </div>
+        </div>
+      )}
+
       {showMediaModal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6">
           <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setShowMediaModal(false)} />
@@ -1964,25 +2321,93 @@ export default function CreateCampaign() {
             <div className="flex items-center justify-between border-b border-slate-100 p-5">
               <div>
                 <h3 className="text-lg font-bold text-slate-900">Select Header Media</h3>
-                <p className="text-xs text-slate-500 mt-0.5">Choose a package or property to feature in the CTA image header.</p>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {formData.mediaType === 'VIDEO'
+                    ? 'Upload a video (max 16 MB) to use in the WhatsApp broadcast header. Leave empty to use the template’s approved video.'
+                    : 'Upload an image or choose a package/property to feature in the CTA image header.'}
+                </p>
               </div>
               <button onClick={() => setShowMediaModal(false)} className="p-2 rounded-xl hover:bg-slate-100 transition text-slate-500">
                 <X className="w-5 h-5" />
               </button>
             </div>
             <div className="p-4 border-b border-slate-100 bg-slate-50/50">
-              <div className="relative">
-                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                <input
-                  type="text"
-                  placeholder="Search packages or properties..."
-                  value={mediaSearch}
-                  onChange={(e) => setMediaSearch(e.target.value)}
-                  className="w-full rounded-xl border border-slate-200 bg-white pl-10 pr-4 py-2.5 text-sm text-slate-700 outline-none transition focus:border-teal-400 focus:ring-4 focus:ring-teal-400/10"
-                />
+              <div className="mb-3 rounded-2xl border border-dashed border-slate-300 bg-white p-3">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex min-w-0 items-center gap-3">
+                    {uploadedHeaderMediaUrl ? (
+                      formData.mediaType === 'VIDEO' ? (
+                        <video src={uploadedHeaderMediaUrl} className="h-14 w-14 rounded-xl object-cover shadow-sm" muted />
+                      ) : (
+                        <img src={uploadedHeaderMediaUrl} alt="" className="h-14 w-14 rounded-xl object-cover shadow-sm" />
+                      )
+                    ) : (
+                      <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-slate-100 text-slate-400">
+                        <Upload className="h-5 w-5" />
+                      </div>
+                    )}
+                    <div className="min-w-0">
+                      <p className="text-sm font-bold text-slate-900">{formData.mediaType === 'VIDEO' ? 'Upload header video' : 'Upload header image'}</p>
+                      <p className="mt-0.5 truncate text-xs text-slate-500">
+                        {uploadedHeaderMediaUrl
+                          ? (uploadedHeaderMediaName || `Uploaded ${formData.mediaType === 'VIDEO' ? 'video' : 'image'} selected`)
+                          : `This ${formData.mediaType === 'VIDEO' ? 'video' : 'image'} will be used in the WhatsApp broadcast header.`}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    {uploadedHeaderMediaUrl && (
+                      <button
+                        type="button"
+                        onClick={() => setFormData((prev) => ({
+                          ...prev,
+                          ctaConfig: {
+                            ...(prev.ctaConfig || {}),
+                            featuredMediaUrl: '',
+                            featuredMediaName: '',
+                          },
+                        }))}
+                        className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 transition hover:bg-slate-100"
+                      >
+                        Clear
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => headerMediaInputRef.current?.click()}
+                      disabled={headerMediaUploading}
+                      className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-xs font-bold text-white transition hover:bg-slate-800 disabled:opacity-60"
+                    >
+                      <Upload className="h-4 w-4" />
+                      {headerMediaUploading ? 'Uploading...' : (formData.mediaType === 'VIDEO' ? 'Upload Video' : 'Upload Image')}
+                    </button>
+                    <input
+                      ref={headerMediaInputRef}
+                      type="file"
+                      accept={formData.mediaType === 'VIDEO' ? 'video/*' : 'image/*'}
+                      className="hidden"
+                      onChange={handleHeaderMediaUpload}
+                    />
+                  </div>
+                </div>
+                {headerMediaUploadError && (
+                  <p className="mt-2 text-xs font-semibold text-rose-600">{headerMediaUploadError}</p>
+                )}
               </div>
+              {formData.mediaType !== 'VIDEO' && (
+                <div className="relative">
+                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="Search packages or properties..."
+                    value={mediaSearch}
+                    onChange={(e) => setMediaSearch(e.target.value)}
+                    className="w-full rounded-xl border border-slate-200 bg-white pl-10 pr-4 py-2.5 text-sm text-slate-700 outline-none transition focus:border-teal-400 focus:ring-4 focus:ring-teal-400/10"
+                  />
+                </div>
+              )}
             </div>
-            <div className="flex-1 overflow-y-auto p-4 bg-slate-50/30">
+            <div className={`flex-1 overflow-y-auto p-4 bg-slate-50/30 ${formData.mediaType === 'VIDEO' ? 'hidden' : ''}`}>
               <div className="grid gap-2">
                 {allCatalogRecords
                   .filter(item => getCatalogItemMediaUrl(item) && item.name.toLowerCase().includes(mediaSearch.toLowerCase()))
@@ -1998,6 +2423,8 @@ export default function CreateCampaign() {
                               ...(prev.ctaConfig || {}),
                               featuredItemType: item.itemType,
                               featuredItemId: item.id,
+                              featuredMediaUrl: '',
+                              featuredMediaName: '',
                             },
                           }));
                           setShowMediaModal(false);

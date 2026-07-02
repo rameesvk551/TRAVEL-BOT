@@ -14,6 +14,11 @@ export const useAuthStore = create(
       agency: null,
       accessToken: null,
       refreshToken: null,
+      // Runtime-only flag (not persisted): true once the stored session has been
+      // validated/refreshed on app boot. Guards wait on this to avoid flashing login.
+      bootstrapped: false,
+
+      setBootstrapped: (value) => set({ bootstrapped: value }),
 
       setAuth: (data) =>
         set({

@@ -27,6 +27,8 @@ async function start() {
     } else {
       await sequelize.sync();
       console.log('Database synced');
+      await ensureProductionSchema();
+      console.log('Development schema checked');
     }
     
     await seedPrebuiltTemplates();

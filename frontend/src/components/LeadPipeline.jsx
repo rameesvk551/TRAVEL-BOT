@@ -16,7 +16,23 @@ export default function LeadPipeline({ onLeadClick, leads: providedLeads }) {
   const updateLead = useUpdateLead();
   const [draggedLead, setDraggedLead] = useState(null);
   const [dragOverCol, setDragOverCol] = useState(null);
-  const [mobileStatus, setMobileStatus] = useState(LEAD_PIPELINE_COLUMNS[0]?.key);
+  const { data: stagesResponse } = useQuery({
+    queryKey: ['pipelineStages'],
+    queryFn: () => client.get('/crm/pipeline-stages').then((r) => r.data),
+  });
+  
+  const pipelineStages = stagesResponse?.data || [];
+  
+  // Map backend stages to the column format used by the component
+  const columns = pipelineStages.length > 0 
+    ? pipelineStages.filter(s => s.isActive).map(s => ({
+        key: s.id, // Using pipelineStageId as the key instead of status
+        label: s.name,
+        color: s.color,
+      }))
+    : LEAD_PIPELINE_COLUMNS;
+
+  const [mobileStatus, setMobileStatus] = useState(columns[0]?.key);
 
   const hasProvidedLeads = Array.isArray(providedLeads);
   const leads = hasProvidedLeads ? providedLeads : data?.data?.data || [];
@@ -28,8 +44,9 @@ export default function LeadPipeline({ onLeadClick, leads: providedLeads }) {
 
   const agents = agentsResponse?.data || [];
 
-  const getLeadsByStatus = (status) =>
-    leads.filter((l) => l.status === status);
+  const getLeadsByStatus = (key) => {
+    return leads.filter((l) => (l.pipelineStageId === key) || (l.status === key && pipelineStages.length === 0));
+  };
 
   const handleDragStart = (e, lead) => {
     setDraggedLead(lead);
@@ -49,15 +66,22 @@ export default function LeadPipeline({ onLeadClick, leads: providedLeads }) {
   const handleDrop = (e, newStatus) => {
     e.preventDefault();
     setDragOverCol(null);
-    if (draggedLead && draggedLead.status !== newStatus) {
-      updateLead.mutate({ id: draggedLead.id, data: { status: newStatus } });
+    if (draggedLead && draggedLead.pipelineStageId !== newStatus && draggedLead.status !== newStatus) {
+      if (pipelineStages.length > 0) {
+        updateLead.mutate({ id: draggedLead.id, data: { pipelineStageId: newStatus } });
+      } else {
+        updateLead.mutate({ id: draggedLead.id, data: { status: newStatus } });
+      }
     }
     setDraggedLead(null);
   };
 
   function handleStatusChange(leadId, newStatus) {
-    if (!leadId) return;
-    updateLead.mutate({ id: leadId, data: { status: newStatus } });
+    if (pipelineStages.length > 0) {
+      updateLead.mutate({ id: leadId, data: { pipelineStageId: newStatus } });
+    } else {
+      updateLead.mutate({ id: leadId, data: { status: newStatus } });
+    }
   }
 
   function handleAssignAgent(leadId, agentId) {
@@ -68,7 +92,7 @@ export default function LeadPipeline({ onLeadClick, leads: providedLeads }) {
   if (!hasProvidedLeads && isLoading) {
     return (
       <div className="flex gap-6 overflow-x-auto pb-4 hide-scrollbar">
-        {LEAD_PIPELINE_COLUMNS.map((col) => (
+        {columns.map((col) => (
           <div key={col.key} className="w-[320px] shrink-0 rounded-2xl border border-neutral-200/60 bg-neutral-50/30 p-5">
             <div className="flex items-center justify-between mb-6">
               <div className="h-5 bg-neutral-200 rounded-md w-24 animate-pulse" />
@@ -93,15 +117,14 @@ export default function LeadPipeline({ onLeadClick, leads: providedLeads }) {
       </div>
     );
   }
-
-  const activeMobileColumn = LEAD_PIPELINE_COLUMNS.find((col) => col.key === mobileStatus) || LEAD_PIPELINE_COLUMNS[0];
+  const activeMobileColumn = columns.find((col) => col.key === mobileStatus) || columns[0];
   const mobileLeads = getLeadsByStatus(activeMobileColumn?.key);
 
   return (
     <>
     <div className="md:hidden">
       <div className="-mx-1 mb-3 flex gap-1 overflow-x-auto px-1 hide-scrollbar">
-        {LEAD_PIPELINE_COLUMNS.map((col) => (
+        {columns.map((col) => (
           <button
             key={col.key}
             type="button"
@@ -137,7 +160,7 @@ export default function LeadPipeline({ onLeadClick, leads: providedLeads }) {
     </div>
 
     <div className="hidden gap-4 overflow-x-auto pb-4 md:flex hide-scrollbar">
-      {LEAD_PIPELINE_COLUMNS.map((col) => {
+      {columns.map((col) => {
         const colLeads = getLeadsByStatus(col.key);
         const isDragOver = dragOverCol === col.key;
         const overdueCount = colLeads.filter((lead) =>
@@ -162,7 +185,8 @@ export default function LeadPipeline({ onLeadClick, leads: providedLeads }) {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
                   <div
-                    className={`w-2.5 h-2.5 rounded-full ${getStatusDotColor(col.key)}`}
+                    className={`w-2.5 h-2.5 rounded-full`}
+                    style={{ backgroundColor: col.color || '#5b7c99' }}
                   />
                   <h3 className="text-sm font-semibold text-neutral-800">
                     {col.label}

@@ -7,9 +7,11 @@ import { usePlatformAuthStore } from './store/platformAuthStore';
 import { useUiStore } from './store/uiStore';
 import { useBrandingStore } from './store/brandingStore';
 import { useBranding } from './hooks/useBranding';
+import { useAuthInit } from './hooks/useAuthInit';
 import { industryModuleVisible, TRAVEL_INDUSTRY } from './config/industryProfiles';
 import Sidebar from './components/Sidebar';
 import AppTopbar from './components/AppTopbar';
+import PunchGate from './components/PunchGate';
 
 const Login = lazy(() => import('./pages/Login'));
 const ForgotPassword = lazy(() => import('./pages/ForgotPassword'));
@@ -19,20 +21,28 @@ const Leads = lazy(() => import('./pages/Leads'));
 const FollowUps = lazy(() => import('./pages/FollowUps'));
 const Bookings = lazy(() => import('./pages/Bookings'));
 const BookingForm = lazy(() => import('./pages/BookingForm'));
+const Quotations = lazy(() => import('./pages/Quotations'));
+const QuotationForm = lazy(() => import('./pages/QuotationForm'));
 const Customers = lazy(() => import('./pages/Customers'));
 const WhatsAppInbox = lazy(() => import('./pages/WhatsAppInbox'));
 const Packages = lazy(() => import('./pages/Packages'));
 const PackageForm = lazy(() => import('./pages/PackageForm'));
+const PackageFinance = lazy(() => import('./pages/PackageFinance'));
 const Properties = lazy(() => import('./pages/Properties'));
 const PropertyDetails = lazy(() => import('./pages/PropertyDetails'));
 const PropertyForm = lazy(() => import('./pages/PropertyForm'));
 const Payments = lazy(() => import('./pages/Payments'));
 const Accounts = lazy(() => import('./pages/Accounts'));
 const Analytics = lazy(() => import('./pages/Analytics'));
+const ActivityLog = lazy(() => import('./pages/ActivityLog'));
 const SettingsLayout = lazy(() => import('./pages/settings/SettingsLayout'));
 const SettingsGeneral = lazy(() => import('./pages/settings/SettingsGeneral'));
 const SettingsCompanyProfile = lazy(() => import('./pages/settings/SettingsCompanyProfile'));
 const SettingsInvoiceTemplates = lazy(() => import('./pages/settings/SettingsInvoiceTemplates'));
+const SettingsQuotationTemplates = lazy(() => import('./pages/settings/SettingsQuotationTemplates'));
+const SettingsItineraryTemplates = lazy(() => import('./pages/settings/SettingsItineraryTemplates'));
+const SettingsReceiptTemplates = lazy(() => import('./pages/settings/SettingsReceiptTemplates'));
+const SettingsDocuments = lazy(() => import('./pages/settings/SettingsDocuments'));
 const SettingsWelcomeMenu = lazy(() => import('./pages/settings/SettingsWelcomeMenu'));
 const SettingsFlowBuilder = lazy(() => import('./pages/settings/SettingsFlowBuilder'));
 const SettingsInstagramFlowBuilder = lazy(() => import('./pages/settings/SettingsInstagramFlowBuilder'));
@@ -41,6 +51,11 @@ const SettingsIntegrations = lazy(() => import('./pages/settings/SettingsIntegra
 const SettingsSidebarModules = lazy(() => import('./pages/settings/SettingsSidebarModules'));
 const SettingsApiKeys = lazy(() => import('./pages/settings/SettingsApiKeys'));
 const SettingsVendorTypes = lazy(() => import('./pages/settings/SettingsVendorTypes'));
+const SettingsLeadSources = lazy(() => import('./pages/settings/SettingsLeadSources'));
+const SettingsPipelineStatuses = lazy(() => import('./pages/settings/SettingsPipelineStatuses'));
+const SettingsAccounts = lazy(() => import('./pages/settings/SettingsAccounts'));
+const SettingsLeadForm = lazy(() => import('./pages/settings/SettingsLeadForm'));
+const LeadFormPage = lazy(() => import('./pages/LeadFormPage'));
 const WebsiteBuilder = lazy(() => import('./pages/WebsiteBuilder'));
 const Templates = lazy(() => import('./pages/Templates'));
 const Flows = lazy(() => import('./pages/Flows'));
@@ -88,7 +103,16 @@ function RouteLoading() {
  */
 function ProtectedRoute({ children }) {
   const accessToken = useAuthStore((s) => s.accessToken);
+  const bootstrapped = useAuthStore((s) => s.bootstrapped);
+
+  // Hold the loader until the boot refresh resolves. The session may live only in
+  // the HttpOnly cookie (e.g. Safari PWA after localStorage eviction), which JS
+  // can't see — so we must let useAuthInit attempt a restore before deciding.
+  if (!bootstrapped) return <RouteLoading />;
+
+  // Boot finished and there's still no usable session — go to login.
   if (!accessToken) return <Navigate to="/login" replace />;
+
   return children;
 }
 
@@ -132,11 +156,12 @@ function AppLayout({ children }) {
   const isCollapsed = sidebarCollapsed && !sidebarHovered;
 
   return (
-    <div className="flex min-h-dvh overflow-hidden bg-[#f5f5f5] text-[#1a1a1a]">
+    <div className="flex min-h-dvh overflow-hidden bg-slate-50 text-slate-900 mesh-gradient-bg">
+      <PunchGate />
       <Sidebar />
       <AppTopbar />
       <main
-        className={`flex-1 bg-[#f5f5f5] pt-16 transition-[padding] duration-300 lg:pt-0 ${isFullScreenPage ? 'overflow-hidden' : 'overflow-y-auto'}`}
+        className={`min-w-0 flex-1 pt-16 transition-[padding] duration-300 lg:pt-0 ${isFullScreenPage ? 'overflow-hidden' : 'overflow-x-hidden overflow-y-auto'}`}
         style={{ paddingLeft: isDesktop ? (isCollapsed ? 72 : 252) : 0 }}
       >
         {isFullScreenPage ? (
@@ -144,7 +169,7 @@ function AppLayout({ children }) {
             {children}
           </div>
         ) : (
-          <div className="page-enter min-h-full px-3 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-3 sm:px-4 md:p-6">
+          <div className="page-enter min-h-full min-w-0 overflow-x-hidden px-4 pb-[calc(2rem+env(safe-area-inset-bottom))] pt-6 sm:px-6 md:px-8">
             {children}
           </div>
         )}
@@ -156,6 +181,9 @@ function AppLayout({ children }) {
 export default function App() {
   // Resolve + apply white-label branding for the current host on boot.
   useBranding();
+  // Validate / silently refresh the persisted session on boot so reopening the
+  // PWA restores the session instead of bouncing to login.
+  useAuthInit();
   return (
     <BrowserRouter>
       <Suspense fallback={<RouteLoading />}>
@@ -178,6 +206,7 @@ export default function App() {
               </PlatformProtectedRoute>
             }
           />
+          <Route path="/lead/:agencyKey" element={<LeadFormPage />} />
           <Route path="/login" element={<Login />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password" element={<ResetPassword />} />
@@ -194,10 +223,15 @@ export default function App() {
                     <Route path="/bookings" element={<ModuleRoute modulePath="/bookings"><Bookings /></ModuleRoute>} />
                     <Route path="/bookings/new" element={<ModuleRoute modulePath="/bookings"><BookingForm /></ModuleRoute>} />
                     <Route path="/bookings/:id/edit" element={<ModuleRoute modulePath="/bookings"><BookingForm /></ModuleRoute>} />
+                    <Route path="/quotations" element={<ModuleRoute modulePath="/quotations"><Quotations /></ModuleRoute>} />
+                    <Route path="/quotations/new" element={<ModuleRoute modulePath="/quotations"><QuotationForm /></ModuleRoute>} />
+                    <Route path="/quotations/:id/edit" element={<ModuleRoute modulePath="/quotations"><QuotationForm /></ModuleRoute>} />
                     <Route path="/customers" element={<ModuleRoute modulePath="/customers"><Customers /></ModuleRoute>} />
                     <Route path="/whatsapp" element={<ModuleRoute modulePath="/whatsapp"><WhatsAppInbox /></ModuleRoute>} />
                     <Route path="/packages" element={<ModuleRoute modulePath="/packages"><Packages /></ModuleRoute>} />
                     <Route path="/packages/new" element={<ModuleRoute modulePath="/packages"><PackageForm /></ModuleRoute>} />
+                    <Route path="/packages/:id/finance" element={<ModuleRoute modulePath="/packages"><PackageFinance /></ModuleRoute>} />
+                    <Route path="/finance/:itemType/:id" element={<PackageFinance />} />
                     <Route path="/packages/:id/edit" element={<ModuleRoute modulePath="/packages"><PackageForm /></ModuleRoute>} />
                     <Route path="/cruises" element={<ModuleRoute modulePath="/cruises"><Cruises /></ModuleRoute>} />
                     <Route path="/cruises/new" element={<ModuleRoute modulePath="/cruises"><CruiseForm /></ModuleRoute>} />
@@ -234,12 +268,17 @@ export default function App() {
                     <Route path="/vendor-payments" element={<ModuleRoute modulePath="/vendor-payments"><GlobalVendorPayments /></ModuleRoute>} />
                     <Route path="/hrm" element={<ModuleRoute modulePath="/hrm"><Hrm /></ModuleRoute>} />
                     <Route path="/analytics" element={<ModuleRoute modulePath="/analytics"><Analytics /></ModuleRoute>} />
+                    <Route path="/activity" element={<ModuleRoute modulePath="/activity"><ActivityLog /></ModuleRoute>} />
                     <Route path="/agents" element={<ModuleRoute modulePath="/agents"><Agents /></ModuleRoute>} />
                     <Route path="/settings" element={<ModuleRoute modulePath="/settings"><SettingsLayout /></ModuleRoute>}>
                       <Route index element={<Navigate to="general" replace />} />
                       <Route path="general" element={<SettingsGeneral />} />
                       <Route path="company-profile" element={<SettingsCompanyProfile />} />
                       <Route path="invoice-templates" element={<SettingsInvoiceTemplates />} />
+                      <Route path="quotation-templates" element={<SettingsQuotationTemplates />} />
+                      <Route path="itinerary-templates" element={<SettingsItineraryTemplates />} />
+                      <Route path="receipt-templates" element={<SettingsReceiptTemplates />} />
+                      <Route path="documents" element={<SettingsDocuments />} />
                       <Route path="welcome-menu" element={<SettingsWelcomeMenu />} />
                       <Route path="flow-builder" element={<Navigate to="/flow-builder" replace />} />
                       <Route path="automations" element={<SettingsAutomations />} />
@@ -247,6 +286,10 @@ export default function App() {
                       <Route path="api-keys" element={<SettingsApiKeys />} />
                       <Route path="sidebar-modules" element={<SettingsSidebarModules />} />
                       <Route path="vendor-types" element={<SettingsVendorTypes />} />
+                      <Route path="lead-sources" element={<SettingsLeadSources />} />
+                      <Route path="pipeline-statuses" element={<SettingsPipelineStatuses />} />
+                      <Route path="lead-form" element={<SettingsLeadForm />} />
+                      <Route path="accounts" element={<SettingsAccounts />} />
                     </Route>
                     <Route path="/website-builder" element={<ModuleRoute modulePath="/website-builder"><WebsiteBuilder /></ModuleRoute>} />
                     <Route path="/auth/meta/callback" element={<InstagramAuthCallback />} />

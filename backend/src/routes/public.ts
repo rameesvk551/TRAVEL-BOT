@@ -34,7 +34,21 @@ const enquirySchema = z.object({
   company: z.string().optional(),
 });
 
+const leadFormLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  max: 12,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    error: 'Too many submissions. Please try again later.',
+    code: 'RATE_LIMIT_EXCEEDED',
+  },
+});
+
 router.get('/:agencyKey/info', publicController.getInfo);
+router.get('/:agencyKey/lead-form', publicController.getLeadForm);
+router.post('/:agencyKey/lead-form', leadFormLimiter, publicController.submitLeadForm);
 router.get('/:agencyKey/packages', publicController.listPackages);
 router.get('/:agencyKey/packages/:id', publicController.getPackage);
 router.get('/:agencyKey/properties', publicController.listProperties);

@@ -137,12 +137,12 @@ const templates = {
     return `Thank you, *${name}*! 🎉\n\nOur travel expert will contact you within *30 minutes* with the best options for you.\n\nFor urgent help, call *${agencyPhone}*`;
   },
 
-  /** Agent handoff message to customer */
+  /** Agent handoff message to customer (generic — staff name not exposed; a Chat button links to them) */
   handoffToCustomer: (agentName, lang = 'EN') => {
     if (lang === 'ML') {
-      return `${agentName}-മായി നിങ്ങളെ ബന്ധിപ്പിക്കുന്നു. അവർക്ക് നിങ്ങളുടെ എല്ലാ വിവരങ്ങളും ഉണ്ട്.`;
+      return `ഞങ്ങളുടെ ട്രാവൽ കൺസൾട്ടന്റുമായി നിങ്ങളെ ബന്ധിപ്പിക്കുന്നു. അവർക്ക് നിങ്ങളുടെ എല്ലാ വിവരങ്ങളും ഉണ്ട്.`;
     }
-    return `Connecting you with *${agentName}* now. 🤝 They have all your details.`;
+    return `Connecting you with our travel consultant now. 🤝 They have all your details.`;
   },
 
   /** No agent available message */

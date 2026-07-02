@@ -70,7 +70,7 @@ export default function PackageListCard({ pkg, onEdit, onToggleActive, canManage
 
         <div className="flex items-center justify-between mt-1">
           <span className="text-sm font-black tracking-tight text-neutral-900 md:text-base">
-            {formatCurrency(pkg.basePrice)}
+            {pkg.basePrice ? formatCurrency(pkg.basePrice) : 'Price on request'}
           </span>
           <ArrowUpRightIcon className="h-3.5 w-3.5 text-neutral-300 md:hidden" />
         </div>

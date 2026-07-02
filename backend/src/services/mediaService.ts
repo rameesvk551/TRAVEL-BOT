@@ -28,14 +28,20 @@ function hasCloudinaryConfig() {
 function resolvePublicWebRoot() {
   const candidates = [
     process.env.PUBLIC_WEB_ROOT,
-    '/var/www/travel-bot',
+    path.resolve(__dirname, '../../public'),
     '/home/ec2-user/travel-bot-frontend-release',
     path.resolve(__dirname, '../../../frontend/dist'),
+    '/var/www/travel-bot',
   ].filter(Boolean);
 
   for (const candidate of candidates) {
     try {
       if (fs.existsSync(candidate)) {
+        const assetRoot = path.join(candidate, 'assets');
+        if (!fs.existsSync(assetRoot)) {
+          fs.mkdirSync(assetRoot, { recursive: true });
+        }
+        fs.accessSync(assetRoot, fs.constants.W_OK);
         return candidate;
       }
     } catch (_err) {
@@ -43,10 +49,12 @@ function resolvePublicWebRoot() {
     }
   }
 
-  return candidates[0] || path.resolve(__dirname, '../../../frontend/dist');
+  const fallback = path.resolve(__dirname, '../../public');
+  fs.mkdirSync(path.join(fallback, 'assets'), { recursive: true });
+  return fallback;
 }
 
-function buildPublicAssetUrl(relativePath) {
+function buildPublicAssetUrl(relativePath, downloadName = '') {
   const baseUrl = String(process.env.BASE_URL || '').trim().replace(/\/+$/, '');
   if (!baseUrl) {
     throw Object.assign(new Error('BASE_URL is required to create a public brochure URL when Cloudinary is not configured.'), {
@@ -55,7 +63,15 @@ function buildPublicAssetUrl(relativePath) {
     });
   }
 
-  return `${baseUrl}/${relativePath.replace(/^\/+/, '')}`;
+  const cleanPath = relativePath.replace(/^\/+/, '');
+  const isPdf = /\.pdf(?:\?|$)/i.test(cleanPath);
+  if (isPdf) {
+    const filename = String(downloadName || path.posix.basename(cleanPath)).trim();
+    const query = filename ? `?filename=${encodeURIComponent(filename)}` : '';
+    return `${baseUrl}/api/public-assets/${cleanPath}${query}`;
+  }
+
+  return `${baseUrl}/${cleanPath}`;
 }
 
 function safePdfBaseName(originalName = 'document.pdf', fallback = 'document') {
@@ -65,6 +81,39 @@ function safePdfBaseName(originalName = 'document.pdf', fallback = 'document') {
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 80) || fallback;
+}
+
+async function uploadCloudinaryPdf(fileBuffer, folder, publicId, originalName = 'document.pdf', errorMessage = 'Cloudinary pdf upload failed') {
+  assertCloudinaryConfigured();
+
+  return new Promise((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(
+      {
+        folder,
+        public_id: publicId,
+        overwrite: true,
+        resource_type: 'raw',
+        format: 'pdf',
+      },
+      (err, result) => {
+        if (err) {
+          reject(Object.assign(new Error(err.message || errorMessage), {
+            statusCode: 502,
+            code: 'CLOUDINARY_UPLOAD_FAILED',
+          }));
+          return;
+        }
+
+        resolve({
+          secureUrl: result.secure_url,
+          publicId: result.public_id,
+          originalFilename: originalName,
+        });
+      }
+    );
+
+    stream.end(fileBuffer);
+  });
 }
 
 async function uploadPublicPdf(fileBuffer, relativeFolder, id, originalName = 'document.pdf', fallbackName = 'document') {
@@ -79,7 +128,7 @@ async function uploadPublicPdf(fileBuffer, relativeFolder, id, originalName = 'd
   fs.writeFileSync(absolutePath, fileBuffer);
 
   return {
-    secureUrl: buildPublicAssetUrl(publicPath),
+    secureUrl: buildPublicAssetUrl(publicPath, originalName),
     publicId: `local-pdf-${id}`,
     originalFilename: originalName,
   };
@@ -118,98 +167,27 @@ async function uploadPackageImage(fileBuffer, agencyId) {
 }
 
 async function uploadPackageBrochure(fileBuffer, agencyId, originalName = 'brochure.pdf') {
+  const uploadId = Date.now();
+
   return uploadPublicPdf(
     fileBuffer,
     path.join('assets', 'brochures', String(agencyId)),
-    Date.now(),
+    uploadId,
     originalName,
     'brochure'
   );
-
-  assertCloudinaryConfigured();
-
-  const rootFolder = process.env.CLOUDINARY_FOLDER || 'travel-bot/packages';
-  const folder = `${rootFolder}/${agencyId}/brochures`;
-  const publicId = String(originalName || 'brochure')
-    .replace(/\.[^.]+$/, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 80) || 'brochure';
-
-  return new Promise((resolve, reject) => {
-    const stream = cloudinary.uploader.upload_stream(
-      {
-        folder,
-        public_id: publicId,
-        overwrite: true,
-        resource_type: 'raw',
-        format: 'pdf',
-      },
-      (err, result) => {
-        if (err) {
-          reject(Object.assign(new Error(err.message || 'Cloudinary brochure upload failed'), {
-            statusCode: 502,
-            code: 'CLOUDINARY_UPLOAD_FAILED',
-          }));
-          return;
-        }
-
-        resolve({
-          secureUrl: result.secure_url,
-          publicId: result.public_id,
-          originalFilename: originalName,
-        });
-      }
-    );
-
-    stream.end(fileBuffer);
-  });
 }
 
 async function uploadItineraryPdf(fileBuffer, agencyId, itineraryId, originalName = 'itinerary.pdf') {
+  const uploadId = itineraryId || Date.now();
+
   return uploadPublicPdf(
     fileBuffer,
     path.join('assets', 'itineraries', String(agencyId)),
-    itineraryId,
+    uploadId,
     originalName,
     'itinerary'
   );
-
-  assertCloudinaryConfigured();
-
-  const rootFolder = process.env.CLOUDINARY_FOLDER || 'travel-bot/packages';
-  const folder = `${rootFolder}/${agencyId}/itineraries`;
-  const publicId = `${safeBaseName}-${itineraryId}`;
-
-  return new Promise((resolve, reject) => {
-    const stream = cloudinary.uploader.upload_stream(
-      {
-        folder,
-        public_id: publicId,
-        overwrite: true,
-        resource_type: 'raw',
-        format: 'pdf',
-      },
-      (err, result) => {
-        if (err) {
-          reject(Object.assign(new Error(err.message || 'Cloudinary itinerary upload failed'), {
-            statusCode: 502,
-            code: 'CLOUDINARY_UPLOAD_FAILED',
-          }));
-          return;
-        }
-
-        resolve({
-          secureUrl: result.secure_url,
-          publicId: result.public_id,
-          originalFilename: originalName,
-        });
-      }
-    );
-
-    stream.end(fileBuffer);
-  });
 }
 
 async function uploadPropertyImage(fileBuffer, agencyId) {
@@ -384,36 +362,34 @@ async function uploadPartnerAsset(fileBuffer, assetType) {
 }
 
 async function uploadInvoicePdf(fileBuffer, agencyId, invoiceNumber) {
-  assertCloudinaryConfigured();
+  return uploadPublicPdf(
+    fileBuffer,
+    path.join('assets', 'invoices', String(agencyId)),
+    Date.now(),
+    `${invoiceNumber || 'invoice'}.pdf`,
+    'invoice'
+  );
+}
 
-  const rootFolder = process.env.CLOUDINARY_FOLDER || 'travel-bot';
-  const folder = `${rootFolder}/agencies/${agencyId}/invoices`;
+/**
+ * Uploads a generated document PDF (quotation / receipt) and returns a public
+ * URL suitable for sending over WhatsApp. Mirrors uploadInvoicePdf.
+ * @param {Buffer} fileBuffer
+ * @param {string} agencyId
+ * @param {string} kind   e.g. 'quotation' | 'receipt'
+ * @param {string} ref    a short reference (number/id) for the public_id
+ */
+async function uploadDocumentPdf(fileBuffer, agencyId, kind, ref) {
+  const safeKind = String(kind || 'document').replace(/[^a-z0-9_-]/gi, '').slice(0, 40) || 'document';
+  const safeRef = String(ref || 'doc').replace(/[^a-z0-9_-]/gi, '').slice(0, 60) || 'doc';
 
-  return new Promise((resolve, reject) => {
-    const stream = cloudinary.uploader.upload_stream(
-      {
-        folder,
-        public_id: `invoice-${invoiceNumber}-${Date.now()}`,
-        resource_type: 'raw',
-      },
-      (err, result) => {
-        if (err) {
-          reject(Object.assign(new Error(err.message || 'Cloudinary invoice pdf upload failed'), {
-            statusCode: 502,
-            code: 'CLOUDINARY_UPLOAD_FAILED',
-          }));
-          return;
-        }
-
-        resolve({
-          secureUrl: result.secure_url,
-          publicId: result.public_id,
-        });
-      }
-    );
-
-    stream.end(fileBuffer);
-  });
+  return uploadPublicPdf(
+    fileBuffer,
+    path.join('assets', `${safeKind}s`, String(agencyId)),
+    Date.now(),
+    `${safeRef}.pdf`,
+    safeKind
+  );
 }
 
 async function uploadCustomerDocument(fileBuffer, agencyId, customerId, originalName) {
@@ -465,5 +441,6 @@ module.exports = {
   uploadCompanyAsset,
   uploadPartnerAsset,
   uploadInvoicePdf,
+  uploadDocumentPdf,
   uploadCustomerDocument,
 };

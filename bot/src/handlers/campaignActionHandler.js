@@ -15,6 +15,7 @@ const {
   WhatsAppFlow,
 } = require(path.resolve(__dirname, '../../../backend/src/models/index.ts'));
 const whatsappService = require(path.resolve(__dirname, '../../../backend/src/services/whatsappService.ts'));
+const leadService = require(path.resolve(__dirname, '../../../backend/src/services/leadService.ts'));
 const { updateSession } = require('../utils/sessionManager');
 const {
   ensureLead,
@@ -25,11 +26,13 @@ const {
   buildFlowPropertyTypeOptions,
   getAgencyTripFlowId,
   isMetaTripFlowConfigured,
+  quickPackageEnquiry,
+  startFlowGraph,
   PROPERTY_FLOW_FIRST_SCREEN_ID,
   CUSTOM_TRIP_FLOW_FIRST_SCREEN_ID,
 } = require('./travelFlowHandler');
 const templates = require('../utils/messageTemplates');
-const { sendAgentTalkToAgentIntent } = require('../utils/agentNotificationSender');
+const { sendAgentLeadAssignment, sendAgentTalkToAgentIntent } = require('../utils/agentNotificationSender');
 
 const CAMPAIGN_PREFIXES = [
   'campaign_view_packages:',
@@ -41,6 +44,7 @@ const CAMPAIGN_PREFIXES = [
   'campaign_carousel_enquire:',
   'campaign_carousel_others:',
   'campaign_property_enquire:',
+  'campaign_card_btn:',
 ];
 const CTA_BUTTON_ACTIONS = new Set([
   'VIEW_PACKAGES',
@@ -50,6 +54,8 @@ const CTA_BUTTON_ACTIONS = new Set([
   'SEND_ITINERARY',
   'CHECK_AVAILABILITY',
   'TALK_TO_AGENT',
+  'OPEN_FLOW',
+  'OPEN_URL',
 ]);
 const TRAVEL_READINESS_FLOW_NAME = 'Travel Readiness Questionnaire';
 
@@ -85,6 +91,18 @@ function buildSpecialistPrefill({ customer, pkg, campaign, lead }) {
 
 function money(amountPaise = 0) {
   return `INR ${Math.round(Number(amountPaise || 0) / 100).toLocaleString('en-IN')}`;
+}
+
+function packagePriceLabel(amountPaise) {
+  const amount = Number(amountPaise || 0);
+  return Number.isFinite(amount) && amount > 0 ? money(amount) : '';
+}
+
+function packageSummaryLine(pkg, separator = ' - ') {
+  return [
+    packagePriceLabel(pkg?.basePrice),
+    escapeMarkdown(pkg?.duration || 'Custom itinerary'),
+  ].filter(Boolean).join(separator);
 }
 
 function parseAction(actionId = '') {
@@ -314,6 +332,70 @@ async function attachLeadToRecipient(campaignId, customer, lead, extra = {}) {
     },
     { where: { campaignId, customerId: customer.id } }
   );
+}
+
+function isStayrouteAgency(agency = {}) {
+  return normalizeLooseText(agency.name || '').includes('stayroute');
+}
+
+async function findBisminaAgent(agency) {
+  if (!agency?.id || !isStayrouteAgency(agency)) return null;
+  return Agent.findOne({
+    where: {
+      agencyId: agency.id,
+      name: { [Op.iLike]: '%bismina%' },
+      phone: { [Op.ne]: null },
+    },
+    order: [['createdAt', 'ASC']],
+  });
+}
+
+async function autoAssignStayrouteCampaignInteraction(session, campaignOrId, customer, agency, actionLabel, extra = {}) {
+  const bismina = await findBisminaAgent(agency);
+  if (!bismina?.phone) return null;
+
+  const campaign = typeof campaignOrId === 'string'
+    ? await getCampaign(campaignOrId, agency)
+    : campaignOrId;
+  if (!campaign?.id) return null;
+
+  const selectedPackageId = extra.packageId || session.collectedData?.selectedPackageId || null;
+  const pkg = selectedPackageId
+    ? await Package.findOne({ where: { id: selectedPackageId, agencyId: agency.id, isActive: true } })
+    : null;
+
+  let lead = await ensureLead(session, customer, agency, {
+    packageId: pkg?.id || null,
+    itemType: pkg ? 'PACKAGE' : null,
+    source: 'whatsapp_campaign',
+    campaignId: campaign.id,
+    campaignName: campaign.name,
+    campaignAction: actionLabel || 'CAMPAIGN_BUTTON_CLICK',
+    destination: pkg?.destinations?.[0] || null,
+    interest: 'CAMPAIGN_BUTTON_CLICK',
+    status: 'ENQUIRY',
+    notes: `Campaign button clicked: ${actionLabel || 'Unknown action'}${pkg ? ` | Package: ${pkg.name}` : ''}`,
+  });
+
+  if (lead?.id && lead.assignedAgentId !== bismina.id) {
+    lead = await leadService.updateLead(lead.id, agency.id, { assignedAgentId: bismina.id });
+  }
+
+  await attachLeadToRecipient(campaign.id, customer, lead, {
+    selectedItemType: pkg ? 'PACKAGE' : extra.selectedItemType || null,
+    selectedItemId: pkg?.id || extra.selectedItemId || null,
+  });
+
+  await sendAgentLeadAssignment(bismina.phone, agency.id, {
+    customerName: customer?.name,
+    phone: customer?.phone,
+    packageName: pkg?.name || campaign.name,
+    notes: `Campaign: ${campaign.name}. Button clicked: ${actionLabel || 'Unknown action'}.`,
+  }, { customerId: customer.id, agencyId: agency.id }).catch((err) => {
+    console.warn('[CampaignAction] Could not notify Bismina of campaign interaction:', err.message);
+  });
+
+  return lead;
 }
 
 async function resolveSectionItems(campaign, section, agency) {
@@ -660,7 +742,7 @@ async function showCampaignPackageDetail(session, campaignId, packageId, custome
   const detailMessage = [
     `*${escapeMarkdown(pkg.name)}*`,
     '',
-    `${money(pkg.basePrice)}/person`,
+    packagePriceLabel(pkg.basePrice) ? `${packagePriceLabel(pkg.basePrice)}/person` : 'Price on request',
     `${escapeMarkdown(pkg.duration || 'Custom itinerary')}`,
     '',
     packageDescriptionText(pkg.summary || 'Curated holiday package with handpicked stays.').slice(0, 180),
@@ -1010,9 +1092,9 @@ async function sendCampaignPackageItinerary(session, campaignId, packageId, cust
     return whatsappService.sendButtonsMessage(
       customer.phone,
       `I sent the itinerary PDF for ${escapeMarkdown(pkg.name)}. Would you like to see other options?`,
-      [{ id: 'global_main_menu', title: 'See Other' }],
+      [{ id: 'menu_packages', title: 'See Other' }],
       ctx,
-      { footerText: 'Tap See Other to return to the welcome menu.' }
+      { footerText: 'Tap See Other to browse more trip options.' }
     );
   }
 
@@ -1084,7 +1166,7 @@ async function openCampaignAvailabilityFlow(session, campaign, packageId, custom
       data: {
         package_id: pkg.id,
         package_name: escapeMarkdown(pkg.name),
-        package_summary: `${money(pkg.basePrice)} / ${escapeMarkdown(pkg.duration || 'Custom itinerary')}`.slice(0, 80),
+        package_summary: packageSummaryLine(pkg, ' / ').slice(0, 80),
         campaign_id: campaign.id,
         campaign_name: escapeMarkdown(campaign.name).slice(0, 60),
         customer_name: String(customer.name || '').trim(),
@@ -1227,6 +1309,170 @@ async function showConfiguredActionItems(session, campaign, actionEntry, itemTyp
   return true;
 }
 
+async function getConfiguredFlowById(agency, flowId) {
+  if (!agency?.id || !flowId) return null;
+  return WhatsAppFlow.findOne({
+    where: {
+      id: flowId,
+      agencyId: agency.id,
+      status: 'PUBLISHED',
+      metaFlowId: { [Op.ne]: null },
+    },
+  });
+}
+
+// Industry-agnostic: open whichever published WhatsApp flow the agency bound to
+// this campaign button. Works for any vertical (travel, resort, ayurveda, …) —
+// the behaviour is whatever flow the agency built, not a hardcoded travel flow.
+// Launch the agency's bot conversational flow graph (whatsappFlowConfig.flows[]),
+// seeding {campaign_keyword} so MESSAGE/CONDITION nodes can render/branch on the
+// keyword tied to the tapped carousel image or CTA button.
+async function openCampaignConfiguredGraphFlow(session, campaign, actionEntry, customer, agency) {
+  const buttonLabel = String(actionEntry.buttonText || 'Continue').trim();
+  const keyword = String(actionEntry.keyword || '').trim();
+  const targetFlowId = actionEntry.flowId || null;
+
+  const lead = await ensureLead(session, customer, agency, {
+    source: 'whatsapp_campaign',
+    campaignId: campaign.id,
+    campaignName: campaign.name,
+    campaignAction: 'OPEN_FLOW',
+    interest: keyword ? `Campaign: ${campaign.name} — ${keyword}` : `Campaign: ${campaign.name}`,
+    status: 'ENQUIRY',
+    preserveExistingStatus: true,
+    notes: `Opened flow from campaign: ${campaign.name} (button: ${buttonLabel}${keyword ? `, keyword: ${keyword}` : ''})`,
+    ...(keyword ? { customTripDetails: { campaignKeyword: keyword } } : {}),
+  });
+
+  await trackCampaignClick(campaign.id, customer, agency, { clickedAction: 'OPEN_FLOW' });
+  await attachLeadToRecipient(campaign.id, customer, lead, {});
+
+  // The tapped catalog item (carousel card / CTA target) becomes the flow's
+  // selected item, so a SEND_ITEM_DOCUMENT node sends that record's PDF.
+  const seedItemId = actionEntry.selectedItemId || actionEntry.itemId || null;
+  const seedItemType = String(actionEntry.itemType || '').toUpperCase() || (seedItemId ? 'PACKAGE' : null);
+
+  return startFlowGraph(session, customer, agency, targetFlowId, {
+    seedFields: {
+      campaign_keyword: keyword,
+      campaign_name: String(campaign.name || '').trim(),
+      customer_name: String(customer.name || '').trim(),
+    },
+    ...(seedItemId ? { seedSelectedItem: { itemType: seedItemType, itemId: seedItemId } } : {}),
+    // Multi-entry campaign flow: start at this button's own node when set.
+    ...(actionEntry.entryNodeId ? { startNodeId: actionEntry.entryNodeId } : {}),
+  });
+}
+
+async function openCampaignConfiguredFlow(session, campaign, actionEntry, customer, agency) {
+  const ctx = { customerId: customer.id, agencyId: agency.id };
+
+  // GRAPH = bot conversational flow graph; META (default) = published Meta form flow.
+  if (String(actionEntry.flowKind || '').toUpperCase() === 'GRAPH') {
+    return openCampaignConfiguredGraphFlow(session, campaign, actionEntry, customer, agency);
+  }
+
+  const flow = await getConfiguredFlowById(agency, actionEntry.flowId);
+  const buttonLabel = String(actionEntry.buttonText || 'Continue').trim();
+  const keyword = String(actionEntry.keyword || '').trim();
+
+  if (!flow?.metaFlowId) {
+    await whatsappService.sendTextMessage(
+      customer.phone,
+      'This option is being set up. Our team will reach out to you shortly.',
+      ctx
+    );
+    return true;
+  }
+
+  const lead = await ensureLead(session, customer, agency, {
+    source: 'whatsapp_campaign',
+    campaignId: campaign.id,
+    campaignName: campaign.name,
+    campaignAction: 'OPEN_FLOW',
+    interest: `Campaign: ${campaign.name}`,
+    status: 'ENQUIRY',
+    preserveExistingStatus: true,
+    notes: `Opened flow "${flow.name}" from campaign: ${campaign.name} (button: ${buttonLabel}${keyword ? `, keyword: ${keyword}` : ''})`,
+    ...(keyword ? { customTripDetails: { campaignKeyword: keyword } } : {}),
+  });
+
+  await trackCampaignClick(campaign.id, customer, agency, { clickedAction: 'OPEN_FLOW' });
+
+  await updateSession(session, {
+    currentStep: 'COMPLETE',
+    collectedData: {
+      activeLeadId: lead?.id || null,
+      campaignId: campaign.id,
+      campaignName: campaign.name,
+      enquiryDraft: customer.name ? { name: customer.name } : {},
+    },
+  });
+
+  const flowResponse = await whatsappService.sendFlowMessage(
+    customer.phone,
+    buttonLabel,
+    {
+      flowId: flow.metaFlowId,
+      firstScreenId: flow.firstScreenId || undefined,
+      flowCta: buttonLabel.slice(0, 30),
+      flowToken: `campaign-flow|${agency.id}|${campaign.id}|${flow.id}|${customer.id}|${Date.now()}`,
+      data: {
+        campaign_name: escapeMarkdown(campaign.name).slice(0, 60),
+        customer_name: String(customer.name || '').trim(),
+        ...(keyword ? { campaign_keyword: keyword.slice(0, 60) } : {}),
+      },
+    },
+    ctx,
+    {
+      headerText: buttonLabel.slice(0, 60),
+      footerText: 'Reply LIST if the flow does not open.',
+    }
+  );
+
+  await attachLeadToRecipient(campaign.id, customer, lead, { flowSubmittedAt: new Date() });
+
+  if (flowResponse?.status === 'FAILED') {
+    await whatsappService.sendTextMessage(
+      customer.phone,
+      'Thanks for your interest. Our team will contact you shortly to continue.',
+      ctx
+    );
+  }
+  return true;
+}
+
+async function openCampaignConfiguredUrl(session, campaign, actionEntry, customer, agency) {
+  const ctx = { customerId: customer.id, agencyId: agency.id };
+  const url = String(actionEntry.url || '').trim();
+  const buttonLabel = String(actionEntry.buttonText || 'Open Link').trim();
+
+  if (!/^https?:\/\//i.test(url)) {
+    await whatsappService.sendTextMessage(customer.phone, 'This link is being set up. Please try again shortly.', ctx);
+    return true;
+  }
+
+  await ensureLead(session, customer, agency, {
+    source: 'whatsapp_campaign',
+    campaignId: campaign.id,
+    campaignName: campaign.name,
+    campaignAction: 'OPEN_URL',
+    interest: `Campaign: ${campaign.name}`,
+    preserveExistingStatus: true,
+    notes: `Opened link from campaign: ${campaign.name} (button: ${buttonLabel})`,
+  });
+  await trackCampaignClick(campaign.id, customer, agency, { clickedAction: 'OPEN_URL' });
+
+  await whatsappService.sendUrlButtonMessage(
+    customer.phone,
+    buttonLabel,
+    (buttonLabel.slice(0, 20) || 'Open'),
+    url,
+    ctx
+  );
+  return true;
+}
+
 async function handleConfiguredCampaignButtonAction(session, campaign, actionEntry, customer, agency) {
   if (!actionEntry?.action) return false;
 
@@ -1234,6 +1480,14 @@ async function handleConfiguredCampaignButtonAction(session, campaign, actionEnt
   const itemType = String(actionEntry.itemType || '').toUpperCase();
   const itemId = actionEntry.itemId || null;
   const ctx = { customerId: customer.id, agencyId: agency.id };
+
+  if (action === 'OPEN_FLOW') {
+    return openCampaignConfiguredFlow(session, campaign, actionEntry, customer, agency);
+  }
+
+  if (action === 'OPEN_URL') {
+    return openCampaignConfiguredUrl(session, campaign, actionEntry, customer, agency);
+  }
 
   if (action === 'TALK_TO_AGENT') {
     return routeTalkToAgentForCampaignPackage(session, campaign, actionEntry, customer, agency);
@@ -1308,6 +1562,22 @@ async function handleConfiguredCampaignButtonAction(session, campaign, actionEnt
 async function handleCampaignAction(session, actionId, customer, agency) {
   const ctx = { customerId: customer.id, agencyId: agency.id };
   const parts = parseAction(actionId);
+  const autoCampaignId = actionId.startsWith('campaign_pkg_pick:')
+    ? session.collectedData?.campaignId || null
+    : parts[1] || null;
+  const autoPackageId = actionId.startsWith('campaign_pkg_pick:')
+    ? parts[1]
+    : (actionId.startsWith('campaign_item_pick:') || actionId.startsWith('campaign_carousel_enquire:'))
+      && parts[2] === 'PACKAGE'
+      ? parts[3]
+      : null;
+  if (autoCampaignId) {
+    await autoAssignStayrouteCampaignInteraction(session, autoCampaignId, customer, agency, actionId, {
+      packageId: autoPackageId,
+      selectedItemType: parts[2] || null,
+      selectedItemId: parts[3] || null,
+    });
+  }
 
   if (actionId.startsWith('campaign_call_now:')) {
     const campaignId = parts[1];
@@ -1349,7 +1619,35 @@ async function handleCampaignAction(session, actionId, customer, agency) {
   if (actionId.startsWith('campaign_carousel_enquire:')) {
     const [, campaignId, itemType, itemId] = parts;
     if (itemType === 'PROPERTY') return showCampaignPropertyDetail(session, campaignId, itemId, customer, agency, 'CAROUSEL_DETAILS');
-    return showCampaignPackageDetail(session, campaignId, itemId, customer, agency, 'CAROUSEL_ENQUIRY');
+    const campaign = await getCampaign(campaignId, agency);
+    await trackCampaignClick(campaignId, customer, agency, {
+      clickedAction: 'CAROUSEL_ENQUIRY',
+      selectedItemType: 'PACKAGE',
+      selectedItemId: itemId,
+    });
+    const lead = await quickPackageEnquiry(session, customer, agency, itemId, {
+      source: 'whatsapp_campaign',
+      campaignId,
+      campaignName: campaign?.name || null,
+      campaignAction: 'CAROUSEL_ENQUIRY',
+      notes: 'Customer tapped Enquiry on campaign package card',
+    });
+    if (campaignId && customer?.id && itemId) {
+      const activeLeadId = session.collectedData?.activeLeadId || null;
+      if (activeLeadId) {
+        await CampaignRecipient.update(
+          {
+            leadId: activeLeadId,
+            selectedItemType: 'PACKAGE',
+            selectedItemId: itemId,
+            clickedAt: new Date(),
+            clickedAction: 'CAROUSEL_ENQUIRY',
+          },
+          { where: { campaignId, customerId: customer.id } }
+        );
+      }
+    }
+    return lead;
   }
 
   if (actionId.startsWith('campaign_carousel_others:')) {
@@ -1365,6 +1663,32 @@ async function handleCampaignAction(session, actionId, customer, agency) {
     const [, campaignId, propertyId] = parts;
     return startPropertyLead(session, campaignId, propertyId, customer, agency);
   }
+
+  // A tap on a per-card button the agency configured in the carousel builder.
+  // Payload: campaign_card_btn:{campaignId}:{itemId}:{buttonKey}
+  if (actionId.startsWith('campaign_card_btn:')) {
+    const [, campaignId, itemId, buttonKey] = parts;
+    const campaign = await getCampaign(campaignId, agency);
+    if (!campaign) return whatsappService.sendTextMessage(customer.phone, 'This campaign is no longer available.', ctx);
+    const cards = Array.isArray(campaign.carouselConfig?.cards) ? campaign.carouselConfig.cards : [];
+    const card = cards.find((entry) => String(entry?.itemId || entry?.id || '') === String(itemId));
+    const button = Array.isArray(card?.buttons)
+      ? card.buttons.find((entry) => String(entry?.buttonKey || '') === String(buttonKey))
+      : null;
+    if (!button?.action) {
+      return whatsappService.sendTextMessage(customer.phone, 'This option is no longer available.', ctx);
+    }
+    // UPLOAD-mode cards have no catalog item behind them — only seed a selected item
+    // for catalog cards, so SEND_ITEM_DOCUMENT etc. don't chase a non-existent record.
+    const isUploadCarousel = String(campaign.carouselConfig?.mode || 'CATALOG').toUpperCase() === 'UPLOAD';
+    // Card-level keyword wins, falling back to a button-specific keyword.
+    const actionEntry = {
+      ...button,
+      keyword: card?.keyword || button.keyword || null,
+      ...(isUploadCarousel ? {} : { selectedItemId: itemId, itemType: card?.itemType || button.itemType || 'PACKAGE' }),
+    };
+    return handleConfiguredCampaignButtonAction(session, campaign, actionEntry, customer, agency);
+  }
 }
 
 async function tryHandleCampaignTextAction(session, text, customer, agency) {
@@ -1378,12 +1702,14 @@ async function tryHandleCampaignTextAction(session, text, customer, agency) {
   const sections = getSections(campaign);
   const configuredButtonAction = getCampaignButtonAction(campaign, text);
   if (configuredButtonAction) {
+    await autoAssignStayrouteCampaignInteraction(session, campaign, customer, agency, configuredButtonAction.buttonText || text);
     const handled = await handleConfiguredCampaignButtonAction(session, campaign, configuredButtonAction, customer, agency);
     if (handled) return true;
   }
 
   const buttonRoute = getTemplateButtonRoute(campaign, text, sections);
   if (buttonRoute) {
+    await autoAssignStayrouteCampaignInteraction(session, campaign, customer, agency, text);
     const handled = await handleConfiguredCampaignButtonAction(session, campaign, {
       action: buttonRoute,
       buttonText: text,
@@ -1393,10 +1719,50 @@ async function tryHandleCampaignTextAction(session, text, customer, agency) {
 
   const wantsPackages = textIncludesAny(normalized, ['view packages', 'packages', 'show packages', 'see others']);
   const wantsProperties = textIncludesAny(normalized, ['view properties', 'properties', 'show properties']);
+  const wantsEnquiry = textIncludesAny(normalized, ['enquiry', 'enquire', 'enquire now']);
+
+  if (wantsEnquiry) {
+    const selectedPackageId = session.collectedData?.selectedPackageId || null;
+    if (selectedPackageId) {
+      await autoAssignStayrouteCampaignInteraction(session, campaign, customer, agency, text, { packageId: selectedPackageId });
+      await quickPackageEnquiry(session, customer, agency, selectedPackageId, {
+        source: 'whatsapp_campaign',
+        campaignId: campaign.id,
+        campaignName: campaign.name,
+        campaignAction: 'ENQUIRY_CLICKED',
+        notes: 'Customer tapped Enquiry from campaign package detail',
+      });
+      return true;
+    }
+
+    const resolved = await resolveCampaignActionPackage(campaign, {}, agency);
+    if (resolved.package) {
+      await autoAssignStayrouteCampaignInteraction(session, campaign, customer, agency, text, { packageId: resolved.package.id });
+      await quickPackageEnquiry(session, customer, agency, resolved.package.id, {
+        source: 'whatsapp_campaign',
+        campaignId: campaign.id,
+        campaignName: campaign.name,
+        campaignAction: 'ENQUIRY_CLICKED',
+        notes: 'Customer tapped Enquiry from campaign',
+      });
+      return true;
+    }
+
+    if (resolved.candidates.length > 1 && resolved.section) {
+      await whatsappService.sendTextMessage(
+        customer.phone,
+        'Please choose the package you want to enquire about.',
+        { customerId: customer.id, agencyId: agency.id }
+      );
+      await showCampaignItems(session, campaign, resolved.section, resolved.candidates, customer, agency);
+      return true;
+    }
+  }
 
   if (buttonRoute === 'CUSTOM_TRIP') {
     const customTripSection = sections.find((section) => String(section.itemType || '').toUpperCase() === 'CUSTOM_TRIP');
     if (!customTripSection && sections.length) return false;
+    await autoAssignStayrouteCampaignInteraction(session, campaign, customer, agency, text, { selectedItemType: 'CUSTOM_TRIP' });
     await trackCampaignClick(campaign.id, customer, agency, { clickedAction: 'CUSTOM_TRIP', selectedItemType: 'CUSTOM_TRIP' });
     await startCustomTripLead(session, campaign, customer, agency);
     return true;
@@ -1410,6 +1776,7 @@ async function tryHandleCampaignTextAction(session, text, customer, agency) {
         || groups[0];
       if (!matchingGroup) return false;
 
+      await autoAssignStayrouteCampaignInteraction(session, campaign, customer, agency, text, { selectedItemType: desiredType });
       await showCampaignSection(session, campaign.id, matchingGroup.section.key, customer, agency);
       return true;
     }
@@ -1421,6 +1788,7 @@ async function tryHandleCampaignTextAction(session, text, customer, agency) {
     const packageSection = sections.find((section) => String(section.itemType || '').toUpperCase() === 'PACKAGE')
       || sections[0];
     if (!packageSection) return false;
+    await autoAssignStayrouteCampaignInteraction(session, campaign, customer, agency, text, { selectedItemType: 'PACKAGE' });
     await showCampaignSection(session, campaign.id, packageSection.key, customer, agency);
     return true;
   }
@@ -1428,6 +1796,7 @@ async function tryHandleCampaignTextAction(session, text, customer, agency) {
   if (wantsProperties || buttonRoute === 'VIEW_PROPERTIES') {
     const propertySection = sections.find((section) => String(section.itemType || '').toUpperCase() === 'PROPERTY');
     if (!propertySection) return false;
+    await autoAssignStayrouteCampaignInteraction(session, campaign, customer, agency, text, { selectedItemType: 'PROPERTY' });
     await showCampaignSection(session, campaign.id, propertySection.key, customer, agency);
     return true;
   }
@@ -1435,6 +1804,7 @@ async function tryHandleCampaignTextAction(session, text, customer, agency) {
   if (textIncludesAny(normalized, ['custom trip', 'plan trip', 'customize trip'])) {
     const customTripSection = sections.find((section) => String(section.itemType || '').toUpperCase() === 'CUSTOM_TRIP');
     if (!customTripSection) return false;
+    await autoAssignStayrouteCampaignInteraction(session, campaign, customer, agency, text, { selectedItemType: 'CUSTOM_TRIP' });
     await startCustomTripLead(session, campaign, customer, agency);
     return true;
   }
@@ -1447,10 +1817,12 @@ async function tryHandleCampaignTextAction(session, text, customer, agency) {
 
   if (matchingSection) {
     if (String(matchingSection.itemType || '').toUpperCase() === 'CUSTOM_TRIP') {
+      await autoAssignStayrouteCampaignInteraction(session, campaign, customer, agency, text, { selectedItemType: 'CUSTOM_TRIP' });
       await startCustomTripLead(session, campaign, customer, agency);
       return true;
     }
 
+    await autoAssignStayrouteCampaignInteraction(session, campaign, customer, agency, text, { selectedItemType: String(matchingSection.itemType || '').toUpperCase() });
     await showCampaignSection(session, campaign.id, matchingSection.key, customer, agency);
     return true;
   }
@@ -1462,7 +1834,7 @@ function formatItemRow(item, itemType) {
   if (itemType === 'PROPERTY') {
     return `${item.propertyType || 'Property'} - ${item.location || 'Location'} - ${item.pricePerNight ? `${money(item.pricePerNight)}/night` : 'Price on request'}`;
   }
-  return `${money(item.basePrice)}/person - ${escapeMarkdown(item.duration || 'Custom itinerary')}`;
+  return packageSummaryLine(item);
 }
 
 function formatItemListText(items, itemType) {
@@ -1471,7 +1843,7 @@ function formatItemListText(items, itemType) {
       return `${index + 1}. *${escapeMarkdown(item.name)}*\n   ${formatItemRow(item, itemType)}`;
     }
     const destinations = item.destinations?.slice(0, 2).join(', ') || 'Multiple destinations';
-    return `${index + 1}. *${escapeMarkdown(item.name)}*\n   ${escapeMarkdown(item.duration || 'Custom')} - ${destinations} - ${money(item.basePrice)}`;
+    return `${index + 1}. *${escapeMarkdown(item.name)}*\n   ${[escapeMarkdown(item.duration || 'Custom'), destinations, packagePriceLabel(item.basePrice)].filter(Boolean).join(' - ')}`;
   });
 
   return [`*Campaign Deals*`, '', ...lines].join('\n');
@@ -1493,6 +1865,7 @@ module.exports = {
   isCampaignAction,
   handleCampaignAction,
   tryHandleCampaignTextAction,
+  getLatestCampaignRecipient,
   showCampaignPackages: (session, campaignId, customer, agency) => showCampaignOverview(session, campaignId, customer, agency),
   showCampaignPropertyDetail,
   showCampaignPackageDetail,

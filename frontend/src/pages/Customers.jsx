@@ -1,10 +1,36 @@
-import { useState } from 'react';
-import { PlusIcon, XMarkIcon, UserIcon, ChatBubbleLeftIcon, DocumentIcon, PhoneIcon, CalendarDaysIcon, PencilSquareIcon, ClockIcon, CheckCircleIcon } from '@heroicons/react/24/outline';
-import { useCustomers, useCreateCustomer } from '../api/customersApi';
+import { useState, useRef } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { PlusIcon, XMarkIcon, UserIcon, ChatBubbleLeftIcon, DocumentIcon, PhoneIcon, CalendarDaysIcon, PencilSquareIcon, ClockIcon, CheckCircleIcon, ArrowUpTrayIcon, CurrencyRupeeIcon } from '@heroicons/react/24/outline';
+import { customersApi, useCustomers, useCreateCustomer, useUploadCustomerDocument } from '../api/customersApi';
 import { useMessages } from '../hooks/useMessages';
-import { formatDate, formatDateTime, formatPhone } from '../utils/formatters';
+import { accountsApi } from '../api/accountsApi';
+import { formatDate, formatDateTime, formatPhone, formatCurrency } from '../utils/formatters';
 import { getInitials } from '../components/uiHelpers';
 import MobileRecordCard, { MobileField } from '../components/MobileRecordCard';
+import ActivityTimeline from '../components/ActivityTimeline';
+
+const getCustomerStats = (customer) => {
+  if (!customer || !customer.bookings) return { totalBilled: 0, balanceDue: 0, trips: [], services: [] };
+  let totalBilled = 0;
+  let balanceDue = 0;
+  const trips = [];
+  const services = [];
+
+  customer.bookings.forEach(b => {
+    totalBilled += b.totalAmount || 0;
+    balanceDue += Math.max(0, (b.totalAmount || 0) - (b.advancePaid || 0));
+    
+    const itemName = b.customItemName || b.package?.name || b.property?.name || b.cruise?.name || b.service?.name || b.visa?.country || b.itemType;
+    
+    if (['PACKAGE', 'PROPERTY', 'CRUISE'].includes(b.itemType)) {
+      trips.push({ name: itemName, date: b.createdAt, status: b.status, amount: b.totalAmount });
+    } else {
+      services.push({ name: itemName, type: b.itemType, date: b.createdAt, status: b.status, amount: b.totalAmount });
+    }
+  });
+  
+  return { totalBilled, balanceDue, trips, services };
+};
 
 const EMPTY_CUSTOMER_FORM = {
   name: '',
@@ -63,7 +89,9 @@ export default function Customers() {
             <button onClick={() => setIsCreateOpen(true)} className="font-semibold text-neutral-800 underline underline-offset-2">Create your first customer</button>
           </div>
         ) : (
-          customers.map((customer) => (
+          customers.map((customer) => {
+            const stats = getCustomerStats(customer);
+            return (
             <MobileRecordCard
               key={customer.id}
               title={customer.name || 'Traveler'}
@@ -76,10 +104,12 @@ export default function Customers() {
               }
               badge={customer.documents?.length > 0 ? <span className="badge bg-emerald-50 text-emerald-700">{customer.documents.length} file{customer.documents.length > 1 ? 's' : ''}</span> : null}
             >
+              <MobileField label="Billed" value={formatCurrency(stats.totalBilled)} />
+              <MobileField label="Due" value={<span className="text-rose-600 font-medium">{formatCurrency(stats.balanceDue)}</span>} />
               <MobileField label="Created" value={formatDate(customer.createdAt)} />
-              <MobileField label="Notes" value={customer.notes || '-'} />
             </MobileRecordCard>
-          ))
+            );
+          })
         )}
       </div>
 
@@ -91,6 +121,8 @@ export default function Customers() {
                 <th className="data-table-th w-16">SL NO</th>
                 <th className="data-table-th">CUSTOMER</th>
                 <th className="data-table-th">PHONE</th>
+                <th className="data-table-th text-right">BILLED</th>
+                <th className="data-table-th text-right">DUE</th>
                 <th className="data-table-th">NOTES</th>
                 <th className="data-table-th">CREATED</th>
                 <th className="data-table-th">DOCUMENTS</th>
@@ -109,7 +141,9 @@ export default function Customers() {
                   </td>
                 </tr>
               ) : (
-                customers.map((customer, i) => (
+                customers.map((customer, i) => {
+                  const stats = getCustomerStats(customer);
+                  return (
                   <tr
                     key={customer.id}
                     className="data-table-row group cursor-pointer"
@@ -125,6 +159,8 @@ export default function Customers() {
                       </div>
                     </td>
                     <td className="data-table-td text-neutral-500 text-sm">{formatPhone(customer.phone)}</td>
+                    <td className="data-table-td text-neutral-900 font-medium text-sm text-right">{formatCurrency(stats.totalBilled)}</td>
+                    <td className="data-table-td text-rose-600 font-medium text-sm text-right">{formatCurrency(stats.balanceDue)}</td>
                     <td className="data-table-td text-neutral-500 text-sm max-w-[200px] truncate">{customer.notes || <span className="text-neutral-300">—</span>}</td>
                     <td className="data-table-td text-neutral-500 text-sm">{formatDate(customer.createdAt)}</td>
                     <td className="data-table-td text-neutral-500 text-sm">
@@ -135,7 +171,8 @@ export default function Customers() {
                       )}
                     </td>
                   </tr>
-                ))
+                  );
+                })
               )}
             </tbody>
           </table>
@@ -216,15 +253,59 @@ function CustomerDrawer({ customer, onClose }) {
   const [activeTab, setActiveTab] = useState('Profile');
   const { data: messagesResponse } = useMessages(customer?.id, { limit: 20 });
   const messages = messagesResponse?.data || [];
+  const { data: ledgerResponse, isLoading: isLedgerLoading } = useQuery({
+    queryKey: ['customer-ledger', customer?.id],
+    queryFn: () => accountsApi.report('party-statement', { partyType: 'CUSTOMER', partyId: customer.id }),
+    enabled: Boolean(customer?.id),
+  });
+  const ledger = ledgerResponse?.data || { data: [], summary: { debit: 0, credit: 0, balance: 0 } };
+  const { data: serviceReportResponse, isLoading: isServiceReportLoading } = useQuery({
+    queryKey: ['customer-service-report', customer?.id],
+    queryFn: () => customersApi.getServiceReport(customer.id),
+    enabled: Boolean(customer?.id),
+  });
+  const serviceReport = serviceReportResponse?.data || {
+    summary: { totalServices: 0, totalBilled: 0, totalReceived: 0, totalBalance: 0 },
+    byCategory: [],
+    services: [],
+  };
+  const { data: activityResponse, isLoading: isActivityLoading } = useQuery({
+    queryKey: ['customer-activity', customer?.id],
+    queryFn: () => customersApi.getActivity(customer.id),
+    enabled: Boolean(customer?.id),
+  });
+  const activity = activityResponse?.data || { enquiries: [], timeline: [] };
+  const uploadDocMutation = useUploadCustomerDocument();
+  const fileInputRef = useRef(null);
+
+  const handleUploadDocument = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file || !customer) return;
+
+    const formData = new FormData();
+    formData.append('document', file);
+
+    try {
+      await uploadDocMutation.mutateAsync({ id: customer.id, formData });
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    } catch (err) {
+      console.error('Failed to upload document', err);
+      alert('Failed to upload document');
+    }
+  };
 
   if (!customer) return null;
 
   const DRAWER_TABS = [
     { key: 'Profile', icon: UserIcon },
+    { key: 'Services', icon: CurrencyRupeeIcon },
     { key: 'Messages', icon: ChatBubbleLeftIcon },
     { key: 'Documents', icon: DocumentIcon },
+    { key: 'Ledger', icon: CurrencyRupeeIcon },
     { key: 'Timeline', icon: ClockIcon },
   ];
+
+  const stats = getCustomerStats(customer);
 
   return (
     <div className="fixed inset-0 z-50 pointer-events-auto">
@@ -327,12 +408,128 @@ function CustomerDrawer({ customer, onClose }) {
                 </div>
               </div>
 
+              <div className="bg-white border border-neutral-200 rounded-[var(--radius-md)] p-5 shadow-sm">
+                <h3 className="text-sm font-bold text-neutral-800 mb-4">Financial Overview</h3>
+                <div className="space-y-4 text-sm">
+                  <div className="flex items-center justify-between py-2 border-b border-neutral-50">
+                    <span className="text-neutral-400 font-medium">Total Billed</span>
+                    <span className="text-neutral-900 font-medium">{formatCurrency(stats.totalBilled)}</span>
+                  </div>
+                  <div className="flex items-center justify-between py-2">
+                    <span className="text-neutral-400 font-medium">Total Due</span>
+                    <span className="text-rose-600 font-medium">{formatCurrency(stats.balanceDue)}</span>
+                  </div>
+                </div>
+              </div>
+
+              {(stats.trips.length > 0 || stats.services.length > 0) && (
+                <div className="bg-white border border-neutral-200 rounded-[var(--radius-md)] p-5 shadow-sm">
+                  <h3 className="text-sm font-bold text-neutral-800 mb-4">Booking History</h3>
+                  <div className="space-y-4">
+                    {stats.trips.map((trip, idx) => (
+                      <div key={'trip-'+idx} className="flex items-center justify-between py-2 border-b border-neutral-50 last:border-0 last:pb-0">
+                        <div>
+                          <div className="text-sm font-medium text-neutral-900">{trip.name}</div>
+                          <div className="text-xs text-neutral-400 mt-0.5">{formatDate(trip.date)} • {trip.status}</div>
+                        </div>
+                        <div className="text-sm font-medium text-neutral-900">{formatCurrency(trip.amount)}</div>
+                      </div>
+                    ))}
+                    {stats.services.map((service, idx) => (
+                      <div key={'service-'+idx} className="flex items-center justify-between py-2 border-b border-neutral-50 last:border-0 last:pb-0">
+                        <div>
+                          <div className="text-sm font-medium text-neutral-900">{service.name} <span className="text-[10px] bg-neutral-100 text-neutral-500 px-1.5 py-0.5 rounded ml-1">{service.type}</span></div>
+                          <div className="text-xs text-neutral-400 mt-0.5">{formatDate(service.date)} • {service.status}</div>
+                        </div>
+                        <div className="text-sm font-medium text-neutral-900">{formatCurrency(service.amount)}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {customer.notes && (
                 <div className="bg-white border border-neutral-200 rounded-[var(--radius-md)] p-5 shadow-sm">
                   <h3 className="text-sm font-bold text-neutral-800 mb-3">Notes</h3>
                   <p className="text-sm text-neutral-600 whitespace-pre-wrap">{customer.notes}</p>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Services Tab */}
+          {activeTab === 'Services' && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-[var(--radius-md)] border border-neutral-200 bg-white p-3 shadow-sm">
+                  <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-neutral-400">Services</div>
+                  <div className="mt-1 text-sm font-bold text-neutral-900">{serviceReport.summary.totalServices}</div>
+                </div>
+                <div className="rounded-[var(--radius-md)] border border-neutral-200 bg-white p-3 shadow-sm">
+                  <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-neutral-400">Billed</div>
+                  <div className="mt-1 text-sm font-bold text-neutral-900">{formatCurrency(serviceReport.summary.totalBilled)}</div>
+                </div>
+                <div className="rounded-[var(--radius-md)] border border-neutral-200 bg-white p-3 shadow-sm">
+                  <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-neutral-400">Received</div>
+                  <div className="mt-1 text-sm font-bold text-emerald-700">{formatCurrency(serviceReport.summary.totalReceived)}</div>
+                </div>
+                <div className="rounded-[var(--radius-md)] border border-neutral-200 bg-white p-3 shadow-sm">
+                  <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-neutral-400">Balance</div>
+                  <div className="mt-1 text-sm font-bold text-rose-600">{formatCurrency(serviceReport.summary.totalBalance)}</div>
+                </div>
+              </div>
+
+              {serviceReport.byCategory.length > 0 && (
+                <div className="bg-white border border-neutral-200 rounded-[var(--radius-md)] p-4 shadow-sm">
+                  <h3 className="mb-3 text-sm font-bold text-neutral-800">Service Category Summary</h3>
+                  <div className="space-y-2">
+                    {serviceReport.byCategory.map((category) => (
+                      <div key={category.category} className="flex items-center justify-between gap-3 rounded-lg bg-neutral-50 px-3 py-2 text-sm">
+                        <div>
+                          <div className="font-semibold text-neutral-900">{category.category}</div>
+                          <div className="text-xs text-neutral-400">{category.count} service{category.count === 1 ? '' : 's'}</div>
+                        </div>
+                        <div className="text-right">
+                          <div className="font-semibold text-neutral-900">{formatCurrency(category.totalAmount)}</div>
+                          <div className="text-xs text-rose-500">Due {formatCurrency(category.balance)}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="overflow-hidden rounded-[var(--radius-md)] border border-neutral-200 bg-white shadow-sm">
+                <table className="min-w-full text-left text-sm">
+                  <thead className="bg-neutral-50 text-[10px] font-bold uppercase tracking-[0.14em] text-neutral-400">
+                    <tr>
+                      <th className="px-3 py-2">Service</th>
+                      <th className="px-3 py-2">Date</th>
+                      <th className="px-3 py-2 text-right">Total</th>
+                      <th className="px-3 py-2 text-right">Balance</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-neutral-100">
+                    {isServiceReportLoading ? (
+                      <tr><td colSpan="4" className="px-3 py-8 text-center text-neutral-400">Loading service report...</td></tr>
+                    ) : serviceReport.services.length === 0 ? (
+                      <tr><td colSpan="4" className="px-3 py-8 text-center text-neutral-400">No standalone services for this customer.</td></tr>
+                    ) : (
+                      serviceReport.services.map((service) => (
+                        <tr key={service.bookingId}>
+                          <td className="px-3 py-2">
+                            <div className="font-medium text-neutral-800">{service.serviceName}</div>
+                            <div className="text-xs text-neutral-400">{service.bookingRef} - {service.status}</div>
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-2 text-neutral-500">{formatDate(service.serviceDate)}</td>
+                          <td className="px-3 py-2 text-right font-semibold text-neutral-900">{formatCurrency(service.totalAmount)}</td>
+                          <td className="px-3 py-2 text-right font-semibold text-rose-600">{formatCurrency(service.balance)}</td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
 
@@ -366,12 +563,29 @@ function CustomerDrawer({ customer, onClose }) {
 
           {/* Documents Tab */}
           {activeTab === 'Documents' && (
-            <div className="space-y-3">
-              {!customer.documents || customer.documents.length === 0 ? (
-                <div className="text-center py-10 bg-white border border-neutral-200 rounded-[var(--radius-md)]">
-                  <DocumentIcon className="w-8 h-8 mx-auto text-neutral-300 mb-3" />
-                  <div className="text-neutral-400 text-sm">No documents uploaded.</div>
-                </div>
+            <div className="space-y-4">
+              <div className="flex justify-end">
+                <input
+                  type="file"
+                  className="hidden"
+                  ref={fileInputRef}
+                  onChange={handleUploadDocument}
+                />
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploadDocMutation.isPending}
+                  className="shell-button-primary py-1.5 px-3 text-xs flex items-center gap-1.5"
+                >
+                  <ArrowUpTrayIcon className="w-4 h-4" />
+                  {uploadDocMutation.isPending ? 'Uploading...' : 'Upload Document'}
+                </button>
+              </div>
+              <div className="space-y-3">
+                {!customer.documents || customer.documents.length === 0 ? (
+                  <div className="text-center py-10 bg-white border border-neutral-200 rounded-[var(--radius-md)]">
+                    <DocumentIcon className="w-8 h-8 mx-auto text-neutral-300 mb-3" />
+                    <div className="text-neutral-400 text-sm">No documents uploaded.</div>
+                  </div>
               ) : (
                 customer.documents.map((doc, idx) => (
                   <a
@@ -391,61 +605,85 @@ function CustomerDrawer({ customer, onClose }) {
                   </a>
                 ))
               )}
+              </div>
             </div>
           )}
 
-          {/* Timeline Tab */}
-          {activeTab === 'Timeline' && (
+          {/* Ledger Tab */}
+          {activeTab === 'Ledger' && (
             <div className="space-y-4">
-              {/* Creation Entry */}
-              <div className="bg-white border border-neutral-200 rounded-[var(--radius-md)] p-4 flex gap-4 shadow-sm">
-                <div className="w-6 flex flex-col items-center shrink-0">
-                  <div className="w-6 h-6 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center shrink-0 ring-1 ring-emerald-200">
-                    <CheckCircleIcon className="w-4 h-4" />
-                  </div>
-                  {(messages.length > 0) && <div className="w-px h-full bg-neutral-200 mt-2"></div>}
+              <div className="grid grid-cols-3 gap-3">
+                <div className="rounded-[var(--radius-md)] border border-neutral-200 bg-white p-3 shadow-sm">
+                  <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-neutral-400">Billed</div>
+                  <div className="mt-1 text-sm font-bold text-neutral-900">{formatCurrency(ledger.summary?.debit || 0)}</div>
                 </div>
-                <div className="flex-1 pb-2">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <h4 className="text-sm font-bold text-neutral-800">Customer Registered</h4>
-                      <p className="text-xs text-neutral-400 mt-1">
-                        {customer.name} added to database via {customer.source || 'Manual entry'}
-                      </p>
-                    </div>
-                    <span className="text-xs text-neutral-400">{formatDateTime(customer.createdAt)}</span>
+                <div className="rounded-[var(--radius-md)] border border-neutral-200 bg-white p-3 shadow-sm">
+                  <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-neutral-400">Received</div>
+                  <div className="mt-1 text-sm font-bold text-neutral-900">{formatCurrency(ledger.summary?.credit || 0)}</div>
+                </div>
+                <div className="rounded-[var(--radius-md)] border border-neutral-200 bg-white p-3 shadow-sm">
+                  <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-neutral-400">Balance</div>
+                  <div className={`mt-1 text-sm font-bold ${(ledger.summary?.balance || 0) > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
+                    {formatCurrency(Math.abs(ledger.summary?.balance || 0))}
                   </div>
                 </div>
               </div>
 
-              {/* Message Entries */}
-              {messages.map((msg, i) => (
-                <div key={msg.id} className="bg-white border border-neutral-200 rounded-[var(--radius-md)] p-4 flex gap-4 shadow-sm">
-                  <div className="w-6 flex flex-col items-center shrink-0">
-                    <div className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 text-[10px] font-bold ring-1 ${
-                      msg.direction === 'IN' 
-                        ? 'bg-sky-100 text-sky-600 ring-sky-200' 
-                        : 'bg-emerald-100 text-emerald-600 ring-emerald-200'
-                    }`}>
-                      {msg.direction === 'IN' ? 'IN' : 'OUT'}
-                    </div>
-                    {i !== messages.length - 1 && <div className="w-px h-full bg-neutral-200 mt-2"></div>}
-                  </div>
-                  <div className="flex-1 pb-1">
-                    <div className="flex justify-between items-start">
-                      <div className="flex-1">
-                        <h4 className="text-sm font-bold text-neutral-800">
-                          {msg.direction === 'IN' ? 'Message Received' : 'Message Sent'}
-                        </h4>
-                        <p className="text-sm text-neutral-500 mt-1 break-words line-clamp-3">
-                          {msg.content || (msg.mediaUrl ? 'Attachment received' : 'Media message')}
-                        </p>
-                      </div>
-                      <span className="text-xs text-neutral-400 pl-4 shrink-0">{formatDateTime(msg.timestamp)}</span>
-                    </div>
-                  </div>
+              <div className="overflow-hidden rounded-[var(--radius-md)] border border-neutral-200 bg-white shadow-sm">
+                <table className="min-w-full text-left text-sm">
+                  <thead className="bg-neutral-50 text-[10px] font-bold uppercase tracking-[0.14em] text-neutral-400">
+                    <tr>
+                      <th className="px-3 py-2">Date</th>
+                      <th className="px-3 py-2">Particulars</th>
+                      <th className="px-3 py-2 text-right">Debit</th>
+                      <th className="px-3 py-2 text-right">Credit</th>
+                      <th className="px-3 py-2 text-right">Balance</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-neutral-100">
+                    {isLedgerLoading ? (
+                      <tr><td colSpan="5" className="px-3 py-8 text-center text-neutral-400">Loading ledger...</td></tr>
+                    ) : (ledger.data || []).length === 0 ? (
+                      <tr><td colSpan="5" className="px-3 py-8 text-center text-neutral-400">No ledger entries yet.</td></tr>
+                    ) : (
+                      ledger.data.map((row) => (
+                        <tr key={row.id}>
+                          <td className="whitespace-nowrap px-3 py-2 text-neutral-500">{formatDate(row.date)}</td>
+                          <td className="px-3 py-2 text-neutral-700">
+                            <div className="font-medium">{row.description || row.type}</div>
+                            <div className="text-xs text-neutral-400">{row.referenceNumber || row.type}</div>
+                          </td>
+                          <td className="px-3 py-2 text-right text-neutral-700">{row.debit ? formatCurrency(row.debit) : '-'}</td>
+                          <td className="px-3 py-2 text-right text-neutral-700">{row.credit ? formatCurrency(row.credit) : '-'}</td>
+                          <td className="px-3 py-2 text-right font-semibold text-neutral-900">{formatCurrency(Math.abs(row.runningBalance || 0))}</td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Timeline Tab — unified lead/enquiry activity story */}
+          {activeTab === 'Timeline' && (
+            <div>
+              {activity.enquiries.length > 1 && (
+                <div className="mb-4 rounded-[var(--radius-md)] border border-neutral-200 bg-white px-4 py-3 text-xs text-neutral-500 shadow-sm">
+                  This customer has <span className="font-bold text-neutral-800">{activity.enquiries.length} enquiries</span>. Their whole journey is merged below, newest first.
                 </div>
-              ))}
+              )}
+              {isActivityLoading ? (
+                <div className="rounded-[var(--radius-md)] border border-neutral-200 bg-white py-12 text-center text-sm text-neutral-400 shadow-sm">
+                  Loading activity…
+                </div>
+              ) : (
+                <ActivityTimeline
+                  events={activity.timeline}
+                  grouped={activity.enquiries.length > 1}
+                  emptyText="No lead activity recorded for this customer yet."
+                />
+              )}
             </div>
           )}
         </div>

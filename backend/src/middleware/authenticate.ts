@@ -12,6 +12,13 @@ const { Agent, Agency } = require('../models');
  */
 async function authenticate(req, res, next) {
   try {
+    // Idempotent: if an earlier middleware (e.g. requireModule mounted at the
+    // route-group level) already resolved the session, don't re-verify or
+    // re-query. Keeps the extra module guard from doubling DB lookups.
+    if (req.agent && req.agency) {
+      return next();
+    }
+
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return res.status(401).json({

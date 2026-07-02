@@ -2,6 +2,33 @@ import { formatCurrency, formatDateTime, timeAgo } from './formatters';
 
 const CLOSED_STATUSES = new Set(['CONVERTED', 'LOST', 'CANCELLED']);
 
+// ── Agency-configurable pipeline stages ("statuses") ──
+// A lead's stage is the source of truth. These helpers read the stage first and
+// fall back to the legacy status only for leads not yet migrated.
+
+export function getLeadStageLabel(lead) {
+  if (lead?.pipelineStage?.name) return lead.pipelineStage.name;
+  // No stage: status is optional, so a status-less lead shows nothing.
+  return formatStatus(lead?.status);
+}
+
+export function getLeadStageColor(lead) {
+  return lead?.pipelineStage?.color || null;
+}
+
+export function getLeadStageKind(lead) {
+  return lead?.pipelineStage?.kind || null;
+}
+
+// Closed = the stage is Won/Lost. Falls back to the legacy status set for leads
+// whose stage hasn't been resolved yet.
+export function isLeadClosed(lead) {
+  const kind = lead?.pipelineStage?.kind;
+  if (kind === 'WON' || kind === 'LOST') return true;
+  if (kind === 'OPEN') return false;
+  return CLOSED_STATUSES.has(lead?.status);
+}
+
 export const SOURCE_OPTIONS = [
   { value: 'all', label: 'All Sources' },
   { value: 'whatsapp', label: 'WhatsApp' },
@@ -32,7 +59,9 @@ export const DATE_RANGE_OPTIONS = [
 ];
 
 export function formatStatus(status) {
-  return String(status || 'UNKNOWN').replace(/_/g, ' ');
+  // Entry-stage leads carry an empty (null) status; show nothing for them.
+  if (!status || status === 'JUST_CONTACTED') return '';
+  return String(status).replace(/_/g, ' ');
 }
 
 export function formatSource(source) {
@@ -95,7 +124,7 @@ export function getAttentionBadges(lead) {
   const badges = [];
   const nextFollowUp = getNextFollowUp(lead);
   const latestInbound = getLatestCustomerMessage(lead);
-  const isClosed = CLOSED_STATUSES.has(lead?.status);
+  const isClosed = isLeadClosed(lead);
   const score = getLeadScore(lead);
 
   if (nextFollowUp && isPast(nextFollowUp.scheduledAt) && !isToday(nextFollowUp.scheduledAt)) {
@@ -142,9 +171,9 @@ export function getNextAction(lead) {
 
   if (nextFollowUp && isPast(nextFollowUp.scheduledAt)) return 'Follow up now';
   if (nextFollowUp && isToday(nextFollowUp.scheduledAt)) return `Follow up ${formatDateTime(nextFollowUp.scheduledAt)}`;
-  if (!lead?.assignedAgentId && !CLOSED_STATUSES.has(lead?.status)) return 'Assign owner';
+  if (!lead?.assignedAgentId && !isLeadClosed(lead)) return 'Assign owner';
   if (hasSelectedItems && ['PACKAGE_SEARCHED', 'PACKAGE_INTERESTED', 'ENQUIRY'].includes(lead?.status)) return 'Send quote';
-  if (!nextFollowUp && !CLOSED_STATUSES.has(lead?.status)) return 'Schedule follow-up';
+  if (!nextFollowUp && !isLeadClosed(lead)) return 'Schedule follow-up';
   if (lead?.status === 'PACKAGE_INTERESTED') return 'Send quote';
   if (lead?.status === 'CONVERTED') return 'Review booking';
   if (lead?.status === 'LOST') return 'Review lost reason';

@@ -8,6 +8,18 @@ export const loginSchema = z.object({
   password: z.string().min(1, 'Password is required'),
 });
 
+export const forgotPasswordSchema = z.object({
+  email: z.string().email('Please enter a valid email'),
+});
+
+export const resetPasswordSchema = z.object({
+  password: z.string().min(8, 'Password must be at least 8 characters'),
+  confirmPassword: z.string().min(8, 'Confirm your new password'),
+}).refine((data) => data.password === data.confirmPassword, {
+  message: 'Passwords do not match',
+  path: ['confirmPassword'],
+});
+
 export const registerSchema = z.object({
   agencyName: z.string().min(2, 'Agency name must be at least 2 characters'),
   agencyPhone: z.string().min(10, 'Enter a valid phone number'),
@@ -16,6 +28,7 @@ export const registerSchema = z.object({
   agentName: z.string().min(2, 'Your name must be at least 2 characters'),
   agentEmail: z.string().email('Enter a valid email'),
   agentPassword: z.string().min(8, 'Password must be at least 8 characters'),
+  industry: z.enum(['TRAVEL', 'RESORT', 'CLEANING', 'LAUNDRY']).default('TRAVEL'),
 });
 
 export const packageSchema = z.object({

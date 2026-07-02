@@ -17,6 +17,10 @@ const sendMessageSchema = z.object({
   type: z.enum(['TEXT', 'IMAGE', 'DOCUMENT']).optional(),
 });
 
+const assignSchema = z.object({
+  agentId: z.string().uuid().nullable().optional(),
+});
+
 /**
  * GET /api/messages - List messages for a customer
  */
@@ -28,9 +32,24 @@ router.get('/', authenticate, requirePermission(PERMISSIONS.MESSAGES_VIEW), mess
 router.get('/live', authenticate, requirePermission(PERMISSIONS.MESSAGES_VIEW), messageController.live);
 
 /**
+ * GET /api/messages/threads - WhatsApp conversation list
+ */
+router.get('/threads', authenticate, requirePermission(PERMISSIONS.MESSAGES_VIEW), messageController.threads);
+
+/**
+ * GET /api/messages/agents - Agents a conversation can be assigned to
+ */
+router.get('/agents', authenticate, requirePermission(PERMISSIONS.MESSAGES_VIEW), messageController.assignableAgents);
+
+/**
  * POST /api/messages/send - Send a message from agent to customer
  */
 router.post('/send', authenticate, requirePermission(PERMISSIONS.MESSAGES_SEND), validateBody(sendMessageSchema), messageController.send);
+
+/**
+ * PATCH /api/messages/threads/:customerId/assignee - Assign/reassign a conversation
+ */
+router.patch('/threads/:customerId/assignee', authenticate, requirePermission(PERMISSIONS.MESSAGES_SEND), validateBody(assignSchema), messageController.assign);
 
 /**
  * PATCH /api/sessions/:customerId/takeover - Agent takes over from bot

@@ -87,6 +87,11 @@ module.exports = (sequelize) => {
       defaultValue: [],
       comment: 'Sample values for preview: ["John", "Maldives"]',
     },
+    variableMap: {
+      type: DataTypes.JSONB,
+      defaultValue: [],
+      comment: 'Ordered named-variable map; array index = position-1: [{ name, source }]. source: CONTACT (per-recipient) | STATIC (campaign-wide). Empty = legacy positional template.',
+    },
     tags: {
       type: DataTypes.ARRAY(DataTypes.STRING),
       defaultValue: [],

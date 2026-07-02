@@ -40,6 +40,15 @@ exports.getReport = async (req, res, next) => {
   }
 };
 
+exports.reports = async (req, res, next) => {
+  try {
+    const result = await campaignService.getCampaignRecipientReports(req.user.agencyId, req.query);
+    res.json({ success: true, data: result });
+  } catch (err) {
+    next(err);
+  }
+};
+
 exports.create = async (req, res, next) => {
   try {
     const campaign = await campaignService.createCampaign(req.user.agencyId, req.body);

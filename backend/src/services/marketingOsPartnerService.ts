@@ -115,7 +115,23 @@ async function sendTenantWhatsAppMedia(tenantToken, payload) {
 
 async function sendTenantInstagramMessage(tenantToken, payload) {
   const client = getTenantClient(tenantToken);
-  // payload expects { tenantId, accountId?, recipientId, text }
+  // payload expects { tenantId, accountId?, recipientId, text?, quickReplies?, buttons?,
+  //   mediaUrl?, mediaType?, caption?, ctaLabel? }.
+  // quickReplies render as tappable chips (their payload echoes back on the inbound webhook);
+  // buttons render as a button template (web_url buttons for links);
+  // mediaUrl + mediaType ('image' | 'video' | 'audio') send a native attachment, with an
+  // optional caption delivered as a follow-up text.
+  const response = await client.post('/messages/instagram/send', payload, {
+    headers: payload.tenantId ? { 'x-tenant-id': payload.tenantId } : undefined,
+  });
+  return response.data;
+}
+
+async function sendTenantInstagramSenderAction(tenantToken, payload) {
+  const client = getTenantClient(tenantToken);
+  // payload expects { tenantId, accountId?, recipientId, senderAction }.
+  // senderAction is 'typing_on' | 'typing_off' | 'mark_seen' — a native Instagram UI signal
+  // (typing bubble / seen receipt), not a stored message.
   const response = await client.post('/messages/instagram/send', payload, {
     headers: payload.tenantId ? { 'x-tenant-id': payload.tenantId } : undefined,
   });
@@ -160,6 +176,12 @@ async function sendTenantWhatsAppTemplate(tenantToken, payload) {
 async function syncTenantWhatsAppBusinessAppData(tenantToken, payload) {
   const client = getTenantClient(tenantToken);
   const response = await client.post('/whatsapp/smb-app-data', payload);
+  return response.data;
+}
+
+async function disconnectTenantWhatsApp(tenantToken) {
+  const client = getTenantClient(tenantToken);
+  const response = await client.delete('/whatsapp/settings');
   return response.data;
 }
 
@@ -253,6 +275,41 @@ async function disconnectTenantInstagram(tenantToken, accountId) {
   return response.data;
 }
 
+async function getTenantMessengerConnection(tenantToken) {
+  const client = getTenantClient(tenantToken);
+  const response = await client.get('/messenger/connection');
+  return response.data;
+}
+
+async function connectTenantMessenger(tenantToken, payload) {
+  const client = getTenantClient(tenantToken);
+  // payload expects { code, redirectUri } (Facebook Login) or { userAccessToken }, optional { pageId }
+  const response = await client.post('/messenger/connect', payload);
+  return response.data;
+}
+
+async function disconnectTenantMessenger(tenantToken, accountId) {
+  const client = getTenantClient(tenantToken);
+  const response = await client.delete(`/messenger/disconnect/${encodeURIComponent(accountId)}`);
+  return response.data;
+}
+
+async function getTenantMessengerMessages(tenantToken, params = {}) {
+  const client = getTenantClient(tenantToken);
+  const response = await client.get('/messenger/inbox/messages', { params });
+  return response.data;
+}
+
+async function sendTenantMessengerMessage(tenantToken, payload) {
+  const client = getTenantClient(tenantToken);
+  // payload expects { accountId, recipientId, text }
+  const response = await client.post(
+    `/messenger/inbox/messages/${encodeURIComponent(payload.accountId)}/send`,
+    { recipientId: payload.recipientId, text: payload.text }
+  );
+  return response.data;
+}
+
 async function createTenantMetaConnectSession(tenantToken, payload = {}) {
   const client = getTenantClient(tenantToken);
   const response = await client.post('/meta/connect-session', payload);
@@ -317,6 +374,19 @@ async function getTenantMetaLead(tenantToken, leadgenId) {
   return response.data;
 }
 
+/**
+ * Resolve a single Meta ad by its ID (the `source_id` from a Click-to-WhatsApp
+ * referral). Returns the ad with its ad set + campaign so the CRM can show a
+ * readable ad name. Best-effort: the partner API may not expose this endpoint on
+ * every deployment, in which case it throws a 404/405 that callers treat as
+ * "not resolvable" and fall back to the ad headline.
+ */
+async function getTenantMetaAd(tenantToken, adId) {
+  const client = getTenantClient(tenantToken);
+  const response = await client.get(`/meta/ads/${encodeURIComponent(adId)}`);
+  return response.data;
+}
+
 async function subscribeTenantMetaForm(tenantToken, formId) {
   const client = getTenantClient(tenantToken);
   const response = await client.post(`/meta/forms/${encodeURIComponent(formId)}/subscribe`);
@@ -341,7 +411,9 @@ module.exports = {
   sendTenantWhatsAppMedia,
   sendTenantWhatsAppTemplate,
   syncTenantWhatsAppBusinessAppData,
+  disconnectTenantWhatsApp,
   sendTenantInstagramMessage,
+  sendTenantInstagramSenderAction,
   sendTenantInstagramPrivateReply,
   sendTenantInstagramCommentReply,
   sendTenantWhatsAppReadTyping,
@@ -360,6 +432,11 @@ module.exports = {
   getTenantInstagramConnection,
   connectTenantInstagram,
   disconnectTenantInstagram,
+  getTenantMessengerConnection,
+  connectTenantMessenger,
+  disconnectTenantMessenger,
+  getTenantMessengerMessages,
+  sendTenantMessengerMessage,
   createTenantMetaConnectSession,
   getTenantMetaLoginUrl,
   listTenantMetaAdAccounts,
@@ -369,6 +446,7 @@ module.exports = {
   listTenantMetaForms,
   listTenantMetaFormLeads,
   getTenantMetaLead,
+  getTenantMetaAd,
   subscribeTenantMetaForm,
   backfillTenantMetaForm,
 };

@@ -2,7 +2,7 @@ const platformAdminService = require('../services/platformAdminService');
 
 async function overview(_req, res, next) {
   try {
-    const data = await platformAdminService.getOverview();
+    const data = await platformAdminService.getOverview(_req.query?.range);
     res.json({ success: true, data });
   } catch (err) {
     next(err);
@@ -20,7 +20,7 @@ async function agencies(req, res, next) {
 
 async function agencyDetail(req, res, next) {
   try {
-    const data = await platformAdminService.getAgencyDetail(req.params.id, req.platformAdmin.id, req);
+    const data = await platformAdminService.getAgencyDetail(req.params.id, req.platformAdmin.id, req, req.query?.range);
     res.json({ success: true, data });
   } catch (err) {
     next(err);
@@ -31,6 +31,15 @@ async function updateAgencyStatus(req, res, next) {
   try {
     const data = await platformAdminService.updateAgencyStatus(req.params.id, req.body.isActive, req.platformAdmin.id, req);
     res.json({ success: true, data, message: data.isActive ? 'Agency reactivated' : 'Agency suspended' });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function updateAgencyModules(req, res, next) {
+  try {
+    const data = await platformAdminService.updateAgencyModules(req.params.id, req.body.modules, req.platformAdmin.id, req);
+    res.json({ success: true, data, message: 'Agency modules updated' });
   } catch (err) {
     next(err);
   }
@@ -59,6 +68,7 @@ module.exports = {
   agencies,
   agencyDetail,
   updateAgencyStatus,
+  updateAgencyModules,
   health,
   activity,
 };

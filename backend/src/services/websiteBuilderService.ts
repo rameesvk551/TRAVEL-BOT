@@ -5,6 +5,225 @@ const { Agency } = require('../models');
 
 const SITES_ROOT = path.resolve(__dirname, '../../public/sites');
 const RESERVED_SUBDOMAINS = new Set(['api', 'app', 'admin', 'www', 'mail', 'ftp', 'localhost', 'travelbot']);
+const WEBSITE_TEMPLATE_IDS = [
+  'MODERN',
+  'CLASSIC',
+  'MINIMAL',
+  'VIBRANT',
+  'LUXURY_ESCAPE',
+  'ADVENTURE_TREK',
+  'FAMILY_HOLIDAY',
+  'HONEYMOON',
+  'CORPORATE_TRAVEL',
+  'PILGRIMAGE',
+];
+const WEBSITE_TEMPLATES = {
+  MODERN: {
+    eyebrow: 'Travel experiences',
+    bodyClass: 'bg-white text-neutral-950',
+    headerClass: 'sticky top-0 z-30 border-b border-neutral-200 bg-white/90 backdrop-blur',
+    heroClass: 'relative overflow-hidden bg-neutral-950',
+    heroImageClass: 'absolute inset-0 h-full w-full object-cover opacity-50',
+    heroInnerClass: 'relative mx-auto flex min-h-[70vh] max-w-6xl flex-col justify-end px-4 pb-14 pt-24 text-white',
+    primaryButtonClass: 'rounded-lg bg-white px-5 py-3 text-sm font-bold text-neutral-950',
+    secondaryButtonClass: 'rounded-lg border border-white/40 px-5 py-3 text-sm font-bold text-white',
+    sectionClass: 'mx-auto max-w-6xl px-4 py-14',
+    bandClass: 'bg-neutral-50',
+    cardClass: 'overflow-hidden rounded-lg border border-neutral-200 bg-white',
+    formClass: 'rounded-lg border border-neutral-200 bg-white p-5 shadow-sm',
+  },
+  CLASSIC: {
+    eyebrow: 'Curated journeys',
+    bodyClass: 'bg-stone-50 text-neutral-950',
+    headerClass: 'sticky top-0 z-30 border-b border-stone-200 bg-stone-50/95 backdrop-blur',
+    heroClass: 'relative overflow-hidden bg-stone-950',
+    heroImageClass: 'absolute inset-0 h-full w-full object-cover opacity-45 sepia',
+    heroInnerClass: 'relative mx-auto flex min-h-[68vh] max-w-6xl flex-col justify-center px-4 py-24 text-white',
+    primaryButtonClass: 'rounded-sm bg-white px-5 py-3 text-sm font-bold text-stone-950',
+    secondaryButtonClass: 'rounded-sm border border-white/45 px-5 py-3 text-sm font-bold text-white',
+    sectionClass: 'mx-auto max-w-6xl px-4 py-16',
+    bandClass: 'bg-white',
+    cardClass: 'overflow-hidden rounded-sm border border-stone-200 bg-white shadow-sm',
+    formClass: 'rounded-sm border border-stone-200 bg-white p-5 shadow-sm',
+  },
+  MINIMAL: {
+    eyebrow: 'Trips, stays, support',
+    bodyClass: 'bg-white text-neutral-950',
+    headerClass: 'sticky top-0 z-30 border-b border-neutral-100 bg-white/95 backdrop-blur',
+    heroClass: 'relative overflow-hidden bg-white',
+    heroImageClass: 'absolute right-0 top-0 h-full w-full object-cover opacity-20 grayscale',
+    heroInnerClass: 'relative mx-auto flex min-h-[62vh] max-w-6xl flex-col justify-end px-4 pb-12 pt-24 text-neutral-950',
+    primaryButtonClass: 'rounded-lg bg-neutral-950 px-5 py-3 text-sm font-bold text-white',
+    secondaryButtonClass: 'rounded-lg border border-neutral-300 px-5 py-3 text-sm font-bold text-neutral-900',
+    sectionClass: 'mx-auto max-w-6xl px-4 py-12',
+    bandClass: 'bg-neutral-50',
+    cardClass: 'overflow-hidden rounded-lg border border-neutral-100 bg-white',
+    formClass: 'rounded-lg border border-neutral-100 bg-white p-5 shadow-sm',
+  },
+  VIBRANT: {
+    eyebrow: 'Deals and departures',
+    bodyClass: 'bg-white text-neutral-950',
+    headerClass: 'sticky top-0 z-30 border-b border-fuchsia-100 bg-white/90 backdrop-blur',
+    heroClass: 'relative overflow-hidden bg-fuchsia-950',
+    heroImageClass: 'absolute inset-0 h-full w-full object-cover opacity-55 saturate-150',
+    heroInnerClass: 'relative mx-auto flex min-h-[72vh] max-w-6xl flex-col justify-end px-4 pb-14 pt-24 text-white',
+    primaryButtonClass: 'rounded-lg bg-white px-5 py-3 text-sm font-black text-fuchsia-950',
+    secondaryButtonClass: 'rounded-lg border border-white/50 px-5 py-3 text-sm font-black text-white',
+    sectionClass: 'mx-auto max-w-6xl px-4 py-14',
+    bandClass: 'bg-amber-50',
+    cardClass: 'overflow-hidden rounded-lg border border-fuchsia-100 bg-white shadow-sm',
+    formClass: 'rounded-lg border border-fuchsia-100 bg-white p-5 shadow-sm',
+  },
+  LUXURY_ESCAPE: {
+    eyebrow: 'Luxury escapes',
+    bodyClass: 'bg-neutral-950 text-white',
+    headerClass: 'sticky top-0 z-30 border-b border-white/10 bg-neutral-950/90 backdrop-blur',
+    heroClass: 'relative overflow-hidden bg-black',
+    heroImageClass: 'absolute inset-0 h-full w-full object-cover opacity-45',
+    heroInnerClass: 'relative mx-auto flex min-h-[74vh] max-w-6xl flex-col justify-center px-4 py-24 text-white',
+    primaryButtonClass: 'rounded-sm bg-white px-5 py-3 text-sm font-bold text-neutral-950',
+    secondaryButtonClass: 'rounded-sm border border-white/35 px-5 py-3 text-sm font-bold text-white',
+    sectionClass: 'mx-auto max-w-6xl px-4 py-16 text-white',
+    bandClass: 'bg-neutral-900',
+    cardClass: 'overflow-hidden rounded-sm border border-white/10 bg-neutral-900 text-white',
+    formClass: 'rounded-sm border border-white/10 bg-neutral-900 p-5 shadow-sm',
+  },
+  ADVENTURE_TREK: {
+    eyebrow: 'Adventure departures',
+    bodyClass: 'bg-lime-50 text-neutral-950',
+    headerClass: 'sticky top-0 z-30 border-b border-lime-200 bg-lime-50/95 backdrop-blur',
+    heroClass: 'relative overflow-hidden bg-emerald-950',
+    heroImageClass: 'absolute inset-0 h-full w-full object-cover opacity-55 contrast-125',
+    heroInnerClass: 'relative mx-auto flex min-h-[72vh] max-w-6xl flex-col justify-end px-4 pb-14 pt-24 text-white',
+    primaryButtonClass: 'rounded-lg bg-lime-300 px-5 py-3 text-sm font-black text-emerald-950',
+    secondaryButtonClass: 'rounded-lg border border-lime-200/70 px-5 py-3 text-sm font-black text-white',
+    sectionClass: 'mx-auto max-w-6xl px-4 py-14',
+    bandClass: 'bg-white',
+    cardClass: 'overflow-hidden rounded-lg border border-lime-200 bg-white shadow-sm',
+    formClass: 'rounded-lg border border-lime-200 bg-white p-5 shadow-sm',
+  },
+  FAMILY_HOLIDAY: {
+    eyebrow: 'Family holidays',
+    bodyClass: 'bg-sky-50 text-neutral-950',
+    headerClass: 'sticky top-0 z-30 border-b border-sky-100 bg-white/90 backdrop-blur',
+    heroClass: 'relative overflow-hidden bg-sky-950',
+    heroImageClass: 'absolute inset-0 h-full w-full object-cover opacity-50',
+    heroInnerClass: 'relative mx-auto flex min-h-[70vh] max-w-6xl flex-col justify-end px-4 pb-14 pt-24 text-white',
+    primaryButtonClass: 'rounded-lg bg-white px-5 py-3 text-sm font-bold text-sky-950',
+    secondaryButtonClass: 'rounded-lg border border-white/40 px-5 py-3 text-sm font-bold text-white',
+    sectionClass: 'mx-auto max-w-6xl px-4 py-14',
+    bandClass: 'bg-white',
+    cardClass: 'overflow-hidden rounded-lg border border-sky-100 bg-white shadow-sm',
+    formClass: 'rounded-lg border border-sky-100 bg-white p-5 shadow-sm',
+  },
+  HONEYMOON: {
+    eyebrow: 'Romantic getaways',
+    bodyClass: 'bg-rose-50 text-neutral-950',
+    headerClass: 'sticky top-0 z-30 border-b border-rose-100 bg-rose-50/95 backdrop-blur',
+    heroClass: 'relative overflow-hidden bg-rose-950',
+    heroImageClass: 'absolute inset-0 h-full w-full object-cover opacity-50 saturate-125',
+    heroInnerClass: 'relative mx-auto flex min-h-[72vh] max-w-6xl flex-col justify-center px-4 py-24 text-white',
+    primaryButtonClass: 'rounded-lg bg-white px-5 py-3 text-sm font-bold text-rose-950',
+    secondaryButtonClass: 'rounded-lg border border-white/45 px-5 py-3 text-sm font-bold text-white',
+    sectionClass: 'mx-auto max-w-6xl px-4 py-14',
+    bandClass: 'bg-white',
+    cardClass: 'overflow-hidden rounded-lg border border-rose-100 bg-white shadow-sm',
+    formClass: 'rounded-lg border border-rose-100 bg-white p-5 shadow-sm',
+  },
+  CORPORATE_TRAVEL: {
+    eyebrow: 'Business travel',
+    bodyClass: 'bg-slate-50 text-slate-950',
+    headerClass: 'sticky top-0 z-30 border-b border-slate-200 bg-white/95 backdrop-blur',
+    heroClass: 'relative overflow-hidden bg-slate-950',
+    heroImageClass: 'absolute inset-0 h-full w-full object-cover opacity-40 grayscale',
+    heroInnerClass: 'relative mx-auto flex min-h-[64vh] max-w-6xl flex-col justify-center px-4 py-24 text-white',
+    primaryButtonClass: 'rounded-md bg-white px-5 py-3 text-sm font-bold text-slate-950',
+    secondaryButtonClass: 'rounded-md border border-white/45 px-5 py-3 text-sm font-bold text-white',
+    sectionClass: 'mx-auto max-w-6xl px-4 py-12',
+    bandClass: 'bg-white',
+    cardClass: 'overflow-hidden rounded-md border border-slate-200 bg-white shadow-sm',
+    formClass: 'rounded-md border border-slate-200 bg-white p-5 shadow-sm',
+  },
+  PILGRIMAGE: {
+    eyebrow: 'Pilgrimage tours',
+    bodyClass: 'bg-orange-50 text-neutral-950',
+    headerClass: 'sticky top-0 z-30 border-b border-orange-100 bg-orange-50/95 backdrop-blur',
+    heroClass: 'relative overflow-hidden bg-orange-950',
+    heroImageClass: 'absolute inset-0 h-full w-full object-cover opacity-45 sepia',
+    heroInnerClass: 'relative mx-auto flex min-h-[70vh] max-w-6xl flex-col justify-end px-4 pb-14 pt-24 text-white',
+    primaryButtonClass: 'rounded-lg bg-white px-5 py-3 text-sm font-bold text-orange-950',
+    secondaryButtonClass: 'rounded-lg border border-white/45 px-5 py-3 text-sm font-bold text-white',
+    sectionClass: 'mx-auto max-w-6xl px-4 py-14',
+    bandClass: 'bg-white',
+    cardClass: 'overflow-hidden rounded-lg border border-orange-100 bg-white shadow-sm',
+    formClass: 'rounded-lg border border-orange-100 bg-white p-5 shadow-sm',
+  },
+};
+
+function websiteTemplate(theme) {
+  return WEBSITE_TEMPLATES[theme] || WEBSITE_TEMPLATES.MODERN;
+}
+
+function templateCss(theme) {
+  return `
+    body[data-template="CLASSIC"] { font-family: Georgia, "Times New Roman", serif; }
+    body[data-template="CLASSIC"] h1,
+    body[data-template="CLASSIC"] h2,
+    body[data-template="CLASSIC"] h3 { font-family: Georgia, "Times New Roman", serif; font-weight: 700; }
+    body[data-template="CLASSIC"] .catalog-card { border-left: 4px solid var(--brand); }
+
+    body[data-template="MINIMAL"] #packages-grid,
+    body[data-template="MINIMAL"] #properties-grid,
+    body[data-template="CORPORATE_TRAVEL"] #packages-grid,
+    body[data-template="CORPORATE_TRAVEL"] #properties-grid { display: grid; grid-template-columns: 1fr; }
+    body[data-template="MINIMAL"] .catalog-card,
+    body[data-template="CORPORATE_TRAVEL"] .catalog-card { display: grid; grid-template-columns: minmax(180px, 32%) 1fr; align-items: stretch; }
+    body[data-template="MINIMAL"] .catalog-card .card-media,
+    body[data-template="CORPORATE_TRAVEL"] .catalog-card .card-media { height: 100%; min-height: 180px; aspect-ratio: auto; }
+    body[data-template="MINIMAL"] .catalog-card { box-shadow: none; }
+    body[data-template="MINIMAL"] .catalog-card .card-content { padding: 1.35rem; }
+
+    body[data-template="VIBRANT"] .catalog-card { box-shadow: 0 18px 45px rgba(192, 38, 211, 0.14); border-top: 5px solid var(--brand); }
+    body[data-template="VIBRANT"] #packages-grid article:nth-child(2n) { transform: translateY(18px); }
+
+    body[data-template="LUXURY_ESCAPE"] h2,
+    body[data-template="LUXURY_ESCAPE"] .brand-text { color: #d6b46d; }
+    body[data-template="LUXURY_ESCAPE"] .catalog-card { box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35); }
+    body[data-template="LUXURY_ESCAPE"] .catalog-card p { color: rgba(255,255,255,0.68); }
+    body[data-template="LUXURY_ESCAPE"] .catalog-card h3,
+    body[data-template="LUXURY_ESCAPE"] .catalog-card .price { color: #fff; }
+    body[data-template="LUXURY_ESCAPE"] input,
+    body[data-template="LUXURY_ESCAPE"] textarea { background: #111827; border-color: rgba(255,255,255,0.14); color: #fff; }
+
+    body[data-template="ADVENTURE_TREK"] .catalog-card { border-radius: 0.35rem; box-shadow: 0 16px 36px rgba(22, 101, 52, 0.12); }
+    body[data-template="ADVENTURE_TREK"] .catalog-card .card-media { clip-path: polygon(0 0, 100% 0, 100% 90%, 0 100%); }
+
+    body[data-template="FAMILY_HOLIDAY"] .catalog-card,
+    body[data-template="FAMILY_HOLIDAY"] form { border-radius: 1.5rem; box-shadow: 0 16px 40px rgba(2, 132, 199, 0.10); }
+    body[data-template="FAMILY_HOLIDAY"] .catalog-card .card-media { border-radius: 1.25rem; margin: 0.75rem; margin-bottom: 0; overflow: hidden; }
+
+    body[data-template="HONEYMOON"] .catalog-card { border-radius: 1.5rem; box-shadow: 0 18px 45px rgba(225, 29, 72, 0.12); }
+    body[data-template="HONEYMOON"] .catalog-card .card-media { border-radius: 1.5rem 1.5rem 0 0; }
+    body[data-template="HONEYMOON"] h2 { font-family: Georgia, "Times New Roman", serif; font-style: italic; }
+
+    body[data-template="CORPORATE_TRAVEL"] .catalog-card { border-left: 5px solid #334155; box-shadow: none; }
+    body[data-template="CORPORATE_TRAVEL"] .catalog-card .card-content { display: grid; grid-template-columns: 1fr auto; gap: 0.75rem 1.25rem; align-items: start; }
+    body[data-template="CORPORATE_TRAVEL"] .catalog-card .description { grid-column: 1 / -1; }
+    body[data-template="CORPORATE_TRAVEL"] .catalog-card button { grid-column: 1 / -1; justify-self: start; }
+
+    body[data-template="PILGRIMAGE"] { font-family: Georgia, "Times New Roman", serif; }
+    body[data-template="PILGRIMAGE"] .catalog-card { text-align: center; border-color: rgba(234, 88, 12, 0.18); }
+    body[data-template="PILGRIMAGE"] .catalog-card .card-media img { filter: sepia(0.24) saturate(0.9); }
+
+    @media (max-width: 720px) {
+      body[data-template="MINIMAL"] .catalog-card,
+      body[data-template="CORPORATE_TRAVEL"] .catalog-card { grid-template-columns: 1fr; }
+      body[data-template="MINIMAL"] .catalog-card .card-media,
+      body[data-template="CORPORATE_TRAVEL"] .catalog-card .card-media { min-height: 0; aspect-ratio: 4 / 2.35; }
+      body[data-template="VIBRANT"] #packages-grid article:nth-child(2n) { transform: none; }
+    }
+  `;
+}
 
 function normalizeHost(value = '') {
   const raw = String(value || '').trim().toLowerCase();
@@ -75,7 +294,7 @@ function publicAgencyPayload(agency) {
     subdomain: agency.subdomain || null,
     customDomain: agency.customDomain || null,
     websiteEnabled: Boolean(agency.websiteEnabled),
-    websiteTheme: agency.websiteTheme || 'MODERN',
+    websiteTheme: WEBSITE_TEMPLATE_IDS.includes(agency.websiteTheme) ? agency.websiteTheme : 'MODERN',
     websiteTitle: agency.websiteTitle || agency.name,
     websiteDescription: agency.websiteDescription || '',
     websiteLogoUrl: agency.websiteLogoUrl || '',
@@ -93,6 +312,7 @@ function publicAgencyPayload(agency) {
 
 function renderStaticSite(agency) {
   const payload = publicAgencyPayload(agency);
+  const template = websiteTemplate(payload.websiteTheme);
   const title = payload.websiteSeoMeta.title || payload.websiteTitle || payload.name;
   const description = payload.websiteSeoMeta.description || payload.websiteDescription || `Travel packages and stays from ${payload.name}`;
   const css = agency.websiteCustomCss || '';
@@ -112,11 +332,12 @@ function renderStaticSite(agency) {
     .brand-bg { background: var(--brand); }
     .brand-text { color: var(--brand); }
     .brand-border { border-color: var(--brand); }
+    ${templateCss(payload.websiteTheme)}
     ${css}
   </style>
 </head>
-<body class="bg-white text-neutral-950">
-  <header class="sticky top-0 z-30 border-b border-neutral-200 bg-white/90 backdrop-blur">
+<body class="${template.bodyClass}" data-template="${escapeHtml(payload.websiteTheme)}">
+  <header class="${template.headerClass}">
     <div class="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
       <a href="/" class="flex min-w-0 items-center gap-3">
         ${payload.websiteLogoUrl ? `<img src="${escapeHtml(payload.websiteLogoUrl)}" alt="" class="h-10 w-10 rounded-lg object-cover">` : '<span class="brand-bg flex h-10 w-10 items-center justify-center rounded-lg text-sm font-black text-white">W</span>'}
@@ -131,27 +352,27 @@ function renderStaticSite(agency) {
   </header>
 
   <main>
-    <section class="relative overflow-hidden bg-neutral-950">
-      ${payload.websiteHeroImageUrl ? `<img src="${escapeHtml(payload.websiteHeroImageUrl)}" alt="" class="absolute inset-0 h-full w-full object-cover opacity-50">` : ''}
-      <div class="relative mx-auto flex min-h-[70vh] max-w-6xl flex-col justify-end px-4 pb-14 pt-24 text-white">
-        <p class="text-xs font-bold uppercase tracking-[0.22em] text-white/70">Travel experiences</p>
+    <section class="${template.heroClass}">
+      ${payload.websiteHeroImageUrl ? `<img src="${escapeHtml(payload.websiteHeroImageUrl)}" alt="" class="${template.heroImageClass}">` : ''}
+      <div class="${template.heroInnerClass}">
+        <p class="text-xs font-bold uppercase tracking-[0.22em] opacity-70">${escapeHtml(template.eyebrow)}</p>
         <h1 class="mt-4 max-w-3xl text-4xl font-black leading-tight sm:text-6xl">${escapeHtml(payload.websiteTitle || payload.name)}</h1>
-        <p class="mt-5 max-w-2xl text-base leading-7 text-white/85">${escapeHtml(payload.websiteDescription || 'Explore curated packages, stays, and travel support from our team.')}</p>
+        <p class="mt-5 max-w-2xl text-base leading-7 opacity-85">${escapeHtml(payload.websiteDescription || 'Explore curated packages, stays, and travel support from our team.')}</p>
         <div class="mt-7 flex flex-wrap gap-3">
-          <a href="#packages" class="rounded-lg bg-white px-5 py-3 text-sm font-bold text-neutral-950">Explore packages</a>
-          <a href="#enquiry" class="rounded-lg border border-white/40 px-5 py-3 text-sm font-bold text-white">Send enquiry</a>
+          <a href="#packages" class="${template.primaryButtonClass}">Explore packages</a>
+          <a href="#enquiry" class="${template.secondaryButtonClass}">Send enquiry</a>
         </div>
       </div>
     </section>
 
-    <section id="packages" class="mx-auto max-w-6xl px-4 py-14">
+    <section id="packages" class="${template.sectionClass}">
       <p class="text-xs font-bold uppercase tracking-[0.2em] text-neutral-400">Packages</p>
       <h2 class="mt-2 text-3xl font-black">Featured trips</h2>
       <div id="packages-grid" class="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-3"></div>
     </section>
 
-    <section class="bg-neutral-50">
-      <div class="mx-auto max-w-6xl px-4 py-14">
+    <section class="${template.bandClass}">
+      <div class="${template.sectionClass}">
         <p class="text-xs font-bold uppercase tracking-[0.2em] text-neutral-400">Properties</p>
         <h2 class="mt-2 text-3xl font-black">Stays and properties</h2>
         <div id="properties-grid" class="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-3"></div>
@@ -168,7 +389,7 @@ function renderStaticSite(agency) {
           ${payload.websiteContactEmail ? `<p>Email: ${escapeHtml(payload.websiteContactEmail)}</p>` : ''}
         </div>
       </div>
-      <form id="enquiry-form" class="rounded-lg border border-neutral-200 bg-white p-5 shadow-sm">
+      <form id="enquiry-form" class="${template.formClass}">
         <div id="form-message" class="mb-4 hidden rounded-lg px-3 py-2 text-sm"></div>
         <input id="selected-item-type" type="hidden">
         <input id="selected-item-id" type="hidden">
@@ -200,14 +421,14 @@ function renderStaticSite(agency) {
         ? [item.duration, ...(item.destinations || []).slice(0, 2)].filter(Boolean).join(" | ")
         : [item.propertyType, item.location].filter(Boolean).join(" | ");
       const price = type === "PACKAGE" ? money(item.basePrice) : money(item.pricePerNight);
-      return \`<article class="overflow-hidden rounded-lg border border-neutral-200 bg-white">
-        <div class="aspect-[4/2.35] bg-neutral-100">\${image ? \`<img src="\${esc(image)}" alt="\${esc(item.name)}" class="h-full w-full object-cover">\` : ""}</div>
-        <div class="p-4">
+      return \`<article class="catalog-card ${template.cardClass}">
+        <div class="card-media aspect-[4/2.35] bg-neutral-100">\${image ? \`<img src="\${esc(image)}" alt="\${esc(item.name)}" class="h-full w-full object-cover">\` : ""}</div>
+        <div class="card-content p-4">
           <p class="text-xs font-bold uppercase tracking-[0.16em] text-neutral-400">\${type === "PACKAGE" ? esc(item.category || "Package") : "Stay"}</p>
           <h3 class="mt-2 text-lg font-bold">\${esc(item.name)}</h3>
           <p class="mt-1 text-sm text-neutral-500">\${esc(subtitle)}</p>
-          <p class="mt-3 text-sm font-bold">\${price}</p>
-          <p class="mt-3 line-clamp-3 text-sm leading-6 text-neutral-600">\${esc(item.summary || item.description || "Contact us for details.")}</p>
+          <p class="price mt-3 text-sm font-bold">\${price}</p>
+          <p class="description mt-3 line-clamp-3 text-sm leading-6 text-neutral-600">\${esc(item.summary || item.description || "Contact us for details.")}</p>
           <button class="brand-text mt-4 text-sm font-black" data-type="\${type}" data-id="\${item.id}" data-name="\${esc(item.name)}">Enquire now</button>
         </div>
       </article>\`;

@@ -1,0 +1,45 @@
+{
+  "name": "travelbot-backend",
+  "version": "1.0.0",
+  "description": "TravelBot Backend API — WhatsApp automation for travel agencies",
+  "main": "src/server.ts",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "start": "tsx src/server.ts",
+    "db:sync": "tsx -e \"const { sequelize } = require('./src/models'); sequelize.sync().then(() => { console.log('DB synced'); process.exit(0); }).catch((err) => { console.error(err); process.exit(1); });\"",
+    "flows:refresh-properties": "tsx src/scripts/refreshOnboardedPropertyFlows.ts",
+    "seed:real-estate": "tsx src/scripts/seedRealEstateData.ts",
+    "seed:travel-packages": "tsx src/scripts/seedTravelPackages.ts",
+    "typecheck": "tsc --noEmit",
+    "build:ts": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "axios": "^1.6.2",
+    "bcryptjs": "^2.4.3",
+    "bullmq": "^5.1.1",
+    "cloudinary": "^2.9.0",
+    "cors": "^2.8.5",
+    "crypto-js": "^4.2.0",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "express-rate-limit": "^7.1.4",
+    "helmet": "^7.1.0",
+    "ioredis": "^5.3.2",
+    "jsonwebtoken": "^9.0.2",
+    "morgan": "^1.10.0",
+    "multer": "^2.1.1",
+    "nodemailer": "^6.9.7",
+    "pdf-lib": "^1.17.1",
+    "pg": "^8.11.3",
+    "pg-hstore": "^2.3.4",
+    "sequelize": "^6.35.2",
+    "uuid": "^9.0.0",
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^25.6.0",
+    "tsx": "^4.20.6",
+    "typescript": "^6.0.2"
+  }
+}

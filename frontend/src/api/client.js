@@ -12,6 +12,9 @@ const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api';
 const client = axios.create({
   baseURL: API_BASE,
   headers: { 'Content-Type': 'application/json' },
+  // Send/receive the HttpOnly refresh cookie so the session can be restored even
+  // when localStorage was evicted (Safari/Mac & iOS standalone PWAs).
+  withCredentials: true,
 });
 
 // Request interceptor — attach access token
@@ -59,10 +62,15 @@ client.interceptors.response.use(
       isRefreshing = true;
 
       try {
+        // Use the stored refresh token if present; otherwise fall back to the
+        // HttpOnly cookie (sent via withCredentials) — the only surviving source
+        // after Safari evicts localStorage.
         const refreshToken = useAuthStore.getState().refreshToken;
-        if (!refreshToken) throw new Error('No refresh token');
-
-        const { data } = await axios.post(`${API_BASE}/auth/refresh`, { refreshToken });
+        const { data } = await axios.post(
+          `${API_BASE}/auth/refresh`,
+          refreshToken ? { refreshToken } : {},
+          { withCredentials: true }
+        );
         const { accessToken: newAccess, refreshToken: newRefresh } = data.data;
 
         useAuthStore.getState().setTokens(newAccess, newRefresh);

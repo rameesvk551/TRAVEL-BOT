@@ -18,6 +18,11 @@ module.exports = (sequelize) => {
       type: DataTypes.UUID,
       allowNull: false,
     },
+    channelId: {
+      type: DataTypes.UUID,
+      allowNull: true,
+      comment: 'WhatsApp channel used for sending this campaign',
+    },
     name: {
       type: DataTypes.STRING(255),
       allowNull: false,

@@ -1,10 +1,13 @@
+import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Link, useSearchParams } from 'react-router-dom';
 import { 
   EnvelopeIcon, 
   LockClosedIcon, 
-  ChevronRightIcon
+  ChevronRightIcon,
+  EyeIcon,
+  EyeSlashIcon
 } from '@heroicons/react/24/outline';
 import { useLogin } from '../hooks/useAuth';
 import { loginSchema } from '../utils/validators';
@@ -14,6 +17,7 @@ import { useBrandingStore } from '../store/brandingStore';
 import metaBadge from '../assets/meta_tech_provider_badge.png';
 
 export default function Login() {
+  const [showPassword, setShowPassword] = useState(false);
   const loginMutation = useLogin();
   const loginForm = useForm({ resolver: zodResolver(loginSchema) });
   const [searchParams] = useSearchParams();
@@ -82,14 +86,33 @@ export default function Login() {
                   <label className="text-xs font-bold uppercase tracking-widest text-neutral-400">Password</label>
                   <Link to="/forgot-password" className="text-xs font-semibold text-indigo-600 hover:text-indigo-700 transition">Forgot?</Link>
                 </div>
-                <div className="input-icon-wrapper">
+                <div className="input-icon-wrapper relative">
                   <LockClosedIcon className="icon-left h-5 w-5 absolute left-3" />
                   <input 
                     {...loginForm.register('password')} 
-                    type="password" 
-                    className="shell-input-rect input-with-icon border-neutral-200/60 bg-white focus:bg-white" 
+                    type={showPassword ? "text" : "password"} 
+                    className="shell-input-rect input-with-icon border-neutral-200/60 bg-white focus:bg-white pr-20" 
                     placeholder="••••••••" 
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                    title={showPassword ? 'Hide password' : 'Show password'}
+                    className="absolute right-2 top-1/2 flex h-8 min-w-14 -translate-y-1/2 items-center justify-center gap-1 rounded-lg px-2 text-xs font-bold text-neutral-700 transition hover:bg-neutral-100 hover:text-neutral-950 focus:outline-none focus:ring-2 focus:ring-neutral-300"
+                  >
+                    {showPassword ? (
+                      <>
+                        <EyeSlashIcon className="h-4 w-4 stroke-[2.2]" />
+                        Hide
+                      </>
+                    ) : (
+                      <>
+                        <EyeIcon className="h-4 w-4 stroke-[2.2]" />
+                        View
+                      </>
+                    )}
+                  </button>
                 </div>
                 {loginForm.formState.errors.password ? <p className="mt-1.5 text-xs font-medium text-rose-500">{loginForm.formState.errors.password.message}</p> : null}
               </div>

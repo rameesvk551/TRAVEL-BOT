@@ -1,4 +1,5 @@
 const packageService = require('../services/packageService');
+const packageFinanceService = require('../services/packageFinanceService');
 const mediaService = require('../services/mediaService');
 
 async function list(req, res, next) {
@@ -70,6 +71,42 @@ async function uploadImage(req, res, next) {
   }
 }
 
+async function finance(req, res, next) {
+  try {
+    const report = await packageFinanceService.getPackageFinance(req.agency.id, req.params.id);
+    res.json({ success: true, data: report });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function createVendorCost(req, res, next) {
+  try {
+    const cost = await packageFinanceService.createVendorCost(req.agency.id, req.params.id, req.body, req.agent?.id);
+    res.status(201).json({ success: true, data: cost, message: 'Vendor cost added' });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function updateVendorCost(req, res, next) {
+  try {
+    const cost = await packageFinanceService.updateVendorCost(req.agency.id, req.params.id, req.params.costId, req.body, req.agent?.id);
+    res.json({ success: true, data: cost, message: 'Vendor cost updated' });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function deleteVendorCost(req, res, next) {
+  try {
+    await packageFinanceService.deleteVendorCost(req.agency.id, req.params.id, req.params.costId);
+    res.json({ success: true, message: 'Vendor cost deleted' });
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function uploadBrochure(req, res, next) {
   try {
     if (!req.file) {
@@ -105,6 +142,10 @@ module.exports = {
   create,
   update,
   deactivate,
+  finance,
+  createVendorCost,
+  updateVendorCost,
+  deleteVendorCost,
   uploadImage,
   uploadBrochure,
 };

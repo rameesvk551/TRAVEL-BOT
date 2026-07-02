@@ -10,7 +10,22 @@ import {
 import { getWebsiteStatus, publishWebsite, unpublishWebsite, updateWebsiteSettings } from '../api/websiteApi';
 import { useAuthStore } from '../store/authStore';
 
-const THEMES = ['MODERN', 'CLASSIC', 'MINIMAL', 'VIBRANT'];
+const WEBSITE_TEMPLATES = [
+  { id: 'MODERN', name: 'Modern Agency', description: 'Clean hero, balanced catalog cards, works for most agencies.', swatch: '#00A884' },
+  { id: 'CLASSIC', name: 'Classic Tours', description: 'Editorial and timeless for established tour operators.', swatch: '#7C5E3C' },
+  { id: 'MINIMAL', name: 'Minimal Studio', description: 'Quiet, spacious layout for premium curated itineraries.', swatch: '#111827' },
+  { id: 'VIBRANT', name: 'Vibrant Deals', description: 'High-energy style for offers, departures, and promotions.', swatch: '#C026D3' },
+  { id: 'LUXURY_ESCAPE', name: 'Luxury Escape', description: 'Dark premium look for high-value vacations and resorts.', swatch: '#D6B46D' },
+  { id: 'ADVENTURE_TREK', name: 'Adventure Trek', description: 'Outdoorsy style for trekking, camping, and active trips.', swatch: '#65A30D' },
+  { id: 'FAMILY_HOLIDAY', name: 'Family Holiday', description: 'Warm, friendly feel for family packages and stays.', swatch: '#0284C7' },
+  { id: 'HONEYMOON', name: 'Honeymoon', description: 'Soft romantic layout for couples and special escapes.', swatch: '#E11D48' },
+  { id: 'CORPORATE_TRAVEL', name: 'Corporate Travel', description: 'Sharp, restrained design for business and MICE travel.', swatch: '#334155' },
+  { id: 'PILGRIMAGE', name: 'Pilgrimage', description: 'Calm, devotional tone for religious and group tours.', swatch: '#EA580C' },
+];
+
+function templateById(id) {
+  return WEBSITE_TEMPLATES.find((template) => template.id === id) || WEBSITE_TEMPLATES[0];
+}
 
 function Field({ label, hint, children }) {
   return (
@@ -136,6 +151,7 @@ export default function WebsiteBuilder() {
 
   const status = websiteQuery.data;
   const publishBusy = publishMutation.isPending || unpublishMutation.isPending;
+  const selectedTemplate = templateById(form.websiteTheme);
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
@@ -179,10 +195,11 @@ export default function WebsiteBuilder() {
             <Field label="Website title">
               <input className="shell-input-rect" value={form.websiteTitle} onChange={(event) => update('websiteTitle', event.target.value)} placeholder="Agency name" />
             </Field>
-            <Field label="Theme">
+            <Field label="Template">
               <select className="shell-input-rect" value={form.websiteTheme} onChange={(event) => update('websiteTheme', event.target.value)}>
-                {THEMES.map((theme) => <option key={theme} value={theme}>{theme}</option>)}
+                {WEBSITE_TEMPLATES.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}
               </select>
+              <p className="mt-2 text-xs leading-5 text-neutral-500">{selectedTemplate.description}</p>
             </Field>
             <Field label="Primary color">
               <input className="shell-input-rect h-12" type="color" value={form.websitePrimaryColor || '#00A884'} onChange={(event) => update('websitePrimaryColor', event.target.value)} />
@@ -206,6 +223,29 @@ export default function WebsiteBuilder() {
             <Field label="Contact email">
               <input className="shell-input-rect" value={form.websiteContactEmail} onChange={(event) => update('websiteContactEmail', event.target.value)} />
             </Field>
+          </div>
+
+          <div className="mt-6 border-t border-neutral-100 pt-5">
+            <h2 className="text-sm font-bold text-neutral-900">Choose a website template</h2>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              {WEBSITE_TEMPLATES.map((template) => {
+                const active = form.websiteTheme === template.id;
+                return (
+                  <button
+                    key={template.id}
+                    type="button"
+                    onClick={() => update('websiteTheme', template.id)}
+                    className={`rounded-[var(--radius-md)] border p-4 text-left transition ${active ? 'border-neutral-900 bg-neutral-950 text-white' : 'border-neutral-200 bg-white text-neutral-900 hover:border-neutral-400'}`}
+                  >
+                    <span className="flex items-center gap-3">
+                      <span className="h-4 w-4 rounded-full border border-white/40" style={{ backgroundColor: template.swatch }} />
+                      <span className="text-sm font-black">{template.name}</span>
+                    </span>
+                    <span className={`mt-2 block text-xs leading-5 ${active ? 'text-white/70' : 'text-neutral-500'}`}>{template.description}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           <div className="mt-6 border-t border-neutral-100 pt-5">
@@ -270,6 +310,7 @@ export default function WebsiteBuilder() {
             </div>
             <div className="p-5">
               <p className="eyebrow">Preview</p>
+              <p className="mt-2 text-xs font-bold text-neutral-500">{selectedTemplate.name}</p>
               <h3 className="mt-2 text-xl font-black text-neutral-950">{form.websiteTitle || 'Agency website'}</h3>
               <p className="mt-3 line-clamp-4 text-sm leading-6 text-neutral-600">{form.websiteDescription || 'Your public packages and properties will appear here.'}</p>
             </div>

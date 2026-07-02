@@ -66,7 +66,7 @@ const journey = [
   'Customer sends an enquiry on WhatsApp.',
   'The bot qualifies the lead and collects trip details.',
   'Your team shares packages, itineraries, and property options.',
-  'Agents follow up, send quotes, and close the booking.',
+  'Staff follow up, send quotes, and close the booking.',
   'Payments, reviews, and analytics stay in one system.',
 ];
 

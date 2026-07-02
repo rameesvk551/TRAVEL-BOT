@@ -166,7 +166,7 @@ export default function Templates() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="eyebrow">Preset Gallery</p>
-                    <h2 className="text-xl font-bold text-neutral-900 mt-1">Travel templates</h2>
+                    <h2 className="text-xl font-bold text-neutral-900 mt-1">Starter templates</h2>
                     <p className="text-sm text-neutral-400">Pick a prebuilt starting point and turn it into a send-ready WhatsApp template.</p>
                   </div>
                   <span className="text-sm text-neutral-400">{prebuiltTemplates.length} templates</span>

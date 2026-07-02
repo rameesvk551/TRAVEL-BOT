@@ -15,6 +15,18 @@ const guard = [authenticate, requirePermission(PERMISSIONS.ANALYTICS_VIEW)];
 router.get('/summary', ...guard, analyticsController.summary);
 
 /**
+ * GET /api/analytics/crm - CRM dashboard (cards, funnel, activity, suggestions)
+ */
+router.get('/crm', ...guard, analyticsController.crmReport);
+
+/**
+ * GET /api/analytics/calls - Calling report (KPIs, trend, staff/lead rollups,
+ * recommendations). Accepts ?from&to&agentId&leadId. Non-admins are scoped to
+ * their own calls regardless of agentId.
+ */
+router.get('/calls', ...guard, analyticsController.callingReport);
+
+/**
  * GET /api/analytics/sales - Sales / Revenue report
  */
 router.get('/sales', ...guard, analyticsController.salesReport);
@@ -63,6 +75,11 @@ router.get('/profit', ...guard, analyticsController.profitReport);
  * GET /api/analytics/sources - Lead source attribution
  */
 router.get('/sources', ...guard, analyticsController.sourceReport);
+
+/**
+ * GET /api/analytics/leads-by-ad - Click-to-WhatsApp ad attribution breakdown
+ */
+router.get('/leads-by-ad', ...guard, analyticsController.leadsByAdReport);
 
 /**
  * GET /api/analytics/bookings - Booking report

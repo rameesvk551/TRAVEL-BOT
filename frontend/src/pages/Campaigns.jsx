@@ -1,11 +1,12 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Plus, Search, Users, Activity, BarChart2, Send, Copy, Trash2,
-  MoreHorizontal, Ban, Megaphone, Gift, RotateCcw, Sparkles,
+  Plus, Search, Users, Send, Copy, Trash2,
+  MoreHorizontal, Megaphone, Gift, RotateCcw, Sparkles, Download,
+  CheckCircle2, Eye, XCircle, Upload, FileText,
 } from 'lucide-react';
 import {
-  useCampaigns, useSendCampaign, useDuplicateCampaign, useDeleteCampaign,
+  useCampaigns, useCampaignAnalytics, useSendCampaign, useDuplicateCampaign, useDeleteCampaign,
 } from '../hooks/useCampaigns';
 import { formatDateTime } from '../utils/formatters';
 import MobileRecordCard, { MobileField } from '../components/MobileRecordCard';
@@ -16,7 +17,17 @@ const STATUS_FILTERS = [
   { key: 'SCHEDULED', label: 'Scheduled' },
   { key: 'SENDING', label: 'Sending' },
   { key: 'SENT', label: 'Sent' },
+  { key: 'FAILED', label: 'Failed' },
   { key: 'CANCELLED', label: 'Cancelled' },
+];
+
+const TYPE_FILTERS = [
+  { key: '', label: 'All Types' },
+  { key: 'BROADCAST', label: 'Broadcast' },
+  { key: 'PROMOTIONAL', label: 'Promotional' },
+  { key: 'RE_ENGAGEMENT', label: 'Re-engagement' },
+  { key: 'SEASONAL', label: 'Seasonal' },
+  { key: 'REVIEW_COLLECTION', label: 'Reviews' },
 ];
 
 const TYPE_ICONS = {
@@ -24,6 +35,7 @@ const TYPE_ICONS = {
   PROMOTIONAL: Gift,
   RE_ENGAGEMENT: RotateCcw,
   SEASONAL: Sparkles,
+  REVIEW_COLLECTION: Sparkles,
 };
 
 const STATUS_BADGE = {
@@ -35,143 +47,243 @@ const STATUS_BADGE = {
   FAILED: 'bg-rose-50 text-rose-600 border-rose-200',
 };
 
+function number(value) {
+  return Number(value || 0).toLocaleString();
+}
+
+function csvCell(value) {
+  return `"${String(value ?? '').replace(/"/g, '""')}"`;
+}
+
+function downloadCsv(filename, rows) {
+  const csv = rows.map((row) => row.map(csvCell).join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
 export default function Campaigns() {
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [typeFilter, setTypeFilter] = useState('');
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
   const [menuOpen, setMenuOpen] = useState(null);
 
-  const queryParams = statusFilter ? { status: statusFilter } : {};
+  const queryParams = useMemo(() => ({
+    pageSize: 100,
+    ...(statusFilter ? { status: statusFilter } : {}),
+    ...(typeFilter ? { type: typeFilter } : {}),
+    ...(fromDate ? { from: fromDate } : {}),
+    ...(toDate ? { to: toDate } : {}),
+    ...(searchQuery.trim() ? { q: searchQuery.trim() } : {}),
+  }), [statusFilter, typeFilter, fromDate, toDate, searchQuery]);
+
   const { data, isLoading } = useCampaigns(queryParams);
+  const { data: analyticsData } = useCampaignAnalytics(queryParams);
   const sendMutation = useSendCampaign();
   const duplicateMutation = useDuplicateCampaign();
   const deleteMutation = useDeleteCampaign();
 
   const campaigns = data?.data || [];
-  const filtered = campaigns.filter((c) =>
-    c.name.toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
-  const activeCampaigns = campaigns.filter((c) => c.status === 'SENDING' || c.status === 'SCHEDULED').length;
-  const totalReached = campaigns.reduce((sum, c) => sum + c.totalRecipients, 0);
-  const totalDelivered = campaigns.reduce((sum, c) => sum + c.delivered, 0);
-  const totalRead = campaigns.reduce((sum, c) => sum + c.read, 0);
-  const readRate = totalDelivered > 0 ? Math.round((totalRead / totalDelivered) * 100) : 0;
+  const summary = data?.summary || analyticsData?.data || {};
 
   const handleRowClick = (id) => navigate(`/campaigns/${id}`);
 
+  const clearFilters = () => {
+    setStatusFilter('');
+    setTypeFilter('');
+    setFromDate('');
+    setToDate('');
+    setSearchQuery('');
+  };
+
+  const handleExport = () => {
+    const rows = [
+      ['Campaign', 'Type', 'Status', 'Total Recipients', 'Sent', 'Delivered', 'Read', 'Replied', 'Failed', 'Created At', 'Sent At'],
+      ...campaigns.map((c) => [
+        c.name,
+        c.type,
+        c.status,
+        c.totalRecipients || 0,
+        c.sent || 0,
+        c.delivered || 0,
+        c.read || 0,
+        c.replied || 0,
+        c.failed || 0,
+        c.createdAt ? formatDateTime(c.createdAt) : '',
+        c.sentAt ? formatDateTime(c.sentAt) : '',
+      ]),
+    ];
+    downloadCsv(`campaign-report-${new Date().toISOString().slice(0, 10)}.csv`, rows);
+  };
+
+  const reportCards = [
+    { label: 'Total Campaigns', value: summary.totalCampaigns ?? data?.total ?? campaigns.length, icon: Megaphone, tone: 'bg-slate-100 text-slate-700' },
+    { label: 'Total Recipients', value: summary.totalRecipients, icon: Users, tone: 'bg-sky-50 text-sky-700' },
+    { label: 'Sent', value: summary.totalSent, icon: Send, tone: 'bg-blue-50 text-blue-700' },
+    { label: 'Delivered', value: summary.totalDelivered, icon: CheckCircle2, tone: 'bg-emerald-50 text-emerald-700' },
+    { label: 'Read', value: summary.totalRead, icon: Eye, tone: 'bg-violet-50 text-violet-700' },
+    { label: 'Failed', value: summary.totalFailed, icon: XCircle, tone: 'bg-rose-50 text-rose-700' },
+  ];
+
   return (
     <div className="space-y-6 animate-in fade-in md:p-2">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
         <div>
-          <h1 className="page-heading">Push Campaigns</h1>
-          <p className="page-subtext mt-1">Broadcast promotional messages to segmented audiences.</p>
+          <h1 className="page-heading">Campaign Reports</h1>
+          <p className="page-subtext mt-1">Track total campaigns, sent, delivered, read, replied, and failed WhatsApp delivery.</p>
         </div>
-        <button
-          onClick={() => navigate('/campaigns/new')}
-          className="shell-button-primary w-full self-start sm:w-auto"
-        >
-          <Plus className="w-4 h-4" />
-          Create Campaign
-        </button>
-      </div>
-
-      {/* KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        <div className="kpi-card flex gap-4 items-center">
-          <div className="kpi-icon bg-sky-50 text-sky-600">
-            <Activity className="w-5 h-5" />
-          </div>
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400">Active</p>
-            <p className="text-2xl font-bold text-slate-900">{activeCampaigns}</p>
-          </div>
-        </div>
-
-        <div className="kpi-card flex gap-4 items-center">
-          <div className="kpi-icon bg-indigo-50 text-indigo-600">
-            <Users className="w-5 h-5" />
-          </div>
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400">Total Reached</p>
-            <p className="text-2xl font-bold text-slate-900">{totalReached.toLocaleString()}</p>
-          </div>
-        </div>
-
-        <div className="kpi-card flex gap-4 items-center">
-          <div className="kpi-icon bg-amber-50 text-amber-600">
-            <BarChart2 className="w-5 h-5" />
-          </div>
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400">Read Rate</p>
-            <p className="text-2xl font-bold text-slate-900">{readRate}%</p>
-          </div>
-        </div>
-
-        <div className="kpi-card flex gap-4 items-center">
-          <div className="kpi-icon bg-violet-50 text-violet-600">
-            <Send className="w-5 h-5" />
-          </div>
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400">Total Campaigns</p>
-            <p className="text-2xl font-bold text-slate-900">{campaigns.length}</p>
-          </div>
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <button
+            onClick={() => navigate('/campaigns/reports')}
+            className="shell-button-secondary w-full sm:w-auto"
+          >
+            <FileText className="w-4 h-4" />
+            Reports
+          </button>
+          <button
+            onClick={() => navigate('/campaigns/new?audience=import')}
+            className="shell-button-secondary w-full sm:w-auto"
+          >
+            <Upload className="w-4 h-4" />
+            Import CSV Campaign
+          </button>
+          <button
+            onClick={() => navigate('/campaigns/new')}
+            className="shell-button-primary w-full sm:w-auto"
+          >
+            <Plus className="w-4 h-4" />
+            Create Campaign
+          </button>
         </div>
       </div>
 
-      {/* Filter Tabs + Search */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
+        {reportCards.map((card) => {
+          const Icon = card.icon;
+          return (
+            <div key={card.label} className="kpi-card flex items-center gap-4">
+              <div className={`kpi-icon ${card.tone}`}>
+                <Icon className="h-5 w-5" />
+              </div>
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400">{card.label}</p>
+                <p className="text-2xl font-bold text-slate-900">{number(card.value)}</p>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
       <div className="rounded-[14px] border border-slate-200 bg-white overflow-hidden">
-        <div className="p-4 border-b border-slate-100 flex flex-col sm:flex-row items-start sm:items-center gap-3 bg-slate-50/50">
-          {/* Status Filter Tabs */}
-          <div className="flex gap-1 overflow-x-auto hide-scrollbar w-full sm:w-auto min-w-0 -mx-1 px-1 pb-1 sm:pb-0 sm:mx-0 sm:px-0">
-            {STATUS_FILTERS.map((f) => (
-              <button
-                key={f.key}
-                onClick={() => setStatusFilter(f.key)}
-                className={`whitespace-nowrap flex-shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
-                  statusFilter === f.key
-                    ? 'bg-[#2d2d2d] text-white shadow-sm'
-                    : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700'
-                }`}
+        <div className="border-b border-slate-100 bg-slate-50/50 p-4">
+          <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
+            <div className="flex gap-1 overflow-x-auto hide-scrollbar min-w-0 -mx-1 px-1 pb-1 xl:pb-0 xl:mx-0 xl:px-0">
+              {STATUS_FILTERS.map((f) => (
+                <button
+                  key={f.key}
+                  onClick={() => setStatusFilter(f.key)}
+                  className={`whitespace-nowrap flex-shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+                    statusFilter === f.key
+                      ? 'bg-[#2d2d2d] text-white shadow-sm'
+                      : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700'
+                  }`}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="grid w-full grid-cols-1 gap-2 sm:grid-cols-2 xl:ml-auto xl:w-auto xl:grid-cols-[170px_150px_150px_auto_auto]">
+              <select
+                value={typeFilter}
+                onChange={(e) => setTypeFilter(e.target.value)}
+                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-600 outline-none focus:border-slate-400"
               >
-                {f.label}
+                {TYPE_FILTERS.map((type) => <option key={type.key} value={type.key}>{type.label}</option>)}
+              </select>
+              <input
+                type="date"
+                value={fromDate}
+                onChange={(e) => setFromDate(e.target.value)}
+                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-600 outline-none focus:border-slate-400"
+              />
+              <input
+                type="date"
+                value={toDate}
+                onChange={(e) => setToDate(e.target.value)}
+                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-600 outline-none focus:border-slate-400"
+              />
+              <button
+                onClick={handleExport}
+                disabled={campaigns.length === 0}
+                className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-700 transition hover:bg-slate-100 disabled:opacity-50"
+              >
+                <Download className="h-4 w-4" />
+                Export CSV
               </button>
-            ))}
+              <button
+                onClick={clearFilters}
+                className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-700 transition hover:bg-slate-100"
+              >
+                Clear
+              </button>
+            </div>
           </div>
 
-          {/* Search */}
-          <div className="relative w-full flex-1 sm:ml-auto sm:max-w-sm">
+          <div className="relative mt-3 w-full max-w-md">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               type="text"
               placeholder="Search campaigns..."
-              className="w-full rounded-xl border border-slate-200 pl-9 pr-4 py-2 text-sm focus:border-[#f0f0f0]0 focus:ring-2 focus:ring-[#f0f0f0]0/20 outline-none transition"
+              className="w-full rounded-xl border border-slate-200 pl-9 pr-4 py-2 text-sm outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
           </div>
         </div>
 
-        {/* Table */}
+        <div className="grid grid-cols-1 gap-3 border-b border-slate-100 bg-white p-4 sm:grid-cols-3">
+          <div className="rounded-lg bg-slate-50 p-4">
+            <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400">Delivery Rate</p>
+            <p className="mt-1 text-xl font-bold text-slate-900">{summary.deliveryRate || 0}%</p>
+          </div>
+          <div className="rounded-lg bg-slate-50 p-4">
+            <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400">Read Rate</p>
+            <p className="mt-1 text-xl font-bold text-slate-900">{summary.readRate || 0}%</p>
+          </div>
+          <div className="rounded-lg bg-slate-50 p-4">
+            <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400">Failure Rate</p>
+            <p className="mt-1 text-xl font-bold text-slate-900">{summary.failureRate || 0}%</p>
+          </div>
+        </div>
+
         <div className="mobile-card-list min-h-[300px] p-3">
           {isLoading ? (
             <div className="mobile-record-card text-center text-sm text-slate-500">Loading campaigns...</div>
-          ) : filtered.length === 0 ? (
+          ) : campaigns.length === 0 ? (
             <div className="mobile-record-card text-center text-slate-500">
               <Megaphone className="mx-auto mb-3 h-8 w-8 text-slate-400" />
-              <p className="text-base font-bold text-slate-900">{searchQuery ? 'No campaigns match your search' : 'No campaigns yet'}</p>
+              <p className="text-base font-bold text-slate-900">No campaigns found</p>
               <button onClick={() => navigate('/campaigns/new')} className="mt-4 shell-button-primary">Create Campaign</button>
             </div>
           ) : (
-            filtered.map((c) => {
+            campaigns.map((c) => {
               const TypeIcon = TYPE_ICONS[c.type] || Megaphone;
-              const readRate = Math.round((c.read / Math.max(1, c.totalRecipients)) * 100);
+              const readRate = Math.round(((c.read || 0) / Math.max(1, c.totalRecipients || 0)) * 100);
               return (
                 <MobileRecordCard
                   key={c.id}
                   title={c.name}
-                  subtitle={c.type.replace('_', '-')}
+                  subtitle={String(c.type || '').replace('_', '-')}
                   onClick={() => handleRowClick(c.id)}
                   avatar={<div className="flex h-10 w-10 items-center justify-center rounded-lg bg-slate-100 text-slate-500"><TypeIcon className="h-5 w-5" /></div>}
                   badge={<span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-bold ${STATUS_BADGE[c.status] || ''}`}>{c.status}</span>}
@@ -187,10 +299,10 @@ export default function Campaigns() {
                     </>
                   }
                 >
-                  <MobileField label="Recipients" value={c.totalRecipients.toLocaleString()} />
-                  <MobileField label="Read Rate" value={c.status === 'DRAFT' || c.totalRecipients === 0 ? '-' : `${readRate}%`} />
-                  <MobileField label="Template" value={c.template?.displayName || 'Custom'} />
-                  <MobileField label="Date" value={c.status === 'SENT' ? formatDateTime(c.sentAt) : c.status === 'SCHEDULED' ? formatDateTime(c.scheduledAt) : formatDateTime(c.createdAt)} />
+                  <MobileField label="Recipients" value={number(c.totalRecipients)} />
+                  <MobileField label="Sent" value={number(c.sent)} />
+                  <MobileField label="Delivered" value={number(c.delivered)} />
+                  <MobileField label="Read Rate" value={c.status === 'DRAFT' || !c.totalRecipients ? '-' : `${readRate}%`} />
                 </MobileRecordCard>
               );
             })
@@ -203,9 +315,11 @@ export default function Campaigns() {
               <tr className="bg-slate-50/80 text-[11px] font-bold uppercase tracking-[0.15em] text-slate-400 border-b border-slate-200">
                 <th className="p-4">Campaign</th>
                 <th className="p-4">Status</th>
-                <th className="p-4">Template</th>
                 <th className="p-4 text-right">Recipients</th>
-                <th className="p-4 text-center">Performance</th>
+                <th className="p-4 text-right">Sent</th>
+                <th className="p-4 text-right">Delivered</th>
+                <th className="p-4 text-right">Read</th>
+                <th className="p-4 text-right">Failed</th>
                 <th className="p-4">Date</th>
                 <th className="p-4 w-12"></th>
               </tr>
@@ -213,31 +327,29 @@ export default function Campaigns() {
             <tbody className="divide-y divide-slate-100">
               {isLoading ? (
                 <tr>
-                  <td colSpan="7" className="p-12 text-center">
-                    <div className="w-8 h-8 border-3 border-[#f0f0f0]0 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
+                  <td colSpan="9" className="p-12 text-center">
+                    <div className="w-8 h-8 border-3 border-slate-200 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
                     <p className="text-sm text-slate-500">Loading campaigns...</p>
                   </td>
                 </tr>
-              ) : filtered.length === 0 ? (
+              ) : campaigns.length === 0 ? (
                 <tr>
-                  <td colSpan="7" className="p-12 text-center text-slate-500">
+                  <td colSpan="9" className="p-12 text-center text-slate-500">
                     <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
                       <Megaphone className="w-8 h-8 text-slate-400" />
                     </div>
-                    <p className="text-lg font-bold text-slate-900">
-                      {searchQuery ? 'No campaigns match your search' : 'No campaigns yet'}
-                    </p>
-                    <p className="mt-1 mb-4 text-sm">Start reaching your audience with push campaigns.</p>
+                    <p className="text-lg font-bold text-slate-900">No campaigns found</p>
+                    <p className="mt-1 mb-4 text-sm">Create a campaign or clear filters to see more results.</p>
                     <button
                       onClick={() => navigate('/campaigns/new')}
                       className="inline-flex items-center gap-2 rounded-xl bg-[#2d2d2d] px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#1a1a1a]"
                     >
-                      <Plus className="w-4 h-4" /> Create Your First Campaign
+                      <Plus className="w-4 h-4" /> Create Campaign
                     </button>
                   </td>
                 </tr>
               ) : (
-                filtered.map((c) => {
+                campaigns.map((c) => {
                   const TypeIcon = TYPE_ICONS[c.type] || Megaphone;
                   return (
                     <tr
@@ -247,12 +359,12 @@ export default function Campaigns() {
                     >
                       <td className="p-4">
                         <div className="flex items-center gap-3">
-                          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-500 group-hover:bg-[#f0f0f0] group-hover:text-[#404040] transition">
+                          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-500 transition group-hover:bg-slate-200 group-hover:text-slate-900">
                             <TypeIcon className="w-4 h-4" />
                           </div>
                           <div>
                             <div className="font-semibold text-slate-900 group-hover:text-[#2d2d2d] transition-colors">{c.name}</div>
-                            <div className="text-xs text-slate-400">{c.type.replace('_', '-')}</div>
+                            <div className="text-xs text-slate-400">{String(c.type || '').replace('_', '-')}</div>
                           </div>
                         </div>
                       </td>
@@ -262,27 +374,11 @@ export default function Campaigns() {
                           {c.status}
                         </span>
                       </td>
-                      <td className="p-4 text-sm">
-                        {c.template?.displayName || <span className="text-slate-400">Custom</span>}
-                      </td>
-                      <td className="p-4 text-right font-medium text-slate-700">
-                        {c.totalRecipients.toLocaleString()}
-                      </td>
-                      <td className="p-4 w-52">
-                        {c.status === 'DRAFT' || c.totalRecipients === 0 ? (
-                          <span className="text-slate-400 text-sm">—</span>
-                        ) : (
-                          <div className="flex items-center gap-2">
-                            <div className="flex-1 bg-slate-100 h-2 rounded-full overflow-hidden flex">
-                              <div className="bg-[#f0f0f0]0 h-full rounded-l-full" style={{ width: `${Math.max(2, (c.read / Math.max(1, c.totalRecipients)) * 100)}%` }} />
-                              <div className="bg-[#b0b0b0] h-full" style={{ width: `${Math.max(0, ((c.delivered - c.read) / Math.max(1, c.totalRecipients)) * 100)}%` }} />
-                            </div>
-                            <span className="text-xs font-semibold text-slate-600 whitespace-nowrap">
-                              {Math.round((c.read / Math.max(1, c.totalRecipients)) * 100)}%
-                            </span>
-                          </div>
-                        )}
-                      </td>
+                      <td className="p-4 text-right font-medium text-slate-700">{number(c.totalRecipients)}</td>
+                      <td className="p-4 text-right font-medium text-slate-700">{number(c.sent)}</td>
+                      <td className="p-4 text-right font-medium text-slate-700">{number(c.delivered)}</td>
+                      <td className="p-4 text-right font-medium text-slate-700">{number(c.read)}</td>
+                      <td className="p-4 text-right font-medium text-slate-700">{number(c.failed)}</td>
                       <td className="p-4 text-sm text-slate-500 whitespace-nowrap">
                         {c.status === 'SENT' ? formatDateTime(c.sentAt) :
                          c.status === 'SCHEDULED' ? formatDateTime(c.scheduledAt) :
@@ -292,7 +388,8 @@ export default function Campaigns() {
                         <div className="relative">
                           <button
                             onClick={(e) => { e.stopPropagation(); setMenuOpen(menuOpen === c.id ? null : c.id); }}
-                            className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition opacity-0 group-hover:opacity-100"
+                            className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 md:opacity-0 md:group-hover:opacity-100"
+                            aria-label="Campaign actions"
                           >
                             <MoreHorizontal className="w-4 h-4" />
                           </button>

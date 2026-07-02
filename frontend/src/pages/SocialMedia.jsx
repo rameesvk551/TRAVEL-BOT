@@ -31,13 +31,17 @@ import { packagesApi } from '../api/packagesApi';
 import { propertiesApi } from '../api/propertiesApi';
 import { timeAgo } from '../utils/formatters';
 
+const SHOW_INSTAGRAM_AUTOMATIONS = true;
+
 const TABS = [
   { id: 'inbox', name: 'Inbox', icon: InboxIcon },
   { id: 'comments', name: 'Comments', icon: ChatBubbleOvalLeftIcon },
-  { id: 'automations', name: 'Automations', icon: BoltIcon },
+  { id: 'automations', name: 'Automations', icon: BoltIcon, hidden: !SHOW_INSTAGRAM_AUTOMATIONS },
   { id: 'publishing', name: 'Create Post', icon: PencilSquareIcon },
   { id: 'insights', name: 'Insights', icon: ChartBarIcon },
 ];
+
+const VISIBLE_TABS = TABS.filter((tab) => !tab.hidden);
 
 const DEFAULT_PRIVATE_REPLY = 'Hi {{username}}, thanks for commenting. I can send the details here.';
 const DEFAULT_PUBLIC_REPLY = 'Sent you details in DM.';
@@ -373,7 +377,7 @@ export default function SocialMedia() {
 
       <div className="border-b border-neutral-200 bg-neutral-50/80 px-3 sm:px-6">
         <nav className="hide-scrollbar flex gap-2 overflow-x-auto py-2">
-          {TABS.map((tab) => (
+          {VISIBLE_TABS.map((tab) => (
             <button
               key={tab.id}
               type="button"
@@ -394,8 +398,13 @@ export default function SocialMedia() {
       <main className="flex-1 overflow-hidden bg-neutral-50/40">
         {activeTab === 'inbox' && <InboxTab account={activeAccount} />}
         {activeTab === 'comments' && <CommentsTab account={activeAccount} />}
-        {activeTab === 'automations' && <AutomationsTab account={activeAccount} />}
-        {activeTab === 'publishing' && <PublishingTab account={activeAccount} onOpenAutomations={() => setActiveTab('automations')} />}
+        {SHOW_INSTAGRAM_AUTOMATIONS && activeTab === 'automations' && <AutomationsTab account={activeAccount} />}
+        {activeTab === 'publishing' && (
+          <PublishingTab
+            account={activeAccount}
+            onOpenAutomations={SHOW_INSTAGRAM_AUTOMATIONS ? () => setActiveTab('automations') : null}
+          />
+        )}
         {activeTab === 'insights' && <InsightsTab account={activeAccount} />}
       </main>
     </div>
@@ -814,7 +823,7 @@ function CommentsTab({ account }) {
 
 function AutomationsTab({ account }) {
   const qc = useQueryClient();
-  const [form, setForm] = useState({
+  const buildEmptyAutomationForm = () => ({
     name: 'Package keyword DM',
     mediaId: '',
     triggerKeywords: 'PRICE, PACKAGE, BROCHURE',
@@ -829,6 +838,8 @@ function AutomationsTab({ account }) {
     linkedPackageIds: [],
     linkedPropertyIds: [],
   });
+  const [form, setForm] = useState(buildEmptyAutomationForm);
+  const [editingAutomationId, setEditingAutomationId] = useState('');
 
   const automationsQuery = useQuery({
     queryKey: ['ig-automations', account.id],
@@ -871,9 +882,34 @@ function AutomationsTab({ account }) {
   const media = asArray(mediaQuery.data?.data);
   const packages = asArray(packagesQuery.data?.data);
   const properties = asArray(propertiesQuery.data?.data);
+  const editingAutomation = automations.find((automation) => String(automation.id) === String(editingAutomationId)) || null;
 
   const previewReplies = form.quickReplies.split(',').map((item) => item.trim()).filter(Boolean).slice(0, 4);
   const previewKeywords = form.triggerKeywords.split(',').map((item) => item.trim()).filter(Boolean);
+
+  const resetForm = () => {
+    setForm(buildEmptyAutomationForm());
+    setEditingAutomationId('');
+  };
+
+  const loadAutomationIntoForm = (automation) => {
+    setEditingAutomationId(String(automation.id || ''));
+    setForm({
+      name: automation.name || 'Comment to DM',
+      mediaId: automation.mediaId || '',
+      triggerKeywords: Array.isArray(automation.triggerKeywords) ? automation.triggerKeywords.join(', ') : '',
+      matchType: automation.matchType || 'CONTAINS',
+      actionType: automation.actionType || 'PACKAGE_FLOW',
+      privateReplyMessage: automation.privateReplyMessage || DEFAULT_PRIVATE_REPLY,
+      quickReplies: Array.isArray(automation.quickReplies) ? automation.quickReplies.join(', ') : '',
+      followPromptMode: automation.followPromptMode || 'OFF',
+      publicReplyEnabled: Boolean(automation.publicReplyEnabled),
+      publicReplyMessage: automation.publicReplyMessage || DEFAULT_PUBLIC_REPLY,
+      duplicatePolicy: automation.duplicatePolicy || 'USER_PER_POST',
+      linkedPackageIds: Array.isArray(automation.linkedPackageIds) ? automation.linkedPackageIds : [],
+      linkedPropertyIds: Array.isArray(automation.linkedPropertyIds) ? automation.linkedPropertyIds : [],
+    });
+  };
 
   const updateActionType = (actionType) => {
     setForm({
@@ -890,7 +926,7 @@ function AutomationsTab({ account }) {
   };
 
   const submitAutomation = () => {
-    createMutation.mutate({
+    const payload = {
       accountId: account.id,
       name: form.name,
       mediaId: form.mediaId || null,
@@ -905,6 +941,26 @@ function AutomationsTab({ account }) {
       duplicatePolicy: form.duplicatePolicy,
       linkedPackageIds: form.linkedPackageIds,
       linkedPropertyIds: form.linkedPropertyIds,
+    };
+
+    if (editingAutomationId) {
+      updateMutation.mutate(
+        { id: editingAutomationId, payload },
+        {
+          onSuccess: () => {
+            qc.invalidateQueries({ queryKey: ['ig-automations', account.id] });
+            resetForm();
+          },
+        }
+      );
+      return;
+    }
+
+    createMutation.mutate(payload, {
+      onSuccess: () => {
+        qc.invalidateQueries({ queryKey: ['ig-automations', account.id] });
+        resetForm();
+      },
     });
   };
 
@@ -918,6 +974,11 @@ function AutomationsTab({ account }) {
             <p className="mt-1 max-w-2xl text-sm text-neutral-500">
               Turn post comments like PRICE or KERALA into one private reply, then continue the bot flow after the user responds.
             </p>
+            {editingAutomation ? (
+              <p className="mt-2 text-sm font-semibold text-indigo-700">
+                Editing: {editingAutomation.name}
+              </p>
+            ) : null}
           </div>
 
           <div className="shell-panel p-5">
@@ -1075,12 +1136,17 @@ function AutomationsTab({ account }) {
             </div>
 
             <div className="mt-5 flex flex-wrap items-center justify-end gap-3 border-t border-neutral-100 pt-5">
-              <button type="button" onClick={submitAutomation} disabled={createMutation.isPending} className="shell-button-primary">
+              {editingAutomationId ? (
+                <button type="button" onClick={resetForm} className="shell-button-secondary min-h-10 px-3">
+                  Cancel
+                </button>
+              ) : null}
+              <button type="button" onClick={submitAutomation} disabled={createMutation.isPending || updateMutation.isPending} className="shell-button-primary">
                 <BoltIcon className="h-4 w-4" />
-                {createMutation.isPending ? 'Saving...' : 'Create Automation'}
+                {createMutation.isPending || updateMutation.isPending ? 'Saving...' : editingAutomationId ? 'Update Automation' : 'Create Automation'}
               </button>
             </div>
-            <ErrorBanner error={createMutation.error} fallback="Failed to create automation." />
+            <ErrorBanner error={createMutation.error || updateMutation.error} fallback={editingAutomationId ? 'Failed to update automation.' : 'Failed to create automation.'} />
           </div>
 
           <div className="shell-panel overflow-hidden">
@@ -1120,6 +1186,13 @@ function AutomationsTab({ account }) {
                     </div>
                   </div>
                   <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => loadAutomationIntoForm(automation)}
+                      className="shell-button-secondary min-h-10 px-3"
+                    >
+                      Edit
+                    </button>
                     <button
                       type="button"
                       onClick={() => updateMutation.mutate({ id: automation.id, payload: { isActive: !automation.isActive } })}
@@ -1259,10 +1332,12 @@ function PublishingTab({ account, onOpenAutomations }) {
               </div>
 
               <div className="flex flex-wrap justify-end gap-3 border-t border-neutral-100 pt-4">
-                <button type="button" onClick={onOpenAutomations} className="shell-button-secondary">
-                  <BoltIcon className="h-4 w-4" />
-                  Create Automation
-                </button>
+                {onOpenAutomations ? (
+                  <button type="button" onClick={onOpenAutomations} className="shell-button-secondary">
+                    <BoltIcon className="h-4 w-4" />
+                    Create Automation
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   onClick={() => publishMutation.mutate({ accountId: account.id, imageUrl: imageUrl.trim(), caption: caption.trim() })}

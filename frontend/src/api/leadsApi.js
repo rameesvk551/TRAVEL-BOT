@@ -18,4 +18,8 @@ export const leadsApi = {
 
   // Notes
   addNote: (id, data) => client.post(`/leads/${id}/notes`, data).then((r) => r.data),
+
+  // Report Exports
+  exportPdf: (params) => client.get('/leads/export/pdf', { params, responseType: 'blob', timeout: 120000 }),
+  exportExcel: (params) => client.get('/leads/export/excel', { params, responseType: 'blob', timeout: 120000 }),
 };

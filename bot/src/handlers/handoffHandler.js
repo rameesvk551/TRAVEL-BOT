@@ -118,7 +118,14 @@ async function handoffToAgent(session, customer, agency, reason) {
   if (data.datesLabel || data.dates) summaryParts.push(`Dates: ${data.datesLabel || data.dates}`);
   const summary = summaryParts.length ? ` I’ve shared your choices (${summaryParts.join(', ')}) so you won’t need to repeat anything.` : ' I’ve shared your choices so you won’t need to repeat anything.';
   const customerMsg = templates.handoffToCustomer(assignedAgent.name, lang).replace(/\.$/, '') + summary;
-  await whatsappService.sendTextMessage(customer.phone, customerMsg, ctx);
+  // Offer a "Chat on WhatsApp" button that deep-links to the assigned staff's WhatsApp.
+  const { toWaMeNumber } = require('../utils/phoneFormat');
+  const staffDigits = toWaMeNumber(assignedAgent.phone);
+  if (staffDigits) {
+    await whatsappService.sendUrlButtonMessage(customer.phone, customerMsg, 'Chat on WhatsApp', `https://wa.me/${staffDigits}`, ctx);
+  } else {
+    await whatsappService.sendTextMessage(customer.phone, customerMsg, ctx);
+  }
 
   // Get last 3 messages for context
   const lastMessages = await Message.findAll({

@@ -9,7 +9,7 @@ export function mergeAssignedAgentOption(agents = [], lead = {}) {
   return [
     {
       id: assignedAgent.id,
-      name: assignedAgent.name || assignedAgent.email || 'Assigned Agent',
+      name: assignedAgent.name || assignedAgent.email || 'Assigned Staff',
       email: assignedAgent.email,
     },
     ...options,

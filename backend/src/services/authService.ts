@@ -10,9 +10,10 @@ const { normalizePhone } = require('../utils/phoneUtils');
 const { ALL_PERMISSIONS } = require('../constants/permissions');
 const { sendPasswordResetEmail } = require('./emailService');
 const brandingService = require('./brandingService');
+const pipelineService = require('./pipelineService');
 
 const ACCESS_TOKEN_EXPIRY = '15m';
-const REFRESH_TOKEN_EXPIRY_DAYS = 7;
+const REFRESH_TOKEN_EXPIRY_DAYS = 30;
 const BCRYPT_ROUNDS = 12;
 const PASSWORD_RESET_EXPIRY_MINUTES = 30;
 
@@ -77,6 +78,13 @@ async function register(data) {
     whatsappNumber: normalizePhone(whatsappNumber),
     // Passive vertical marker; column defaults to TRAVEL when omitted.
     ...(industry ? { industry } : {}),
+  });
+
+  // Seed the default pipeline statuses so a newly onboarded agency has a working
+  // funnel from day one (before anyone opens the CRM). Idempotent and race-safe;
+  // the agency can rename, recolor, reorder, add or remove them afterwards.
+  await pipelineService.ensureDefaultStages(agency.id).catch((err) => {
+    console.error('Failed to seed default pipeline stages for agency', agency.id, err);
   });
 
   // Hash password and create admin agent

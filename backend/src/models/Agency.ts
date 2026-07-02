@@ -141,6 +141,11 @@ module.exports = (sequelize) => {
       allowNull: true,
       comment: 'Last successful provider sync timestamp',
     },
+    upiId: {
+      type: DataTypes.STRING(120),
+      allowNull: true,
+      comment: 'UPI VPA (name@bank) used to render a balance-payment QR on invoices',
+    },
     razorpayKeyId: {
       type: DataTypes.STRING(255),
       allowNull: true,
@@ -254,6 +259,28 @@ module.exports = (sequelize) => {
       allowNull: true,
       comment: 'URL of the agency authorized signature',
     },
+    gstin: {
+      type: DataTypes.STRING(32),
+      allowNull: true,
+      comment: 'Company GSTIN used on Indian tax invoices',
+    },
+    stateCode: {
+      type: DataTypes.STRING(2),
+      allowNull: true,
+      comment: 'Indian GST state code for deciding CGST/SGST vs IGST',
+    },
+    accountingSettings: {
+      type: DataTypes.JSONB,
+      allowNull: false,
+      defaultValue: {},
+      comment: 'Accounting configuration such as default GST treatment and rates',
+    },
+    documentSettings: {
+      type: DataTypes.JSONB,
+      allowNull: false,
+      defaultValue: {},
+      comment: "Document delivery config, e.g. { autoSend: { quotation, invoice, receipt }, captions: {...} }",
+    },
     isActive: {
       type: DataTypes.BOOLEAN,
       defaultValue: true,
@@ -349,6 +376,12 @@ module.exports = (sequelize) => {
       type: DataTypes.DATE,
       allowNull: true,
       comment: 'When the website was last published',
+    },
+    leadFormConfig: {
+      type: DataTypes.JSONB,
+      allowNull: false,
+      defaultValue: {},
+      comment: 'Public lead-capture form config {enabled, title, description, successMessage, submitLabel, fields[]}',
     },
   }, {
     tableName: 'agencies',

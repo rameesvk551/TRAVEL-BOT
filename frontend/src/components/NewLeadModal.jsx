@@ -1,18 +1,35 @@
 import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { XMarkIcon } from '@heroicons/react/24/outline';
 import { useCreateLead } from '../hooks/useLeads';
+import { serviceRoutingApi } from '../api/serviceRoutingApi';
+import { leadSourcesApi } from '../api/leadSourcesApi';
 
 export default function NewLeadModal({ isOpen, onClose, agents }) {
   const [formData, setFormData] = useState({
     customerName: '',
     customerPhone: '',
     customerEmail: '',
+    place: '',
     destination: '',
+    enquiryType: '',
     source: 'manual',
     assignedAgentId: '',
     budgetPerPerson: '',
     tagsText: '',
   });
+
+  const { data: routingResponse } = useQuery({
+    queryKey: ['service-routing'],
+    queryFn: () => serviceRoutingApi.get(),
+  });
+  const intents = routingResponse?.data?.intents || [];
+
+  const { data: leadSources = [] } = useQuery({
+    queryKey: ['lead-sources'],
+    queryFn: () => leadSourcesApi.list().then((res) => res.data),
+  });
+  const activeSources = leadSources.filter((s) => s.isActive);
 
   const createLead = useCreateLead();
 
@@ -33,7 +50,9 @@ export default function NewLeadModal({ isOpen, onClose, agents }) {
             customerName: '',
             customerPhone: '',
             customerEmail: '',
+            place: '',
             destination: '',
+            enquiryType: '',
             source: 'manual',
             assignedAgentId: '',
             budgetPerPerson: '',
@@ -61,7 +80,6 @@ export default function NewLeadModal({ isOpen, onClose, agents }) {
             <label className="mb-1 block text-sm font-semibold text-neutral-700">Phone</label>
             <input
               type="text"
-              required
               className="shell-input-rect w-full h-11 bg-neutral-50 px-3"
               placeholder="+91..."
               value={formData.customerPhone}
@@ -92,6 +110,17 @@ export default function NewLeadModal({ isOpen, onClose, agents }) {
           </div>
 
           <div>
+            <label className="mb-1 block text-sm font-semibold text-neutral-700">Place</label>
+            <input
+              type="text"
+              className="shell-input-rect w-full h-11 bg-neutral-50 px-3"
+              placeholder="Customer's place / city, e.g. Kochi"
+              value={formData.place}
+              onChange={(e) => setFormData({ ...formData, place: e.target.value })}
+            />
+          </div>
+
+          <div>
             <label className="mb-1 block text-sm font-semibold text-neutral-700">Destination</label>
             <input
               type="text"
@@ -102,6 +131,37 @@ export default function NewLeadModal({ isOpen, onClose, agents }) {
             />
           </div>
 
+          <div>
+            <label className="mb-1 block text-sm font-semibold text-neutral-700">Enquiry</label>
+            <select
+              className="shell-input-rect w-full h-11 bg-neutral-50 px-2"
+              value={formData.enquiryType}
+              onChange={(e) => setFormData({ ...formData, enquiryType: e.target.value })}
+            >
+              <option value="">General (No Category)</option>
+              {(() => {
+                const standard = intents.filter(i => !i.key.startsWith('service_') && i.level === 'section');
+                const specific = intents.filter(i => i.key.startsWith('service_'));
+                return (
+                  <>
+                    <optgroup label="Main Categories">
+                      {standard.map((intent) => (
+                        <option key={intent.key} value={intent.key}>{intent.label}</option>
+                      ))}
+                    </optgroup>
+                    {specific.length > 0 && (
+                      <optgroup label="Specific Services">
+                        {specific.map((intent) => (
+                          <option key={intent.key} value={intent.key}>{intent.label.replace('Service: ', '')}</option>
+                        ))}
+                      </optgroup>
+                    )}
+                  </>
+                );
+              })()}
+            </select>
+          </div>
+
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="mb-1 block text-sm font-semibold text-neutral-700">Source</label>
@@ -110,15 +170,34 @@ export default function NewLeadModal({ isOpen, onClose, agents }) {
                 value={formData.source}
                 onChange={(e) => setFormData({ ...formData, source: e.target.value })}
               >
-                <option value="manual">Manual</option>
-                <option value="whatsapp_organic">WhatsApp Organic</option>
-                <option value="facebook_ad">Facebook Ad</option>
-                <option value="instagram_ad">Instagram Ad</option>
-                <option value="referral">Referral</option>
+                {activeSources.length === 0 ? (
+                  <>
+                    <option value="manual">Manual</option>
+                    <option value="whatsapp_organic">WhatsApp Organic</option>
+                    <option value="facebook_ad">Facebook Ad</option>
+                    <option value="instagram_ad">Instagram Ad</option>
+                    <option value="referral">Referral</option>
+                  </>
+                ) : (
+                  <>
+                    {/* Ensure 'manual' is always an option or whatever they select */}
+                    {activeSources.map((s) => (
+                      <option key={s.id} value={s.name}>{s.name}</option>
+                    ))}
+                    {!activeSources.find(s => s.name === formData.source) && formData.source && (
+                      <option value={formData.source}>{formData.source}</option>
+                    )}
+                  </>
+                )}
               </select>
             </div>
             <div>
-              <label className="mb-1 block text-sm font-semibold text-neutral-700">Assign To</label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-sm font-semibold text-neutral-700">Assign To</label>
+                {formData.enquiryType && !formData.assignedAgentId && (
+                  <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded">Auto-routed</span>
+                )}
+              </div>
               <select
                 className="shell-input-rect w-full h-11 bg-neutral-50 px-2"
                 value={formData.assignedAgentId}

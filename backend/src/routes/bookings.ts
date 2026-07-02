@@ -14,12 +14,31 @@ const router = Router();
 const createBookingSchema = z.object({
   leadId: z.string().uuid().optional(),
   customerId: z.string().uuid().optional(),
+  newCustomer: z.object({
+    name: z.string().min(1),
+    phone: z.string().min(1),
+    email: z.string().email().optional().or(z.literal('')),
+  }).optional(),
+  itemType: z.enum(['PACKAGE', 'PROPERTY', 'CRUISE', 'VISA', 'SERVICE', 'CUSTOM']).optional(),
   packageId: z.string().uuid().optional(),
-  totalAmount: z.number().int().min(1, 'Total amount must be positive'),
+  propertyId: z.string().uuid().optional(),
+  cruiseId: z.string().uuid().optional(),
+  visaId: z.string().uuid().optional(),
+  serviceId: z.string().uuid().optional(),
+  customItemName: z.string().optional(),
+  customItemDescription: z.string().optional(),
+  paymentMode: z.enum(['FULL', 'ADVANCE', 'NO_PAYMENT']).optional(),
+  paymentMethodId: z.string().uuid().optional(),
+  // COMMISSION_ONLY: agency earns only its commission; the customer pays the balance at
+  // the property. commissionAmount is the agency's revenue (paise); defaults to advance.
+  settlementType: z.enum(['FULL_COLLECTION', 'COMMISSION_ONLY']).optional(),
+  commissionAmount: z.number().int().min(0).optional(),
+  basePrice: z.number().int().min(0).optional(),
+  totalAmount: z.number().int().min(0, 'Total amount must be valid'),
   advanceAmount: z.number().int().min(0).optional(),
-  travelDate: z.string().datetime().or(z.string().min(1)),
-  returnDate: z.string().datetime().or(z.string().min(1)),
-  travellers: z.number().int().min(1).max(50),
+  travelDate: z.string().datetime().or(z.string().min(1)).optional(),
+  returnDate: z.string().datetime().or(z.string().min(1)).optional(),
+  travellers: z.number().int().min(1).max(50).optional(),
   notes: z.string().optional(),
 });
 
@@ -34,6 +53,11 @@ const updateBookingSchema = z.object({
  * GET /api/bookings - List bookings with filters
  */
 router.get('/', authenticate, requirePermission(PERMISSIONS.BOOKINGS_VIEW), bookingController.list);
+
+/**
+ * GET /api/bookings/:id/invoice - Download invoice PDF for a booking
+ */
+router.get('/:id/invoice', authenticate, requirePermission(PERMISSIONS.BOOKINGS_VIEW), bookingController.invoice);
 
 /**
  * GET /api/bookings/:id - Get booking by ID

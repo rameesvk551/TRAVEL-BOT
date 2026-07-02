@@ -8,6 +8,8 @@ const marketingOsPartnerService = require('./marketingOsPartnerService');
 const flowService = require('./flowService');
 const templateService = require('./templateService');
 const websiteBuilderService = require('./websiteBuilderService');
+const { normalizeLeadFormConfig } = require('./leadFormConfig');
+const { AgencyChannel, Package, Property, Service, Visa, Cruise, WhatsAppFlow } = require('../models');
 
 const CALLBACK_SECRET = process.env.MARKETING_OS_WEBHOOK_SECRET || '';
 const WEBHOOK_APP_SECRET = process.env.WEBHOOK_APP_SECRET || '';
@@ -155,6 +157,46 @@ const FLOW_ACTIONS = new Set([
   'CAPTURE_SERVICE_DETAILS',
 ]);
 
+const FLOW_GRAPH_NODE_TYPES = new Set([
+  'START',
+  'MESSAGE',
+  'BUTTONS',
+  'LIST',
+  'QUESTION',
+  'CONDITION',
+  'CATALOG_LIST',
+  'SEARCH',
+  'WHATSAPP_BUTTON',
+  'SEND_ITEM_DETAIL',
+  'SEND_ITEM_DOCUMENT',
+  'SAVE_ENQUIRY',
+  'NOTIFY_STAFF',
+  'OPEN_SERVICE',
+  'OPEN_PACKAGE_FLOW',
+  'OPEN_PROPERTY_FLOW',
+  'OPEN_VISA_FLOW',
+  'OPEN_CRUISE_FLOW',
+  'OPEN_SERVICE_FLOW',
+  'OPEN_CUSTOM_TRIP_FLOW',
+  'OPEN_META_FLOW',
+  'HANDOFF',
+  'END',
+]);
+
+const FLOW_GRAPH_FIELD_LIMITS = {
+  body: 1024,
+  prompt: 1024,
+  message: 1024,
+  title: 24,
+  label: 24,
+  description: 72,
+  fieldKey: 48,
+  value: 120,
+  emptyMessage: 300,
+  notePrefix: 80,
+  staffMessage: 1500,
+};
+
 function normalizeFlowMenuItems(items = [], limit = 10) {
   if (!Array.isArray(items)) return [];
 
@@ -187,8 +229,370 @@ function normalizeFlowMenuItems(items = [], limit = 10) {
     .slice(0, limit);
 }
 
-function normalizeWhatsAppFlowConfig(config = {}) {
+function normalizeFlowValue(value, limit = 80) {
+  return String(value || '')
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_|_$/g, '')
+    .slice(0, limit);
+}
+
+function normalizeFlowGraphText(value, limit = 255) {
+  return String(value || '').trim().slice(0, limit);
+}
+
+function normalizeGraphNodeId(value, fallback) {
+  return toMenuId(value, fallback).slice(0, 80);
+}
+
+function normalizeGraphOption(option = {}, fallbackPrefix, index, titleLimit = 24) {
+  const label = normalizeFlowGraphText(option.label || option.title || `Option ${index + 1}`, titleLimit);
+  const id = normalizeGraphNodeId(option.id || option.value, `${fallbackPrefix}_${index + 1}`);
+  if (!id || !label) return null;
+  return {
+    id,
+    label,
+    title: normalizeFlowGraphText(option.title || label, titleLimit),
+    description: normalizeFlowGraphText(option.description, FLOW_GRAPH_FIELD_LIMITS.description),
+    value: normalizeFlowGraphText(option.value || id, FLOW_GRAPH_FIELD_LIMITS.value),
+  };
+}
+
+const FLOW_CATALOG_TYPES = new Set(['SERVICE', 'PACKAGE', 'PROPERTY', 'VISA', 'CRUISE']);
+
+function normalizeCatalogType(value, fallback = 'SERVICE') {
+  const type = String(value || '').trim().toUpperCase();
+  return FLOW_CATALOG_TYPES.has(type) ? type : fallback;
+}
+
+function normalizeGraphItemOverride(item = {}, fallbackType = 'SERVICE') {
+  if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
+  const itemType = normalizeCatalogType(item.itemType || item.catalogType || fallbackType, fallbackType);
+  const itemId = normalizeFlowGraphText(item.itemId || item.id, 80);
+  if (!itemId) return null;
+  return {
+    itemType,
+    itemId,
+    label: normalizeFlowGraphText(item.label || item.itemName || itemId, 48),
+  };
+}
+
+// Instagram-only rendering mode for catalog/search results: LIST (numbered text + images),
+// CARDS (one generic-template card per item), or CAROUSEL (a swipeable row of cards).
+function normalizeIgCardMode(value) {
+  const v = String(value || '').trim().toUpperCase();
+  return ['CARDS', 'CAROUSEL'].includes(v) ? v : 'LIST';
+}
+
+function normalizeGraphData(type, data = {}, nodeId = '') {
+  const source = data && typeof data === 'object' && !Array.isArray(data) ? data : {};
+  const normalized = {};
+
+  if (source.label !== undefined) normalized.label = normalizeFlowGraphText(source.label, FLOW_GRAPH_FIELD_LIMITS.label);
+  if (source.title !== undefined) normalized.title = normalizeFlowGraphText(source.title, FLOW_GRAPH_FIELD_LIMITS.title);
+  if (source.body !== undefined) normalized.body = normalizeFlowGraphText(source.body, FLOW_GRAPH_FIELD_LIMITS.body);
+  if (source.prompt !== undefined) normalized.prompt = normalizeFlowGraphText(source.prompt, FLOW_GRAPH_FIELD_LIMITS.prompt);
+  if (source.message !== undefined) normalized.message = normalizeFlowGraphText(source.message, FLOW_GRAPH_FIELD_LIMITS.message);
+  if (source.fieldKey !== undefined) normalized.fieldKey = toMenuId(source.fieldKey, 'answer').slice(0, FLOW_GRAPH_FIELD_LIMITS.fieldKey);
+  if (source.operator !== undefined) {
+    const operator = String(source.operator || '').trim().toUpperCase();
+    normalized.operator = ['EQUALS', 'CONTAINS', 'EXISTS', 'NOT_EQUALS'].includes(operator) ? operator : 'EXISTS';
+  }
+  if (source.value !== undefined) normalized.value = normalizeFlowGraphText(source.value, FLOW_GRAPH_FIELD_LIMITS.value);
+  if (source.catalogType !== undefined) {
+    const rawCatalogType = String(source.catalogType || '').trim().toUpperCase();
+    normalized.catalogType = type === 'SEND_ITEM_DETAIL' && rawCatalogType === 'AUTO'
+      ? 'AUTO'
+      : normalizeCatalogType(source.catalogType);
+  }
+  if (source.emptyMessage !== undefined) normalized.emptyMessage = normalizeFlowGraphText(source.emptyMessage, FLOW_GRAPH_FIELD_LIMITS.emptyMessage);
+  if (source.notePrefix !== undefined) normalized.notePrefix = normalizeFlowGraphText(source.notePrefix, FLOW_GRAPH_FIELD_LIMITS.notePrefix);
+  if (source.finalMessage !== undefined) normalized.finalMessage = normalizeFlowGraphText(source.finalMessage, FLOW_GRAPH_FIELD_LIMITS.message);
+  if (source.staffMessage !== undefined) normalized.staffMessage = normalizeFlowGraphText(source.staffMessage, FLOW_GRAPH_FIELD_LIMITS.staffMessage);
+  if (source.fallbackMessage !== undefined) normalized.fallbackMessage = normalizeFlowGraphText(source.fallbackMessage, FLOW_GRAPH_FIELD_LIMITS.emptyMessage);
+  if (source.status !== undefined) {
+    const status = String(source.status || '').trim().toUpperCase();
+    normalized.status = ['NEW', 'ENQUIRY', 'CONTACTED', 'QUOTED'].includes(status) ? status : 'ENQUIRY';
+  }
+  if (source.category !== undefined) normalized.category = normalizeFlowValue(source.category, 32);
+  if (source.tourType !== undefined) normalized.tourType = normalizeFlowValue(source.tourType, 80);
+  if (source.serviceCategory !== undefined) normalized.serviceCategory = normalizeFlowValue(source.serviceCategory, 80);
+  if (source.serviceKey !== undefined) normalized.serviceKey = normalizeFlowValue(source.serviceKey, 80);
+  if (source.serviceId !== undefined) normalized.serviceId = normalizeFlowGraphText(source.serviceId, 80);
+  if (source.routingIntentKey !== undefined) normalized.routingIntentKey = toMenuId(source.routingIntentKey, 'properties').slice(0, 80);
+  if (source.propertyType !== undefined) normalized.propertyType = normalizeFlowGraphText(source.propertyType, 80);
+  if (source.propertyLocation !== undefined) normalized.propertyLocation = normalizeFlowGraphText(source.propertyLocation, 80);
+  if (source.flowId !== undefined) normalized.flowId = normalizeFlowGraphText(source.flowId, 80);
+  if (source.flowType !== undefined) {
+    const flowType = String(source.flowType || '').trim().toUpperCase();
+    normalized.flowType = ['PACKAGE', 'PROPERTY', 'VISA', 'CRUISE', 'SERVICE', 'CUSTOM_TRIP', 'REVIEW', 'GENERIC'].includes(flowType) ? flowType : 'GENERIC';
+  }
+  if (source.cta !== undefined) normalized.cta = normalizeFlowGraphText(source.cta, 20);
+  if (source.reason !== undefined) normalized.reason = normalizeFlowGraphText(source.reason, 180);
+
+  if (type === 'BUTTONS') {
+    normalized.buttons = (Array.isArray(source.buttons) ? source.buttons : [])
+      .map((option, index) => normalizeGraphOption(option, `${nodeId}_button`, index, 20))
+      .filter(Boolean)
+      .slice(0, 3);
+  }
+
+  if (type === 'LIST') {
+    normalized.buttonLabel = normalizeFlowGraphText(source.buttonLabel || 'Choose Option', 20);
+    normalized.rows = (Array.isArray(source.rows) ? source.rows : [])
+      .map((option, index) => normalizeGraphOption(option, `${nodeId}_row`, index, 24))
+      .filter(Boolean)
+      .slice(0, 10);
+  }
+
+  if (type === 'CATALOG_LIST') {
+    const catalogType = normalizeCatalogType(source.catalogType);
+    normalized.catalogType = catalogType;
+    normalized.body = normalizeFlowGraphText(source.body || 'Please choose an option.', FLOW_GRAPH_FIELD_LIMITS.body);
+    normalized.buttonLabel = normalizeFlowGraphText(source.buttonLabel || 'View Options', 20);
+    normalized.emptyMessage = normalizeFlowGraphText(source.emptyMessage || 'No active options are available right now.', FLOW_GRAPH_FIELD_LIMITS.emptyMessage);
+    normalized.itemOverrides = (Array.isArray(source.itemOverrides) ? source.itemOverrides : [])
+      .map((item) => normalizeGraphItemOverride(item, catalogType))
+      .filter(Boolean)
+      .slice(0, 100);
+    normalized.igCardMode = normalizeIgCardMode(source.igCardMode);
+    normalized.igCardButtonLabel = normalizeFlowGraphText(source.igCardButtonLabel || 'Get details on WhatsApp', 20);
+  }
+
+  if (type === 'SEARCH') {
+    normalized.catalogType = normalizeCatalogType(source.catalogType, 'PROPERTY');
+    normalized.body = normalizeFlowGraphText(source.body || 'Here are the closest matches:', FLOW_GRAPH_FIELD_LIMITS.body);
+    normalized.emptyMessage = normalizeFlowGraphText(source.emptyMessage || 'Sorry, I could not find a match for that. Our team will help you shortly.', FLOW_GRAPH_FIELD_LIMITS.emptyMessage);
+    normalized.pickPrompt = normalizeFlowGraphText(source.pickPrompt || 'Reply with the number of your choice.', 200);
+    normalized.igCardMode = normalizeIgCardMode(source.igCardMode);
+    normalized.igCardButtonLabel = normalizeFlowGraphText(source.igCardButtonLabel || 'Get details on WhatsApp', 20);
+    const maxResults = parseInt(source.maxResults, 10);
+    normalized.maxResults = Number.isFinite(maxResults) ? Math.min(10, Math.max(1, maxResults)) : 6;
+    // fieldKey normalized the same way as QUESTION fieldKeys so they always line up at runtime.
+    normalized.searchMappings = (Array.isArray(source.searchMappings) ? source.searchMappings : [])
+      .map((mapping) => {
+        if (!mapping || typeof mapping !== 'object') return null;
+        const fieldKey = toMenuId(mapping.fieldKey, '').slice(0, FLOW_GRAPH_FIELD_LIMITS.fieldKey);
+        const matchField = normalizeFlowGraphText(mapping.matchField, 40);
+        if (!fieldKey || !matchField) return null;
+        return { fieldKey, matchField };
+      })
+      .filter(Boolean)
+      .slice(0, 6);
+  }
+
+  if (type === 'WHATSAPP_BUTTON') {
+    normalized.body = normalizeFlowGraphText(source.body || 'Tap below to chat with us on WhatsApp.', FLOW_GRAPH_FIELD_LIMITS.body);
+    normalized.buttonLabel = normalizeFlowGraphText(source.buttonLabel || 'Chat on WhatsApp', 20);
+    const target = String(source.target || '').trim().toUpperCase();
+    normalized.target = ['ASSIGNED_AGENT', 'CUSTOM'].includes(target) ? target : 'ASSIGNED_AGENT';
+    normalized.phone = normalized.target === 'CUSTOM'
+      ? String(source.phone || '').replace(/[^0-9+]/g, '').slice(0, 20)
+      : '';
+  }
+
+  return normalized;
+}
+
+async function assertGraphReferencesBelongToAgency(agencyId, nodes = []) {
+  const serviceIds = nodes
+    .filter((node) => node.type === 'OPEN_SERVICE' && node.data?.serviceId)
+    .map((node) => node.data.serviceId);
+  const flowIds = nodes
+    .filter((node) => node.type === 'OPEN_META_FLOW' && node.data?.flowId)
+    .map((node) => node.data.flowId);
+  const catalogRefs = {
+    SERVICE: [],
+    PACKAGE: [],
+    PROPERTY: [],
+    VISA: [],
+    CRUISE: [],
+  };
+
+  nodes
+    .filter((node) => node.type === 'CATALOG_LIST')
+    .forEach((node) => {
+      (node.data?.itemOverrides || []).forEach((item) => {
+        const itemType = normalizeCatalogType(item.itemType || node.data?.catalogType);
+        if (catalogRefs[itemType]) catalogRefs[itemType].push(item.itemId);
+      });
+    });
+
+  if (serviceIds.length) {
+    const services = await Service.findAll({ where: { agencyId, id: serviceIds }, attributes: ['id'] });
+    const found = new Set(services.map((item) => String(item.id)));
+    const missing = serviceIds.find((id) => !found.has(String(id)));
+    if (missing) {
+      throw Object.assign(new Error('Selected service is not available for this agency'), {
+        statusCode: 400,
+        code: 'INVALID_FLOW_SERVICE',
+      });
+    }
+  }
+
+  if (flowIds.length) {
+    const flows = await WhatsAppFlow.findAll({ where: { agencyId, id: flowIds }, attributes: ['id'] });
+    const found = new Set(flows.map((item) => String(item.id)));
+    const missing = flowIds.find((id) => !found.has(String(id)));
+    if (missing) {
+      throw Object.assign(new Error('Selected WhatsApp flow is not available for this agency'), {
+        statusCode: 400,
+        code: 'INVALID_FLOW_REFERENCE',
+      });
+    }
+  }
+
+  const checks = [
+    ['SERVICE', Service, catalogRefs.SERVICE],
+    ['PACKAGE', Package, catalogRefs.PACKAGE],
+    ['PROPERTY', Property, catalogRefs.PROPERTY],
+    ['VISA', Visa, catalogRefs.VISA],
+    ['CRUISE', Cruise, catalogRefs.CRUISE],
+  ];
+
+  for (const [type, model, ids] of checks) {
+    const uniqueIds = Array.from(new Set((ids || []).filter(Boolean)));
+    if (!uniqueIds.length) continue;
+    const records = await model.findAll({ where: { agencyId, id: uniqueIds }, attributes: ['id'] });
+    const found = new Set(records.map((item) => String(item.id)));
+    const missing = uniqueIds.find((id) => !found.has(String(id)));
+    if (missing) {
+      throw Object.assign(new Error(`Selected ${type.toLowerCase()} is not available for this agency`), {
+        statusCode: 400,
+        code: `INVALID_FLOW_${type}_REFERENCE`,
+      });
+    }
+  }
+}
+
+async function normalizeWhatsAppFlowGraphConfig(agencyId, config = {}) {
+  const rawNodes = Array.isArray(config.nodes) ? config.nodes : [];
+  const rawEdges = Array.isArray(config.edges) ? config.edges : [];
+  const seenNodes = new Set();
+
+  const nodes = rawNodes
+    .map((node, index) => {
+      if (!node || typeof node !== 'object') return null;
+      const type = String(node.type || '').trim().toUpperCase();
+      if (!FLOW_GRAPH_NODE_TYPES.has(type)) return null;
+      const id = normalizeGraphNodeId(node.id, `${type.toLowerCase()}_${index + 1}`);
+      if (!id || seenNodes.has(id)) return null;
+      seenNodes.add(id);
+      const position = node.position && typeof node.position === 'object'
+        ? {
+            x: Number.isFinite(Number(node.position.x)) ? Number(node.position.x) : 0,
+            y: Number.isFinite(Number(node.position.y)) ? Number(node.position.y) : 0,
+          }
+        : { x: 0, y: 0 };
+      return {
+        id,
+        type,
+        position,
+        data: normalizeGraphData(type, node.data || {}, id),
+      };
+    })
+    .filter(Boolean)
+    .slice(0, 80);
+
+  const nodeIds = new Set(nodes.map((node) => node.id));
+  const seenEdges = new Set();
+  const edges = rawEdges
+    .map((edge, index) => {
+      if (!edge || typeof edge !== 'object') return null;
+      const source = normalizeGraphNodeId(edge.source, '');
+      const target = normalizeGraphNodeId(edge.target, '');
+      if (!source || !target || !nodeIds.has(source) || !nodeIds.has(target)) return null;
+      const sourceHandle = normalizeGraphNodeId(edge.sourceHandle || 'default', 'default');
+      const id = normalizeGraphNodeId(edge.id, `${source}_${sourceHandle}_${target}_${index}`);
+      if (!id || seenEdges.has(id)) return null;
+      seenEdges.add(id);
+      return { id, source, sourceHandle, target };
+    })
+    .filter(Boolean)
+    .slice(0, 160);
+
+  const startNodes = nodes.filter((node) => node.type === 'START');
+  if (startNodes.length !== 1) {
+    throw Object.assign(new Error('Flow builder must contain exactly one start node'), {
+      statusCode: 400,
+      code: 'INVALID_FLOW_GRAPH_START',
+    });
+  }
+
+  await assertGraphReferencesBelongToAgency(agencyId, nodes);
+
+  const requestedStartNodeId = normalizeGraphNodeId(config.startNodeId, '');
+
+  return {
+    schemaVersion: Number(config.schemaVersion) >= 3 ? 3 : 2,
+    startNodeId: nodeIds.has(requestedStartNodeId) ? requestedStartNodeId : startNodes[0].id,
+    nodes,
+    edges,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+async function normalizeWhatsAppFlowLibraryConfig(agencyId, config = {}) {
+  const rawFlows = Array.isArray(config.flows) ? config.flows : [];
+  const seen = new Set();
+  const flows = [];
+
+  for (let index = 0; index < rawFlows.length; index += 1) {
+    const flow = rawFlows[index];
+    if (!flow || typeof flow !== 'object' || Array.isArray(flow)) continue;
+    const id = normalizeGraphNodeId(flow.id, `flow_${index + 1}`);
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    const graph = await normalizeWhatsAppFlowGraphConfig(agencyId, {
+      schemaVersion: 3,
+      startNodeId: flow.startNodeId,
+      nodes: flow.nodes,
+      edges: flow.edges,
+    });
+    flows.push({
+      id,
+      name: normalizeFlowGraphText(flow.name || `Flow ${flows.length + 1}`, 40),
+      description: normalizeFlowGraphText(flow.description || '', 120),
+      startNodeId: graph.startNodeId,
+      nodes: graph.nodes,
+      edges: graph.edges,
+      updatedAt: new Date().toISOString(),
+    });
+    if (flows.length >= 20) break;
+  }
+
+  if (!flows.length) {
+    throw Object.assign(new Error('Flow builder must contain at least one flow'), {
+      statusCode: 400,
+      code: 'INVALID_FLOW_LIBRARY',
+    });
+  }
+
+  const requestedEntryFlowId = normalizeGraphNodeId(config.entryFlowId, '');
+  const entryFlowId = flows.some((flow) => flow.id === requestedEntryFlowId)
+    ? requestedEntryFlowId
+    : flows[0].id;
+
+  return {
+    schemaVersion: 4,
+    entryFlowId,
+    flows,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+async function normalizeWhatsAppFlowConfig(agencyId, config = {}) {
   if (!config || typeof config !== 'object' || Array.isArray(config)) return {};
+
+  if (Number(config.schemaVersion) >= 4 && Array.isArray(config.flows)) {
+    return normalizeWhatsAppFlowLibraryConfig(agencyId, config);
+  }
+
+  if (Number(config.schemaVersion) === 2 || Array.isArray(config.nodes) || Array.isArray(config.edges)) {
+    return normalizeWhatsAppFlowGraphConfig(agencyId, config);
+  }
 
   const welcomeMenu = normalizeFlowMenuItems(config.welcomeMenu, 10);
   const packageCategories = normalizeFlowMenuItems(config.packageCategories, 3);
@@ -201,6 +605,90 @@ function normalizeWhatsAppFlowConfig(config = {}) {
     ...(tourTypes.length ? { tourTypes } : {}),
     ...(serviceMenu.length ? { serviceMenu } : {}),
   };
+}
+
+function serializeWhatsAppChannel(channel) {
+  if (!channel) return null;
+  const row = typeof channel.toJSON === 'function' ? channel.toJSON() : channel;
+  return {
+    id: row.id,
+    agencyId: row.agencyId,
+    label: row.label || null,
+    isDefault: Boolean(row.isDefault),
+    isActive: row.isActive !== false,
+    provider: row.whatsappProvider || 'SELF_HOSTED',
+    status: row.whatsappConnectionStatus || 'NOT_CONNECTED',
+    whatsappNumber: row.whatsappNumber || null,
+    displayPhoneNumber: row.whatsappDisplayPhoneNumber || row.whatsappNumber || null,
+    phoneNumberId: row.whatsappPhoneNumberId || null,
+    businessAccountId: row.whatsappBusinessAccountId || null,
+    marketingOsTenantId: row.marketingOsTenantId || null,
+    onboardingMode: row.whatsappOnboardingMode || 'STANDARD',
+    errorMessage: row.whatsappConnectionError || null,
+    lastSyncedAt: row.whatsappLastSyncedAt || null,
+    coexistence: {
+      enabled: row.whatsappOnboardingMode === 'COEXISTENCE' || row.whatsappCoexistenceStatus === 'ACTIVE',
+      status: row.whatsappCoexistenceStatus || 'NOT_ENABLED',
+      contactSyncStatus: row.whatsappContactSyncStatus || 'NOT_STARTED',
+      historySyncStatus: row.whatsappHistorySyncStatus || 'NOT_STARTED',
+      lastSyncedAt: row.whatsappCoexistenceLastSyncedAt || null,
+    },
+  };
+}
+
+async function listWhatsAppChannels(agencyId) {
+  const channels = await AgencyChannel.findAll({
+    where: { agencyId, isActive: true },
+    order: [['isDefault', 'DESC'], ['createdAt', 'ASC']],
+  });
+  return channels.map(serializeWhatsAppChannel);
+}
+
+async function upsertWhatsAppChannel(agency, values = {}) {
+  const displayPhoneNumber = values.displayPhoneNumber || values.whatsappDisplayPhoneNumber || null;
+  const whatsappNumber = values.whatsappNumber || (displayPhoneNumber ? normalizePhone(displayPhoneNumber) : null);
+  const phoneNumberId = values.phoneNumberId || values.whatsappPhoneNumberId || null;
+  const businessAccountId = values.businessAccountId || values.whatsappBusinessAccountId || null;
+  const existingDefaultCount = await AgencyChannel.count({ where: { agencyId: agency.id, isDefault: true } });
+  const where = phoneNumberId
+    ? { agencyId: agency.id, whatsappPhoneNumberId: phoneNumberId }
+    : { agencyId: agency.id, whatsappNumber };
+
+  if (!phoneNumberId && !whatsappNumber) return null;
+
+  const payload = {
+    agencyId: agency.id,
+    label: values.label || displayPhoneNumber || whatsappNumber || 'WhatsApp Channel',
+    isDefault: values.isDefault ?? existingDefaultCount === 0,
+    isActive: values.isActive ?? true,
+    whatsappProvider: values.provider || values.whatsappProvider || 'MARKETING_OS',
+    whatsappConnectionStatus: values.status || values.whatsappConnectionStatus || 'CONNECTED',
+    whatsappNumber: whatsappNumber || null,
+    whatsappDisplayPhoneNumber: displayPhoneNumber || whatsappNumber || null,
+    whatsappPhoneNumberId: phoneNumberId || null,
+    whatsappBusinessAccountId: businessAccountId || null,
+    whatsappCatalogId: values.whatsappCatalogId || agency.whatsappCatalogId || null,
+    whatsappOnboardingMode: values.onboardingMode || values.whatsappOnboardingMode || agency.whatsappOnboardingMode || 'STANDARD',
+    whatsappCoexistenceStatus: values.whatsappCoexistenceStatus || agency.whatsappCoexistenceStatus || 'NOT_ENABLED',
+    whatsappContactSyncStatus: values.whatsappContactSyncStatus || agency.whatsappContactSyncStatus || 'NOT_STARTED',
+    whatsappHistorySyncStatus: values.whatsappHistorySyncStatus || agency.whatsappHistorySyncStatus || 'NOT_STARTED',
+    whatsappCoexistenceLastSyncedAt: values.whatsappCoexistenceLastSyncedAt || agency.whatsappCoexistenceLastSyncedAt || null,
+    whatsappConnectionError: values.errorMessage || values.whatsappConnectionError || null,
+    whatsappLastSyncedAt: values.whatsappLastSyncedAt || new Date(),
+    marketingOsTenantId: values.marketingOsTenantId || agency.marketingOsTenantId || null,
+  };
+
+  const [channel] = await AgencyChannel.findOrCreate({
+    where,
+    defaults: payload,
+  });
+
+  if (!channel.isDefault && payload.isDefault) {
+    await AgencyChannel.update({ isDefault: false }, { where: { agencyId: agency.id } });
+  }
+
+  await channel.update(payload);
+  return channel;
 }
 
 function mapMarketingOsStatus(status) {
@@ -417,8 +905,19 @@ async function updateCurrentAgency(agencyId, updates) {
     payload.whatsappMenuConfig = normalizeWhatsAppMenuConfig(payload.whatsappMenuConfig);
   }
 
+  if (Object.prototype.hasOwnProperty.call(payload, 'leadFormConfig')) {
+    payload.leadFormConfig = normalizeLeadFormConfig(payload.leadFormConfig);
+  }
+
   if (Object.prototype.hasOwnProperty.call(payload, 'whatsappFlowConfig')) {
-    payload.whatsappFlowConfig = normalizeWhatsAppFlowConfig(payload.whatsappFlowConfig);
+    payload.whatsappFlowConfig = await normalizeWhatsAppFlowConfig(agencyId, payload.whatsappFlowConfig);
+  }
+
+  if (Object.prototype.hasOwnProperty.call(payload, 'instagramFlowConfig')) {
+    // Instagram DM flow graph is validated/sanitized the same way as the WhatsApp
+    // flow graph (same node types, same agency-reference checks). It is never
+    // published to Meta — it is executed over IG DMs via Marketing OS.
+    payload.instagramFlowConfig = await normalizeWhatsAppFlowConfig(agencyId, payload.instagramFlowConfig);
   }
 
   if (
@@ -459,7 +958,91 @@ async function getWhatsAppConnection(agencyId) {
     throw Object.assign(new Error('Agency not found'), { statusCode: 404, code: 'NOT_FOUND' });
   }
 
-  return serializeWhatsAppConnection(agency);
+  const connection = serializeWhatsAppConnection(agency);
+  connection.channels = await listWhatsAppChannels(agencyId);
+  return connection;
+}
+
+async function getWhatsAppChannels(agencyId) {
+  const agency = await agencyRepository.findById(agencyId);
+  if (!agency) {
+    throw Object.assign(new Error('Agency not found'), { statusCode: 404, code: 'NOT_FOUND' });
+  }
+
+  return listWhatsAppChannels(agencyId);
+}
+
+async function deleteWhatsAppChannel(agencyId, channelId) {
+  const channel = await AgencyChannel.findOne({ where: { id: channelId, agencyId } });
+  if (!channel) {
+    throw Object.assign(new Error('Channel not found'), { statusCode: 404, code: 'NOT_FOUND' });
+  }
+
+  const wasDefault = Boolean(channel.isDefault);
+
+  // When removing the default channel, promote another active channel (most recent) so the
+  // agency keeps a usable default for send-path credential resolution.
+  const activeChannels = await AgencyChannel.findAll({
+    where: { agencyId, isActive: true },
+    order: [['isDefault', 'DESC'], ['createdAt', 'DESC']],
+  });
+  const replacement = activeChannels.find((c) => c.id !== channelId) || null;
+
+  // Best-effort: if this is the number currently provisioned in Marketing OS (mirrored by the
+  // agency's cached phone number id), tear down the Marketing OS WhatsApp config too. Skipped
+  // when disconnecting an older/secondary number so the remaining number's connection is left
+  // intact — this is the "they changed their number" case.
+  const agency = await agencyRepository.findById(agencyId);
+  const isMarketingOsNumber = Boolean(
+    channel.whatsappProvider === 'MARKETING_OS'
+    && channel.whatsappPhoneNumberId
+    && agency?.whatsappPhoneNumberId
+    && String(channel.whatsappPhoneNumberId) === String(agency.whatsappPhoneNumberId)
+  );
+
+  if (isMarketingOsNumber && agency?.marketingOsTenantId) {
+    try {
+      const tenantToken = await marketingOsPartnerService.getTenantToken(agency.marketingOsTenantId);
+      await marketingOsPartnerService.disconnectTenantWhatsApp(tenantToken);
+    } catch (err) {
+      console.error('[agencyService] Marketing OS WhatsApp disconnect failed (continuing):', err.message);
+    }
+  }
+
+  await channel.update({ isActive: false, isDefault: false });
+
+  if (wasDefault && replacement) {
+    await AgencyChannel.update({ isDefault: false }, { where: { agencyId } });
+    await replacement.update({ isDefault: true, isActive: true });
+  }
+
+  // Keep agency-level cached WhatsApp fields in sync with the surviving default channel so the
+  // dashboard and the agency-level send fallback reflect the correct number.
+  if (agency && (wasDefault || isMarketingOsNumber)) {
+    if (replacement) {
+      await agency.update({
+        whatsappProvider: replacement.whatsappProvider || agency.whatsappProvider,
+        whatsappPhoneNumberId: replacement.whatsappPhoneNumberId || null,
+        whatsappBusinessAccountId: replacement.whatsappBusinessAccountId || null,
+        whatsappNumber: replacement.whatsappNumber || null,
+        whatsappDisplayPhoneNumber: replacement.whatsappDisplayPhoneNumber || replacement.whatsappNumber || null,
+        whatsappChannelId: replacement.id,
+        whatsappConnectionStatus: replacement.whatsappConnectionStatus || agency.whatsappConnectionStatus,
+        marketingOsTenantId: replacement.marketingOsTenantId || agency.marketingOsTenantId,
+      });
+    } else {
+      await agency.update({
+        whatsappConnectionStatus: 'NOT_CONNECTED',
+        whatsappChannelId: null,
+        whatsappPhoneNumberId: null,
+        whatsappBusinessAccountId: null,
+        whatsappNumber: null,
+        whatsappDisplayPhoneNumber: null,
+      });
+    }
+  }
+
+  return listWhatsAppChannels(agencyId);
 }
 
 async function createMarketingOsConnectSession(agencyId, options = {}) {
@@ -604,6 +1187,23 @@ async function completeMarketingOsConnectSession(agencyId, payload) {
   });
 
   const refreshedAgency = await agencyRepository.findById(agencyId);
+  await upsertWhatsAppChannel(refreshedAgency, {
+    provider: 'MARKETING_OS',
+    status: mapMarketingOsStatus(providerConnection?.status),
+    onboardingMode,
+    whatsappCoexistenceStatus: isCoexistence
+      ? (mapMarketingOsStatus(providerConnection?.status) === 'CONNECTED' ? 'ACTIVE' : 'PENDING')
+      : 'NOT_ENABLED',
+    whatsappContactSyncStatus: isCoexistence ? 'PENDING' : 'NOT_STARTED',
+    whatsappHistorySyncStatus: isCoexistence ? 'PENDING' : 'NOT_STARTED',
+    whatsappCoexistenceLastSyncedAt: isCoexistence ? new Date() : null,
+    marketingOsTenantId: session.tenantId,
+    businessAccountId: providerConnection?.whatsappBusinessAccountId,
+    phoneNumberId: providerConnection?.phoneNumberId,
+    displayPhoneNumber,
+    whatsappNumber: normalizedWhatsappNumber,
+    errorMessage: providerConnection?.errorMessage || null,
+  });
   if (isCoexistence) {
     await initiateCoexistenceSync(refreshedAgency, session.tenantToken);
   }
@@ -611,7 +1211,7 @@ async function completeMarketingOsConnectSession(agencyId, payload) {
   templateService.ensureDefaultApprovalTemplatesForAgency(refreshedAgency).catch((err) => {
     console.error('[AgencyService] Default WhatsApp template submission failed:', err.message);
   });
-  return serializeWhatsAppConnection(await agencyRepository.findById(agencyId));
+  return getWhatsAppConnection(agencyId);
 }
 
 async function initiateCoexistenceSync(agency, tenantToken) {
@@ -717,10 +1317,25 @@ async function handleMarketingOsCallback(headers, payload, rawBody) {
 
   await agency.update(nextValues);
   const refreshedAgency = await agencyRepository.findById(payload.agencyId);
+  await upsertWhatsAppChannel(refreshedAgency, {
+    provider: 'MARKETING_OS',
+    status: payload.status,
+    onboardingMode: refreshedAgency.whatsappOnboardingMode,
+    whatsappCoexistenceStatus: refreshedAgency.whatsappCoexistenceStatus,
+    whatsappContactSyncStatus: refreshedAgency.whatsappContactSyncStatus,
+    whatsappHistorySyncStatus: refreshedAgency.whatsappHistorySyncStatus,
+    whatsappCoexistenceLastSyncedAt: refreshedAgency.whatsappCoexistenceLastSyncedAt,
+    marketingOsTenantId: refreshedAgency.marketingOsTenantId,
+    businessAccountId: payload.businessAccountId || refreshedAgency.whatsappBusinessAccountId,
+    phoneNumberId: payload.phoneNumberId || refreshedAgency.whatsappPhoneNumberId,
+    displayPhoneNumber: payload.displayPhoneNumber || payload.whatsappNumber || refreshedAgency.whatsappDisplayPhoneNumber,
+    whatsappNumber: payload.whatsappNumber ? normalizePhone(payload.whatsappNumber) : refreshedAgency.whatsappNumber,
+    errorMessage: payload.status === 'FAILED' ? (payload.errorMessage || 'Marketing OS reported a connection failure') : null,
+  });
   await flowService.ensureDefaultFlowsForAgency(refreshedAgency);
   return {
     message: 'Marketing OS callback processed',
-    data: serializeWhatsAppConnection(refreshedAgency),
+    data: await getWhatsAppConnection(refreshedAgency.id),
   };
 }
 
@@ -783,6 +1398,8 @@ module.exports = {
   publishWebsite,
   unpublishWebsite,
   getWhatsAppConnection,
+  getWhatsAppChannels,
+  deleteWhatsAppChannel,
   createMarketingOsConnectSession,
   completeMarketingOsConnectSession,
   handleMarketingOsCallback,

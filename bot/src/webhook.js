@@ -5,14 +5,15 @@
 const crypto = require('crypto');
 const path = require('path');
 const { Op } = require('sequelize');
-const { Agency, Agent, BotSession, Customer, Lead, Message, Package, Property } = require(path.resolve(__dirname, '../../backend/src/models/index.ts'));
+const { Agency, AgencyChannel, Agent, BotSession, Customer, Lead, Message, Package, Property } = require(path.resolve(__dirname, '../../backend/src/models/index.ts'));
 const whatsappService = require(path.resolve(__dirname, '../../backend/src/services/whatsappService.ts'));
 const schedulerService = require(path.resolve(__dirname, '../../backend/src/services/schedulerService.ts'));
 const { loadOrCreateSession, updateSession } = require('./utils/sessionManager');
-const { routeMessage } = require('./botRouter');
+const { routeMessage, willDropSilently } = require('./botRouter');
 const { handleAgentLeadAction } = require('./handlers/agentLeadHandler');
-const { ensureLead } = require('./handlers/travelFlowHandler');
+const { ensureLead, hasInstagramFlowGraph } = require('./handlers/travelFlowHandler');
 const { normalizePhone } = require(path.resolve(__dirname, '../../backend/src/utils/phoneUtils.ts'));
+const adReferralService = require(path.resolve(__dirname, '../../backend/src/services/adReferralService.ts'));
 
 const ACTIVE_LEAD_STATUSES = [
   'JUST_CONTACTED',
@@ -24,6 +25,9 @@ const ACTIVE_LEAD_STATUSES = [
   'QUOTED',
   'NEGOTIATING',
 ];
+
+const LIVE_ECHO_HANDOFF_WINDOW_MS = 15 * 60 * 1000;
+const ECHO_CLOCK_SKEW_MS = 60 * 1000;
 
 async function applyWhatsAppProfileName({ profileName, customer, agency, session }) {
   const name = String(profileName || '').trim();
@@ -50,7 +54,8 @@ async function applyWhatsAppProfileName({ profileName, customer, agency, session
     where: {
       customerId: customer.id,
       agencyId: agency.id,
-      status: ACTIVE_LEAD_STATUSES,
+      // Entry-stage leads carry a null status; match those too.
+      [Op.or]: [{ status: null }, { status: ACTIVE_LEAD_STATUSES }],
     },
     order: [['updatedAt', 'DESC']],
   });
@@ -251,11 +256,19 @@ async function resolveAgencyFromMetadata(metadata = {}, entry = {}) {
   if (wabaId) whereCandidates.push({ whatsappBusinessAccountId: wabaId });
 
   for (const where of whereCandidates) {
-    const agency = await Agency.findOne({ where });
-    if (agency) return agency;
+    const channel = await AgencyChannel.findOne({
+      where,
+      include: [{ model: Agency, as: 'agency' }],
+    });
+    if (channel?.agency) return { agency: channel.agency, channel };
   }
 
-  return null;
+  for (const where of whereCandidates) {
+    const agency = await Agency.findOne({ where });
+    if (agency) return { agency, channel: null };
+  }
+
+  return { agency: null, channel: null };
 }
 
 async function upsertCustomerContact(agencyId, phone, updates = {}) {
@@ -270,6 +283,7 @@ async function upsertCustomerContact(agencyId, phone, updates = {}) {
       source: updates.source || 'whatsapp_business_app',
       name: updates.name || null,
       notes: updates.notes || null,
+      channelId: updates.channelId || null,
     },
   });
 
@@ -277,6 +291,7 @@ async function upsertCustomerContact(agencyId, phone, updates = {}) {
   if (updates.name && updates.name !== customer.name) nextValues.name = updates.name;
   if (updates.source && updates.source !== customer.source) nextValues.source = updates.source;
   if (updates.notes && updates.notes !== customer.notes) nextValues.notes = updates.notes;
+  if (updates.channelId && updates.channelId !== customer.channelId) nextValues.channelId = updates.channelId;
 
   if (Object.keys(nextValues).length) {
     await customer.update(nextValues);
@@ -315,16 +330,16 @@ function extractMessageContent(msg = {}) {
   return '';
 }
 
-async function saveCoexistenceMessage({ agency, customerPhone, msg, direction, status, source, agentId = null }) {
+async function saveCoexistenceMessage({ agency, channel = null, customerPhone, msg, direction, status, source, agentId = null }) {
   if (!agency || !customerPhone || !msg?.id) return null;
 
   const existing = await Message.findOne({ where: { waMessageId: msg.id } });
-  if (existing) return existing;
+  if (existing) return { message: existing, created: false };
 
-  const customer = await upsertCustomerContact(agency.id, customerPhone, { source });
+  const customer = await upsertCustomerContact(agency.id, customerPhone, { source, channelId: channel?.id || null });
   if (!customer) return null;
 
-  return Message.create({
+  const message = await Message.create({
     customerId: customer.id,
     agencyId: agency.id,
     agentId,
@@ -335,6 +350,25 @@ async function saveCoexistenceMessage({ agency, customerPhone, msg, direction, s
     status: status || 'SENT',
     timestamp: msg.timestamp ? new Date(parseInt(msg.timestamp, 10) * 1000) : new Date(),
   });
+
+  return { message, created: true };
+}
+
+function getMetaMessageTimestamp(msg = {}) {
+  const timestamp = Number.parseInt(msg.timestamp, 10);
+  if (!Number.isFinite(timestamp)) return null;
+  const date = new Date(timestamp * 1000);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function shouldPauseForBusinessAppEcho(savedMessage, msg = {}, now = Date.now()) {
+  if (!savedMessage?.created) return false;
+
+  const messageAt = getMetaMessageTimestamp(msg);
+  if (!messageAt) return true;
+
+  const ageMs = now - messageAt.getTime();
+  return ageMs >= -ECHO_CLOCK_SKEW_MS && ageMs <= LIVE_ECHO_HANDOFF_WINDOW_MS;
 }
 
 async function resolveManualReplyAgent(agencyId, customerId) {
@@ -410,7 +444,7 @@ async function pauseBotForManualReply({ agency, customerId, agentId, source }) {
 }
 
 async function processAccountUpdate(value = {}, entry = {}) {
-  const agency = await resolveAgencyFromMetadata({ phone_number: value.phone_number }, entry);
+  const { agency, channel } = await resolveAgencyFromMetadata({ phone_number: value.phone_number }, entry);
   if (!agency) return;
 
   const event = String(value.event || '').toUpperCase();
@@ -431,10 +465,11 @@ async function processAccountUpdate(value = {}, entry = {}) {
   }
 
   await agency.update(updates);
+  if (channel) await channel.update(updates);
 }
 
 async function processStateSync(value = {}, metadata = {}) {
-  const agency = await resolveAgencyFromMetadata(metadata);
+  const { agency, channel } = await resolveAgencyFromMetadata(metadata);
   if (!agency) return;
 
   const contacts = Array.isArray(value.state_sync) ? value.state_sync : [];
@@ -449,6 +484,7 @@ async function processStateSync(value = {}, metadata = {}) {
       name: fullName,
       source: 'whatsapp_business_app_contact',
       notes: item.action === 'remove' ? 'Removed from WhatsApp Business App contacts' : null,
+      channelId: channel?.id || null,
     });
   }
 
@@ -458,10 +494,18 @@ async function processStateSync(value = {}, metadata = {}) {
     whatsappContactSyncStatus: 'COMPLETE',
     whatsappCoexistenceLastSyncedAt: new Date(),
   });
+  if (channel) {
+    await channel.update({
+      whatsappOnboardingMode: 'COEXISTENCE',
+      whatsappCoexistenceStatus: 'ACTIVE',
+      whatsappContactSyncStatus: 'COMPLETE',
+      whatsappCoexistenceLastSyncedAt: new Date(),
+    });
+  }
 }
 
 async function processHistorySync(value = {}, metadata = {}) {
-  const agency = await resolveAgencyFromMetadata(metadata);
+  const { agency, channel } = await resolveAgencyFromMetadata(metadata);
   if (!agency) return;
 
   const historyItems = Array.isArray(value.history) ? value.history : [];
@@ -491,6 +535,7 @@ async function processHistorySync(value = {}, metadata = {}) {
 
         await saveCoexistenceMessage({
           agency,
+          channel,
           customerPhone: targetPhone || customerPhone,
           msg,
           direction,
@@ -507,10 +552,18 @@ async function processHistorySync(value = {}, metadata = {}) {
     whatsappHistorySyncStatus: declined ? 'DECLINED' : (maxProgress === 100 ? 'COMPLETE' : 'PENDING'),
     whatsappCoexistenceLastSyncedAt: new Date(),
   });
+  if (channel) {
+    await channel.update({
+      whatsappOnboardingMode: 'COEXISTENCE',
+      whatsappCoexistenceStatus: 'ACTIVE',
+      whatsappHistorySyncStatus: declined ? 'DECLINED' : (maxProgress === 100 ? 'COMPLETE' : 'PENDING'),
+      whatsappCoexistenceLastSyncedAt: new Date(),
+    });
+  }
 }
 
 async function processHistoryMediaMessage(msg = {}, metadata = {}) {
-  const agency = await resolveAgencyFromMetadata(metadata);
+  const { agency, channel } = await resolveAgencyFromMetadata(metadata);
   if (!agency) return;
 
   const fromPhone = normalizePhone(msg.from);
@@ -520,6 +573,7 @@ async function processHistoryMediaMessage(msg = {}, metadata = {}) {
 
   await saveCoexistenceMessage({
     agency,
+    channel,
     customerPhone,
     msg,
     direction,
@@ -529,7 +583,7 @@ async function processHistoryMediaMessage(msg = {}, metadata = {}) {
 }
 
 async function processMessageEchoes(value = {}, metadata = {}) {
-  const agency = await resolveAgencyFromMetadata(metadata);
+  const { agency, channel } = await resolveAgencyFromMetadata(metadata);
   if (!agency) return;
 
   const echoes = Array.isArray(value.message_echoes) ? value.message_echoes : [];
@@ -537,12 +591,14 @@ async function processMessageEchoes(value = {}, metadata = {}) {
     const customerPhone = msg.to || msg.recipient || msg.recipient_phone_number || msg.customer_phone;
     const customer = await upsertCustomerContact(agency.id, customerPhone, {
       source: 'whatsapp_business_app_echo',
+      channelId: channel?.id || null,
     });
     if (!customer) continue;
 
     const agentId = await resolveManualReplyAgent(agency.id, customer.id);
     const savedMessage = await saveCoexistenceMessage({
       agency,
+      channel,
       customerPhone,
       msg,
       direction: 'OUT',
@@ -551,7 +607,7 @@ async function processMessageEchoes(value = {}, metadata = {}) {
       agentId,
     });
 
-    if (savedMessage) {
+    if (shouldPauseForBusinessAppEcho(savedMessage, msg)) {
       await pauseBotForManualReply({
         agency,
         customerId: customer.id,
@@ -566,6 +622,13 @@ async function processMessageEchoes(value = {}, metadata = {}) {
     whatsappCoexistenceStatus: 'ACTIVE',
     whatsappCoexistenceLastSyncedAt: new Date(),
   });
+  if (channel) {
+    await channel.update({
+      whatsappOnboardingMode: 'COEXISTENCE',
+      whatsappCoexistenceStatus: 'ACTIVE',
+      whatsappCoexistenceLastSyncedAt: new Date(),
+    });
+  }
 }
 
 async function processMessageEdit(msg = {}) {
@@ -598,6 +661,15 @@ async function processMessageRevoke(msg = {}) {
   });
 }
 
+function isMetaUnavailableUnsupportedMessage(msg = {}) {
+  const type = String(msg.type || '').toLowerCase();
+  const unsupportedType = String(msg.unsupported?.type || '').toLowerCase();
+  const errors = Array.isArray(msg.errors) ? msg.errors : [];
+  return type === 'unsupported'
+    && (unsupportedType === 'unknown' || unsupportedType === '')
+    && errors.some((error) => String(error?.code || '') === '131060');
+}
+
 /**
  * Processes a single incoming WhatsApp message through the bot pipeline.
  * Includes fallback protection — customer always gets a response.
@@ -607,8 +679,8 @@ async function processMessageRevoke(msg = {}) {
 async function processMessage(msg, metadata, contacts = []) {
   const fromPhone = normalizePhone(msg.from);
   const toPhone = normalizePhone(metadata.display_phone_number);
-  const incoming = extractIncoming(msg);
-  const messageText = incoming.text || '';
+  let incoming = extractIncoming(msg);
+  let messageText = incoming.text || '';
   const waMessageId = msg.id;
   const timestamp = msg.timestamp ? new Date(parseInt(msg.timestamp) * 1000) : new Date();
   const isInteractiveReply = ['BUTTON', 'BUTTON_REPLY', 'LIST_REPLY', 'FLOW_REPLY'].includes(incoming.type)
@@ -644,6 +716,7 @@ async function processMessage(msg, metadata, contacts = []) {
     'whatsappMenuLabels',
     'whatsappMenuConfig',
     'whatsappFlowConfig',
+    'sidebarPreferences',
     'marketingOsTenantId',
     'isActive',
   ];
@@ -654,10 +727,13 @@ async function processMessage(msg, metadata, contacts = []) {
     attributes: agencyAttributes,
   });
 
+  let channel = null;
+
   if (!agency) {
-    const metadataAgency = await resolveAgencyFromMetadata(metadata);
-    if (metadataAgency?.id) {
-      agency = await Agency.findByPk(metadataAgency.id, { attributes: agencyAttributes });
+    const resolved = await resolveAgencyFromMetadata(metadata);
+    if (resolved.agency?.id) {
+      agency = await Agency.findByPk(resolved.agency.id, { attributes: agencyAttributes });
+      channel = resolved.channel;
     }
   }
 
@@ -680,6 +756,9 @@ async function processMessage(msg, metadata, contacts = []) {
 
   // Load or create session + customer
   const { session, customer } = await loadOrCreateSession(fromPhone, agency.id);
+  if (channel?.id && customer.channelId !== channel.id) {
+    await customer.update({ channelId: channel.id });
+  }
   const previousInboundCount = await Message.count({
     where: {
       customerId: customer.id,
@@ -696,16 +775,35 @@ async function processMessage(msg, metadata, contacts = []) {
   await applyWhatsAppProfileName({ profileName, customer, agency, session });
 
   // Save incoming message to DB (BEFORE processing — never lose a message)
+  const shouldStartFromUnavailableMessage = isFirstInboundMessage
+    && isMetaUnavailableUnsupportedMessage(msg)
+    && !messageText
+    && !incoming.actionId
+    && !incoming.mediaId;
+
   await Message.create({
     customerId: customer.id,
     agencyId: agency.id,
     direction: 'IN',
-    content: messageText || (incoming.mediaId ? `[Media Received: ${incoming.mediaId}]` : ''),
+    content: messageText
+      || (incoming.mediaId ? `[Media Received: ${incoming.mediaId}]` : '')
+      || (shouldStartFromUnavailableMessage ? '[Unavailable WhatsApp message received]' : ''),
     type: normalizeInboundType(msg.type),
     waMessageId,
     status: 'DELIVERED',
     timestamp,
   });
+
+  if (shouldStartFromUnavailableMessage) {
+    console.warn('[Webhook] Unavailable unsupported first inbound; starting welcome fallback', {
+      from: fromPhone,
+      to: toPhone,
+      msgType: msg.type || '',
+      waMessageId,
+    });
+    incoming = { ...incoming, text: 'hi', type: 'TEXT', unavailableFallback: true };
+    messageText = incoming.text;
+  }
 
   if (!messageText && !incoming.actionId && !incoming.mediaId && incoming.type !== 'ORDER') {
     console.warn('[Webhook] Empty inbound message payload; ignoring instead of sending menu fallback', {
@@ -718,12 +816,21 @@ async function processMessage(msg, metadata, contacts = []) {
   }
 
   await ensureLead(session, customer, agency, {
-    status: 'JUST_CONTACTED',
+    status: null,
     notes: 'First WhatsApp message received',
     preserveExistingStatus: true,
   }).catch((err) => {
     console.warn('[Webhook] Could not ensure lead before routing:', err.message);
   });
+
+  // Click-to-WhatsApp ad attribution: when this message came from tapping a Meta ad,
+  // Meta attaches a `referral` with the unique ad ID. Stamp it onto the lead so the
+  // CRM knows which of several same-number ads this contact came from.
+  if (msg.referral && (msg.referral.source_id || msg.referral.sourceId)) {
+    await adReferralService.applyCtwaReferral(agency.id, customer.id, msg.referral).catch((err) => {
+      console.warn('[Webhook] Could not apply ad referral attribution:', err.message);
+    });
+  }
 
   try {
     await schedulerService.cancelChatFollowUps(customer.id, agency.id);
@@ -751,16 +858,30 @@ async function processMessage(msg, metadata, contacts = []) {
 
   // Process through bot with full fallback protection
   try {
-    await whatsappService.sendTypingIndicator(
-      customer.phone,
-      waMessageId,
-      { customerId: customer.id, agencyId: agency.id }
+    // Free-text that matches no flow/campaign is silently dropped (no reply).
+    // Skip the read receipt / typing indicator for those so the message stays
+    // UNREAD in the WhatsApp Business App and a human can pick it up. Meta's
+    // typing call also marks the message read, so there is no way to keep it
+    // unread while still showing typing.
+    const willDrop = await willDropSilently(
+      session,
+      incoming,
+      customer,
+      agency,
+      { isFirstInboundMessage }
     );
-    await whatsappService.sendProcessingPlaceholder(
-      customer.phone,
-      { customerId: customer.id, agencyId: agency.id }
-    );
-    await whatsappService.waitForReplyPacing({ customerId: customer.id, agencyId: agency.id });
+    if (!willDrop) {
+      await whatsappService.sendTypingIndicator(
+        customer.phone,
+        waMessageId,
+        { customerId: customer.id, agencyId: agency.id }
+      );
+      await whatsappService.sendProcessingPlaceholder(
+        customer.phone,
+        { customerId: customer.id, agencyId: agency.id }
+      );
+      await whatsappService.waitForReplyPacing({ customerId: customer.id, agencyId: agency.id });
+    }
     await routeMessage(session, incoming, customer, agency, { isFirstInboundMessage });
   } catch (err) {
     console.error('[Webhook] Bot processing error:', err.message);
@@ -800,6 +921,49 @@ function buildInstagramCustomerIdentifier(managedAccountId, senderId) {
     .digest('hex')
     .slice(0, 17);
   return `ig_${digest}`;
+}
+
+function slugifyAgencyName(value = '') {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+async function resolveAgencyFromInstagramTenant(tenantId = '') {
+  const key = String(tenantId || '').trim();
+  if (!key) return null;
+
+  const exact = await Agency.findOne({
+    where: { marketingOsTenantId: key },
+  });
+  if (exact) return exact;
+
+  const agencies = await Agency.findAll({
+    where: {
+      isActive: true,
+      marketingOsTenantId: { [Op.ne]: null },
+    },
+  });
+
+  const matches = agencies
+    .map((agency) => ({ agency, slug: slugifyAgencyName(agency.name) }))
+    .filter(({ slug }) => slug && (key === slug || key.startsWith(`${slug}-`)))
+    .sort((a, b) => b.slug.length - a.slug.length);
+
+  if (matches.length > 0) {
+    const resolved = matches[0].agency;
+    console.log('[IG Webhook] Resolved tenant slug to agency:', {
+      tenantId: key,
+      agencyId: resolved.id,
+      agencyName: resolved.name,
+      marketingOsTenantId: resolved.marketingOsTenantId,
+    });
+    return resolved;
+  }
+
+  return null;
 }
 
 function parseInstagramBudget(value = '') {
@@ -858,8 +1022,9 @@ function buildWhatsAppPackageDetailsUrl(agency, pkg) {
 async function sendInstagramDm(agency, payload) {
   const partnerService = require(path.resolve(__dirname, '../../backend/src/services/marketingOsPartnerService.ts'));
   const tenantToken = await partnerService.getTenantToken(agency.marketingOsTenantId);
+  const tenantHeaderId = agency.instagramTenantHeaderId || agency.marketingOsTenantId;
   return partnerService.sendTenantInstagramMessage(tenantToken, {
-    tenantId: agency.marketingOsTenantId,
+    tenantId: tenantHeaderId,
     ...payload,
   });
 }
@@ -975,15 +1140,17 @@ async function sendInstagramPackages({ agency, accountId, senderId, session, int
   await sendInstagramDm(agency, {
     accountId,
     recipientId: senderId,
-    products: packages.map((pkg) => ({
-      id: pkg.id,
-      name: pkg.name,
-      price: Math.round(Number(pkg.basePrice || 0) / 100),
-      currency: 'INR',
-      image: pkg.imageUrl || 'https://travelbot.wayon.in/favicon.ico',
-      url: buildWhatsAppPackageDetailsUrl(agency, pkg),
-      description: pkg.duration || (Array.isArray(pkg.destinations) ? pkg.destinations.slice(0, 2).join(', ') : ''),
-    })),
+    products: packages.map((pkg) => {
+      const priceRupees = Math.round(Number(pkg.basePrice || 0) / 100);
+      return {
+        id: pkg.id,
+        name: pkg.name,
+        ...(priceRupees > 0 ? { price: priceRupees, currency: 'INR' } : {}),
+        image: pkg.imageUrl || 'https://travelbot.wayon.in/favicon.ico',
+        url: buildWhatsAppPackageDetailsUrl(agency, pkg),
+        description: pkg.duration || (Array.isArray(pkg.destinations) ? pkg.destinations.slice(0, 2).join(', ') : ''),
+      };
+    }),
     ctaLabel: 'View Details',
   });
 
@@ -1410,12 +1577,20 @@ async function processInstagramMessage(data) {
   const { accountId, igAccountId, senderId, recipientId, messageId, text, attachments, timestamp, tenantId } = data;
   
   // Find agency by Instagram account ID or tenant ID
-  const agency = await Agency.findOne({
-    where: { marketingOsTenantId: tenantId || '' },
-  });
+  const agency = await resolveAgencyFromInstagramTenant(tenantId);
 
   if (!agency) {
     console.error(`[IG Webhook] No agency found for tenant ID: ${tenantId}`);
+    return;
+  }
+  agency.instagramTenantHeaderId = tenantId || agency.marketingOsTenantId;
+
+  // Some agencies are handled entirely by a Marketing OS Instagram away/auto-reply and do NOT want
+  // the travel-bot's package/welcome responder ("travel expert") replying on IG. When
+  // instagramFlowConfig.autoReplyDisabled is set, the bot stays completely silent on Instagram so
+  // only the Marketing OS automation responds. No typing indicator, no reply.
+  if (agency.instagramFlowConfig && agency.instagramFlowConfig.autoReplyDisabled) {
+    console.log(`[IG Webhook] Auto-reply disabled for agency ${agency.id} (${agency.name}); skipping travel-bot IG handling.`);
     return;
   }
 
@@ -1435,10 +1610,12 @@ async function processInstagramMessage(data) {
   const managedAccountId = igAccountId || accountId || recipientId || 'unknown';
   const fromIdentifier = buildInstagramCustomerIdentifier(managedAccountId, senderId);
   
-  // Create an incoming format similar to WhatsApp
+  // Create an incoming format similar to WhatsApp. A tapped quick-reply chip arrives as a
+  // payload (dispatched by Marketing OS as actionId/quickReplyPayload) — surface it as the
+  // actionId so the flow engine routes it exactly like a WhatsApp reply button.
   const incoming = {
     text: text || '',
-    actionId: data.postbackPayload || data.actionId || '',
+    actionId: data.postbackPayload || data.actionId || data.quickReplyPayload || '',
     type: attachments && attachments.length > 0 ? 'MEDIA' : 'TEXT',
     mediaId: attachments && attachments.length > 0 ? attachments[0].id : null,
   };
@@ -1446,11 +1623,35 @@ async function processInstagramMessage(data) {
   // Load or create session + customer
   const { session, customer } = await loadOrCreateSession(fromIdentifier, agency.id);
 
+  // Was this the customer's first inbound message? (matches the WhatsApp routing contract)
+  const priorInboundCount = await Message.count({
+    where: { customerId: customer.id, agencyId: agency.id, direction: 'IN' },
+  });
+  const isFirstInboundMessage = priorInboundCount === 0;
+
+  // Fire a native Instagram seen-receipt + typing bubble immediately (fire-and-forget) so the
+  // chat feels responsive while the bot composes its reply. Never block or fail the message on it.
+  (async () => {
+    try {
+      const partnerService = require(path.resolve(__dirname, '../../backend/src/services/marketingOsPartnerService.ts'));
+      const tenantToken = await partnerService.getTenantToken(agency.marketingOsTenantId);
+      const igActionBase = {
+        tenantId: agency.instagramTenantHeaderId || agency.marketingOsTenantId,
+        accountId: accountId || igAccountId,
+        recipientId: senderId,
+      };
+      await partnerService.sendTenantInstagramSenderAction(tenantToken, { ...igActionBase, senderAction: 'mark_seen' });
+      await partnerService.sendTenantInstagramSenderAction(tenantToken, { ...igActionBase, senderAction: 'typing_on' });
+    } catch (err) {
+      console.warn('[IG Webhook] typing indicator failed:', err.message);
+    }
+  })();
+
   // We don't have the user's name immediately from Instagram message payload in Meta's basic webhook, 
   // but if we do, we could update it. We leave it generic or update if Marketing OS sent a profile name.
 
   await ensureLead(session, customer, agency, {
-    status: 'JUST_CONTACTED',
+    status: null,
     notes: 'First Instagram DM received',
     preserveExistingStatus: true,
   });
@@ -1477,6 +1678,15 @@ async function processInstagramMessage(data) {
   try {
     customer.source = 'instagram';
     await customer.save();
+
+    // When the agency has built a dedicated Instagram flow, drive the conversation through
+    // the same unified engine as WhatsApp so the visual flow builder runs natively over IG
+    // DMs (quick-reply chips, lists, catalog, enquiries). Agencies without an Instagram flow
+    // keep the legacy package/welcome behaviour below.
+    if (hasInstagramFlowGraph(agency)) {
+      await routeMessage(session, incoming, customer, agency, { isFirstInboundMessage });
+      return;
+    }
 
     const handled = await handleInstagramPackageFlow({
       agency,
@@ -1520,7 +1730,7 @@ async function processInstagramMessage(data) {
       const tenantToken = await partnerService.getTenantToken(agency.marketingOsTenantId);
       
       await partnerService.sendTenantInstagramMessage(tenantToken, {
-        tenantId: agency.marketingOsTenantId,
+        tenantId: agency.instagramTenantHeaderId || agency.marketingOsTenantId,
         accountId: accountId || igAccountId,
         recipientId: senderId,
         text: `Sorry, we are currently experiencing issues. Please contact us via phone or email.`
@@ -1533,9 +1743,7 @@ async function processInstagramMessage(data) {
 
 async function processInstagramComment(data) {
   const { tenantId } = data;
-  const agency = await Agency.findOne({
-    where: { marketingOsTenantId: tenantId || '' },
-  });
+  const agency = await resolveAgencyFromInstagramTenant(tenantId);
 
   if (!agency) {
     console.error(`[IG Webhook] No agency found for comment tenant ID: ${tenantId}`);

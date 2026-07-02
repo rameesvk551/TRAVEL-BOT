@@ -1,0 +1,11 @@
+{
+  "name": "Siaa Holidays",
+  "agencySlug": "siaa-holidays",
+  "sourceTemplate": "IRISTOURCO.IN",
+  "notes": "Mirror the IRISTOURCO Instagram DM flow using the same catalog/detail/enquiry structure as WhatsApp.",
+  "flowConfig": {
+    "entryFlowId": "entry",
+    "schemaVersion": 4,
+    "updatedAt": "2026-06-23T00:00:00.000Z"
+  }
+}

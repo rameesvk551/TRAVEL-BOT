@@ -55,6 +55,56 @@ const sampleForPosition = (position) => (
    VARIABLE_PRESETS.find((preset) => preset.position === position)?.sample || `Sample ${position}`
 );
 
+// Variable names that auto-fill from the contact per-recipient (no campaign input).
+const RESERVED_CONTACT_VARIABLES = new Set([
+   'name', 'firstname', 'first_name', 'fullname', 'full_name',
+   'customer', 'customername', 'customer_name',
+   'phone', 'mobile', 'number', 'phone_number',
+]);
+
+// Friendly named-variable shortcuts the author can insert.
+const NAMED_VARIABLE_PRESETS = [
+   { name: 'name', label: 'Contact Name', sample: 'Rahul' },
+   { name: 'description', label: 'Description', sample: 'Kashmir 4N 5D - hotels, transfers, sightseeing, from Rs 39,999/person' },
+   { name: 'destination', label: 'Destination', sample: 'Kashmir' },
+   { name: 'price', label: 'Price', sample: 'Rs 39,999/person' },
+];
+
+const humanizeVariableName = (name) => String(name || '')
+   .replace(/[_-]+/g, ' ')
+   .replace(/\b\w/g, (c) => c.toUpperCase())
+   .trim();
+
+// Named tokens ({{description}}) in order of first appearance, lowercased + unique.
+const extractNamedTokens = (body) => {
+   const re = /\{\{\s*([a-zA-Z][a-zA-Z0-9_]*)\s*\}\}/g;
+   const out = [];
+   let match;
+   while ((match = re.exec(String(body || ''))) !== null) {
+      const key = match[1].toLowerCase();
+      if (!out.includes(key)) out.push(key);
+   }
+   return out;
+};
+
+const isContactVariable = (name) => RESERVED_CONTACT_VARIABLES.has(String(name || '').toLowerCase());
+
+// Rebuild a named body + per-name samples from a stored positional template.
+const positionalToNamed = (body, variableMap = [], sampleVariables = []) => {
+   if (!Array.isArray(variableMap) || !variableMap.length) {
+      return { body: String(body || ''), variableSamples: {} };
+   }
+   let named = String(body || '');
+   const variableSamples = {};
+   variableMap.forEach((entry, index) => {
+      const name = String(entry?.name || `var${index + 1}`).toLowerCase();
+      named = named.replace(new RegExp(`\\{\\{\\s*${index + 1}\\s*\\}\\}`, 'g'), `{{${name}}}`);
+      const sample = sampleVariables[index];
+      if (String(sample || '').trim()) variableSamples[name] = sample;
+   });
+   return { body: named, variableSamples };
+};
+
 const withCompleteBodyExamples = (data) => {
    const sampleVariables = normalizeSampleVariables(data.sampleVariables);
    extractPlaceholderIndexes(data.body).forEach((position) => {
@@ -72,8 +122,23 @@ const stripButtonRoutes = (buttons = []) => (
       : []
 );
 
+// For named-token bodies, emit sampleVariables in appearance order so the
+// backend (which compiles names -> positional) lines examples up correctly.
+const withNamedBodyExamples = (data) => {
+   const namedTokens = extractNamedTokens(data.body);
+   if (!namedTokens.length) return withCompleteBodyExamples(data);
+   const samples = data.variableSamples || {};
+   const sampleVariables = namedTokens.map((name) => {
+      const provided = samples[name];
+      if (String(provided || '').trim()) return provided;
+      const preset = NAMED_VARIABLE_PRESETS.find((entry) => entry.name === name);
+      return preset?.sample || humanizeVariableName(name);
+   });
+   return { ...data, sampleVariables };
+};
+
 const buildTemplatePayload = (data) => ({
-   ...withCompleteBodyExamples(data),
+   ...withNamedBodyExamples(data),
    buttons: stripButtonRoutes(data.buttons),
    carouselCards: Array.isArray(data.carouselCards)
       ? data.carouselCards.map((card) => ({
@@ -93,7 +158,10 @@ export default function TemplateDetailDrawer({
 }) {
    const newCarouselCard = () => ({
       title: '',
-      body: '',
+      // Default the card body to a single variable so each CAMPAIGN can write its own
+      // per-card description ("Card text"). Fixed text here locks the same words for
+      // every recipient (Meta approves the literal body).
+      body: '{{1}}',
       mediaType: 'IMAGE',
       mediaUrl: '',
       buttons: [
@@ -115,6 +183,7 @@ export default function TemplateDetailDrawer({
       buttons: [],
       carouselCards: [],
       sampleVariables: [],
+      variableSamples: {},
       icon: '💬',
       tags: []
    });
@@ -128,17 +197,24 @@ export default function TemplateDetailDrawer({
 
    useEffect(() => {
       if (initialTemplate) {
+         // Round-trip a stored positional template back into friendly named tokens.
+         const reconstructed = positionalToNamed(
+            initialTemplate.body || '',
+            initialTemplate.variableMap,
+            normalizeSampleVariables(initialTemplate.sampleVariables)
+         );
          setFormData({
             displayName: initialTemplate.displayName || '',
             category: initialTemplate.category || 'MARKETING',
             templateType: initialTemplate.templateType || 'STANDARD',
             headerType: initialTemplate.headerType || 'NONE',
             headerContent: initialTemplate.headerContent || '',
-            body: initialTemplate.body || '',
+            body: reconstructed.body,
             footer: initialTemplate.footer || '',
             buttons: initialTemplate.buttons || [],
             carouselCards: initialTemplate.carouselCards || [],
             sampleVariables: normalizeSampleVariables(initialTemplate.sampleVariables),
+            variableSamples: reconstructed.variableSamples,
             icon: initialTemplate.icon || '????',
             tags: initialTemplate.tags || []
          });
@@ -150,11 +226,20 @@ export default function TemplateDetailDrawer({
             templateType: draftSeed?.templateType || 'STANDARD',
             headerType: draftSeed?.headerType || 'NONE',
             headerContent: draftSeed?.headerContent || '',
-            body: draftSeed?.body || '',
+            body: positionalToNamed(
+               draftSeed?.body || '',
+               draftSeed?.variableMap,
+               normalizeSampleVariables(draftSeed?.sampleVariables)
+            ).body,
             footer: draftSeed?.footer || '',
             buttons: draftSeed?.buttons || [],
             carouselCards: draftSeed?.carouselCards || [],
             sampleVariables: normalizeSampleVariables(draftSeed?.sampleVariables),
+            variableSamples: positionalToNamed(
+               draftSeed?.body || '',
+               draftSeed?.variableMap,
+               normalizeSampleVariables(draftSeed?.sampleVariables)
+            ).variableSamples,
             icon: draftSeed?.icon || '????',
             tags: draftSeed?.tags || []
          });
@@ -243,6 +328,11 @@ export default function TemplateDetailDrawer({
          toast.error('Please upload an image file for this image template.');
          return;
       }
+      // WhatsApp caps header videos at 16 MB.
+      if (file.type.startsWith('video/') && file.size > 16 * 1024 * 1024) {
+         toast.error('Video is too large. WhatsApp allows videos up to 16 MB. Please compress it and try again.');
+         return;
+      }
 
       const uploadKey = target.type === 'header' ? 'header' : `card-${target.cardIndex}`;
       setUploadingMediaKey(uploadKey);
@@ -274,28 +364,54 @@ export default function TemplateDetailDrawer({
          return { ...current, sampleVariables };
       });
    };
-   const insertBodyVariable = (preset) => {
+   const setNamedSample = (name, sample) => {
+      setFormData((current) => ({
+         ...current,
+         variableSamples: { ...(current.variableSamples || {}), [name]: sample },
+      }));
+   };
+   const insertNamedVariable = (name) => {
+      const token = `{{${name}}}`;
       let nextCursor = 0;
       setFormData((current) => {
          const body = String(current.body || '');
          const textarea = bodyTextareaRef.current;
          const start = textarea?.selectionStart ?? body.length;
          const end = textarea?.selectionEnd ?? start;
-         const nextBody = `${body.slice(0, start)}${preset.token}${body.slice(end)}`;
-         const sampleVariables = normalizeSampleVariables(current.sampleVariables);
-         sampleVariables[preset.position - 1] = sampleVariables[preset.position - 1] || preset.sample;
-         nextCursor = start + preset.token.length;
-         return { ...current, body: nextBody, sampleVariables };
+         const nextBody = `${body.slice(0, start)}${token}${body.slice(end)}`;
+         const preset = NAMED_VARIABLE_PRESETS.find((entry) => entry.name === name);
+         const variableSamples = { ...(current.variableSamples || {}) };
+         if (preset?.sample && !variableSamples[name]) variableSamples[name] = preset.sample;
+         nextCursor = start + token.length;
+         return { ...current, body: nextBody, variableSamples };
       });
       window.setTimeout(() => {
          bodyTextareaRef.current?.focus();
          bodyTextareaRef.current?.setSelectionRange(nextCursor, nextCursor);
       }, 0);
    };
-   const renderPreviewText = (text) => String(text || '').replace(/{{\s*(\d+)\s*}}/g, (_match, position) => {
-      const index = Number(position) - 1;
-      return formData.sampleVariables?.[index] || VARIABLE_PRESETS[index]?.sample || `Sample ${position}`;
-   });
+   const insertCustomVariable = () => {
+      const raw = window.prompt('Variable name (letters, numbers, underscore). e.g. destination');
+      if (!raw) return;
+      const name = String(raw).trim().toLowerCase().replace(/[^a-z0-9_]/g, '_').replace(/^_+|_+$/g, '');
+      if (!name || /^\d/.test(name)) {
+         toast.error('Variable name must start with a letter and use only letters, numbers, or underscores.');
+         return;
+      }
+      insertNamedVariable(name);
+   };
+   const renderPreviewText = (text) => String(text || '')
+      .replace(/{{\s*([a-zA-Z][a-zA-Z0-9_]*)\s*}}/g, (_match, name) => {
+         const key = String(name).toLowerCase();
+         if (isContactVariable(key)) return formData.variableSamples?.[key] || 'Rahul';
+         return formData.variableSamples?.[key]
+            || NAMED_VARIABLE_PRESETS.find((entry) => entry.name === key)?.sample
+            || humanizeVariableName(key);
+      })
+      .replace(/{{\s*(\d+)\s*}}/g, (_match, position) => {
+         const index = Number(position) - 1;
+         return formData.sampleVariables?.[index] || VARIABLE_PRESETS[index]?.sample || `Sample ${position}`;
+      });
    const isValidHttpUrl = (value) => {
       try {
          const parsed = new URL(String(value || '').trim());
@@ -315,6 +431,15 @@ export default function TemplateDetailDrawer({
       return true;
    }) && !hasDuplicateQuickReplyLabels(formData.buttons);
    const bodyPlaceholderIndexes = extractPlaceholderIndexes(formData.body);
+   const bodyNamedTokens = extractNamedTokens(formData.body);
+   // Named variables drive the sample editors when present; fall back to legacy
+   // numbered placeholders for older positional templates.
+   const namedVariableEditors = bodyNamedTokens.map((name) => ({
+      name,
+      label: NAMED_VARIABLE_PRESETS.find((entry) => entry.name === name)?.label || humanizeVariableName(name),
+      token: `{{${name}}}`,
+      isContact: isContactVariable(name),
+   }));
    const samplePresets = (bodyPlaceholderIndexes.length ? bodyPlaceholderIndexes : [1, 2])
       .map((position) => VARIABLE_PRESETS.find((preset) => preset.position === position) || {
          position,
@@ -322,14 +447,24 @@ export default function TemplateDetailDrawer({
          token: `{{${position}}}`,
          sample: `Sample ${position}`,
       });
-   const hasValidBodyExamples = bodyPlaceholderIndexes.every((position) => {
-      const value = formData.sampleVariables?.[position - 1];
-      return String(value || sampleForPosition(position)).trim();
-   });
+   const hasValidBodyExamples = bodyNamedTokens.length
+      ? true
+      : bodyPlaceholderIndexes.every((position) => {
+         const value = formData.sampleVariables?.[position - 1];
+         return String(value || sampleForPosition(position)).trim();
+      });
    const hasValidCarouselCards = !isCarousel || (
       formData.carouselCards.length >= 2
       && formData.carouselCards.length <= 10
-      && formData.carouselCards.every((card) => String(card.body || '').trim() && isValidHttpUrl(card.mediaUrl))
+      && formData.carouselCards.every((card) => String(card.body || '').trim()
+         && isValidHttpUrl(card.mediaUrl)
+         && (card.buttons || []).every((button) => {
+            const type = String(button.type || 'QUICK_REPLY').toUpperCase();
+            if (!String(button.text || '').trim()) return false;
+            if (type === 'URL') return isValidHttpUrl(button.url);
+            if (type === 'PHONE_NUMBER') return !!String(button.phoneNumber || '').trim();
+            return true;
+         }))
    );
    const canSave = !!formData.displayName
       && !!formData.body
@@ -481,16 +616,51 @@ export default function TemplateDetailDrawer({
                                        }}
                                     />
                                  </label>
-                                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                                 <div className="grid grid-cols-1 gap-2">
                                     {(card.buttons || []).slice(0, 2).map((button, buttonIdx) => (
-                                       <input
-                                          key={buttonIdx}
-                                          type="text"
-                                          value={button.text || ''}
-                                          onChange={e => updateCarouselCardButton(idx, buttonIdx, { text: e.target.value })}
-                                          placeholder={buttonIdx === 0 ? 'Enquiry' : 'See Others'}
-                                          className="rounded border border-neutral-200 bg-white px-3 py-2 text-xs focus:outline-none"
-                                       />
+                                       <div key={buttonIdx} className="grid grid-cols-1 gap-2 rounded border border-neutral-200 bg-white p-2 sm:grid-cols-[120px_1fr]">
+                                          <select
+                                             value={button.type || 'QUICK_REPLY'}
+                                             onChange={e => {
+                                                const nextType = e.target.value;
+                                                updateCarouselCardButton(idx, buttonIdx, {
+                                                   type: nextType,
+                                                   url: nextType === 'URL' ? button.url || '' : null,
+                                                   phoneNumber: nextType === 'PHONE_NUMBER' ? button.phoneNumber || '' : null,
+                                                });
+                                             }}
+                                             className="rounded border border-neutral-200 bg-neutral-50 px-2 py-2 text-xs focus:outline-none"
+                                          >
+                                             <option value="QUICK_REPLY">Quick Reply</option>
+                                             <option value="URL">Visit Website</option>
+                                             <option value="PHONE_NUMBER">Call Number</option>
+                                          </select>
+                                          <input
+                                             type="text"
+                                             value={button.text || ''}
+                                             onChange={e => updateCarouselCardButton(idx, buttonIdx, { text: e.target.value })}
+                                             placeholder={buttonIdx === 0 ? 'Visit Website' : 'Call Us'}
+                                             className="rounded border border-neutral-200 bg-white px-3 py-2 text-xs focus:outline-none"
+                                          />
+                                          {button.type === 'URL' && (
+                                             <input
+                                                type="url"
+                                                value={button.url || ''}
+                                                onChange={e => updateCarouselCardButton(idx, buttonIdx, { url: e.target.value })}
+                                                placeholder="https://example.com/page"
+                                                className="rounded border border-neutral-200 bg-white px-3 py-2 text-xs focus:outline-none sm:col-span-2"
+                                             />
+                                          )}
+                                          {button.type === 'PHONE_NUMBER' && (
+                                             <input
+                                                type="text"
+                                                value={button.phoneNumber || ''}
+                                                onChange={e => updateCarouselCardButton(idx, buttonIdx, { phoneNumber: e.target.value })}
+                                                placeholder="+91 9876543210"
+                                                className="rounded border border-neutral-200 bg-white px-3 py-2 text-xs focus:outline-none sm:col-span-2"
+                                             />
+                                          )}
+                                       </div>
                                     ))}
                                  </div>
                               </div>
@@ -631,46 +801,79 @@ export default function TemplateDetailDrawer({
                      <div>
                         <label className="block text-xs font-bold text-neutral-500 mb-1 flex items-center justify-between">
                            <span>Body Message</span>
-                           <span className="text-[10px] text-neutral-400 font-normal italic">Meta variables use numbered tokens</span>
+                           <span className="text-[10px] text-neutral-400 font-normal italic">Use named variables like {'{{description}}'}</span>
                         </label>
                         <div className="mb-2 flex flex-wrap gap-2">
-                           {VARIABLE_PRESETS.map((preset) => (
+                           {NAMED_VARIABLE_PRESETS.map((preset) => (
                               <button
-                                 key={preset.token}
+                                 key={preset.name}
                                  type="button"
-                                 onClick={() => insertBodyVariable(preset)}
+                                 onClick={() => insertNamedVariable(preset.name)}
                                  className="inline-flex items-center gap-1.5 rounded border border-neutral-200 bg-white px-2.5 py-1.5 text-[11px] font-bold text-neutral-600 transition-colors hover:border-neutral-400 hover:text-neutral-900"
                                  title={`Insert ${preset.label}`}
                               >
                                  <Hash className="h-3 w-3" />
-                                 {preset.token} {preset.label}
+                                 {`{{${preset.name}}}`}
                               </button>
                            ))}
+                           <button
+                              type="button"
+                              onClick={insertCustomVariable}
+                              className="inline-flex items-center gap-1.5 rounded border border-dashed border-neutral-300 bg-white px-2.5 py-1.5 text-[11px] font-bold text-neutral-500 transition-colors hover:border-neutral-400 hover:text-neutral-900"
+                              title="Insert a custom variable"
+                           >
+                              <Hash className="h-3 w-3" />
+                              + Custom
+                           </button>
                         </div>
                         <textarea
                            ref={bodyTextareaRef}
                            rows={6}
                            value={formData.body}
                            onChange={e => setFormData({ ...formData, body: e.target.value })}
-                           placeholder="Type your message here..."
+                           placeholder="Type your message here. Insert variables like {{name}} or {{description}}..."
                            className="shell-input-rect bg-white py-3 resize-none font-sans leading-relaxed"
                         />
-                        <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                           {samplePresets.map((preset) => (
-                              <label key={preset.token} className="block">
-                                 <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-neutral-400">
-                                    Sample for {preset.token} {preset.label}
-                                 </span>
-                                 <input
-                                    type="text"
-                                    value={formData.sampleVariables?.[preset.position - 1] || ''}
-                                    onChange={(event) => setSampleVariable(preset.position, event.target.value)}
-                                    placeholder={preset.sample}
-                                    className="w-full rounded border border-neutral-200 bg-white px-3 py-2 text-xs focus:outline-none"
-                                 />
-                              </label>
-                           ))}
-                        </div>
+                        {namedVariableEditors.length > 0 ? (
+                           <div className="mt-3 space-y-2">
+                              <span className="block text-[10px] font-bold uppercase tracking-wider text-neutral-400">Variables</span>
+                              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                                 {namedVariableEditors.map((editor) => (
+                                    <label key={editor.name} className="block">
+                                       <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-neutral-400">
+                                          {`{{${editor.name}}}`} {editor.isContact ? '· auto: from contact' : `· example for ${editor.label}`}
+                                       </span>
+                                       <input
+                                          type="text"
+                                          value={formData.variableSamples?.[editor.name] || ''}
+                                          onChange={(event) => setNamedSample(editor.name, event.target.value)}
+                                          placeholder={editor.isContact ? 'Filled per recipient (e.g. Rahul)' : `Example for ${editor.label}`}
+                                          disabled={editor.isContact}
+                                          className="w-full rounded border border-neutral-200 bg-white px-3 py-2 text-xs focus:outline-none disabled:bg-neutral-50 disabled:text-neutral-400"
+                                       />
+                                    </label>
+                                 ))}
+                              </div>
+                              <p className="text-[10px] text-neutral-400">Contact variables (name, phone) fill automatically per recipient. Others (like description) are filled when you create a campaign.</p>
+                           </div>
+                        ) : (
+                           <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                              {samplePresets.map((preset) => (
+                                 <label key={preset.token} className="block">
+                                    <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-neutral-400">
+                                       Sample for {preset.token} {preset.label}
+                                    </span>
+                                    <input
+                                       type="text"
+                                       value={formData.sampleVariables?.[preset.position - 1] || ''}
+                                       onChange={(event) => setSampleVariable(preset.position, event.target.value)}
+                                       placeholder={preset.sample}
+                                       className="w-full rounded border border-neutral-200 bg-white px-3 py-2 text-xs focus:outline-none"
+                                    />
+                                 </label>
+                              ))}
+                           </div>
+                        )}
                      </div>
 
                      <div>

@@ -10,7 +10,12 @@ export const propertiesApi = {
   delete: (id) => client.delete(`/properties/${id}`).then((r) => r.data),
   uploadImage: (file) => {
     const formData = new FormData();
-    formData.append('image', file);
+    formData.append('image', file, file.name);
     return client.post('/properties/upload-image', formData).then((r) => r.data);
+  },
+  uploadBrochure: (file) => {
+    const formData = new FormData();
+    formData.append('file', file, file.name);
+    return client.post('/uploads/pdf', formData).then((r) => r.data);
   },
 };

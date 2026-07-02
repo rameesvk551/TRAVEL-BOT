@@ -1,7 +1,9 @@
 const { Op } = require('sequelize');
-const { Package, Property, Agency } = require('../models');
+const { Package, Property, Agency, Lead, Customer } = require('../models');
 const leadService = require('../services/leadService');
 const websiteBuilderService = require('../services/websiteBuilderService');
+const leadFormConfig = require('../services/leadFormConfig');
+const { normalizePhone } = require('../utils/phoneUtils');
 
 async function resolveAgency(key) {
   const normalized = websiteBuilderService.normalizeHost(key);
@@ -164,6 +166,92 @@ async function submitEnquiry(req, res, next) {
   }
 }
 
+// The public lead form is independent of the website builder — an agency can share
+// its capture link without ever publishing a site, so we don't require websiteEnabled.
+async function resolveAgencyForLeadForm(key) {
+  const normalized = websiteBuilderService.normalizeHost(key);
+  const agency = await Agency.findOne({
+    where: {
+      isActive: true,
+      [Op.or]: [
+        { id: key },
+        { subdomain: key },
+        { customDomain: normalized },
+      ],
+    },
+  });
+
+  if (!agency) {
+    throw Object.assign(new Error('Lead form not found'), {
+      statusCode: 404,
+      code: 'LEAD_FORM_NOT_FOUND',
+    });
+  }
+
+  return agency;
+}
+
+async function getLeadForm(req, res, next) {
+  try {
+    const agency = await resolveAgencyForLeadForm(req.params.agencyKey);
+    res.json({ success: true, data: leadFormConfig.publicLeadFormPayload(agency) });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// Returns an existing recent lead id when the same phone re-submits the same source
+// inside a short window, so a double-tap or refresh doesn't create duplicate leads.
+async function findRecentDuplicateLead(agencyId, phone, source) {
+  const normalized = normalizePhone(String(phone || '').trim());
+  if (!normalized) return null;
+  const customer = await Customer.findOne({ where: { agencyId, phone: normalized } });
+  if (!customer) return null;
+
+  const since = new Date(Date.now() - 10 * 60 * 1000);
+  return Lead.findOne({
+    where: {
+      agencyId,
+      customerId: customer.id,
+      source,
+      createdAt: { [Op.gte]: since },
+    },
+    order: [['createdAt', 'DESC']],
+  });
+}
+
+async function submitLeadForm(req, res, next) {
+  try {
+    const agency = await resolveAgencyForLeadForm(req.params.agencyKey);
+
+    // Honeypot — bots fill the hidden "company" field; humans never see it.
+    if (String(req.body?.company || '').trim()) {
+      return res.status(202).json({ success: true, data: null, message: 'Enquiry received' });
+    }
+
+    const meta = {
+      source: String(req.body?.source || '').trim().slice(0, 100),
+      utm_source: String(req.body?.utm_source || '').trim().slice(0, 200),
+      utm_medium: String(req.body?.utm_medium || '').trim().slice(0, 200),
+      utm_campaign: String(req.body?.utm_campaign || '').trim().slice(0, 200),
+      utm_content: String(req.body?.utm_content || '').trim().slice(0, 200),
+      utm_term: String(req.body?.utm_term || '').trim().slice(0, 200),
+    };
+
+    const { leadInput } = leadFormConfig.mapSubmissionToLead(agency, req.body, meta);
+
+    const existing = await findRecentDuplicateLead(agency.id, leadInput.customerPhone, leadInput.source);
+    if (existing) {
+      return res.status(200).json({ success: true, data: { id: existing.id }, message: 'Enquiry received' });
+    }
+
+    const lead = await leadService.createLead(leadInput, agency.id);
+    res.status(201).json({ success: true, data: { id: lead.id }, message: 'Enquiry received' });
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function allowDomain(req, res, next) {
   try {
     const domain = websiteBuilderService.normalizeHost(req.query.domain || req.query.host || '');
@@ -198,5 +286,7 @@ module.exports = {
   listProperties,
   getProperty,
   submitEnquiry,
+  getLeadForm,
+  submitLeadForm,
   allowDomain,
 };

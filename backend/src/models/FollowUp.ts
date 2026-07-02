@@ -32,6 +32,30 @@ module.exports = (sequelize) => {
       type: DataTypes.ENUM('Scheduled', 'Done', 'Cancelled'),
       defaultValue: 'Scheduled',
     },
+    type: {
+      type: DataTypes.STRING(50),
+      allowNull: true,
+      comment: 'Call, WhatsApp, Email, Meeting, etc.',
+    },
+    outcome: {
+      type: DataTypes.STRING(100),
+      allowNull: true,
+      comment: 'Structured outcome when status is Done',
+    },
+    isRecurring: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
+    },
+    recurringInterval: {
+      type: DataTypes.STRING(20),
+      allowNull: true,
+      comment: 'daily, weekly, monthly, yearly',
+    },
+    recurringEndDate: {
+      type: DataTypes.DATE,
+      allowNull: true,
+    },
     notificationSent: {
       type: DataTypes.BOOLEAN,
       defaultValue: false,

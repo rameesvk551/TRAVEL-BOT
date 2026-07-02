@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Travel Bot — Mobile Mockup</title>
+<style>
+  /* ============================ DESIGN TOKENS (Doc 1 §3) ============================ */
+  :root{
+    --bg-canvas:#F2F2F7; --bg-surface:#FFFFFF; --bg-fill:#EFEFF4; --bg-raised:#FFFFFF;
+    --text-primary:#1C1C1E; --text-secondary:rgba(60,60,67,.6); --text-tertiary:rgba(60,60,67,.3);
+    --accent:#007AFF; --accent-tint:rgba(0,122,255,.12);
+    --hairline:rgba(60,60,67,.12);
+    --success:#34C759; --warning:#FF9F0A; --danger:#FF3B30; --info:#5E5CE6; --neutral:#8E8E93;
+    --shadow-card:0 2px 8px rgba(0,0,0,.06); --shadow-sheet:0 8px 24px rgba(0,0,0,.14);
+    --frame:#0a0a0a;
+  }
+  .dark{
+    --bg-canvas:#000000; --bg-surface:#1C1C1E; --bg-fill:#2C2C2E; --bg-raised:#2C2C2E;
+    --text-primary:#FFFFFF; --text-secondary:rgba(235,235,245,.6); --text-tertiary:rgba(235,235,245,.3);
+    --accent:#0A84FF; --accent-tint:rgba(10,132,255,.24);
+    --hairline:rgba(84,84,88,.6);
+    --success:#30D158; --warning:#FF9F0A; --danger:#FF453A; --info:#5E5CE6; --neutral:#8E8E93;
+    --shadow-card:0 2px 8px rgba(0,0,0,.4); --shadow-sheet:0 8px 24px rgba(0,0,0,.5);
+    --frame:#2a2a2a;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-font-smoothing:antialiased;}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Inter,Roboto,sans-serif;
+    background:#c9ccd6; color:#111; padding:28px 20px 60px; transition:background .3s;
+  }
+  body.dark-page{background:#111318;color:#eee;}
+  .toolbar{max-width:1200px;margin:0 auto 26px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;}
+  .toolbar h1{font-size:20px;font-weight:700;margin-right:auto;letter-spacing:-.3px;}
+  .toolbar h1 span{opacity:.5;font-weight:500;font-size:14px;}
+  .seg{display:inline-flex;background:rgba(120,120,128,.16);border-radius:9px;padding:2px;}
+  .seg button{border:0;background:transparent;padding:7px 14px;border-radius:7px;font-size:13px;
+    font-weight:600;color:inherit;cursor:pointer;transition:.15s;}
+  .seg button.on{background:#fff;color:#000;box-shadow:0 1px 3px rgba(0,0,0,.12);}
+  .dark-page .seg button.on{background:#3a3a3c;color:#fff;}
+  .stage{max-width:1200px;margin:0 auto;display:flex;gap:26px;flex-wrap:wrap;justify-content:center;}
+
+  /* ============================ PHONE FRAME ============================ */
+  .phone{
+    width:300px;height:640px;background:var(--frame);border-radius:44px;padding:11px;
+    box-shadow:0 20px 50px rgba(0,0,0,.35);flex:0 0 auto;
+  }
+  .screen{
+    position:relative;width:100%;height:100%;background:var(--bg-canvas);border-radius:34px;
+    overflow:hidden;color:var(--text-primary);display:flex;flex-direction:column;
+  }
+  .notch{position:absolute;top:0;left:50%;transform:translateX(-50%);width:120px;height:26px;
+    background:var(--frame);border-radius:0 0 16px 16px;z-index:40;}
+  .statusbar{height:44px;display:flex;align-items:flex-end;justify-content:space-between;
+    padding:0 22px 5px;font-size:13px;font-weight:600;flex:0 0 auto;position:relative;z-index:30;}
+  .caption{font-size:11px;font-weight:600;letter-spacing:.5px;text-transform:uppercase;color:var(--text-secondary);}
+  .label{font-size:11px;text-align:center;color:inherit;opacity:.6;margin-top:9px;font-weight:600;}
+
+  /* scroll body */
+  .body{flex:1;overflow-y:auto;padding:0 16px 96px;-webkit-overflow-scrolling:touch;}
+  .body::-webkit-scrollbar{display:none;}
+  .largeTitle{font-size:30px;font-weight:700;letter-spacing:-.5px;padding:6px 0 14px;}
+  .greeting{font-size:13px;color:var(--text-secondary);padding-top:2px;}
+
+  /* cards */
+  .card{background:var(--bg-surface);border-radius:16px;box-shadow:var(--shadow-card);padding:15px;margin-bottom:12px;}
+  .kpiGrid{display:grid;grid-template-columns:1fr 1fr;gap:11px;margin-bottom:16px;}
+  .kpi .eyebrow{font-size:10px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:var(--text-secondary);}
+  .kpi .val{font-size:27px;font-weight:700;letter-spacing:-.5px;margin-top:5px;font-variant-numeric:tabular-nums;}
+  .delta{display:inline-flex;align-items:center;gap:2px;font-size:11px;font-weight:700;margin-top:7px;
+    padding:2px 6px;border-radius:6px;}
+  .delta.up{color:var(--success);background:rgba(52,199,89,.14);}
+  .delta.down{color:var(--danger);background:rgba(255,59,48,.14);}
+  .spark{margin-top:9px;height:26px;width:100%;}
+
+  .sectionHead{display:flex;justify-content:space-between;align-items:center;margin:20px 2px 9px;}
+  .sectionHead .t{font-size:15px;font-weight:700;letter-spacing:-.2px;}
+  .sectionHead .a{font-size:13px;color:var(--accent);font-weight:600;}
+
+  /* list rows */
+  .row{display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid var(--hairline);}
+  .row:last-child{border-bottom:0;}
+  .avatar{width:40px;height:40px;border-radius:50%;flex:0 0 auto;display:flex;align-items:center;justify-content:center;
+    font-weight:700;font-size:15px;color:#fff;}
+  .row .main{flex:1;min-width:0;}
+  .row .ttl{font-size:15px;font-weight:600;letter-spacing:-.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .row .sub{font-size:12.5px;color:var(--text-secondary);margin-top:2px;display:flex;align-items:center;gap:5px;}
+  .dot{width:6px;height:6px;border-radius:50%;display:inline-block;}
+  .row .trail{text-align:right;flex:0 0 auto;}
+  .row .amt{font-size:15px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-.3px;}
+  .badge{font-size:10px;font-weight:700;padding:3px 7px;border-radius:6px;display:inline-block;margin-top:3px;}
+  .b-succ{color:var(--success);background:rgba(52,199,89,.15);}
+  .b-warn{color:var(--warning);background:rgba(255,159,10,.15);}
+  .b-dang{color:var(--danger);background:rgba(255,59,48,.15);}
+  .b-info{color:var(--info);background:rgba(94,92,230,.15);}
+  .chev{color:var(--text-tertiary);font-size:19px;}
+
+  /* chips */
+  .chips{display:flex;gap:8px;overflow-x:auto;padding:2px 0 6px;margin-bottom:4px;}
+  .chips::-webkit-scrollbar{display:none;}
+  .chip{flex:0 0 auto;font-size:13px;font-weight:600;padding:7px 13px;border-radius:999px;background:var(--bg-fill);color:var(--text-secondary);}
+  .chip.on{background:var(--accent-tint);color:var(--accent);}
+
+  /* search */
+  .search{display:flex;align-items:center;gap:8px;background:var(--bg-fill);border-radius:11px;padding:9px 12px;margin:2px 0 12px;color:var(--text-secondary);font-size:15px;}
+
+  /* nav bar (inbox thread) */
+  .navbar{display:flex;align-items:center;gap:10px;padding:4px 16px 12px;flex:0 0 auto;}
+  .navbar .back{color:var(--accent);font-size:26px;line-height:1;}
+  .navbar .nti{flex:1;min-width:0;}
+  .navbar .nt{font-size:16px;font-weight:700;letter-spacing:-.2px;}
+  .navbar .ns{font-size:11.5px;color:var(--success);font-weight:600;}
+  .navbar .more{color:var(--accent);font-size:22px;font-weight:700;}
+
+  /* chat */
+  .chat{flex:1;overflow-y:auto;padding:6px 14px 12px;display:flex;flex-direction:column;gap:8px;}
+  .chat::-webkit-scrollbar{display:none;}
+  .daydiv{text-align:center;font-size:11px;color:var(--text-secondary);margin:6px 0;font-weight:600;}
+  .bub{max-width:78%;padding:9px 13px;border-radius:18px;font-size:14px;line-height:1.35;}
+  .bub.in{align-self:flex-start;background:var(--bg-fill);border-bottom-left-radius:5px;}
+  .bub.out{align-self:flex-end;background:var(--accent);color:#fff;border-bottom-right-radius:5px;}
+  .tick{font-size:10px;opacity:.7;margin-left:5px;}
+  .composer{flex:0 0 auto;display:flex;align-items:center;gap:10px;padding:9px 14px;border-top:1px solid var(--hairline);background:var(--bg-surface);}
+  .composer .field{flex:1;background:var(--bg-fill);border-radius:18px;padding:9px 14px;font-size:14px;color:var(--text-secondary);}
+  .composer .send{width:32px;height:32px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:16px;}
+  .takeover{margin:8px 14px 0;background:var(--accent-tint);color:var(--accent);border-radius:12px;padding:9px 13px;font-size:12.5px;font-weight:600;display:flex;justify-content:space-between;align-items:center;}
+
+  /* tab bar */
+  .tabbar{position:absolute;left:0;right:0;bottom:0;height:82px;padding:9px 8px 24px;
+    display:flex;justify-content:space-around;align-items:flex-start;
+    background:color-mix(in srgb,var(--bg-surface) 78%,transparent);
+    backdrop-filter:saturate(180%) blur(20px);-webkit-backdrop-filter:saturate(180%) blur(20px);
+    border-top:1px solid var(--hairline);z-index:30;}
+  .tab{display:flex;flex-direction:column;align-items:center;gap:3px;color:var(--text-secondary);font-size:10px;font-weight:600;position:relative;}
+  .tab.on{color:var(--accent);}
+  .tab .ic{font-size:21px;line-height:1;}
+  .tab .tbadge{position:absolute;top:-4px;right:-8px;background:var(--danger);color:#fff;font-size:9px;font-weight:700;min-width:16px;height:16px;border-radius:8px;display:flex;align-items:center;justify-content:center;padding:0 4px;}
+
+  /* bottom sheet (lead detail) */
+  .sheetScreen{justify-content:flex-end;}
+  .scrim{position:absolute;inset:0;background:rgba(0,0,0,.4);z-index:20;}
+  .sheet{position:relative;z-index:25;background:var(--bg-surface);border-radius:22px 22px 0 0;padding:8px 18px 26px;box-shadow:var(--shadow-sheet);}
+  .grab{width:36px;height:5px;border-radius:3px;background:var(--text-tertiary);margin:5px auto 14px;}
+  .sheet .sh-top{display:flex;align-items:center;gap:12px;margin-bottom:16px;}
+  .sheet .sh-name{font-size:19px;font-weight:700;letter-spacing:-.3px;}
+  .sheet .sh-sub{font-size:12.5px;color:var(--text-secondary);margin-top:2px;}
+  .factGrid{display:grid;grid-template-columns:1fr 1fr;gap:12px 10px;margin-bottom:18px;}
+  .fact .fl{font-size:11px;color:var(--text-secondary);font-weight:600;text-transform:uppercase;letter-spacing:.3px;}
+  .fact .fv{font-size:14.5px;font-weight:600;margin-top:3px;}
+  .qa{display:flex;gap:9px;margin-bottom:12px;}
+  .qa .q{flex:1;text-align:center;background:var(--bg-fill);border-radius:12px;padding:11px 0;font-size:12px;font-weight:600;color:var(--accent);}
+  .btn-primary{background:var(--accent);color:#fff;text-align:center;border-radius:13px;padding:14px;font-size:16px;font-weight:600;}
+  .timeline{margin-top:4px;}
+  .tl{display:flex;gap:10px;padding:8px 0;font-size:13px;}
+  .tl .tdot{width:8px;height:8px;border-radius:50%;background:var(--accent);margin-top:5px;flex:0 0 auto;}
+  .tl .tsub{color:var(--text-secondary);font-size:11.5px;margin-top:1px;}
+  .fab{position:absolute;right:16px;bottom:98px;width:54px;height:54px;border-radius:50%;background:var(--accent);
+    color:#fff;display:flex;align-items:center;justify-content:center;font-size:26px;box-shadow:0 6px 16px rgba(0,0,0,.3);z-index:29;}
+  .nav-plus{margin-left:auto;color:var(--accent);font-size:26px;font-weight:600;}
+  .titleRow{display:flex;align-items:center;}
+</style>
+</head>
+<body>
+  <div class="toolbar">
+    <h1>Travel Bot — Mobile <span>· live design mockup</span></h1>
+    <div class="seg" id="industrySeg">
+      <button class="on" data-ind="travel">Travel</button>
+      <button data-ind="resort">Resort</button>
+      <button data-ind="cleaning">Cleaning</button>
+    </div>
+    <div class="seg" id="themeSeg">
+      <button class="on" data-theme="light">Light</button>
+      <button data-theme="dark">Dark</button>
+    </div>
+  </div>
+
+  <div class="stage" id="stage"></div>
+
+<script>
+/* ================= MANIFEST-DRIVEN DEMO (Doc 3) =================
+   The same screens render differently per industry, driven by a label map + widgets. */
+const IND = {
+  travel: {
+    tabBookings:{ic:"📅",label:"Bookings"}, tabPeople:{ic:"👥",label:"Leads"},
+    bookings:"Bookings", leads:"Leads", customer:"Customer", person:"Lead",
+    home:[["New Leads","28","up","+12%"],["Conversion","24%","up","+3%"],["Bookings","19","up","+5%"],["Revenue","₹4.2L","up","+12%"]],
+    listTitle:"Bookings",
+    rows:[
+      {a:"AR",c:"#0A84FF",t:"Aarav Sharma",s:"Bali Package · 12 Jul",amt:"₹1,24,000",b:"b-succ",bt:"Confirmed"},
+      {a:"MK",c:"#FF9F0A",t:"Meera Krishnan",s:"Dubai Visa · 04 Aug",amt:"₹18,500",b:"b-warn",bt:"Pending"},
+      {a:"RP",c:"#5E5CE6",t:"Rohan Patel",s:"Maldives Cruise · 20 Aug",amt:"₹2,10,000",b:"b-dang",bt:"Due ₹90k"},
+      {a:"SV",c:"#34C759",t:"Sana Verma",s:"Goa Stay · 28 Jul",amt:"₹42,000",b:"b-succ",bt:"Paid"},
+    ],
+    sheet:{name:"Aarav Sharma",sub:"Lead · Bali interest · from Instagram",
+      facts:[["Destination","Bali, Indonesia"],["Travellers","2 adults"],["Budget","₹1,20,000"],["Status","Hot"]],
+      qa:["Call","WhatsApp","Follow-up"],cta:"Convert to Booking"}
+  },
+  resort: {
+    tabBookings:{ic:"🛏",label:"Reservations"}, tabPeople:{ic:"👤",label:"Guests"},
+    bookings:"Reservations", leads:"Enquiries", customer:"Guest", person:"Enquiry",
+    home:[["Occupancy","82%","up","+6%"],["ADR","₹8,400","up","+4%"],["Check-ins","14","up","+2"],["Revenue","₹6.8L","up","+9%"]],
+    listTitle:"Reservations",
+    rows:[
+      {a:"AR",c:"#0A84FF",t:"Aarav Sharma",s:"Deluxe Suite · 3 nts · 12 Jul",amt:"₹36,000",b:"b-succ",bt:"Confirmed"},
+      {a:"MK",c:"#FF9F0A",t:"Meera Krishnan",s:"Sea View · 2 nts · 04 Aug",amt:"₹24,000",b:"b-warn",bt:"Hold"},
+      {a:"RP",c:"#5E5CE6",t:"Rohan Patel",s:"Villa · 5 nts · 20 Aug",amt:"₹1,05,000",b:"b-dang",bt:"Bal ₹40k"},
+      {a:"SV",c:"#34C759",t:"Sana Verma",s:"Garden Room · 1 nt · 28 Jul",amt:"₹8,000",b:"b-succ",bt:"Paid"},
+    ],
+    sheet:{name:"Aarav Sharma",sub:"Enquiry · Deluxe Suite · from WhatsApp",
+      facts:[["Room","Deluxe Suite"],["Nights","3 (12–15 Jul)"],["Guests","2 adults"],["Status","Hold"]],
+      qa:["Call","WhatsApp","Follow-up"],cta:"Confirm Reservation"}
+  },
+  cleaning: {
+    tabBookings:{ic:"🧹",label:"Jobs"}, tabPeople:{ic:"👷",label:"Crew"},
+    bookings:"Jobs", leads:"Requests", customer:"Client", person:"Request",
+    home:[["Today's Jobs","11","up","+3"],["Completed","8","up","72%"],["Crew Active","6","up","+1"],["Revenue","₹64,000","up","+8%"]],
+    listTitle:"Jobs",
+    rows:[
+      {a:"AR",c:"#0A84FF",t:"Aarav Sharma",s:"Deep Clean · 3BHK · 9:00 AM",amt:"₹4,500",b:"b-succ",bt:"Confirmed"},
+      {a:"MK",c:"#FF9F0A",t:"Meera Krishnan",s:"Sofa Shampoo · 11:30 AM",amt:"₹1,800",b:"b-warn",bt:"Assigned"},
+      {a:"RP",c:"#5E5CE6",t:"Rohan Patel",s:"Office · 2000 sqft · 2:00 PM",amt:"₹12,000",b:"b-dang",bt:"Due ₹6k"},
+      {a:"SV",c:"#34C759",t:"Sana Verma",s:"Bathroom · 4:30 PM",amt:"₹1,200",b:"b-succ",bt:"Paid"},
+    ],
+    sheet:{name:"Aarav Sharma",sub:"Request · Deep Clean · from WhatsApp",
+      facts:[["Service","Deep Clean 3BHK"],["Slot","Today 9:00 AM"],["Crew","Team B (3)"],["Status","Confirmed"]],
+      qa:["Call","WhatsApp","Reschedule"],cta:"Assign Crew"}
+  }
+};
+
+let state={ind:"travel",theme:"light"};
+
+const spark=(color,down)=>`<svg class="spark" viewBox="0 0 100 26" preserveAspectRatio="none">
+  <polyline points="0,${down?8:20} 20,${down?12:16} 40,${down?10:18} 60,${down?16:9} 80,${down?14:12} 100,${down?20:4}"
+   fill="none" stroke="${color}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+
+function homeScreen(d){
+  const [k1,k2,k3,k4]=d.home;
+  const kpi=(k)=>`<div class="card kpi"><div class="eyebrow">${k[0]}</div><div class="val">${k[1]}</div>
+    <div class="delta ${k[2]}">${k[2]==='up'?'▲':'▼'} ${k[3]}</div>${spark('var(--accent)')}</div>`;
+  return `<div class="statusbar"><span>9:41</span><span>● ● ● ▂▄</span></div>
+  <div class="body">
+    <div class="greeting">Good morning, Priya</div>
+    <div class="titleRow"><div class="largeTitle">Home</div><div class="nav-plus">＋</div></div>
+    <div class="kpiGrid">${kpi(k1)}${kpi(k2)}${kpi(k3)}${kpi(k4)}</div>
+    <div class="sectionHead"><span class="t">Revenue · 30 days</span><span class="a">Details</span></div>
+    <div class="card">${spark('var(--accent)')}<div style="font-size:11px;color:var(--text-secondary);margin-top:6px;">Peak ₹52k · Jun 24</div></div>
+    <div class="sectionHead"><span class="t">Needs attention</span><span class="a">See all</span></div>
+    <div class="card">
+      <div class="row"><span class="dot" style="background:var(--danger)"></span><div class="main"><div class="ttl">2 overdue follow-ups</div><div class="sub">Oldest 3 days · Rohan P.</div></div><span class="chev">›</span></div>
+      <div class="row"><span class="dot" style="background:var(--warning)"></span><div class="main"><div class="ttl">₹90k balance due</div><div class="sub">Maldives Cruise · Rohan P.</div></div><span class="chev">›</span></div>
+    </div>
+  </div>`;
+}
+
+function listScreen(d){
+  const row=(r)=>`<div class="row">
+    <div class="avatar" style="background:${r.c}">${r.a}</div>
+    <div class="main"><div class="ttl">${r.t}</div><div class="sub">${r.s}</div></div>
+    <div class="trail"><div class="amt">${r.amt}</div><span class="badge ${r.b}">${r.bt}</span></div></div>`;
+  return `<div class="statusbar"><span>9:41</span><span>● ● ● ▂▄</span></div>
+  <div class="body">
+    <div class="titleRow"><div class="largeTitle">${d.listTitle}</div><div class="nav-plus">＋</div></div>
+    <div class="search">🔍 Search ${d.customer.toLowerCase()}s</div>
+    <div class="chips"><span class="chip on">All</span><span class="chip">Confirmed</span><span class="chip">Pending</span><span class="chip">⚙ Filters</span></div>
+    <div class="card" style="padding:4px 15px;">${d.rows.map(row).join('')}</div>
+  </div>`;
+}
+
+function inboxScreen(d){
+  return `<div class="statusbar"><span>9:41</span><span>● ● ● ▂▄</span></div>
+  <div class="navbar"><span class="back">‹</span>
+    <div class="avatar" style="width:34px;height:34px;font-size:13px;background:#0A84FF">AR</div>
+    <div class="nti"><div class="nt">Aarav Sharma</div><div class="ns">● WhatsApp · online</div></div>
+    <span class="more">⋯</span></div>
+  <div class="takeover"><span>🤖 Bot is handling this chat</span><span>Take over ›</span></div>
+  <div class="chat">
+    <div class="daydiv">Today</div>
+    <div class="bub in">Hi! Is the ${d.bookings.toLowerCase().replace(/s$/,'')} for Bali still available for July? 🌴</div>
+    <div class="bub out">Yes! We have a 5-night package from ₹1,24,000 for 2. Want the itinerary?<span class="tick">✓✓</span></div>
+    <div class="bub in">Yes please send it</div>
+    <div class="bub out">Sending now 📄 — includes flights, villa & 2 tours.<span class="tick">✓✓</span></div>
+  </div>
+  <div class="composer"><span style="color:var(--text-secondary);font-size:20px;">＋</span>
+    <div class="field">Message…</div><div class="send">↑</div></div>`;
+}
+
+function sheetScreen(d){
+  const s=d.sheet;
+  const fact=(f)=>`<div class="fact"><div class="fl">${f[0]}</div><div class="fv">${f[1]}</div></div>`;
+  const qa=(q)=>`<div class="q">${q}</div>`;
+  // background = list, foreground = sheet
+  const bg=`<div class="body" style="padding-bottom:16px;filter:blur(0);">
+    <div class="titleRow"><div class="largeTitle">${d.listTitle}</div></div>
+    <div class="card" style="padding:4px 15px;opacity:.5;">
+      ${d.rows.slice(0,3).map(r=>`<div class="row"><div class="avatar" style="background:${r.c}">${r.a}</div>
+      <div class="main"><div class="ttl">${r.t}</div><div class="sub">${r.s}</div></div></div>`).join('')}
+    </div></div>`;
+  return `<div class="statusbar"><span>9:41</span><span>● ● ● ▂▄</span></div>
+  ${bg}
+  <div class="scrim"></div>
+  <div class="sheet">
+    <div class="grab"></div>
+    <div class="sh-top"><div class="avatar" style="background:#0A84FF">AR</div>
+      <div><div class="sh-name">${s.name}</div><div class="sh-sub">${s.sub}</div></div></div>
+    <div class="factGrid">${s.facts.map(fact).join('')}</div>
+    <div class="qa">${s.qa.map(qa).join('')}</div>
+    <div class="sectionHead" style="margin:6px 2px 4px;"><span class="t" style="font-size:13px;">Timeline</span></div>
+    <div class="timeline">
+      <div class="tl"><span class="tdot"></span><div><div>Enquiry received</div><div class="tsub">Today · 9:12 AM · Instagram</div></div></div>
+      <div class="tl"><span class="tdot"></span><div><div>Itinerary sent</div><div class="tsub">Today · 9:20 AM</div></div></div>
+    </div>
+    <div class="btn-primary" style="margin-top:14px;">${s.cta}</div>
+  </div>`;
+}
+
+function tabbar(d,active){
+  const tab=(ic,label,on,badge)=>`<div class="tab ${on?'on':''}"><span class="ic">${ic}</span>${badge?`<span class="tbadge">${badge}</span>`:''}<span>${label}</span></div>`;
+  return `<div class="tabbar">
+    ${tab("🏠","Home",active==='home')}
+    ${tab("💬","Inbox",active==='inbox',"3")}
+    ${tab(d.tabBookings.ic,d.tabBookings.label,active==='list')}
+    ${tab(d.tabPeople.ic,d.tabPeople.label,active==='people',"2")}
+    ${tab("⋯","More",false)}
+  </div>`;
+}
+
+function render(){
+  const d=IND[state.ind];
+  document.body.classList.toggle('dark-page',state.theme==='dark');
+  const phones=[
+    {title:"Home — dashboard",active:'home',inner:homeScreen(d),tab:true,fab:false},
+    {title:"Inbox — conversation",active:'inbox',inner:inboxScreen(d),tab:false,fab:false},
+    {title:d.listTitle+" — list",active:'list',inner:listScreen(d),tab:true,fab:false},
+    {title:d.person+" — detail sheet",active:'list',inner:sheetScreen(d),tab:false,fab:false,sheet:true},
+  ];
+  document.getElementById('stage').innerHTML = phones.map(p=>`
+    <div>
+      <div class="phone">
+        <div class="screen ${state.theme==='dark'?'dark':''} ${p.sheet?'sheetScreen':''}">
+          <div class="notch"></div>
+          ${p.inner}
+          ${p.tab?tabbar(d,p.active):''}
+        </div>
+      </div>
+      <div class="label">${p.title}</div>
+    </div>`).join('');
+}
+
+document.getElementById('industrySeg').addEventListener('click',e=>{
+  if(!e.target.dataset.ind)return;
+  document.querySelectorAll('#industrySeg button').forEach(b=>b.classList.remove('on'));
+  e.target.classList.add('on'); state.ind=e.target.dataset.ind; render();
+});
+document.getElementById('themeSeg').addEventListener('click',e=>{
+  if(!e.target.dataset.theme)return;
+  document.querySelectorAll('#themeSeg button').forEach(b=>b.classList.remove('on'));
+  e.target.classList.add('on'); state.theme=e.target.dataset.theme; render();
+});
+render();
+</script>
+</body>
+</html>

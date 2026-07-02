@@ -44,6 +44,23 @@ async function ensureIndex(indexName, createSql) {
   console.log(`[SchemaBootstrap] Created index ${indexName}`);
 }
 
+// Adds a foreign-key constraint if absent. Defensive: if existing data violates it
+// (e.g. legacy orphan rows), it logs and continues rather than crashing boot — the
+// integrity audit script surfaces such rows separately.
+async function ensureForeignKey(constraintName, createSql) {
+  const [rows] = await sequelize.query(
+    `select exists (select 1 from pg_constraint where conname = :name) as exists`,
+    { replacements: { name: constraintName } }
+  );
+  if (rows?.[0]?.exists) return;
+  try {
+    await sequelize.query(createSql);
+    console.log(`[SchemaBootstrap] Added FK ${constraintName}`);
+  } catch (err) {
+    console.warn(`[SchemaBootstrap] Skipped FK ${constraintName}: ${err.message}`);
+  }
+}
+
 async function ensureEnumValues(typeName, values) {
   const [existsRows] = await sequelize.query(
     `select exists (select 1 from pg_type where typname = :typeName) as exists`,
@@ -159,6 +176,33 @@ async function ensureAgenciesSchema() {
     allowNull: true,
   });
 
+  await ensureColumn('agencies', 'gstin', {
+    type: Sequelize.STRING(32),
+    allowNull: true,
+  });
+
+  await ensureColumn('agencies', 'upi_id', {
+    type: Sequelize.STRING(120),
+    allowNull: true,
+  });
+
+  await ensureColumn('agencies', 'state_code', {
+    type: Sequelize.STRING(2),
+    allowNull: true,
+  });
+
+  await ensureColumn('agencies', 'accounting_settings', {
+    type: Sequelize.JSONB,
+    allowNull: false,
+    defaultValue: {},
+  });
+
+  await ensureColumn('agencies', 'document_settings', {
+    type: Sequelize.JSONB,
+    allowNull: false,
+    defaultValue: {},
+  });
+
   await ensureColumn('agencies', 'company_logo_url', {
     type: Sequelize.STRING(1000),
     allowNull: true,
@@ -182,6 +226,12 @@ async function ensureAgenciesSchema() {
   await ensureColumn('agencies', 'custom_domain', {
     type: Sequelize.STRING(255),
     allowNull: true,
+  });
+
+  await ensureColumn('message_templates', 'variable_map', {
+    type: Sequelize.JSONB,
+    allowNull: false,
+    defaultValue: [],
   });
 
   await ensureColumn('agencies', 'website_enabled', {
@@ -265,6 +315,12 @@ async function ensureAgenciesSchema() {
     allowNull: true,
   });
 
+  await ensureColumn('agencies', 'lead_form_config', {
+    type: Sequelize.JSONB,
+    allowNull: false,
+    defaultValue: {},
+  });
+
   await ensureIndex(
     'agencies_subdomain_unique',
     'CREATE UNIQUE INDEX agencies_subdomain_unique ON agencies (subdomain) WHERE subdomain IS NOT NULL'
@@ -299,6 +355,12 @@ async function ensureLeadsSchema() {
     'UNKNOWN',
   ]);
 
+  // The entry stage is now represented by an empty (null) status. Drop the old
+  // 'JUST_CONTACTED' column default and null-out existing entry-stage leads.
+  // Idempotent: re-running has no effect once rows are migrated.
+  await sequelize.query('ALTER TABLE leads ALTER COLUMN status DROP DEFAULT');
+  await sequelize.query("UPDATE leads SET status = NULL WHERE status = 'JUST_CONTACTED'");
+
   await ensureEnumValues('enum_leads_item_type', [
     'PACKAGE',
     'PROPERTY',
@@ -307,6 +369,11 @@ async function ensureLeadsSchema() {
     'CRUISE',
     'CUSTOM_TRIP',
   ]);
+
+  await ensureColumn('leads', 'place', {
+    type: Sequelize.STRING(500),
+    allowNull: true,
+  });
 
   await ensureColumn('leads', 'ad_id', {
     type: Sequelize.STRING(255),
@@ -456,6 +523,60 @@ async function ensureLeadsSchema() {
   );
 }
 
+async function ensureLeadSourcesSchema() {
+  const queryInterface = sequelize.getQueryInterface();
+
+  if (!(await tableExists('lead_sources'))) {
+    await queryInterface.createTable('lead_sources', {
+      id: {
+        type: Sequelize.UUID,
+        allowNull: false,
+        primaryKey: true,
+        defaultValue: Sequelize.literal('gen_random_uuid()'),
+      },
+      agency_id: {
+        type: Sequelize.UUID,
+        allowNull: false,
+        references: {
+          model: 'agencies',
+          key: 'id',
+        },
+        onUpdate: 'CASCADE',
+        onDelete: 'CASCADE',
+      },
+      name: {
+        type: Sequelize.STRING(100),
+        allowNull: false,
+      },
+      is_active: {
+        type: Sequelize.BOOLEAN,
+        allowNull: false,
+        defaultValue: true,
+      },
+      created_at: {
+        type: Sequelize.DATE,
+        allowNull: false,
+        defaultValue: Sequelize.literal('CURRENT_TIMESTAMP'),
+      },
+      updated_at: {
+        type: Sequelize.DATE,
+        allowNull: false,
+        defaultValue: Sequelize.literal('CURRENT_TIMESTAMP'),
+      },
+    });
+    console.log('[SchemaBootstrap] Created lead_sources');
+  }
+
+  await ensureIndex(
+    'lead_sources_agency_id_idx',
+    'CREATE INDEX lead_sources_agency_id_idx ON lead_sources (agency_id)'
+  );
+  await ensureIndex(
+    'lead_sources_agency_id_name_unique',
+    'CREATE UNIQUE INDEX lead_sources_agency_id_name_unique ON lead_sources (agency_id, name)'
+  );
+}
+
 async function ensureCustomersSchema() {
   await ensureColumn('customers', 'channel_id', {
     type: Sequelize.UUID,
@@ -464,6 +585,26 @@ async function ensureCustomersSchema() {
 
   await ensureColumn('customers', 'email', {
     type: Sequelize.STRING(255),
+    allowNull: true,
+  });
+
+  await ensureColumn('customers', 'gstin', {
+    type: Sequelize.STRING(32),
+    allowNull: true,
+  });
+
+  await ensureColumn('customers', 'ledger_id', {
+    type: Sequelize.UUID,
+    allowNull: true,
+  });
+
+  await ensureColumn('customers', 'state_code', {
+    type: Sequelize.STRING(2),
+    allowNull: true,
+  });
+
+  await ensureColumn('customers', 'contact_phone', {
+    type: Sequelize.STRING(50),
     allowNull: true,
   });
 
@@ -482,6 +623,10 @@ async function ensureCustomersSchema() {
   await ensureIndex(
     'customers_agency_channel_id_idx',
     'CREATE INDEX customers_agency_channel_id_idx ON customers (agency_id, channel_id) WHERE channel_id IS NOT NULL'
+  );
+  await ensureIndex(
+    'customers_ledger_id_idx',
+    'CREATE INDEX customers_ledger_id_idx ON customers (ledger_id) WHERE ledger_id IS NOT NULL'
   );
 }
 
@@ -754,6 +899,14 @@ async function ensurePropertiesSchema() {
     allowNull: false,
     defaultValue: [],
   });
+  await ensureColumn('properties', 'brochure_url', {
+    type: Sequelize.STRING(1000),
+    allowNull: true,
+  });
+  await ensureColumn('properties', 'brochure_file_name', {
+    type: Sequelize.STRING(255),
+    allowNull: true,
+  });
   await ensureColumn('properties', 'is_active', {
     type: Sequelize.BOOLEAN,
     allowNull: false,
@@ -764,6 +917,7 @@ async function ensurePropertiesSchema() {
 async function ensureBookingsSchema() {
   await ensureEnumValues('enum_bookings_item_type', [
     'PACKAGE',
+    'PROPERTY',
     'CRUISE',
     'VISA',
     'SERVICE',
@@ -782,9 +936,14 @@ async function ensureBookingsSchema() {
   });
 
   await ensureColumn('bookings', 'item_type', {
-    type: Sequelize.ENUM('PACKAGE', 'CRUISE', 'VISA', 'SERVICE', 'CUSTOM'),
+    type: Sequelize.ENUM('PACKAGE', 'PROPERTY', 'CRUISE', 'VISA', 'SERVICE', 'CUSTOM'),
     allowNull: false,
     defaultValue: 'PACKAGE',
+  });
+
+  await ensureColumn('bookings', 'property_id', {
+    type: Sequelize.UUID,
+    allowNull: true,
   });
 
   await ensureColumn('bookings', 'cruise_id', {
@@ -818,6 +977,22 @@ async function ensureBookingsSchema() {
     defaultValue: 'FULL',
   });
 
+  await ensureColumn('bookings', 'base_price', {
+    type: Sequelize.INTEGER,
+    allowNull: true,
+  });
+
+  await ensureColumn('bookings', 'settlement_type', {
+    type: Sequelize.ENUM('FULL_COLLECTION', 'COMMISSION_ONLY'),
+    allowNull: false,
+    defaultValue: 'FULL_COLLECTION',
+  });
+
+  await ensureColumn('bookings', 'commission_amount', {
+    type: Sequelize.INTEGER,
+    allowNull: true,
+  });
+
   const queryInterface = sequelize.getQueryInterface();
 
   // Bookings can now be created directly from a customer without an originating lead.
@@ -849,6 +1024,16 @@ async function ensureItinerariesSchema() {
     type: Sequelize.UUID,
     allowNull: true,
   });
+  // Itinerary-builder fields (themed PDF + rich content blocks).
+  await ensureColumn('itineraries', 'template_id', { type: Sequelize.UUID, allowNull: true });
+  await ensureColumn('itineraries', 'product_code', { type: Sequelize.STRING(120), allowNull: true });
+  await ensureColumn('itineraries', 'summary', { type: Sequelize.STRING(500), allowNull: true });
+  await ensureColumn('itineraries', 'hotels', { type: Sequelize.JSONB, allowNull: true, defaultValue: [] });
+  await ensureColumn('itineraries', 'vehicle', { type: Sequelize.JSONB, allowNull: true, defaultValue: {} });
+  await ensureColumn('itineraries', 'price_rooms', { type: Sequelize.JSONB, allowNull: true, defaultValue: [] });
+  await ensureColumn('itineraries', 'pricing', { type: Sequelize.JSONB, allowNull: true, defaultValue: {} });
+  await ensureColumn('itineraries', 'inclusions', { type: Sequelize.JSONB, allowNull: true, defaultValue: [] });
+  await ensureColumn('itineraries', 'exclusions', { type: Sequelize.JSONB, allowNull: true, defaultValue: [] });
 }
 
 async function ensureCampaignsSchema() {
@@ -1146,6 +1331,12 @@ async function ensureFollowUpsTable() {
     await ensureColumn('follow_ups', 'agent_id', {
       type: Sequelize.UUID,
       allowNull: true,
+    });
+
+    await ensureColumn('follow_ups', 'type', {
+      type: Sequelize.STRING(50),
+      allowNull: true,
+      comment: 'Call, WhatsApp, Email, Meeting, etc.',
     });
 
     await ensureColumn('follow_ups', 'notification_sent', {
@@ -1690,6 +1881,7 @@ async function ensureAccountingTables() {
   await ensureEnumValues('enum_accounting_ledgers_type', ['ASSET', 'LIABILITY', 'EQUITY', 'REVENUE', 'EXPENSE']);
   await ensureEnumValues('enum_accounting_ledgers_group_type', ['DIRECT', 'INDIRECT']);
   await ensureEnumValues('enum_accounting_ledgers_financial_statement', ['BALANCE_SHEET', 'PROFIT_AND_LOSS']);
+  await ensureEnumValues('enum_accounting_payment_methods_method_type', ['CASH', 'BANK', 'UPI', 'CARD', 'WALLET', 'GATEWAY', 'OTHER']);
   await ensureEnumValues('enum_journal_entries_type', [
     'JOURNAL',
     'INVOICE',
@@ -1728,6 +1920,26 @@ async function ensureAccountingTables() {
     await queryInterface.addIndex('accounting_ledgers', ['agency_id', 'parent_id']);
     await queryInterface.addIndex('accounting_ledgers', ['agency_id', 'type']);
     console.log('[SchemaBootstrap] Created accounting_ledgers table');
+  }
+
+  if (!(await tableExists('accounting_payment_methods'))) {
+    await queryInterface.createTable('accounting_payment_methods', {
+      id: { type: Sequelize.UUID, defaultValue: Sequelize.UUIDV4, primaryKey: true, allowNull: false },
+      agency_id: { type: Sequelize.UUID, allowNull: false },
+      ledger_id: { type: Sequelize.UUID, allowNull: false },
+      name: { type: Sequelize.STRING(120), allowNull: false },
+      method_type: { type: Sequelize.ENUM('CASH', 'BANK', 'UPI', 'CARD', 'WALLET', 'GATEWAY', 'OTHER'), allowNull: false, defaultValue: 'BANK' },
+      is_default: { type: Sequelize.BOOLEAN, allowNull: false, defaultValue: false },
+      is_active: { type: Sequelize.BOOLEAN, allowNull: false, defaultValue: true },
+      sort_order: { type: Sequelize.INTEGER, allowNull: false, defaultValue: 0 },
+      created_at: { type: Sequelize.DATE, allowNull: false, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') },
+      updated_at: { type: Sequelize.DATE, allowNull: false, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') },
+    });
+    await queryInterface.addIndex('accounting_payment_methods', ['agency_id']);
+    await queryInterface.addIndex('accounting_payment_methods', ['agency_id', 'ledger_id']);
+    await queryInterface.addIndex('accounting_payment_methods', ['agency_id', 'is_active']);
+    await queryInterface.addIndex('accounting_payment_methods', ['agency_id', 'name'], { unique: true });
+    console.log('[SchemaBootstrap] Created accounting_payment_methods table');
   }
 
   if (!(await tableExists('journal_entries'))) {
@@ -1781,6 +1993,33 @@ async function ensureAccountingTables() {
   await ensureColumn('journal_lines', 'party_type', { type: Sequelize.STRING(20), allowNull: true });
   await ensureColumn('journal_lines', 'party_id', { type: Sequelize.UUID, allowNull: true });
 
+  // Gap-free voucher/invoice/credit-note numbering. One row per (agency, scope) holds the
+  // current high-water mark; nextSequentialNumber() increments it atomically under a row lock.
+  if (!(await tableExists('accounting_counters'))) {
+    await queryInterface.createTable('accounting_counters', {
+      id: { type: Sequelize.UUID, defaultValue: Sequelize.literal('gen_random_uuid()'), primaryKey: true, allowNull: false },
+      agency_id: { type: Sequelize.UUID, allowNull: false },
+      scope_key: { type: Sequelize.STRING(80), allowNull: false },
+      value: { type: Sequelize.BIGINT, allowNull: false, defaultValue: 0 },
+      created_at: { type: Sequelize.DATE, allowNull: false, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') },
+      updated_at: { type: Sequelize.DATE, allowNull: false, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') },
+    });
+    console.log('[SchemaBootstrap] Created accounting_counters table');
+  }
+  // Unique index backs the ON CONFLICT (agency_id, scope_key) upsert in nextSequentialNumber.
+  await ensureIndex(
+    'accounting_counters_agency_scope_unique',
+    'CREATE UNIQUE INDEX accounting_counters_agency_scope_unique ON accounting_counters (agency_id, scope_key)'
+  );
+
+  // Referential integrity / immutability backstop: a journal line cannot be orphaned, and a
+  // journal entry that still has lines cannot be hard-deleted (RESTRICT) — entries must be
+  // reversed, never destroyed.
+  await ensureForeignKey(
+    'journal_lines_entry_fk',
+    'ALTER TABLE journal_lines ADD CONSTRAINT journal_lines_entry_fk FOREIGN KEY (journal_entry_id) REFERENCES journal_entries(id) ON DELETE RESTRICT'
+  );
+
   if (!(await tableExists('account_invoices'))) {
     await queryInterface.createTable('account_invoices', {
       id: { type: Sequelize.UUID, defaultValue: Sequelize.UUIDV4, primaryKey: true, allowNull: false },
@@ -1794,9 +2033,19 @@ async function ensureAccountingTables() {
       status: { type: Sequelize.ENUM('DRAFT', 'ISSUED', 'PARTIALLY_PAID', 'PAID', 'VOID'), allowNull: false, defaultValue: 'ISSUED' },
       taxable_amount: { type: Sequelize.BIGINT, allowNull: false, defaultValue: 0 },
       gst_amount: { type: Sequelize.BIGINT, allowNull: false, defaultValue: 0 },
+      cgst_amount: { type: Sequelize.BIGINT, allowNull: false, defaultValue: 0 },
+      sgst_amount: { type: Sequelize.BIGINT, allowNull: false, defaultValue: 0 },
+      igst_amount: { type: Sequelize.BIGINT, allowNull: false, defaultValue: 0 },
       total_amount: { type: Sequelize.BIGINT, allowNull: false, defaultValue: 0 },
       paid_amount: { type: Sequelize.BIGINT, allowNull: false, defaultValue: 0 },
       gstin: { type: Sequelize.STRING(32), allowNull: true },
+      supplier_gstin: { type: Sequelize.STRING(32), allowNull: true },
+      supplier_state_code: { type: Sequelize.STRING(2), allowNull: true },
+      place_of_supply_state_code: { type: Sequelize.STRING(2), allowNull: true },
+      gst_treatment: { type: Sequelize.STRING(20), allowNull: false, defaultValue: 'UNREGISTERED' },
+      tax_type: { type: Sequelize.STRING(20), allowNull: false, defaultValue: 'NONE' },
+      gst_rate_bps: { type: Sequelize.INTEGER, allowNull: false, defaultValue: 0 },
+      tax_breakup: { type: Sequelize.JSONB, allowNull: false, defaultValue: {} },
       narration: { type: Sequelize.TEXT, allowNull: true },
       metadata: { type: Sequelize.JSONB, allowNull: false, defaultValue: {} },
       pdf_url: { type: Sequelize.STRING(1000), allowNull: true },
@@ -1810,6 +2059,27 @@ async function ensureAccountingTables() {
     console.log('[SchemaBootstrap] Created account_invoices table');
   }
   await ensureColumn('account_invoices', 'pdf_url', { type: Sequelize.STRING(1000), allowNull: true });
+  await ensureColumn('account_invoices', 'cgst_amount', { type: Sequelize.BIGINT, allowNull: false, defaultValue: 0 });
+  await ensureColumn('account_invoices', 'sgst_amount', { type: Sequelize.BIGINT, allowNull: false, defaultValue: 0 });
+  await ensureColumn('account_invoices', 'igst_amount', { type: Sequelize.BIGINT, allowNull: false, defaultValue: 0 });
+  await ensureColumn('account_invoices', 'supplier_gstin', { type: Sequelize.STRING(32), allowNull: true });
+  await ensureColumn('account_invoices', 'supplier_state_code', { type: Sequelize.STRING(2), allowNull: true });
+  await ensureColumn('account_invoices', 'place_of_supply_state_code', { type: Sequelize.STRING(2), allowNull: true });
+  await ensureColumn('account_invoices', 'gst_treatment', { type: Sequelize.STRING(20), allowNull: false, defaultValue: 'UNREGISTERED' });
+  await ensureColumn('account_invoices', 'tax_type', { type: Sequelize.STRING(20), allowNull: false, defaultValue: 'NONE' });
+  await ensureColumn('account_invoices', 'gst_rate_bps', { type: Sequelize.INTEGER, allowNull: false, defaultValue: 0 });
+  await ensureColumn('account_invoices', 'tax_breakup', { type: Sequelize.JSONB, allowNull: false, defaultValue: {} });
+
+  // One auto-invoice per booking — closes the concurrent post race (webhook + booking-confirm).
+  await ensureIndex(
+    'account_invoices_agency_booking_unique',
+    'CREATE UNIQUE INDEX account_invoices_agency_booking_unique ON account_invoices (agency_id, booking_id) WHERE booking_id IS NOT NULL'
+  );
+  // An invoice cannot dangle off a deleted journal entry.
+  await ensureForeignKey(
+    'account_invoices_entry_fk',
+    'ALTER TABLE account_invoices ADD CONSTRAINT account_invoices_entry_fk FOREIGN KEY (journal_entry_id) REFERENCES journal_entries(id) ON DELETE RESTRICT'
+  );
 
   if (!(await tableExists('account_reminders'))) {
     await queryInterface.createTable('account_reminders', {
@@ -1839,7 +2109,13 @@ async function ensureAccountingTables() {
       date: { type: Sequelize.DATEONLY, allowNull: false },
       taxable_amount: { type: Sequelize.BIGINT, allowNull: false, defaultValue: 0 },
       gst_amount: { type: Sequelize.BIGINT, allowNull: false, defaultValue: 0 },
+      cgst_amount: { type: Sequelize.BIGINT, allowNull: false, defaultValue: 0 },
+      sgst_amount: { type: Sequelize.BIGINT, allowNull: false, defaultValue: 0 },
+      igst_amount: { type: Sequelize.BIGINT, allowNull: false, defaultValue: 0 },
       total_amount: { type: Sequelize.BIGINT, allowNull: false, defaultValue: 0 },
+      tax_type: { type: Sequelize.STRING(20), allowNull: false, defaultValue: 'NONE' },
+      gst_rate_bps: { type: Sequelize.INTEGER, allowNull: false, defaultValue: 0 },
+      tax_breakup: { type: Sequelize.JSONB, allowNull: false, defaultValue: {} },
       reason: { type: Sequelize.TEXT, allowNull: true },
       status: { type: Sequelize.ENUM('ISSUED', 'VOID'), allowNull: false, defaultValue: 'ISSUED' },
       created_at: { type: Sequelize.DATE, allowNull: false, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') },
@@ -1848,6 +2124,20 @@ async function ensureAccountingTables() {
     await queryInterface.addIndex('credit_notes', ['agency_id', 'credit_note_number'], { unique: true });
     await queryInterface.addIndex('credit_notes', ['agency_id', 'invoice_id']);
     console.log('[SchemaBootstrap] Created credit_notes table');
+  }
+  await ensureColumn('credit_notes', 'cgst_amount', { type: Sequelize.BIGINT, allowNull: false, defaultValue: 0 });
+  await ensureColumn('credit_notes', 'sgst_amount', { type: Sequelize.BIGINT, allowNull: false, defaultValue: 0 });
+  await ensureColumn('credit_notes', 'igst_amount', { type: Sequelize.BIGINT, allowNull: false, defaultValue: 0 });
+  await ensureColumn('credit_notes', 'tax_type', { type: Sequelize.STRING(20), allowNull: false, defaultValue: 'NONE' });
+  await ensureColumn('credit_notes', 'gst_rate_bps', { type: Sequelize.INTEGER, allowNull: false, defaultValue: 0 });
+  await ensureColumn('credit_notes', 'tax_breakup', { type: Sequelize.JSONB, allowNull: false, defaultValue: {} });
+
+  if (await tableExists('payments')) {
+    await ensureColumn('payments', 'payment_method_id', { type: Sequelize.UUID, allowNull: true });
+    await ensureIndex(
+      'payments_payment_method_id_idx',
+      'CREATE INDEX payments_payment_method_id_idx ON payments (payment_method_id) WHERE payment_method_id IS NOT NULL'
+    );
   }
 }
 
@@ -1920,6 +2210,85 @@ async function ensureInvoiceTemplatesTable() {
     });
     await queryInterface.addIndex('invoice_templates', ['agency_id']);
     console.log('[SchemaBootstrap] Created invoice_templates table');
+  }
+
+  await ensureColumn('invoice_templates', 'config', {
+    type: Sequelize.JSONB,
+    allowNull: true,
+    defaultValue: {},
+  });
+}
+
+// Ensures the quotation/receipt builder tables exist. These power the document
+// template builders and per-document PDF generation.
+async function ensureDocumentTemplatesSchema() {
+  const queryInterface = sequelize.getQueryInterface();
+
+  if (!(await tableExists('quotation_templates'))) {
+    await queryInterface.createTable('quotation_templates', {
+      id: { type: Sequelize.UUID, defaultValue: Sequelize.UUIDV4, primaryKey: true, allowNull: false },
+      agency_id: { type: Sequelize.UUID, allowNull: false },
+      name: { type: Sequelize.STRING(255), allowNull: false },
+      html_content: { type: Sequelize.TEXT, allowNull: false },
+      config: { type: Sequelize.JSONB, allowNull: true, defaultValue: {} },
+      is_default: { type: Sequelize.BOOLEAN, allowNull: false, defaultValue: false },
+      created_at: { type: Sequelize.DATE, allowNull: false, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') },
+      updated_at: { type: Sequelize.DATE, allowNull: false, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') },
+    });
+    await queryInterface.addIndex('quotation_templates', ['agency_id']);
+    console.log('[SchemaBootstrap] Created quotation_templates table');
+  }
+  await ensureColumn('quotation_templates', 'config', { type: Sequelize.JSONB, allowNull: true, defaultValue: {} });
+
+  if (!(await tableExists('receipt_templates'))) {
+    await queryInterface.createTable('receipt_templates', {
+      id: { type: Sequelize.UUID, defaultValue: Sequelize.UUIDV4, primaryKey: true, allowNull: false },
+      agency_id: { type: Sequelize.UUID, allowNull: false },
+      name: { type: Sequelize.STRING(255), allowNull: false },
+      html_content: { type: Sequelize.TEXT, allowNull: false },
+      config: { type: Sequelize.JSONB, allowNull: true, defaultValue: {} },
+      is_default: { type: Sequelize.BOOLEAN, allowNull: false, defaultValue: false },
+      created_at: { type: Sequelize.DATE, allowNull: false, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') },
+      updated_at: { type: Sequelize.DATE, allowNull: false, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') },
+    });
+    await queryInterface.addIndex('receipt_templates', ['agency_id']);
+    console.log('[SchemaBootstrap] Created receipt_templates table');
+  }
+
+  if (!(await tableExists('itinerary_templates'))) {
+    await queryInterface.createTable('itinerary_templates', {
+      id: { type: Sequelize.UUID, defaultValue: Sequelize.UUIDV4, primaryKey: true, allowNull: false },
+      agency_id: { type: Sequelize.UUID, allowNull: false },
+      name: { type: Sequelize.STRING(255), allowNull: false },
+      html_content: { type: Sequelize.TEXT, allowNull: false },
+      config: { type: Sequelize.JSONB, allowNull: true, defaultValue: {} },
+      is_default: { type: Sequelize.BOOLEAN, allowNull: false, defaultValue: false },
+      created_at: { type: Sequelize.DATE, allowNull: false, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') },
+      updated_at: { type: Sequelize.DATE, allowNull: false, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') },
+    });
+    await queryInterface.addIndex('itinerary_templates', ['agency_id']);
+    console.log('[SchemaBootstrap] Created itinerary_templates table');
+  }
+
+  if (!(await tableExists('quotations'))) {
+    await queryInterface.createTable('quotations', {
+      id: { type: Sequelize.UUID, defaultValue: Sequelize.UUIDV4, primaryKey: true, allowNull: false },
+      agency_id: { type: Sequelize.UUID, allowNull: false },
+      lead_id: { type: Sequelize.UUID, allowNull: true },
+      customer_id: { type: Sequelize.UUID, allowNull: true },
+      template_id: { type: Sequelize.UUID, allowNull: true },
+      quotation_number: { type: Sequelize.STRING(40), allowNull: false },
+      date: { type: Sequelize.DATEONLY, allowNull: true },
+      items: { type: Sequelize.JSONB, allowNull: false, defaultValue: [] },
+      sub_total: { type: Sequelize.BIGINT, allowNull: false, defaultValue: 0 },
+      total_amount: { type: Sequelize.BIGINT, allowNull: false, defaultValue: 0 },
+      amount_in_words: { type: Sequelize.STRING(255), allowNull: true },
+      status: { type: Sequelize.STRING(20), allowNull: false, defaultValue: 'DRAFT' },
+      created_at: { type: Sequelize.DATE, allowNull: false, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') },
+      updated_at: { type: Sequelize.DATE, allowNull: false, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') },
+    });
+    await queryInterface.addIndex('quotations', ['agency_id']);
+    console.log('[SchemaBootstrap] Created quotations table');
   }
 }
 
@@ -1994,15 +2363,34 @@ async function ensureVendorTypesTable() {
 
 async function ensureVendorPaymentsTable() {
   const queryInterface = sequelize.getQueryInterface();
+  await ensureEnumValues('enum_vendor_payments_item_type', [
+    'PACKAGE',
+    'PROPERTY',
+    'CRUISE',
+    'VISA',
+    'SERVICE',
+    'CUSTOM',
+  ]);
+
   if (!(await tableExists('vendor_payments'))) {
     await queryInterface.createTable('vendor_payments', {
       id: { type: Sequelize.UUID, defaultValue: Sequelize.UUIDV4, primaryKey: true, allowNull: false },
       agency_id: { type: Sequelize.UUID, allowNull: false },
       vendor_id: { type: Sequelize.UUID, allowNull: false },
       journal_entry_id: { type: Sequelize.UUID, allowNull: true },
+      vendor_bill_id: { type: Sequelize.UUID, allowNull: true },
+      item_type: { type: Sequelize.ENUM('PACKAGE', 'PROPERTY', 'CRUISE', 'VISA', 'SERVICE', 'CUSTOM'), allowNull: true },
+      package_id: { type: Sequelize.UUID, allowNull: true },
+      property_id: { type: Sequelize.UUID, allowNull: true },
+      cruise_id: { type: Sequelize.UUID, allowNull: true },
+      visa_id: { type: Sequelize.UUID, allowNull: true },
+      service_id: { type: Sequelize.UUID, allowNull: true },
+      custom_item_name: { type: Sequelize.STRING(255), allowNull: true },
+      custom_item_description: { type: Sequelize.TEXT, allowNull: true },
       amount: { type: Sequelize.INTEGER, allowNull: false },
       payment_date: { type: Sequelize.DATEONLY, allowNull: false },
       payment_mode: { type: Sequelize.STRING(50), allowNull: false },
+      payment_method_id: { type: Sequelize.UUID, allowNull: true },
       reference_number: { type: Sequelize.STRING(255), allowNull: true },
       notes: { type: Sequelize.TEXT, allowNull: true },
       created_at: { type: Sequelize.DATE, allowNull: false, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') },
@@ -2011,8 +2399,191 @@ async function ensureVendorPaymentsTable() {
     await queryInterface.addIndex('vendor_payments', ['agency_id']);
     await queryInterface.addIndex('vendor_payments', ['vendor_id']);
     await queryInterface.addIndex('vendor_payments', ['journal_entry_id']);
+    await queryInterface.addIndex('vendor_payments', ['vendor_bill_id']);
+    await queryInterface.addIndex('vendor_payments', ['payment_method_id']);
+    await queryInterface.addIndex('vendor_payments', ['agency_id', 'item_type']);
     console.log('[SchemaBootstrap] Created vendor_payments table');
   }
+
+  await ensureColumn('vendor_payments', 'item_type', {
+    type: Sequelize.ENUM('PACKAGE', 'PROPERTY', 'CRUISE', 'VISA', 'SERVICE', 'CUSTOM'),
+    allowNull: true,
+  });
+  await ensureColumn('vendor_payments', 'package_id', { type: Sequelize.UUID, allowNull: true });
+  await ensureColumn('vendor_payments', 'property_id', { type: Sequelize.UUID, allowNull: true });
+  await ensureColumn('vendor_payments', 'cruise_id', { type: Sequelize.UUID, allowNull: true });
+  await ensureColumn('vendor_payments', 'visa_id', { type: Sequelize.UUID, allowNull: true });
+  await ensureColumn('vendor_payments', 'service_id', { type: Sequelize.UUID, allowNull: true });
+  await ensureColumn('vendor_payments', 'custom_item_name', { type: Sequelize.STRING(255), allowNull: true });
+  await ensureColumn('vendor_payments', 'custom_item_description', { type: Sequelize.TEXT, allowNull: true });
+  await ensureColumn('vendor_payments', 'vendor_bill_id', { type: Sequelize.UUID, allowNull: true });
+  await ensureColumn('vendor_payments', 'payment_method_id', { type: Sequelize.UUID, allowNull: true });
+  await ensureIndex(
+    'vendor_payments_vendor_bill_id_idx',
+    'CREATE INDEX vendor_payments_vendor_bill_id_idx ON vendor_payments (vendor_bill_id) WHERE vendor_bill_id IS NOT NULL'
+  );
+  await ensureIndex(
+    'vendor_payments_payment_method_id_idx',
+    'CREATE INDEX vendor_payments_payment_method_id_idx ON vendor_payments (payment_method_id) WHERE payment_method_id IS NOT NULL'
+  );
+  await ensureIndex(
+    'vendor_payments_agency_id_item_type',
+    'CREATE INDEX vendor_payments_agency_id_item_type ON vendor_payments (agency_id, item_type)'
+  );
+}
+
+async function ensureVendorBillsTable() {
+  const queryInterface = sequelize.getQueryInterface();
+  await ensureEnumValues('enum_vendor_bills_item_type', [
+    'PACKAGE',
+    'PROPERTY',
+    'CRUISE',
+    'VISA',
+    'SERVICE',
+    'CUSTOM',
+  ]);
+  await ensureEnumValues('enum_vendor_bills_status', [
+    'ISSUED',
+    'PARTIALLY_PAID',
+    'PAID',
+    'VOID',
+  ]);
+
+  if (!(await tableExists('vendor_bills'))) {
+    await queryInterface.createTable('vendor_bills', {
+      id: { type: Sequelize.UUID, defaultValue: Sequelize.UUIDV4, primaryKey: true, allowNull: false },
+      agency_id: { type: Sequelize.UUID, allowNull: false },
+      vendor_id: { type: Sequelize.UUID, allowNull: false },
+      journal_entry_id: { type: Sequelize.UUID, allowNull: true },
+      item_type: { type: Sequelize.ENUM('PACKAGE', 'PROPERTY', 'CRUISE', 'VISA', 'SERVICE', 'CUSTOM'), allowNull: true },
+      package_id: { type: Sequelize.UUID, allowNull: true },
+      property_id: { type: Sequelize.UUID, allowNull: true },
+      cruise_id: { type: Sequelize.UUID, allowNull: true },
+      visa_id: { type: Sequelize.UUID, allowNull: true },
+      service_id: { type: Sequelize.UUID, allowNull: true },
+      custom_item_name: { type: Sequelize.STRING(255), allowNull: true },
+      custom_item_description: { type: Sequelize.TEXT, allowNull: true },
+      amount: { type: Sequelize.INTEGER, allowNull: false },
+      paid_amount: { type: Sequelize.INTEGER, allowNull: false, defaultValue: 0 },
+      bill_date: { type: Sequelize.DATEONLY, allowNull: false },
+      due_date: { type: Sequelize.DATEONLY, allowNull: true },
+      status: { type: Sequelize.ENUM('ISSUED', 'PARTIALLY_PAID', 'PAID', 'VOID'), allowNull: false, defaultValue: 'ISSUED' },
+      reference_number: { type: Sequelize.STRING(255), allowNull: true },
+      description: { type: Sequelize.TEXT, allowNull: true },
+      metadata: { type: Sequelize.JSONB, allowNull: false, defaultValue: {} },
+      created_at: { type: Sequelize.DATE, allowNull: false, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') },
+      updated_at: { type: Sequelize.DATE, allowNull: false, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') },
+    });
+    await queryInterface.addIndex('vendor_bills', ['agency_id']);
+    await queryInterface.addIndex('vendor_bills', ['vendor_id']);
+    await queryInterface.addIndex('vendor_bills', ['journal_entry_id']);
+    await queryInterface.addIndex('vendor_bills', ['agency_id', 'status']);
+    await queryInterface.addIndex('vendor_bills', ['agency_id', 'vendor_id', 'status']);
+    await queryInterface.addIndex('vendor_bills', ['agency_id', 'item_type']);
+    console.log('[SchemaBootstrap] Created vendor_bills table');
+  }
+
+  await ensureColumn('vendor_bills', 'item_type', {
+    type: Sequelize.ENUM('PACKAGE', 'PROPERTY', 'CRUISE', 'VISA', 'SERVICE', 'CUSTOM'),
+    allowNull: true,
+  });
+  await ensureColumn('vendor_bills', 'package_id', { type: Sequelize.UUID, allowNull: true });
+  await ensureColumn('vendor_bills', 'property_id', { type: Sequelize.UUID, allowNull: true });
+  await ensureColumn('vendor_bills', 'cruise_id', { type: Sequelize.UUID, allowNull: true });
+  await ensureColumn('vendor_bills', 'visa_id', { type: Sequelize.UUID, allowNull: true });
+  await ensureColumn('vendor_bills', 'service_id', { type: Sequelize.UUID, allowNull: true });
+  await ensureColumn('vendor_bills', 'custom_item_name', { type: Sequelize.STRING(255), allowNull: true });
+  await ensureColumn('vendor_bills', 'custom_item_description', { type: Sequelize.TEXT, allowNull: true });
+  await ensureColumn('vendor_bills', 'paid_amount', { type: Sequelize.INTEGER, allowNull: false, defaultValue: 0 });
+  await ensureColumn('vendor_bills', 'due_date', { type: Sequelize.DATEONLY, allowNull: true });
+  await ensureColumn('vendor_bills', 'metadata', { type: Sequelize.JSONB, allowNull: false, defaultValue: {} });
+  await ensureIndex(
+    'vendor_bills_agency_status_idx',
+    'CREATE INDEX vendor_bills_agency_status_idx ON vendor_bills (agency_id, status)'
+  );
+  await ensureIndex(
+    'vendor_bills_agency_vendor_status_idx',
+    'CREATE INDEX vendor_bills_agency_vendor_status_idx ON vendor_bills (agency_id, vendor_id, status)'
+  );
+  await ensureIndex(
+    'vendor_bills_agency_item_type_idx',
+    'CREATE INDEX vendor_bills_agency_item_type_idx ON vendor_bills (agency_id, item_type)'
+  );
+}
+
+async function ensurePackageVendorCostsTable() {
+  const queryInterface = sequelize.getQueryInterface();
+  if (!(await tableExists('package_vendor_costs'))) {
+    await queryInterface.createTable('package_vendor_costs', {
+      id: { type: Sequelize.UUID, defaultValue: Sequelize.UUIDV4, primaryKey: true, allowNull: false },
+      agency_id: { type: Sequelize.UUID, allowNull: false },
+      package_id: { type: Sequelize.UUID, allowNull: false },
+      vendor_id: { type: Sequelize.UUID, allowNull: false },
+      service_label: { type: Sequelize.STRING(120), allowNull: false },
+      amount: { type: Sequelize.INTEGER, allowNull: false },
+      due_date: { type: Sequelize.DATEONLY, allowNull: true },
+      notes: { type: Sequelize.TEXT, allowNull: true },
+      journal_entry_id: { type: Sequelize.UUID, allowNull: true },
+      created_at: { type: Sequelize.DATE, allowNull: false, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') },
+      updated_at: { type: Sequelize.DATE, allowNull: false, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') },
+    });
+    await queryInterface.addIndex('package_vendor_costs', ['agency_id']);
+    await queryInterface.addIndex('package_vendor_costs', ['agency_id', 'package_id']);
+    await queryInterface.addIndex('package_vendor_costs', ['vendor_id']);
+    await queryInterface.addIndex('package_vendor_costs', ['due_date']);
+    console.log('[SchemaBootstrap] Created package_vendor_costs table');
+  }
+}
+
+async function ensureItemVendorCostsTable() {
+  const queryInterface = sequelize.getQueryInterface();
+  await ensureEnumValues('enum_item_vendor_costs_item_type', [
+    'PACKAGE',
+    'PROPERTY',
+    'CRUISE',
+    'VISA',
+    'SERVICE',
+  ]);
+
+  if (!(await tableExists('item_vendor_costs'))) {
+    await queryInterface.createTable('item_vendor_costs', {
+      id: { type: Sequelize.UUID, defaultValue: Sequelize.UUIDV4, primaryKey: true, allowNull: false },
+      agency_id: { type: Sequelize.UUID, allowNull: false },
+      item_type: { type: Sequelize.ENUM('PACKAGE', 'PROPERTY', 'CRUISE', 'VISA', 'SERVICE'), allowNull: false },
+      package_id: { type: Sequelize.UUID, allowNull: true },
+      property_id: { type: Sequelize.UUID, allowNull: true },
+      cruise_id: { type: Sequelize.UUID, allowNull: true },
+      visa_id: { type: Sequelize.UUID, allowNull: true },
+      service_id: { type: Sequelize.UUID, allowNull: true },
+      vendor_id: { type: Sequelize.UUID, allowNull: false },
+      service_label: { type: Sequelize.STRING(120), allowNull: false },
+      amount: { type: Sequelize.INTEGER, allowNull: false },
+      due_date: { type: Sequelize.DATEONLY, allowNull: true },
+      notes: { type: Sequelize.TEXT, allowNull: true },
+      journal_entry_id: { type: Sequelize.UUID, allowNull: true },
+      created_at: { type: Sequelize.DATE, allowNull: false, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') },
+      updated_at: { type: Sequelize.DATE, allowNull: false, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') },
+    });
+    await queryInterface.addIndex('item_vendor_costs', ['agency_id']);
+    await queryInterface.addIndex('item_vendor_costs', ['agency_id', 'item_type']);
+    await queryInterface.addIndex('item_vendor_costs', ['agency_id', 'item_type', 'package_id']);
+    await queryInterface.addIndex('item_vendor_costs', ['agency_id', 'item_type', 'property_id']);
+    await queryInterface.addIndex('item_vendor_costs', ['agency_id', 'item_type', 'cruise_id']);
+    await queryInterface.addIndex('item_vendor_costs', ['agency_id', 'item_type', 'visa_id']);
+    await queryInterface.addIndex('item_vendor_costs', ['agency_id', 'item_type', 'service_id']);
+    await queryInterface.addIndex('item_vendor_costs', ['vendor_id']);
+    await queryInterface.addIndex('item_vendor_costs', ['due_date']);
+    console.log('[SchemaBootstrap] Created item_vendor_costs table');
+  }
+
+  await ensureColumn('item_vendor_costs', 'journal_entry_id', {
+    type: Sequelize.UUID,
+    allowNull: true,
+  });
+  await ensureIndex(
+    'idx_item_vendor_costs_journal_entry_id',
+    'CREATE INDEX idx_item_vendor_costs_journal_entry_id ON item_vendor_costs (journal_entry_id)'
+  );
 }
 
 async function ensurePipelineStagesTable() {
@@ -2077,6 +2648,12 @@ async function ensureHrmTables() {
       date: { type: Sequelize.DATEONLY, allowNull: false },
       punch_in_at: { type: Sequelize.DATE, allowNull: true },
       punch_out_at: { type: Sequelize.DATE, allowNull: true },
+      punch_in_lat: { type: Sequelize.DECIMAL(10, 7), allowNull: true },
+      punch_in_lng: { type: Sequelize.DECIMAL(10, 7), allowNull: true },
+      punch_in_accuracy: { type: Sequelize.INTEGER, allowNull: true },
+      punch_out_lat: { type: Sequelize.DECIMAL(10, 7), allowNull: true },
+      punch_out_lng: { type: Sequelize.DECIMAL(10, 7), allowNull: true },
+      punch_out_accuracy: { type: Sequelize.INTEGER, allowNull: true },
       status: { type: Sequelize.ENUM('PRESENT', 'HALF_DAY', 'ABSENT', 'ON_LEAVE', 'WEEKLY_OFF', 'HOLIDAY'), allowNull: false, defaultValue: 'PRESENT' },
       is_late: { type: Sequelize.BOOLEAN, allowNull: false, defaultValue: false },
       worked_minutes: { type: Sequelize.INTEGER, allowNull: true },
@@ -2088,6 +2665,14 @@ async function ensureHrmTables() {
     await queryInterface.addIndex('attendances', ['agency_id', 'date']);
     console.log('[SchemaBootstrap] Created attendances table');
   }
+
+  // Punch geolocation — added to existing attendances tables.
+  await ensureColumn('attendances', 'punch_in_lat', { type: Sequelize.DECIMAL(10, 7), allowNull: true });
+  await ensureColumn('attendances', 'punch_in_lng', { type: Sequelize.DECIMAL(10, 7), allowNull: true });
+  await ensureColumn('attendances', 'punch_in_accuracy', { type: Sequelize.INTEGER, allowNull: true });
+  await ensureColumn('attendances', 'punch_out_lat', { type: Sequelize.DECIMAL(10, 7), allowNull: true });
+  await ensureColumn('attendances', 'punch_out_lng', { type: Sequelize.DECIMAL(10, 7), allowNull: true });
+  await ensureColumn('attendances', 'punch_out_accuracy', { type: Sequelize.INTEGER, allowNull: true });
 
   if (!(await tableExists('leave_types'))) {
     await queryInterface.createTable('leave_types', {
@@ -2152,11 +2737,14 @@ async function ensureHrmTables() {
       half_day_minutes: { type: Sequelize.INTEGER, allowNull: false, defaultValue: 240 },
       default_weekly_off_days: { type: Sequelize.JSONB, allowNull: false, defaultValue: [0] },
       payroll_days_basis: { type: Sequelize.ENUM('CALENDAR', 'WORKING', 'FIXED_30'), allowNull: false, defaultValue: 'WORKING' },
+      force_punch_in: { type: Sequelize.BOOLEAN, allowNull: false, defaultValue: true },
       ...ts,
     });
     await queryInterface.addIndex('hrm_settings', ['agency_id'], { unique: true });
     console.log('[SchemaBootstrap] Created hrm_settings table');
   }
+
+  await ensureColumn('hrm_settings', 'force_punch_in', { type: Sequelize.BOOLEAN, allowNull: false, defaultValue: true });
 
   if (!(await tableExists('payslips'))) {
     await queryInterface.createTable('payslips', {
@@ -2213,8 +2801,36 @@ async function ensureAgencyApiKeysTable() {
   }
 }
 
+async function ensureActivityLogsTable() {
+  const queryInterface = sequelize.getQueryInterface();
+
+  if (!(await tableExists('activity_logs'))) {
+    await queryInterface.createTable('activity_logs', {
+      id: { type: Sequelize.UUID, defaultValue: Sequelize.UUIDV4, primaryKey: true, allowNull: false },
+      agency_id: { type: Sequelize.UUID, allowNull: false },
+      actor_id: { type: Sequelize.UUID, allowNull: true },
+      actor_name: { type: Sequelize.STRING(160), allowNull: true },
+      action: { type: Sequelize.STRING(120), allowNull: false },
+      module: { type: Sequelize.STRING(40), allowNull: false },
+      target_type: { type: Sequelize.STRING(80), allowNull: true },
+      target_id: { type: Sequelize.UUID, allowNull: true },
+      summary: { type: Sequelize.STRING(300), allowNull: true },
+      metadata: { type: Sequelize.JSONB, allowNull: false, defaultValue: {} },
+      ip_address: { type: Sequelize.STRING(80), allowNull: true },
+      user_agent: { type: Sequelize.STRING(500), allowNull: true },
+      created_at: { type: Sequelize.DATE, allowNull: false, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') },
+    });
+    await queryInterface.addIndex('activity_logs', ['agency_id', 'created_at']);
+    await queryInterface.addIndex('activity_logs', ['agency_id', 'actor_id']);
+    await queryInterface.addIndex('activity_logs', ['agency_id', 'module']);
+    await queryInterface.addIndex('activity_logs', ['target_type', 'target_id']);
+    console.log('[SchemaBootstrap] Created activity_logs table');
+  }
+}
+
 async function ensureProductionSchema() {
   await ensureLeadsSchema();
+  await ensureLeadSourcesSchema();
   await ensureAgenciesSchema();
   await ensureAgencyChannelsSchema();
   await ensureAgentsSchema();
@@ -2237,13 +2853,18 @@ async function ensureProductionSchema() {
   await ensureAccountingTables();
   await ensureServicesTable();
   await ensureInvoiceTemplatesTable();
+  await ensureDocumentTemplatesSchema();
   await ensureCruisesTable();
   await ensureVisasTable();
   await ensureVendorTypesTable();
   await ensureVendorsTable();
+  await ensureVendorBillsTable();
   await ensureVendorPaymentsTable();
+  await ensurePackageVendorCostsTable();
+  await ensureItemVendorCostsTable();
   await ensureHrmTables();
   await ensureAgencyApiKeysTable();
+  await ensureActivityLogsTable();
 }
 
 module.exports = {

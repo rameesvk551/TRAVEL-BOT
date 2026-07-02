@@ -1,1392 +1,1598 @@
-import { useState, useMemo } from 'react';
+// FILE: /frontend/src/pages/Analytics.jsx
+//
+// Wayon Reports — "The Founder's Brief".
+// A money-first, editorial set of reports for travel-agency founders. Nine
+// plainly-named views (Pulse, Revenue, Leads, Channels, Marketing, Customers,
+// Packages, Team, Reviews) built on the shared reportKit design system.
+
+import { useEffect, useState, useMemo, Fragment } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
-  ComposedChart, Line, ScatterChart, Scatter,
+  ComposedChart, Line, LineChart,
 } from 'recharts';
 import {
   useSalesReport, useLeadFunnelReport, useAgentPerformanceReport,
-  usePackageReport, useLostLeadsReport,
-  useReviewReport, useSourceReport, useBookingReport,
+  usePackageReport, useReviewReport, useSourceReport, useBookingReport, useLeadsByAdReport,
   useCustomerLtvReport, useCacReport, useOperationalReport,
-  useCampaignRoiReport, useGrowthReport,
+  useCampaignRoiReport, useGrowthReport, useProfitReport, useLostLeadsReport,
+  useLeadHeatmapReport,
 } from '../hooks/useAnalytics';
-import { useCampaignAnalytics } from '../hooks/useCampaigns';
-import { useLeads } from '../hooks/useLeads';
-import { propertiesApi } from '../api/propertiesApi';
-import { formatCurrency, formatDate } from '../utils/formatters';
 import { analyticsApi } from '../api/analyticsApi';
+import client from '../api/client';
+import { formatCurrency, formatDate } from '../utils/formatters';
 import {
-  UsersIcon, BriefcaseIcon, HomeModernIcon, CubeIcon, CurrencyRupeeIcon,
-  ArrowTrendingUpIcon, ClockIcon, ChartBarIcon, HeartIcon, MegaphoneIcon,
-  BoltIcon, SparklesIcon, ArrowPathIcon, ExclamationTriangleIcon,
-  TrophyIcon, UserGroupIcon, ShoppingBagIcon, EyeIcon, CheckCircleIcon,
-  XCircleIcon, MinusIcon,
-} from '@heroicons/react/24/outline';
+  INK, INK_SOFT, EMERALD, CLAY, GOLD, SLATE, SERIES,
+  Eyebrow, Stat, StatCards, Card, SectionCard, ExportButton, Note,
+  BarRow, Rank, Spark, ChartDefs, BriefTooltip, axisTick, gridProps,
+  ReportSkeleton, Empty, downloadCsv, channelMeta, text,
+  fmtNum, fmtPct, compactNum,
+} from './reports/reportKit';
+import CrmReport from './reports/CrmReport';
+import { useIndustry } from '../hooks/useIndustry';
 
-/* ───────────────── Color Palette ───────────────── */
-const COLORS = ['#6366f1', '#8b5cf6', '#0ea5e9', '#10b981', '#f59e0b', '#f43f5e', '#06b6d4', '#ec4899', '#84cc16', '#f97316'];
-const PRIMARY = '#6366f1';
-const PRIMARY_LIGHT = '#818cf8';
-const ACCENT = '#8b5cf6';
-const TEAL = '#10b981';
-const TEAL_LIGHT = '#34d399';
-const ROSE = '#f43f5e';
-const AMBER = '#f59e0b';
-const SKY = '#0ea5e9';
+/* ───────────────────────── Date range ───────────────────────── */
 
-/* ── Reusable SVG gradients ─────── */
-function ChartGradients() {
-  return (
-    <defs>
-      <linearGradient id="barPrimary" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stopColor="#818cf8" stopOpacity={1} />
-        <stop offset="100%" stopColor="#6366f1" stopOpacity={1} />
-      </linearGradient>
-      <linearGradient id="barAccent" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stopColor="#a78bfa" stopOpacity={1} />
-        <stop offset="100%" stopColor="#8b5cf6" stopOpacity={1} />
-      </linearGradient>
-      <linearGradient id="barSecondary" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stopColor="#c7d2fe" stopOpacity={0.9} />
-        <stop offset="100%" stopColor="#a5b4fc" stopOpacity={0.7} />
-      </linearGradient>
-      <linearGradient id="barSky" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stopColor="#38bdf8" stopOpacity={1} />
-        <stop offset="100%" stopColor="#0ea5e9" stopOpacity={1} />
-      </linearGradient>
-      <linearGradient id="barAmber" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stopColor="#fbbf24" stopOpacity={1} />
-        <stop offset="100%" stopColor="#f59e0b" stopOpacity={1} />
-      </linearGradient>
-      <linearGradient id="barRose" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stopColor="#fb7185" stopOpacity={1} />
-        <stop offset="100%" stopColor="#f43f5e" stopOpacity={1} />
-      </linearGradient>
-      <linearGradient id="barTeal" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stopColor="#34d399" stopOpacity={1} />
-        <stop offset="100%" stopColor="#10b981" stopOpacity={1} />
-      </linearGradient>
-      <linearGradient id="areaIndigo" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="5%" stopColor="#6366f1" stopOpacity={0.2} />
-        <stop offset="95%" stopColor="#6366f1" stopOpacity={0.02} />
-      </linearGradient>
-      <linearGradient id="areaTeal" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="5%" stopColor="#10b981" stopOpacity={0.2} />
-        <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
-      </linearGradient>
-      <linearGradient id="areaRose" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="5%" stopColor="#f43f5e" stopOpacity={0.15} />
-        <stop offset="95%" stopColor="#f43f5e" stopOpacity={0} />
-      </linearGradient>
-    </defs>
-  );
-}
-
-/* ───────────────── Tab definitions ───────────────── */
-const TABS = [
-  { key: 'executive', label: 'Executive Summary', icon: SparklesIcon },
-  { key: 'growth', label: 'Growth & Velocity', icon: ArrowTrendingUpIcon },
-  { key: 'financial', label: 'Financial Deep-Dive', icon: CurrencyRupeeIcon },
-  { key: 'pipeline', label: 'Pipeline & Funnel', icon: ChartBarIcon },
-  { key: 'operational', label: 'Operational Excellence', icon: BoltIcon },
-  { key: 'customers', label: 'Customer Intelligence', icon: UserGroupIcon },
-  { key: 'marketing', label: 'Marketing ROI', icon: MegaphoneIcon },
-  { key: 'agents', label: 'Team Performance', icon: TrophyIcon },
-  { key: 'products', label: 'Products & Packages', icon: ShoppingBagIcon },
-  { key: 'reviews', label: 'Reviews & Health', icon: HeartIcon },
-];
-
-/* ───────────────── Date Range Presets ───────────────── */
 const DATE_PRESETS = [
-  { label: '7D', days: 7 },
-  { label: '30D', days: 30 },
-  { label: '90D', days: 90 },
-  { label: 'This Month', days: 'month' },
-  { label: 'This Year', days: 'year' },
+  { label: '7 days', value: 7 },
+  { label: '30 days', value: 30 },
+  { label: '90 days', value: 90 },
+  { label: 'This month', value: 'month' },
+  { label: 'This year', value: 'year' },
 ];
 
 function getDateRange(preset) {
   const end = new Date();
   let start;
-  if (preset === 'month') {
-    start = new Date(end.getFullYear(), end.getMonth(), 1);
-  } else if (preset === 'year') {
-    start = new Date(end.getFullYear(), 0, 1);
-  } else {
-    start = new Date(end.getTime() - preset * 86400000);
-  }
-  return {
-    from: start.toISOString().split('T')[0],
-    to: end.toISOString().split('T')[0],
-  };
+  if (preset === 'month') start = new Date(end.getFullYear(), end.getMonth(), 1);
+  else if (preset === 'year') start = new Date(end.getFullYear(), 0, 1);
+  else start = new Date(end.getTime() - preset * 86400000);
+  return { from: start.toISOString().split('T')[0], to: end.toISOString().split('T')[0] };
 }
 
-/* ───────────────── Shared Components ───────────────── */
+/* ───────────────────────── Small chart helpers ───────────────────────── */
 
-function KpiCard({ label, value, subValue, change, prefix = '', icon: Icon, color = 'indigo', onClick }) {
-  const isUp = change > 0;
-  const isDown = change < 0;
-  const colorMap = {
-    indigo: { bg: 'bg-indigo-50', border: 'border-indigo-100', text: 'text-indigo-900', sub: 'text-indigo-900/60', iconBg: 'bg-indigo-100', iconText: 'text-indigo-600' },
-    emerald: { bg: 'bg-emerald-50', border: 'border-emerald-100', text: 'text-emerald-950', sub: 'text-emerald-900/60', iconBg: 'bg-emerald-100', iconText: 'text-emerald-600' },
-    amber: { bg: 'bg-amber-50', border: 'border-amber-100', text: 'text-amber-950', sub: 'text-amber-900/60', iconBg: 'bg-amber-100', iconText: 'text-amber-600' },
-    rose: { bg: 'bg-rose-50', border: 'border-rose-100', text: 'text-rose-950', sub: 'text-rose-900/60', iconBg: 'bg-rose-100', iconText: 'text-rose-600' },
-    sky: { bg: 'bg-sky-50', border: 'border-sky-100', text: 'text-sky-950', sub: 'text-sky-900/60', iconBg: 'bg-sky-100', iconText: 'text-sky-600' },
-    purple: { bg: 'bg-purple-50', border: 'border-purple-100', text: 'text-purple-950', sub: 'text-purple-900/60', iconBg: 'bg-purple-100', iconText: 'text-purple-600' },
-  };
-  const c = colorMap[color] || colorMap.indigo;
+const dayLabel = (d) => new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+const monthLabel = (d) => new Date(d).toLocaleDateString('en-IN', { month: 'short', year: '2-digit' });
+const rupees = (paise) => Math.round((Number(paise) || 0) / 100);
+const moneyTick = (v) => `Rs ${compactNum(v)}`;
+const moneyTip = (v) => `Rs ${fmtNum(v)}`;
+
+function toSpark(arr, key) {
+  return (arr || []).map((r, i) => ({ x: i, y: Number(r[key]) || 0 }));
+}
+
+/* A refined semicircular health gauge for the Pulse hero. */
+function Gauge({ value }) {
+  const pct = Math.max(0, Math.min(100, Math.round(value || 0)));
+  const r = 52;
+  const len = Math.PI * r;
+  const dash = (len * pct) / 100;
+  const color = pct >= 75 ? EMERALD : pct >= 50 ? GOLD : CLAY;
+  return (
+    <div className="relative flex flex-col items-center">
+      <svg viewBox="0 0 120 72" className="w-[150px]">
+        <path d="M8 64 A52 52 0 0 1 112 64" fill="none" stroke="#efe9dd" strokeWidth="9" strokeLinecap="round" />
+        <path
+          d="M8 64 A52 52 0 0 1 112 64" fill="none" stroke={color} strokeWidth="9" strokeLinecap="round"
+          strokeDasharray={`${dash} ${len}`} style={{ transition: 'stroke-dasharray 1s cubic-bezier(0.22,1,0.36,1)' }}
+        />
+      </svg>
+      <div className="-mt-9 text-center">
+        <p className="font-brief nums text-[38px] font-semibold leading-none" style={{ color }}>{pct}</p>
+        <p className="mt-1 text-[10px] font-bold uppercase tracking-[0.18em] text-[#a8a299]">Health</p>
+      </div>
+    </div>
+  );
+}
+
+/* A small circular score ring for staff scorecards. */
+function Ring({ value, size = 58, stroke = 6 }) {
+  const pct = Math.max(0, Math.min(100, Math.round(value || 0)));
+  const r = (size - stroke) / 2;
+  const c = 2 * Math.PI * r;
+  const dash = (c * pct) / 100;
+  const color = pct >= 70 ? EMERALD : pct >= 40 ? GOLD : CLAY;
+  return (
+    <svg width={size} height={size} className="shrink-0 -rotate-90">
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#efe9dd" strokeWidth={stroke} />
+      <circle
+        cx={size / 2} cy={size / 2} r={r} fill="none" stroke={color} strokeWidth={stroke} strokeLinecap="round"
+        strokeDasharray={`${dash} ${c}`} style={{ transition: 'stroke-dasharray 0.9s cubic-bezier(0.22,1,0.36,1)' }}
+      />
+      <text x="50%" y="50%" dy="0.35em" textAnchor="middle" className="font-brief nums" transform={`rotate(90 ${size / 2} ${size / 2})`} style={{ fontSize: 15, fontWeight: 600, fill: color }}>{pct}</text>
+    </svg>
+  );
+}
+
+/* ───────── Lead heatmap (calendar contribution grid) ───────── */
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const pad2 = (n) => String(n).padStart(2, '0');
+const hourLabel = (h) => `${(h % 12) || 12}${h < 12 ? 'a' : 'p'}`;
+
+function heatColor(v, max) {
+  if (!v) return '#f1ede4';
+  const t = max > 0 ? v / max : 0;
+  if (t > 0.75) return '#0f8a6b';
+  if (t > 0.5) return '#3f9d82';
+  if (t > 0.25) return '#7cc4aa';
+  return '#cfe8df';
+}
+
+function LeadHeatmap() {
+  const now = new Date();
+  const [year, setYear] = useState(now.getFullYear());
+  const [month, setMonth] = useState('all');
+  const [view, setView] = useState('calendar');
+  const years = [now.getFullYear(), now.getFullYear() - 1, now.getFullYear() - 2];
+
+  const hmParams = useMemo(() => ({ from: `${year}-01-01`, to: `${year}-12-31` }), [year]);
+  const { data, isLoading } = useLeadFunnelReport(hmParams);
+  const { data: hmData } = useLeadHeatmapReport(hmParams);
+
+  const byDay = useMemo(() => {
+    const m = {};
+    (data?.data?.leadsByDay || []).forEach((r) => { m[String(r.date).slice(0, 10)] = Number(r.count) || 0; });
+    return m;
+  }, [data]);
+
+  // Build day cells for the visible window (full year or one month).
+  const cells = useMemo(() => {
+    const arr = [];
+    const startM = month === 'all' ? 0 : Number(month);
+    const endM = month === 'all' ? 11 : Number(month);
+    for (let m = startM; m <= endM; m += 1) {
+      const last = new Date(year, m + 1, 0).getDate();
+      for (let d = 1; d <= last; d += 1) {
+        const iso = `${year}-${pad2(m + 1)}-${pad2(d)}`;
+        const wd = (new Date(year, m, d).getDay() + 6) % 7; // Mon=0..Sun=6
+        arr.push({ iso, m, d, wd, count: byDay[iso] || 0 });
+      }
+    }
+    return arr;
+  }, [year, month, byDay]);
+
+  const max = Math.max(...cells.map((c) => c.count), 1);
+  const total = cells.reduce((s, c) => s + c.count, 0);
+
+  // Weekday × hour grid (Mon..Sun rows, 0..23 cols) from the dedicated endpoint.
+  const timeGrid = useMemo(() => {
+    const g = Array.from({ length: 7 }, () => Array(24).fill(0));
+    (hmData?.data?.matrix || []).forEach((r) => {
+      const day = ((Number(r.dow) || 0) + 6) % 7; // Postgres 0=Sun → Mon=0
+      const h = Number(r.hour) || 0;
+      if (g[day] && h >= 0 && h < 24) g[day][h] += Number(r.count) || 0;
+    });
+    return g;
+  }, [hmData]);
+  const timeMax = Math.max(...timeGrid.flat(), 1);
+  const timeTotal = timeGrid.flat().reduce((s, n) => s + n, 0);
+
+  // Leading blanks so the first cell lands on its weekday row.
+  const lead = cells.length ? cells[0].wd : 0;
+  const grid = [...Array(lead).fill(null), ...cells];
+
+  // Busiest weekday.
+  const wdTotals = [0, 0, 0, 0, 0, 0, 0];
+  cells.forEach((c) => { wdTotals[c.wd] += c.count; });
+  const busiestWd = wdTotals.indexOf(Math.max(...wdTotals));
+  const wdMax = Math.max(...wdTotals, 1);
+
+  const selectCls = 'rounded-full border border-[#ece8e0] bg-white px-3 py-1.5 text-[12.5px] font-semibold text-[#6b655c] outline-none transition hover:border-[#d9d4c8]';
 
   return (
-    <div onClick={onClick} className={`${c.bg} rounded-[20px] border ${c.border} p-5 transition-all hover:-translate-y-1 hover:shadow-lg cursor-pointer`}>
-      <div className="flex items-center gap-3 mb-3">
-        {Icon && (
-          <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${c.iconBg} ${c.iconText}`}>
-            <Icon className="w-5 h-5" />
+    <SectionCard
+      eyebrow="When leads arrive"
+      title="Lead heatmap"
+      description={view === 'calendar'
+        ? `${fmtNum(total)} leads in ${month === 'all' ? year : `${MONTHS[Number(month)]} ${year}`}`
+        : `Busiest days and times across ${year}`}
+      action={(
+        <div className="flex flex-wrap items-center gap-1.5">
+          <div className="flex rounded-full border border-[#ece8e0] p-0.5">
+            {[['calendar', 'Calendar'], ['time', 'By time']].map(([k, l]) => (
+              <button
+                key={k}
+                onClick={() => setView(k)}
+                className={`rounded-full px-3 py-1 text-[12px] font-semibold transition ${view === k ? 'bg-[#1c1916] text-white' : 'text-[#8a8278] hover:text-[#1c1916]'}`}
+              >
+                {l}
+              </button>
+            ))}
           </div>
-        )}
-        <p className={`text-[11px] font-bold uppercase tracking-[0.18em] ${c.sub}`}>{label}</p>
-      </div>
-      <p className={`text-[28px] font-black tracking-tight ${c.text} leading-tight`}>{prefix}{value}</p>
-      <div className="mt-2 flex items-center gap-2">
-        {change !== null && change !== undefined && (
-          <span className={`inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-[11px] font-bold ${isUp ? 'bg-emerald-100 text-emerald-700' : isDown ? 'bg-rose-100 text-rose-600' : 'bg-neutral-100 text-neutral-500'}`}>
-            {isUp ? <ArrowTrendingUpIcon className="w-3 h-3" /> : isDown ? <ArrowTrendingDownIcon className="w-3 h-3" /> : <MinusIcon className="w-3 h-3" />}
-            {Math.abs(change)}%
-          </span>
-        )}
-        {subValue && <span className="text-xs text-neutral-400 font-medium">{subValue}</span>}
-      </div>
-    </div>
-  );
-}
-
-function ReportSection({ title, description, children, onExport, fullWidth = false, className = '' }) {
-  return (
-    <div className={`bg-white rounded-[24px] border border-neutral-100 shadow-[0_4px_24px_rgba(0,0,0,0.02)] flex flex-col ${fullWidth ? 'col-span-full' : ''} ${className}`}>
-      <div className="flex flex-col gap-2 border-b border-neutral-50 px-6 py-5 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h3 className="text-[15px] font-bold text-neutral-900">{title}</h3>
-          {description && <p className="mt-1 text-[13px] text-neutral-500 font-medium">{description}</p>}
+          {view === 'calendar' && (
+            <select value={month} onChange={(e) => setMonth(e.target.value)} className={selectCls}>
+              <option value="all">All months</option>
+              {MONTHS.map((m, i) => <option key={m} value={i}>{m}</option>)}
+            </select>
+          )}
+          <select value={year} onChange={(e) => setYear(Number(e.target.value))} className={selectCls}>
+            {years.map((y) => <option key={y} value={y}>{y}</option>)}
+          </select>
         </div>
-        {onExport && (
-          <button onClick={onExport} className="text-xs bg-neutral-50 hover:bg-neutral-100 rounded-xl px-3 py-1.5 text-neutral-600 font-semibold transition">
-            Export CSV
-          </button>
-        )}
-      </div>
-      <div className="p-6 flex-1">{children}</div>
-    </div>
+      )}
+    >
+      {isLoading ? <Empty message="Loading…" height={150} /> : (view === 'calendar' ? total : timeTotal) === 0 ? <Empty message="No leads in this window." height={150} /> : (
+        <div className="space-y-5">
+          {view === 'calendar' ? (
+            <>
+              {/* Calendar grid */}
+              <div className="overflow-x-auto pb-1">
+                <div className="flex gap-2">
+                  <div className="grid shrink-0 grid-rows-7 gap-[3px] pr-1 pt-[2px]">
+                    {WEEKDAYS.map((w, i) => (
+                      <span key={w} className="flex h-[13px] items-center text-[9px] font-semibold text-[#a8a299]">{i % 2 ? w : ''}</span>
+                    ))}
+                  </div>
+                  <div className="grid grid-flow-col grid-rows-7 gap-[3px]">
+                    {grid.map((c, i) => c === null
+                      ? <span key={`b${i}`} className="h-[13px] w-[13px]" />
+                      : (
+                        <span
+                          key={c.iso}
+                          title={`${c.count} lead${c.count === 1 ? '' : 's'} · ${c.d} ${MONTHS[c.m]} ${year}`}
+                          className="h-[13px] w-[13px] rounded-[3px] transition-transform hover:scale-125"
+                          style={{ background: heatColor(c.count, max) }}
+                        />
+                      ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Leads by weekday */}
+              <div className="grid grid-cols-7 gap-2 border-t border-[#ece8e0] pt-4">
+                {WEEKDAYS.map((w, i) => (
+                  <div key={w} className="text-center">
+                    <div className="mx-auto flex h-20 items-end justify-center">
+                      <div
+                        className="w-7 rounded-t-[4px]"
+                        style={{ height: `${Math.max(4, (wdTotals[i] / wdMax) * 100)}%`, background: i === busiestWd ? EMERALD : '#dfd9cc' }}
+                      />
+                    </div>
+                    <p className="mt-1.5 nums text-[12px] font-bold text-[#1c1916]">{fmtNum(wdTotals[i])}</p>
+                    <p className="text-[10px] font-semibold text-[#a8a299]">{w}</p>
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : (
+            /* Time-of-day grid (day × hour) */
+            <div className="overflow-x-auto pb-1">
+              <div className="inline-grid gap-[4px]" style={{ gridTemplateColumns: '40px repeat(24, 22px)' }}>
+                {/* hour labels */}
+                <span />
+                {Array.from({ length: 24 }).map((_, h) => (
+                  <span key={`h${h}`} className="text-center text-[9px] font-semibold text-[#a8a299]">
+                    {h % 3 === 0 ? hourLabel(h) : ''}
+                  </span>
+                ))}
+                {/* rows */}
+                {WEEKDAYS.map((w, di) => (
+                  <Fragment key={w}>
+                    <span className="flex items-center text-[10px] font-semibold text-[#a8a299]">{w}</span>
+                    {timeGrid[di].map((c, h) => (
+                      <span
+                        key={h}
+                        title={`${c} lead${c === 1 ? '' : 's'} · ${w} ${hourLabel(h)}`}
+                        className="h-[22px] w-[22px] rounded-[5px] transition-transform hover:scale-110"
+                        style={{ background: heatColor(c, timeMax) }}
+                      />
+                    ))}
+                  </Fragment>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Legend */}
+          <div className="flex items-center justify-end gap-1.5 border-t border-[#ece8e0] pt-4 text-[10px] font-semibold text-[#a8a299]">
+            Less
+            {['#f1ede4', '#cfe8df', '#7cc4aa', '#3f9d82', '#0f8a6b'].map((c) => (
+              <span key={c} className="h-[11px] w-[11px] rounded-[2px]" style={{ background: c }} />
+            ))}
+            More
+          </div>
+        </div>
+      )}
+    </SectionCard>
   );
 }
 
-function ChartSkeleton() {
-  return <div className="flex h-64 items-center justify-center text-sm text-neutral-400">Loading chart data...</div>;
-}
+/* ───────── Per-staff performance scorecards ───────── */
 
-function EmptyState({ message }) {
-  return <div className="flex h-48 items-center justify-center text-sm text-neutral-400">{message || 'No data available for this period.'}</div>;
-}
+function StaffScorecards({ agents, revenueEnabled = true }) {
+  if (!agents?.length) return null;
+  const maxRev = Math.max(...agents.map((a) => a.revenue || 0), 1);
+  const maxMsg = Math.max(...agents.map((a) => a.messagesSent || 0), 1);
 
-function CustomTooltip({ active, payload, label, formatter }) {
-  if (!active || !payload?.length) return null;
+  const scored = agents.map((a) => {
+    const convPart = Math.min(50, (a.conversionRate || 0) * 2);
+    const revPart = revenueEnabled ? ((a.revenue || 0) / maxRev) * 30 : 0;
+    const actPart = ((a.messagesSent || 0) / maxMsg) * (revenueEnabled ? 20 : 50);
+    return { ...a, score: Math.round(Math.min(100, convPart + revPart + actPart)) };
+  }).sort((x, y) => y.score - x.score);
+
   return (
-    <div className="rounded-xl border border-neutral-200 bg-white/95 backdrop-blur-xl px-5 py-4 shadow-xl" style={{ minWidth: 180 }}>
-      <p className="mb-2.5 text-[11px] font-bold uppercase tracking-[0.2em] text-neutral-400">{label}</p>
-      <div className="space-y-1.5">
-        {payload.map((p, i) => (
-          <div key={i} className="flex items-center gap-2.5">
-            <span className="h-2.5 w-2.5 rounded-full shadow-sm" style={{ background: p.color }} />
-            <span className="text-[13px] text-neutral-500">{p.name}</span>
-            <span className="ml-auto text-[13px] font-bold text-neutral-900">{formatter ? formatter(p.value) : p.value?.toLocaleString('en-IN')}</span>
+    <SectionCard
+      title="Staff scorecards"
+      eyebrow="Per-person performance"
+      description={revenueEnabled ? 'Each team member at a glance - score blends conversion, revenue and activity' : 'Each team member at a glance - score blends conversion and activity'}
+    >
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        {scored.map((a) => (
+          <div key={a.id} className="flex items-center gap-4 rounded-[14px] border border-[#f1ede4] bg-[#fbfaf7] p-4">
+            <Ring value={a.score} />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-[14px] font-semibold text-[#1c1916]">{text(a.name)}</p>
+              <p className="text-[11px] text-[#a8a299]">{text(a.role, 'Staff')}</p>
+              <div className="mt-2.5 grid grid-cols-3 gap-1.5 text-center">
+                <div>
+                  <p className="nums text-[13px] font-bold text-[#1c1916]">{fmtNum(a.leadsConverted)}/{fmtNum(a.leadsAssigned)}</p>
+                  <p className="text-[9px] font-bold uppercase tracking-wider text-[#a8a299]">Booked</p>
+                </div>
+                <div>
+                  <p className="nums text-[13px] font-bold text-[#0f6a52]">{fmtPct(a.conversionRate)}</p>
+                  <p className="text-[9px] font-bold uppercase tracking-wider text-[#a8a299]">Conv.</p>
+                </div>
+                {revenueEnabled ? (
+                  <div>
+                    <p className="nums text-[13px] font-bold text-[#1c1916]">{formatCurrency(a.revenue)}</p>
+                    <p className="text-[9px] font-bold uppercase tracking-wider text-[#a8a299]">Revenue</p>
+                  </div>
+                ) : (
+                  <div>
+                    <p className="nums text-[13px] font-bold text-[#1c1916]">{fmtNum(a.messagesSent)}</p>
+                    <p className="text-[9px] font-bold uppercase tracking-wider text-[#a8a299]">Msgs</p>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         ))}
       </div>
-    </div>
+    </SectionCard>
   );
 }
 
-function InsightBadge({ type, children }) {
-  const styles = {
-    success: 'bg-emerald-50 text-emerald-700 border-emerald-100',
-    warning: 'bg-amber-50 text-amber-700 border-amber-100',
-    danger: 'bg-rose-50 text-rose-700 border-rose-100',
-    info: 'bg-sky-50 text-sky-700 border-sky-100',
-    neutral: 'bg-neutral-50 text-neutral-600 border-neutral-100',
-  };
-  return (
-    <div className={`rounded-xl border px-4 py-3 text-sm font-medium ${styles[type] || styles.neutral}`}>
-      {children}
-    </div>
-  );
-}
+/* ════════════════════════════════════════════════════════════════════════
+   1 · PULSE — the brief overview
+   ════════════════════════════════════════════════════════════════════════ */
 
-/* ─── CSV Download helper ────── */
-async function downloadCsv(type, params) {
-  try {
-    const blob = await analyticsApi.exportCsv(type, params);
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${type}-report.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  } catch (e) {
-    console.error('Export failed:', e);
-  }
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   0. EXECUTIVE SUMMARY TAB
-   ═══════════════════════════════════════════════════════════════════════════ */
-
-function ExecutiveSummaryTab({ params }) {
-  const { data: salesRes, isLoading: isSalesLoading } = useSalesReport(params);
-  const { data: growthRes, isLoading: isGrowthLoading } = useGrowthReport(params);
-  const { data: opRes, isLoading: isOpLoading } = useOperationalReport(params);
-  const { data: ltvRes, isLoading: isLtvLoading } = useCustomerLtvReport(params);
+function PulseReport({ params, periodLabel, revenueEnabled = true }) {
+  const { data: salesRes, isLoading: l1 } = useSalesReport(params);
+  const { data: growthRes, isLoading: l2 } = useGrowthReport(params);
+  const { data: opRes, isLoading: l3 } = useOperationalReport(params);
+  const { data: ltvRes, isLoading: l4 } = useCustomerLtvReport(params);
+  const { data: bookRes } = useBookingReport(params);
 
   const sales = salesRes?.data || {};
-  const growth = growthRes?.data || {};
+  const g = growthRes?.data || {};
   const op = opRes?.data || {};
   const ltv = ltvRes?.data || {};
+  const bookings = bookRes?.data || {};
+  const departures = bookings.upcomingDepartures || [];
 
-  const isLoading = isSalesLoading || isGrowthLoading || isOpLoading || isLtvLoading;
+  const trend = useMemo(() => (g.monthlyTrend || []).map((r) => ({
+    x: monthLabel(r.month), bookings: r.booked, leads: r.leads,
+  })), [g.monthlyTrend]);
 
-  if (isLoading) return <ChartSkeleton />;
+  if (l1 || l2 || l3 || l4) return <ReportSkeleton />;
 
-  // Calculate health score (0-100)
-  const healthScore = Math.min(100, Math.round(
-    (growth.conversionRate || 0) * 0.3 +
-    (op.slaRate || 0) * 0.25 +
-    (growth.revenueChange > 0 ? 20 : 10) +
-    (ltv.repeatRate || 0) * 0.25
-  ));
+  const health = Math.min(100, Math.round(revenueEnabled
+    ? (g.conversionRate || 0) * 0.3 + (op.slaRate || 0) * 0.25 +
+      (g.revenueChange > 0 ? 20 : 10) + (ltv.repeatRate || 0) * 0.25
+    : (g.leadsChange > 0 ? 25 : 15) + (op.slaRate || 0) * 0.45 +
+      ((op.missedFollowUps || 0) === 0 ? 30 : 15)));
+  const verdict = health >= 75 ? 'In good health' : health >= 50 ? 'Holding steady' : 'Needs your attention';
 
-  const healthColor = healthScore >= 80 ? 'emerald' : healthScore >= 60 ? 'amber' : 'rose';
-  const healthLabel = healthScore >= 80 ? 'Excellent' : healthScore >= 60 ? 'Good' : 'Needs Attention';
+  // Plain-language headline.
+  const headline = revenueEnabled
+    ? ((g.revenueChange || 0) >= 0
+      ? `Revenue is up ${g.revenueChange || 0}% on the previous ${periodLabel.toLowerCase()}. Keep the pipeline warm.`
+      : `Revenue slipped ${Math.abs(g.revenueChange || 0)}% versus the previous ${periodLabel.toLowerCase()}. Time to tighten follow-ups.`)
+    : ((g.leadsChange || 0) >= 0
+      ? `Leads are up ${g.leadsChange || 0}% on the previous ${periodLabel.toLowerCase()}. Keep response speed high.`
+      : `Leads slipped ${Math.abs(g.leadsChange || 0)}% versus the previous ${periodLabel.toLowerCase()}. Review channels and follow-ups.`);
+
+  // What needs attention.
+  const attention = [];
+  if (revenueEnabled && (g.revenueChange || 0) < 0) attention.push({ tone: 'critical', title: 'Revenue is falling', body: `Down ${Math.abs(g.revenueChange)}% period-over-period. Review open quotes and chase negotiating leads.` });
+  if ((op.missedFollowUps || 0) > 0) attention.push({ tone: 'critical', title: `${op.missedFollowUps} leads going cold`, body: 'These have had no staff follow-up. Assign them before they’re lost.' });
+  if ((op.slaRate || 0) < 80) attention.push({ tone: 'warning', title: 'Response time slipping', body: revenueEnabled ? `Only ${op.slaRate || 0}% of leads get a reply within 15 minutes. Speed wins bookings.` : `Only ${op.slaRate || 0}% of leads get a reply within 15 minutes. Speed protects opportunities.` });
+  if (revenueEnabled && (ltv.repeatRate || 0) < 30) attention.push({ tone: 'neutral', title: 'Few repeat bookers', body: `${ltv.repeatRate || 0}% book again. Post-trip follow-ups lift lifetime value.` });
+  if (!attention.length) attention.push({ tone: 'positive', title: 'Everything on track', body: 'No fires to put out. Focus on scaling your best channels and packages.' });
+
+  // Pipeline snapshot.
+  const pipeline = g.pipelineSnapshot || [];
+  const pipeTotal = pipeline.reduce((s, r) => s + (r.count || 0), 0) || 1;
 
   return (
-    <div className="space-y-6">
-      {/* Founder Scorecard */}
-      <div className="bg-gradient-to-br from-indigo-600 via-violet-600 to-purple-700 rounded-[24px] p-6 text-white shadow-xl shadow-indigo-500/20">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-          <div>
-            <h2 className="text-lg font-bold flex items-center gap-2">
-              <SparklesIcon className="w-6 h-6 text-amber-300" />
-              Founder Scorecard
-            </h2>
-            <p className="text-indigo-200 text-sm mt-1">Your business health at a glance — updated in real-time</p>
-          </div>
-          <div className="flex items-center gap-4">
-            <div className="text-right">
-              <p className="text-xs text-indigo-200 font-medium uppercase tracking-wider">Health Score</p>
-              <p className="text-4xl font-black">{healthScore}</p>
-            </div>
-            <div className={`px-4 py-2 rounded-xl text-sm font-bold ${healthColor === 'emerald' ? 'bg-emerald-400/20 text-emerald-300' : healthColor === 'amber' ? 'bg-amber-400/20 text-amber-300' : 'bg-rose-400/20 text-rose-300'}`}>
-              {healthLabel}
-            </div>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
-          <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-4">
-            <p className="text-xs text-indigo-200 font-medium uppercase">Revenue</p>
-            <p className="text-xl font-black mt-1">{formatCurrency(sales.totalRevenue || 0)}</p>
-            <p className={`text-xs mt-1 font-semibold ${(growth.revenueChange || 0) >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
-              {(growth.revenueChange || 0) >= 0 ? '+' : ''}{growth.revenueChange || 0}% vs prior
-            </p>
-          </div>
-          <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-4">
-            <p className="text-xs text-indigo-200 font-medium uppercase">New Leads</p>
-            <p className="text-xl font-black mt-1">{(growth.totalLeads || 0).toLocaleString()}</p>
-            <p className={`text-xs mt-1 font-semibold ${(growth.leadsChange || 0) >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
-              {(growth.leadsChange || 0) >= 0 ? '+' : ''}{growth.leadsChange || 0}% vs prior
-            </p>
-          </div>
-          <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-4">
-            <p className="text-xs text-indigo-200 font-medium uppercase">Bookings</p>
-            <p className="text-xl font-black mt-1">{(growth.totalBookings || 0).toLocaleString()}</p>
-            <p className={`text-xs mt-1 font-semibold ${(growth.bookingsChange || 0) >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
-              {(growth.bookingsChange || 0) >= 0 ? '+' : ''}{growth.bookingsChange || 0}% vs prior
-            </p>
-          </div>
-          <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-4">
-            <p className="text-xs text-indigo-200 font-medium uppercase">Avg Response</p>
-            <p className="text-xl font-black mt-1">{op.avgResponseMinutes || 0}m</p>
-            <p className="text-xs mt-1 font-semibold text-indigo-200">
-              SLA: {op.slaRate || 0}%
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {/* Key Insights Row */}
-      <div className="grid gap-4 md:grid-cols-3">
-        <InsightBadge type={growth.revenueChange > 0 ? 'success' : 'warning'}>
-          <div className="flex items-start gap-2">
-            <ArrowTrendingUpIcon className="w-4 h-4 mt-0.5 shrink-0" />
+    <div className="space-y-5">
+      {/* Hero band */}
+      <Card className="brief-rise overflow-hidden">
+        <div className="grid gap-6 p-6 sm:p-8 lg:grid-cols-[1.6fr_1fr]">
+          <div className="flex flex-col justify-between gap-6">
             <div>
-              <p className="font-bold">Revenue Trend</p>
-              <p className="text-xs mt-0.5 opacity-80">
-                {growth.revenueChange > 0
-                  ? `Revenue is up ${growth.revenueChange}% from the previous period. Keep momentum going.`
-                  : `Revenue is down ${Math.abs(growth.revenueChange)}%. Review your pipeline and follow-up strategy.`}
+              <Eyebrow>Business health · {periodLabel}</Eyebrow>
+              <p className="font-brief nums mt-4 text-[52px] font-semibold leading-[0.92] tracking-[-0.02em] text-[#1c1916] sm:text-[64px]">
+                {revenueEnabled ? formatCurrency(sales.totalRevenue || 0) : fmtNum(g.totalLeads || 0)}
               </p>
+              <p className="mt-3 max-w-md text-[14px] font-medium leading-relaxed text-[#6b655c]">{headline}</p>
+            </div>
+            <div className="grid grid-cols-3 gap-5 border-t border-[#ece8e0] pt-5">
+              <Stat variant="plain" label="New leads" value={fmtNum(g.totalLeads || 0)} delta={g.leadsChange} />
+              {revenueEnabled ? (
+                <>
+                  <Stat variant="plain" label="Bookings" value={fmtNum(g.totalBookings || 0)} delta={g.bookingsChange} />
+                  <Stat variant="plain" label="Conversion" value={fmtPct(g.conversionRate || 0, 1)} />
+                </>
+              ) : (
+                <>
+                  <Stat variant="plain" label="Avg reply" value={`${op.avgResponseMinutes || 0}m`} />
+                  <Stat variant="plain" label="Within SLA" value={fmtPct(op.slaRate || 0)} />
+                </>
+              )}
             </div>
           </div>
-        </InsightBadge>
-        <InsightBadge type={op.slaRate >= 80 ? 'success' : op.slaRate >= 50 ? 'warning' : 'danger'}>
-          <div className="flex items-start gap-2">
-            <ClockIcon className="w-4 h-4 mt-0.5 shrink-0" />
-            <div>
-              <p className="font-bold">Response Time</p>
-              <p className="text-xs mt-0.5 opacity-80">
-                {op.slaRate >= 80
-                  ? `Excellent! ${op.slaRate}% of leads are responded to within 15 minutes.`
-                  : `Only ${op.slaRate}% of leads get a response within 15 min. Consider adding more agents or automating.`}
-              </p>
+          <div className="flex flex-col items-center justify-center gap-3 rounded-[16px] bg-[#fbfaf7] p-6">
+            <Gauge value={health} />
+            <p className="font-brief text-[17px] font-semibold text-[#1c1916]">{verdict}</p>
+            <div className="grid w-full grid-cols-2 gap-3 border-t border-[#ece8e0] pt-4 text-center">
+              <div>
+                <p className="nums font-brief text-[20px] font-semibold text-[#1c1916]">{op.avgResponseMinutes || 0}m</p>
+                <p className="mt-0.5 text-[10px] font-bold uppercase tracking-[0.16em] text-[#a8a299]">Avg reply</p>
+              </div>
+              <div>
+                <p className="nums font-brief text-[20px] font-semibold text-[#1c1916]">{fmtPct(op.slaRate || 0)}</p>
+                <p className="mt-0.5 text-[10px] font-bold uppercase tracking-[0.16em] text-[#a8a299]">Within SLA</p>
+              </div>
             </div>
-          </div>
-        </InsightBadge>
-        <InsightBadge type={ltv.repeatRate >= 30 ? 'success' : 'info'}>
-          <div className="flex items-start gap-2">
-            <HeartIcon className="w-4 h-4 mt-0.5 shrink-0" />
-            <div>
-              <p className="font-bold">Customer Loyalty</p>
-              <p className="text-xs mt-0.5 opacity-80">
-                {ltv.repeatRate > 0
-                  ? `${ltv.repeatRate}% of customers are repeat bookers. Avg LTV is ${formatCurrency(ltv.avgLtv || 0)}.`
-                  : 'Focus on post-trip follow-ups to increase repeat bookings and LTV.'}
-              </p>
-            </div>
-          </div>
-        </InsightBadge>
-      </div>
-
-      {/* Pipeline Snapshot */}
-      <ReportSection title="Live Pipeline Snapshot" description="Current lead distribution across all stages">
-        {growth.pipelineSnapshot?.length === 0 ? <EmptyState /> : (
-          <div className="space-y-4">
-            {growth.pipelineSnapshot?.map((stage) => {
-              const total = growth.pipelineSnapshot?.reduce((s, r) => s + r.count, 0) || 1;
-              const pct = Math.round((stage.count / total) * 100);
-              const stageColors = {
-                NEW: 'bg-sky-500',
-                ENQUIRY: 'bg-indigo-500',
-                CONTACTED: 'bg-purple-500',
-                QUOTED: 'bg-amber-500',
-                NEGOTIATING: 'bg-orange-500',
-                BOOKED: 'bg-emerald-500',
-                LOST: 'bg-rose-500',
-                CANCELLED: 'bg-neutral-400',
-                JUST_CONTACTED: 'bg-sky-400',
-                PACKAGE_SEARCHED: 'bg-blue-400',
-                PACKAGE_INTERESTED: 'bg-violet-400',
-                CONVERTED: 'bg-teal-500',
-                UNKNOWN: 'bg-neutral-300',
-              };
-              return (
-                <div key={stage.status} className="group">
-                  <div className="mb-1.5 flex items-center justify-between">
-                    <span className="text-sm font-semibold text-neutral-700">{stage.status.replace(/_/g, ' ')}</span>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-bold text-neutral-900">{stage.count}</span>
-                      <span className="text-xs text-neutral-400">({pct}%)</span>
-                    </div>
-                  </div>
-                  <div className="h-3 w-full rounded-full bg-neutral-100 overflow-hidden">
-                    <div
-                      className={`h-full rounded-full transition-all duration-700 ${stageColors[stage.status] || 'bg-neutral-400'}`}
-                      style={{ width: `${pct}%` }}
-                    />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </ReportSection>
-    </div>
-  );
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   1. GROWTH & VELOCITY TAB
-   ═══════════════════════════════════════════════════════════════════════════ */
-
-function GrowthVelocityTab({ params }) {
-  const { data, isLoading } = useGrowthReport(params);
-  const d = data?.data || {};
-
-  const trendData = useMemo(() =>
-    (d.monthlyTrend || []).map((r) => ({
-      month: new Date(r.month).toLocaleDateString('en-IN', { month: 'short', year: '2-digit' }),
-      leads: r.leads,
-      booked: r.booked,
-      conversionRate: r.leads > 0 ? parseFloat((r.booked / r.leads * 100).toFixed(1)) : 0,
-    })), [d.monthlyTrend]);
-
-  if (isLoading) return <ChartSkeleton />;
-
-  return (
-    <div className="space-y-5">
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <KpiCard label="Total Leads" value={d.totalLeads || 0} change={d.leadsChange} icon={UsersIcon} color="indigo" />
-        <KpiCard label="Total Bookings" value={d.totalBookings || 0} change={d.bookingsChange} icon={ShoppingBagIcon} color="emerald" />
-        <KpiCard label="Total Revenue" value={formatCurrency(d.totalRevenue || 0)} change={d.revenueChange} icon={CurrencyRupeeIcon} color="amber" />
-        <KpiCard label="Sales Velocity" value={`${d.avgVelocityDays || 0}d`} subValue={`median: ${d.medianVelocityDays || 0}d`} icon={ClockIcon} color="sky" />
-      </div>
-
-      <InsightBadge type={d.avgVelocityDays <= 7 ? 'success' : d.avgVelocityDays <= 14 ? 'warning' : 'danger'}>
-        <div className="flex items-start gap-2">
-          <ChartBarIcon className="w-4 h-4 mt-0.5 shrink-0" />
-          <div>
-            <p className="font-bold">Pipeline Velocity Insight</p>
-            <p className="text-xs mt-0.5 opacity-80">
-              {d.avgVelocityDays <= 7
-                ? `Incredible! Leads convert in just ${d.avgVelocityDays} days on average. Your sales process is highly efficient.`
-                : d.avgVelocityDays <= 14
-                ? `Leads take ${d.avgVelocityDays} days to convert. Consider faster follow-ups and automated nurturing to reduce this.`
-                : `Leads take ${d.avgVelocityDays} days to convert — that's too slow. Add drip campaigns and faster agent response times.`}
-            </p>
           </div>
         </div>
-      </InsightBadge>
-
-      <ReportSection title="Growth Trend" description="Monthly leads vs bookings over the last 12 months" fullWidth>
-        {trendData.length === 0 ? <EmptyState /> : (
-          <ResponsiveContainer width="100%" height={320}>
-            <ComposedChart data={trendData}>
-              <ChartGradients />
-              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-              <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-              <YAxis yAxisId="left" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} allowDecimals={false} />
-              <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-              <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(99,102,241,0.04)' }} />
-              <Legend iconType="circle" wrapperStyle={{ fontSize: '12px', paddingTop: '16px' }} />
-              <Bar yAxisId="left" dataKey="leads" fill="url(#barSecondary)" radius={[8, 8, 0, 0]} name="Leads" barSize={28} />
-              <Bar yAxisId="left" dataKey="booked" fill="url(#barPrimary)" radius={[8, 8, 0, 0]} name="Booked" barSize={28} />
-              <Line yAxisId="right" type="monotone" dataKey="conversionRate" stroke={TEAL} strokeWidth={2.5} dot={{ r: 3, fill: TEAL }} name="Conv. Rate (%)" />
-            </ComposedChart>
-          </ResponsiveContainer>
-        )}
-      </ReportSection>
-    </div>
-  );
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   2. FINANCIAL DEEP-DIVE TAB
-   ═══════════════════════════════════════════════════════════════════════════ */
-
-function FinancialDeepDiveTab({ params }) {
-  const { data: salesRes, isLoading: isSalesLoading } = useSalesReport(params);
-  const { data: profitRes, isLoading: isProfitLoading } = useQuery({
-    queryKey: ['analytics-profit', params],
-    queryFn: () => analyticsApi.getProfit(params),
-    staleTime: 60 * 1000,
-  });
-  const { data: bookingsRes, isLoading: isBookingsLoading } = useBookingReport(params);
-
-  const sales = salesRes?.data || {};
-  const profit = profitRes?.data || {};
-  const bookings = bookingsRes?.data || {};
-
-  const isLoading = isSalesLoading || isProfitLoading || isBookingsLoading;
-
-  const chartData = useMemo(() =>
-    (sales.revenueByDay || []).map((r) => ({
-      date: new Date(r.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }),
-      revenue: Math.round((parseInt(r.revenue, 10) || 0) / 100),
-      count: parseInt(r.count, 10) || 0,
-    })), [sales.revenueByDay]);
-
-  const profitChartData = useMemo(() =>
-    (profit.byPackage || []).slice(0, 8).map((r) => ({
-      name: r.packageName?.substring(0, 15) || 'Unknown',
-      selling: Math.round(r.selling / 100),
-      cost: Math.round(r.cost / 100),
-      profit: Math.round(r.profit / 100),
-      margin: r.margin,
-    })), [profit.byPackage]);
-
-  if (isLoading) return <ChartSkeleton />;
-
-  return (
-    <div className="space-y-5">
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <KpiCard label="Total Revenue" value={formatCurrency(sales.totalRevenue || 0)} change={sales.revenueChange} icon={CurrencyRupeeIcon} color="indigo" />
-        <KpiCard label="Est. Profit" value={formatCurrency(profit.totalProfit || 0)} subValue={`${profit.profitMargin || 0}% margin`} icon={ArrowTrendingUpIcon} color="emerald" />
-        <KpiCard label="Avg Booking Value" value={formatCurrency(sales.avgBookingValue || 0)} icon={ShoppingBagIcon} color="amber" />
-        <KpiCard label="Outstanding" value={formatCurrency(sales.outstanding || 0)} subValue="pending payments" icon={ExclamationTriangleIcon} color="rose" />
-      </div>
-
-      <div className="grid gap-4 md:grid-cols-3">
-        <InsightBadge type={profit.profitMargin >= 30 ? 'success' : profit.profitMargin >= 15 ? 'warning' : 'danger'}>
-          <p className="font-bold">Profit Margin: {profit.profitMargin || 0}%</p>
-          <p className="text-xs mt-0.5 opacity-80">
-            {profit.profitMargin >= 30 ? 'Healthy margins. Your pricing strategy is working well.' :
-             profit.profitMargin >= 15 ? 'Moderate margins. Consider upselling premium packages.' :
-             'Low margins detected. Review package pricing and supplier costs.'}
-          </p>
-        </InsightBadge>
-        <InsightBadge type={bookings.cancellationRate <= 5 ? 'success' : bookings.cancellationRate <= 15 ? 'warning' : 'danger'}>
-          <p className="font-bold">Cancellation Rate: {bookings.cancellationRate || 0}%</p>
-          <p className="text-xs mt-0.5 opacity-80">
-            {bookings.cancellationRate <= 5 ? 'Very low cancellations. Strong commitment from customers.' :
-             'Monitor cancellation reasons and improve booking confidence with better policies.'}
-          </p>
-        </InsightBadge>
-        <InsightBadge type="info">
-          <p className="font-bold">Revenue per Lead</p>
-          <p className="text-xs mt-0.5 opacity-80">
-            {sales.totalRevenue > 0 && growth.totalLeads > 0
-              ? `Each lead is worth ~${formatCurrency(Math.round(sales.totalRevenue / growth.totalLeads))} on average.`
-              : 'Track revenue per lead to optimize marketing spend allocation.'}
-          </p>
-        </InsightBadge>
-      </div>
-
-      <div className="grid gap-5 xl:grid-cols-2">
-        <ReportSection title="Revenue Over Time" description="Daily revenue and transaction count" onExport={() => downloadCsv('sales', params)}>
-          {chartData.length === 0 ? <EmptyState /> : (
-            <ResponsiveContainer width="100%" height={300}>
-              <ComposedChart data={chartData}>
-                <ChartGradients />
-                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-                <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-                <YAxis yAxisId="left" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} tickFormatter={(v) => `₹${v >= 1000 ? (v / 1000).toFixed(0) + 'K' : v}`} />
-                <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-                <Tooltip content={<CustomTooltip formatter={(v) => `₹${v.toLocaleString('en-IN')}`} />} cursor={{ fill: 'rgba(99,102,241,0.04)' }} />
-                <Area yAxisId="left" type="monotone" dataKey="revenue" stroke={PRIMARY} strokeWidth={2.5} fill="url(#areaIndigo)" name="Revenue (₹)" dot={false} />
-                <Bar yAxisId="right" dataKey="count" fill="url(#barSky)" radius={[8, 8, 0, 0]} name="Transactions" barSize={20} />
-              </ComposedChart>
-            </ResponsiveContainer>
-          )}
-        </ReportSection>
-
-        <ReportSection title="Profit by Package" description="Selling price vs cost vs estimated profit">
-          {profitChartData.length === 0 ? <EmptyState message="No profit data yet." /> : (
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={profitChartData} barGap={4}>
-                <ChartGradients />
-                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-                <XAxis dataKey="name" tick={{ fontSize: 11, fill: '#475569', fontWeight: 500 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} tickFormatter={(v) => `₹${v >= 1000 ? (v / 1000).toFixed(0) + 'K' : v}`} />
-                <Tooltip content={<CustomTooltip formatter={(v) => `₹${v.toLocaleString('en-IN')}`} />} cursor={{ fill: 'rgba(99,102,241,0.04)' }} />
-                <Legend iconType="circle" wrapperStyle={{ fontSize: '12px', paddingTop: '16px' }} />
-                <Bar dataKey="selling" fill="url(#barPrimary)" radius={[8, 8, 0, 0]} name="Revenue" barSize={20} />
-                <Bar dataKey="cost" fill="url(#barRose)" radius={[8, 8, 0, 0]} name="Est. Cost" barSize={20} />
-                <Bar dataKey="profit" fill="url(#barTeal)" radius={[8, 8, 0, 0]} name="Profit" barSize={20} />
-              </BarChart>
-            </ResponsiveContainer>
-          )}
-        </ReportSection>
-      </div>
-    </div>
-  );
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   3. PIPELINE & FUNNEL TAB
-   ═══════════════════════════════════════════════════════════════════════════ */
-
-function PipelineFunnelTab({ params }) {
-  const { data, isLoading } = useLeadFunnelReport(params);
-  const d = data?.data || {};
-
-  const funnelData = d.funnel || [];
-  const maxCount = Math.max(...funnelData.map((f) => f.count), 1);
-
-  const chartData = useMemo(() =>
-    (d.leadsByDay || []).map((r) => ({
-      date: new Date(r.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }),
-      leads: parseInt(r.count, 10) || 0,
-    })), [d.leadsByDay]);
-
-  const statusData = useMemo(() =>
-    (d.leadsByStatus || []).map((r) => ({
-      name: r.status,
-      value: parseInt(r.count, 10),
-    })), [d.leadsByStatus]);
-
-  if (isLoading) return <ChartSkeleton />;
-
-  return (
-    <div className="space-y-5">
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <KpiCard label="Total Leads" value={d.totalLeads || 0} change={d.leadsChange} icon={UsersIcon} color="indigo" />
-        <KpiCard label="Conversion Rate" value={`${d.conversionRate || 0}%`} subValue="Lead → Booked" icon={ChartBarIcon} color="emerald" />
-        <KpiCard label="Active Enquiries" value={(d.leadsByStatus || []).reduce((s, r) => r.status !== 'JUST_CONTACTED' && r.status !== 'NEW' ? s + parseInt(r.count, 10) : s, 0)} icon={EyeIcon} color="amber" />
-        <KpiCard label="Booked" value={(d.leadsByStatus || []).find((r) => r.status === 'BOOKED')?.count || 0} icon={CheckCircleIcon} color="sky" />
-      </div>
-
-      <div className="grid gap-5 xl:grid-cols-2">
-        <ReportSection title="Conversion Funnel" description="Lead → Enquiry → Contacted → Quoted → Booked" onExport={() => downloadCsv('leads', params)}>
-          <div className="space-y-4 py-2">
-            {funnelData.map((stage, i) => {
-              const width = Math.max(12, (stage.count / maxCount) * 100);
-              const rate = i > 0 && funnelData[i - 1].count > 0
-                ? ((stage.count / funnelData[i - 1].count) * 100).toFixed(0) : null;
-              const dropOff = i > 0 && funnelData[i - 1].count > 0
-                ? (funnelData[i - 1].count - stage.count) : 0;
-              return (
-                <div key={stage.stage} className="group">
-                  <div className="mb-1.5 flex items-center justify-between">
-                    <span className="text-sm font-semibold text-neutral-700">{stage.stage}</span>
-                    <div className="flex items-center gap-3">
-                      <span className="text-sm font-bold text-neutral-900">{stage.count}</span>
-                      {rate && <span className="text-[11px] font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">{rate}% conv.</span>}
-                      {dropOff > 0 && <span className="text-[11px] font-semibold text-rose-500">-{dropOff} dropped</span>}
-                    </div>
-                  </div>
-                  <div className="h-10 w-full rounded-xl bg-neutral-100 overflow-hidden">
-                    <div
-                      className="flex h-full items-center rounded-xl px-4 text-xs font-bold text-white transition-all duration-700"
-                      style={{ width: `${width}%`, background: `linear-gradient(90deg, ${TEAL}, ${TEAL_LIGHT})` }}
-                    >
-                      {width > 25 && stage.count}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </ReportSection>
-
-        <div className="space-y-5">
-          <ReportSection title="Lead Status Distribution">
-            {statusData.length === 0 ? <EmptyState /> : (
-              <ResponsiveContainer width="100%" height={260}>
-                <PieChart>
-                  <Pie data={statusData} cx="50%" cy="50%" outerRadius={90} innerRadius={55} dataKey="value" nameKey="name" paddingAngle={3} stroke="none">
-                    {statusData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-                  </Pie>
-                  <Tooltip content={<CustomTooltip />} />
-                  <Legend iconType="circle" wrapperStyle={{ fontSize: '12px' }} />
-                </PieChart>
-              </ResponsiveContainer>
-            )}
-          </ReportSection>
-
-          <ReportSection title="Leads Over Time" description="Daily new leads">
-            {chartData.length === 0 ? <EmptyState /> : (
-              <ResponsiveContainer width="100%" height={200}>
-                <AreaChart data={chartData}>
-                  <ChartGradients />
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-                  <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} allowDecimals={false} />
-                  <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(14,165,233,0.04)' }} />
-                  <Area type="monotone" dataKey="leads" stroke={SKY} strokeWidth={2.5} fill="url(#barSky)" fillOpacity={0.15} name="Leads" dot={false} activeDot={{ r: 5, fill: SKY, stroke: '#fff', strokeWidth: 2 }} />
-                </AreaChart>
-              </ResponsiveContainer>
-            )}
-          </ReportSection>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   4. OPERATIONAL EXCELLENCE TAB
-   ═══════════════════════════════════════════════════════════════════════════ */
-
-function OperationalTab({ params }) {
-  const { data, isLoading } = useOperationalReport(params);
-  const d = data?.data || {};
-
-  const responseDistData = (d.responseDistribution || []).map((r) => ({
-    name: r.bucket,
-    count: r.count,
-  }));
-
-  const workloadData = (d.agentWorkload || []).slice(0, 8).map((a) => ({
-    name: a.name?.split(' ')[0] || 'Agent',
-    leads: a.leadsAssigned,
-    messages: a.messagesSent,
-    conversions: a.conversions,
-    revenue: Math.round(a.revenue / 100),
-  }));
-
-  if (isLoading) return <ChartSkeleton />;
-
-  return (
-    <div className="space-y-5">
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <KpiCard label="Avg Response Time" value={`${d.avgResponseMinutes || 0}m`} subValue={`median: ${d.medianResponseMinutes || 0}m`} icon={ClockIcon} color="indigo" />
-        <KpiCard label="SLA Compliance" value={`${d.slaRate || 0}%`} subValue={`target: ${d.slaTarget || 80}%`} icon={CheckCircleIcon} color={d.slaRate >= 80 ? 'emerald' : d.slaRate >= 50 ? 'amber' : 'rose'} />
-        <KpiCard label="Missed Follow-ups" value={d.missedFollowUps || 0} subValue="leads untouched" icon={XCircleIcon} color="rose" />
-        <KpiCard label="P90 Response" value={`${d.p90ResponseMinutes || 0}m`} subValue="90% under this" icon={BoltIcon} color="sky" />
-      </div>
-
-      <InsightBadge type={d.missedFollowUps === 0 ? 'success' : d.missedFollowUps <= 5 ? 'warning' : 'danger'}>
-        <div className="flex items-start gap-2">
-          <ExclamationTriangleIcon className="w-4 h-4 mt-0.5 shrink-0" />
-          <div>
-            <p className="font-bold">Follow-up Alert</p>
-            <p className="text-xs mt-0.5 opacity-80">
-              {d.missedFollowUps === 0
-                ? 'Perfect! Every lead has received at least one follow-up message.'
-                : `${d.missedFollowUps} leads have not received any agent follow-up. These are hot leads going cold — assign them immediately.`}
-            </p>
-          </div>
-        </div>
-      </InsightBadge>
-
-      <div className="grid gap-5 xl:grid-cols-2">
-        <ReportSection title="Response Time Distribution" description="How fast your team replies to inbound messages">
-          {responseDistData.length === 0 ? <EmptyState /> : (
-            <ResponsiveContainer width="100%" height={280}>
-              <BarChart data={responseDistData}>
-                <ChartGradients />
-                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-                <XAxis dataKey="name" tick={{ fontSize: 11, fill: '#475569', fontWeight: 500 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} allowDecimals={false} />
-                <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(99,102,241,0.04)' }} />
-                <Bar dataKey="count" fill="url(#barPrimary)" radius={[8, 8, 0, 0]} name="Conversations" barSize={40} />
-              </BarChart>
-            </ResponsiveContainer>
-          )}
-        </ReportSection>
-
-        <ReportSection title="Team Workload Balance" description="Leads, messages, and conversions per agent">
-          {workloadData.length === 0 ? <EmptyState /> : (
-            <ResponsiveContainer width="100%" height={280}>
-              <BarChart data={workloadData} barGap={4}>
-                <ChartGradients />
-                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-                <XAxis dataKey="name" tick={{ fontSize: 12, fill: '#475569', fontWeight: 500 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} allowDecimals={false} />
-                <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(99,102,241,0.04)' }} />
-                <Legend iconType="circle" wrapperStyle={{ fontSize: '12px', paddingTop: '16px' }} />
-                <Bar dataKey="leads" fill="url(#barSecondary)" radius={[8, 8, 0, 0]} name="Leads" barSize={20} />
-                <Bar dataKey="messages" fill="url(#barSky)" radius={[8, 8, 0, 0]} name="Messages" barSize={20} />
-                <Bar dataKey="conversions" fill="url(#barTeal)" radius={[8, 8, 0, 0]} name="Conversions" barSize={20} />
-              </BarChart>
-            </ResponsiveContainer>
-          )}
-        </ReportSection>
-      </div>
-
-      <ReportSection title="Agent Performance Matrix" description="Detailed breakdown per team member">
-        {d.agentWorkload?.length === 0 ? <EmptyState /> : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left">
-              <thead>
-                <tr className="border-b border-neutral-100 text-[11px] font-bold uppercase tracking-[0.18em] text-neutral-400">
-                  <th className="pb-3 pr-4">Agent</th>
-                  <th className="pb-3 pr-4 text-right">Leads</th>
-                  <th className="pb-3 pr-4 text-right">Messages</th>
-                  <th className="pb-3 pr-4 text-right">Conv.</th>
-                  <th className="pb-3 pr-4 text-right">Conv. Rate</th>
-                  <th className="pb-3 text-right">Revenue</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-neutral-50">
-                {d.agentWorkload?.map((a) => (
-                  <tr key={a.id} className="transition hover:bg-neutral-50/50">
-                    <td className="py-3 pr-4">
-                      <p className="text-sm font-semibold text-neutral-800">{a.name}</p>
-                    </td>
-                    <td className="py-3 pr-4 text-right text-sm text-neutral-600">{a.leadsAssigned}</td>
-                    <td className="py-3 pr-4 text-right text-sm text-neutral-600">{a.messagesSent}</td>
-                    <td className="py-3 pr-4 text-right text-sm font-bold text-neutral-800">{a.conversions}</td>
-                    <td className="py-3 pr-4 text-right">
-                      <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-bold ${a.leadsAssigned > 0 && (a.conversions / a.leadsAssigned * 100) >= 20 ? 'bg-emerald-50 text-emerald-700' : a.leadsAssigned > 0 && (a.conversions / a.leadsAssigned * 100) >= 10 ? 'bg-amber-50 text-amber-700' : 'bg-neutral-100 text-neutral-500'}`}>
-                        {a.leadsAssigned > 0 ? (a.conversions / a.leadsAssigned * 100).toFixed(1) : 0}%
-                      </span>
-                    </td>
-                    <td className="py-3 text-right text-sm font-bold text-neutral-900">{formatCurrency(a.revenue)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </ReportSection>
-    </div>
-  );
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   5. CUSTOMER INTELLIGENCE TAB
-   ═══════════════════════════════════════════════════════════════════════════ */
-
-function CustomerIntelligenceTab({ params }) {
-  const { data: ltvRes, isLoading: isLtvLoading } = useCustomerLtvReport(params);
-  const { data: cacRes, isLoading: isCacLoading } = useCacReport(params);
-
-  const ltv = ltvRes?.data || {};
-  const cac = cacRes?.data || {};
-
-  const isLoading = isLtvLoading || isCacLoading;
-
-  const topCustomers = ltv.topCustomers || [];
-
-  if (isLoading) return <ChartSkeleton />;
-
-  return (
-    <div className="space-y-5">
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <KpiCard label="Avg Customer LTV" value={formatCurrency(ltv.avgLtv || 0)} icon={HeartIcon} color="indigo" />
-        <KpiCard label="Total Customers" value={ltv.totalCustomers || 0} icon={UsersIcon} color="emerald" />
-        <KpiCard label="Repeat Rate" value={`${ltv.repeatRate || 0}%`} subValue="customers with 2+ bookings" icon={ArrowPathIcon} color="amber" />
-        <KpiCard label="Avg Conversion" value={`${cac.avgConversionRate || 0}%`} subValue="lead → booking" icon={ChartBarIcon} color="sky" />
-      </div>
-
-      <div className="grid gap-4 md:grid-cols-2">
-        <InsightBadge type="info">
-          <p className="font-bold">Customer Acquisition Cost</p>
-          <p className="text-xs mt-0.5 opacity-80">{cac.note}</p>
-        </InsightBadge>
-        <InsightBadge type={ltv.repeatRate >= 30 ? 'success' : 'warning'}>
-          <p className="font-bold">Repeat Booking Strategy</p>
-          <p className="text-xs mt-0.5 opacity-80">
-            {ltv.repeatRate >= 30
-              ? 'Strong repeat business. Create a loyalty program to push this even higher.'
-              : 'Most customers book once. Set up post-trip drip campaigns and referral incentives.'}
-          </p>
-        </InsightBadge>
-      </div>
-
-      <div className="grid gap-5 xl:grid-cols-2">
-        <ReportSection title="Top Customers by LTV" description="Your highest-value customers">
-          {topCustomers.length === 0 ? <EmptyState /> : (
-            <div className="space-y-3">
-              {topCustomers.map((c, i) => (
-                <div key={c.id} className="flex items-center justify-between rounded-xl bg-neutral-50 px-4 py-3">
-                  <div className="flex items-center gap-3">
-                    <span className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold text-white ${i === 0 ? 'bg-amber-400' : i === 1 ? 'bg-neutral-400' : i === 2 ? 'bg-amber-600' : 'bg-neutral-200 text-neutral-500'}`}>
-                      {i + 1}
-                    </span>
-                    <div>
-                      <p className="text-sm font-semibold text-neutral-800">{c.name}</p>
-                      <p className="text-xs text-neutral-400">{c.phone} · {c.totalBookings} bookings</p>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-sm font-bold text-neutral-900">{formatCurrency(c.totalSpent)}</p>
-                    <p className="text-xs text-neutral-400">avg {formatCurrency(c.avgBookingValue)}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </ReportSection>
-
-        <ReportSection title="Acquisition by Source" description="Lead quality and conversion per channel">
-          {(cac.sources || []).length === 0 ? <EmptyState /> : (
-            <div className="space-y-3">
-              {(cac.sources || []).map((s, i) => (
-                <div key={i} className="rounded-xl border border-neutral-100 p-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm font-semibold text-neutral-800">{formatSourceName(s.source)}</span>
-                    <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${s.conversionRate >= 20 ? 'bg-emerald-50 text-emerald-700' : s.conversionRate >= 10 ? 'bg-amber-50 text-amber-700' : 'bg-neutral-100 text-neutral-500'}`}>
-                      {s.conversionRate}% conv.
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-3 gap-2 text-center">
-                    <div className="bg-neutral-50 rounded-lg p-2">
-                      <p className="text-xs text-neutral-400">Leads</p>
-                      <p className="text-sm font-bold text-neutral-800">{s.leads}</p>
-                    </div>
-                    <div className="bg-neutral-50 rounded-lg p-2">
-                      <p className="text-xs text-neutral-400">Booked</p>
-                      <p className="text-sm font-bold text-neutral-800">{s.booked}</p>
-                    </div>
-                    <div className="bg-neutral-50 rounded-lg p-2">
-                      <p className="text-xs text-neutral-400">Revenue</p>
-                      <p className="text-sm font-bold text-neutral-800">{formatCurrency(s.revenue)}</p>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </ReportSection>
-      </div>
-    </div>
-  );
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   6. MARKETING ROI TAB
-   ═══════════════════════════════════════════════════════════════════════════ */
-
-function MarketingRoiTab({ params }) {
-  const { data, isLoading } = useCampaignRoiReport(params);
-  const d = data?.data || {};
-
-  const campaignChartData = (d.campaigns || []).slice(0, 10).map((c) => ({
-    name: c.name?.substring(0, 15) || 'Campaign',
-    sent: c.sent || 0,
-    delivered: c.delivered || 0,
-    read: c.read || 0,
-    leads: c.leadsGenerated || 0,
-    bookings: c.bookings || 0,
-    revenue: Math.round((c.revenue || 0) / 100),
-  }));
-
-  if (isLoading) return <ChartSkeleton />;
-
-  return (
-    <div className="space-y-5">
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <KpiCard label="Campaigns Sent" value={d.totalCampaigns || 0} subValue={`${(d.totalSent || 0).toLocaleString()} messages`} icon={MegaphoneIcon} color="indigo" />
-        <KpiCard label="Delivery Rate" value={`${d.avgDeliveryRate || 0}%`} subValue={`${(d.totalDelivered || 0).toLocaleString()} delivered`} icon={CheckCircleIcon} color="emerald" />
-        <KpiCard label="Read Rate" value={`${d.avgReadRate || 0}%`} subValue={`${(d.totalRead || 0).toLocaleString()} read`} icon={EyeIcon} color="amber" />
-        <KpiCard label="Campaign Revenue" value={formatCurrency(d.totalRevenue || 0)} subValue={`${d.totalBookings || 0} bookings`} icon={CurrencyRupeeIcon} color="sky" />
-      </div>
-
-      <div className="grid gap-4 md:grid-cols-3">
-        <InsightBadge type={d.avgLeadRate >= 5 ? 'success' : d.avgLeadRate >= 2 ? 'warning' : 'info'}>
-          <p className="font-bold">Lead Generation Rate: {d.avgLeadRate || 0}%</p>
-          <p className="text-xs mt-0.5 opacity-80">
-            {d.avgLeadRate >= 5 ? 'Excellent campaign performance! Each broadcast is generating strong interest.' :
-             'Improve your campaign messaging or targeting to increase lead generation from broadcasts.'}
-          </p>
-        </InsightBadge>
-        <InsightBadge type={d.avgBookingRate >= 1 ? 'success' : 'warning'}>
-          <p className="font-bold">Booking Rate: {d.avgBookingRate || 0}%</p>
-          <p className="text-xs mt-0.5 opacity-80">
-            {d.avgBookingRate >= 1 ? 'Campaigns are converting directly into bookings. Scale your best-performing templates.' :
-             'Campaigns generate interest but few bookings. Add stronger CTAs and booking links.'}
-          </p>
-        </InsightBadge>
-        <InsightBadge type="info">
-          <p className="font-bold">Reply Rate: {d.avgReplyRate || 0}%</p>
-          <p className="text-xs mt-0.5 opacity-80">
-            {d.avgReplyRate >= 10 ? 'High engagement! Your audience is actively responding to campaigns.' :
-             'Low reply rates. Test more personalized messaging or interactive templates.'}
-          </p>
-        </InsightBadge>
-      </div>
-
-      <ReportSection title="Campaign Performance Matrix" description="Top campaigns by engagement and revenue" fullWidth>
-        {campaignChartData.length === 0 ? <EmptyState message="No campaigns sent in this period." /> : (
-          <ResponsiveContainer width="100%" height={340}>
-            <ComposedChart data={campaignChartData}>
-              <ChartGradients />
-              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-              <XAxis dataKey="name" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-              <YAxis yAxisId="left" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} allowDecimals={false} />
-              <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-              <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(99,102,241,0.04)' }} />
-              <Legend iconType="circle" wrapperStyle={{ fontSize: '12px', paddingTop: '16px' }} />
-              <Bar yAxisId="left" dataKey="sent" fill="url(#barSecondary)" radius={[8, 8, 0, 0]} name="Sent" barSize={16} />
-              <Bar yAxisId="left" dataKey="read" fill="url(#barPrimary)" radius={[8, 8, 0, 0]} name="Read" barSize={16} />
-              <Bar yAxisId="left" dataKey="leads" fill="url(#barTeal)" radius={[8, 8, 0, 0]} name="Leads" barSize={16} />
-              <Line yAxisId="right" type="monotone" dataKey="revenue" stroke={AMBER} strokeWidth={2.5} dot={{ r: 3, fill: AMBER }} name="Revenue (₹)" />
-            </ComposedChart>
-          </ResponsiveContainer>
-        )}
-      </ReportSection>
-
-      <ReportSection title="Campaign Details" description="Individual campaign breakdown">
-        {(d.campaigns || []).length === 0 ? <EmptyState /> : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left">
-              <thead>
-                <tr className="border-b border-neutral-100 text-[11px] font-bold uppercase tracking-[0.18em] text-neutral-400">
-                  <th className="pb-3 pr-4">Campaign</th>
-                  <th className="pb-3 pr-4 text-right">Sent</th>
-                  <th className="pb-3 pr-4 text-right">Read %</th>
-                  <th className="pb-3 pr-4 text-right">Reply %</th>
-                  <th className="pb-3 pr-4 text-right">Leads</th>
-                  <th className="pb-3 pr-4 text-right">Bookings</th>
-                  <th className="pb-3 text-right">Revenue</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-neutral-50">
-                {(d.campaigns || []).map((c) => (
-                  <tr key={c.id} className="transition hover:bg-neutral-50/50">
-                    <td className="py-3 pr-4">
-                      <p className="text-sm font-semibold text-neutral-800">{c.name}</p>
-                      <p className="text-xs text-neutral-400">{c.type}</p>
-                    </td>
-                    <td className="py-3 pr-4 text-right text-sm text-neutral-600">{(c.sent || 0).toLocaleString()}</td>
-                    <td className="py-3 pr-4 text-right">
-                      <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-bold ${c.readRate >= 50 ? 'bg-emerald-50 text-emerald-700' : c.readRate >= 25 ? 'bg-amber-50 text-amber-700' : 'bg-neutral-100 text-neutral-500'}`}>
-                        {c.readRate}%
-                      </span>
-                    </td>
-                    <td className="py-3 pr-4 text-right text-sm text-neutral-600">{c.replyRate}%</td>
-                    <td className="py-3 pr-4 text-right text-sm font-bold text-neutral-800">{c.leadsGenerated}</td>
-                    <td className="py-3 pr-4 text-right text-sm font-bold text-neutral-800">{c.bookings}</td>
-                    <td className="py-3 text-right text-sm font-bold text-neutral-900">{formatCurrency(c.revenue)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </ReportSection>
-    </div>
-  );
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   7. TEAM PERFORMANCE TAB
-   ═══════════════════════════════════════════════════════════════════════════ */
-
-function TeamPerformanceTab({ params }) {
-  const { data, isLoading } = useAgentPerformanceReport(params);
-  const agents = data?.data?.agents || [];
-
-  if (isLoading) return <ChartSkeleton />;
-
-  const chartData = agents.map((a) => ({
-    name: a.name?.split(' ')[0] || 'Agent',
-    leads: a.leadsAssigned,
-    booked: a.leadsConverted,
-    revenue: Math.round(a.revenue / 100),
-    conversionRate: a.conversionRate,
-  }));
-
-  return (
-    <div className="space-y-5">
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <KpiCard label="Total Agents" value={agents.length} icon={UsersIcon} color="indigo" />
-        <KpiCard label="Top Performer" value={agents[0]?.name || 'N/A'} subValue={`${formatCurrency(agents[0]?.revenue || 0)}`} icon={TrophyIcon} color="amber" />
-        <KpiCard label="Avg Conv. Rate" value={`${agents.length > 0 ? (agents.reduce((s, a) => s + a.conversionRate, 0) / agents.length).toFixed(1) : 0}%`} icon={ChartBarIcon} color="emerald" />
-        <KpiCard label="Team Revenue" value={formatCurrency(agents.reduce((s, a) => s + a.revenue, 0))} icon={CurrencyRupeeIcon} color="sky" />
-      </div>
-
-      <ReportSection title="Agent Leaderboard" description="Ranked by revenue generated" onExport={() => downloadCsv('agents', params)}>
-        {agents.length === 0 ? <EmptyState message="No users found." /> : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left">
-              <thead>
-                <tr className="border-b border-neutral-100 text-[11px] font-bold uppercase tracking-[0.18em] text-neutral-400">
-                  <th className="pb-3 pr-4">#</th>
-                  <th className="pb-3 pr-4">Agent</th>
-                  <th className="pb-3 pr-4 text-right">Leads</th>
-                  <th className="pb-3 pr-4 text-right">Booked</th>
-                  <th className="pb-3 pr-4 text-right">Conv. %</th>
-                  <th className="pb-3 pr-4 text-right">Messages</th>
-                  <th className="pb-3 text-right">Revenue</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-neutral-50">
-                {agents.map((a, i) => (
-                  <tr key={a.id} className="transition hover:bg-neutral-50/50">
-                    <td className="py-3 pr-4">
-                      <span className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold text-white ${i === 0 ? 'bg-amber-400' : i === 1 ? 'bg-neutral-400' : i === 2 ? 'bg-amber-600' : 'bg-neutral-200 text-neutral-500'}`}>
-                        {i + 1}
-                      </span>
-                    </td>
-                    <td className="py-3 pr-4">
-                      <p className="text-sm font-semibold text-neutral-800">{a.name}</p>
-                      <p className="text-xs text-neutral-400">{a.role}</p>
-                    </td>
-                    <td className="py-3 pr-4 text-right text-sm font-medium text-neutral-600">{a.leadsAssigned}</td>
-                    <td className="py-3 pr-4 text-right text-sm font-bold text-neutral-800">{a.leadsConverted}</td>
-                    <td className="py-3 pr-4 text-right">
-                      <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-bold ${a.conversionRate >= 20 ? 'bg-emerald-50 text-emerald-700' : a.conversionRate >= 10 ? 'bg-amber-50 text-amber-700' : 'bg-neutral-100 text-neutral-500'}`}>
-                        {a.conversionRate}%
-                      </span>
-                    </td>
-                    <td className="py-3 pr-4 text-right text-sm text-neutral-600">{a.messagesSent}</td>
-                    <td className="py-3 text-right text-sm font-bold text-neutral-900">{formatCurrency(a.revenue)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </ReportSection>
-
-      {chartData.length > 0 && (
-        <div className="grid gap-5 xl:grid-cols-2">
-          <ReportSection title="Revenue by Agent">
-            <ResponsiveContainer width="100%" height={280}>
-              <BarChart data={chartData} barGap={4}>
-                <ChartGradients />
-                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-                <XAxis dataKey="name" tick={{ fontSize: 12, fill: '#475569', fontWeight: 500 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} tickFormatter={(v) => `₹${v >= 1000 ? (v / 1000).toFixed(0) + 'K' : v}`} />
-                <Tooltip content={<CustomTooltip formatter={(v) => `₹${v.toLocaleString('en-IN')}`} />} cursor={{ fill: 'rgba(99,102,241,0.04)' }} />
-                <Bar dataKey="revenue" fill="url(#barPrimary)" radius={[8, 8, 0, 0]} name="Revenue (₹)" barSize={32} />
-              </BarChart>
-            </ResponsiveContainer>
-          </ReportSection>
-
-          <ReportSection title="Conversion Rate Comparison">
-            <ResponsiveContainer width="100%" height={280}>
-              <BarChart data={chartData} barGap={4}>
-                <ChartGradients />
-                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-                <XAxis dataKey="name" tick={{ fontSize: 12, fill: '#475569', fontWeight: 500 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} unit="%" />
-                <Tooltip content={<CustomTooltip formatter={(v) => `${v}%`} />} cursor={{ fill: 'rgba(99,102,241,0.04)' }} />
-                <Bar dataKey="conversionRate" fill="url(#barTeal)" radius={[8, 8, 0, 0]} name="Conversion Rate (%)" barSize={32} />
-              </BarChart>
-            </ResponsiveContainer>
-          </ReportSection>
-        </div>
-      )}
-    </div>
-  );
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   8. PRODUCTS & PACKAGES TAB
-   ═══════════════════════════════════════════════════════════════════════════ */
-
-function ProductsPackagesTab({ params }) {
-  const { data, isLoading } = usePackageReport(params);
-  const packages = data?.data?.packages || [];
-
-  if (isLoading) return <ChartSkeleton />;
-
-  return (
-    <div className="space-y-5">
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <KpiCard label="Total Packages" value={packages.length} icon={CubeIcon} color="indigo" />
-        <KpiCard label="Total Bookings" value={packages.reduce((s, p) => s + p.bookingCount, 0)} icon={ShoppingBagIcon} color="emerald" />
-        <KpiCard label="Total Revenue" value={formatCurrency(packages.reduce((s, p) => s + p.totalRevenue, 0))} icon={CurrencyRupeeIcon} color="amber" />
-        <KpiCard label="Avg Conv. Rate" value={`${packages.length > 0 ? (packages.reduce((s, p) => s + p.conversionRate, 0) / packages.length).toFixed(1) : 0}%`} icon={ChartBarIcon} color="sky" />
-      </div>
-
-      <ReportSection title="Package Performance Matrix" description="Bookings, leads, conversion, and revenue per package" onExport={() => downloadCsv('packages', params)}>
-        {packages.length === 0 ? <EmptyState message="No package data yet." /> : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left">
-              <thead>
-                <tr className="border-b border-neutral-100 text-[11px] font-bold uppercase tracking-[0.18em] text-neutral-400">
-                  <th className="pb-3 pr-4">#</th>
-                  <th className="pb-3 pr-4">Package</th>
-                  <th className="pb-3 pr-4">Destination</th>
-                  <th className="pb-3 pr-4 text-right">Leads</th>
-                  <th className="pb-3 pr-4 text-right">Bookings</th>
-                  <th className="pb-3 pr-4 text-right">Conv. %</th>
-                  <th className="pb-3 text-right">Revenue</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-neutral-50">
-                {packages.map((p, i) => (
-                  <tr key={p.package?.id || i} className="transition hover:bg-neutral-50/50">
-                    <td className="py-3 pr-4 text-sm text-neutral-400">{i + 1}</td>
-                    <td className="py-3 pr-4">
-                      <p className="text-sm font-semibold text-neutral-800">{p.package?.name || 'N/A'}</p>
-                      <p className="text-xs text-neutral-400">{p.package?.category || ''}</p>
-                    </td>
-                    <td className="py-3 pr-4 text-sm text-neutral-600">{(p.package?.destinations || []).join(', ') || '-'}</td>
-                    <td className="py-3 pr-4 text-right text-sm text-neutral-600">{p.leads}</td>
-                    <td className="py-3 pr-4 text-right text-sm font-bold text-neutral-800">{p.bookingCount}</td>
-                    <td className="py-3 pr-4 text-right">
-                      <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-bold ${p.conversionRate >= 30 ? 'bg-emerald-50 text-emerald-700' : p.conversionRate >= 15 ? 'bg-amber-50 text-amber-700' : 'bg-neutral-100 text-neutral-500'}`}>
-                        {p.conversionRate}%
-                      </span>
-                    </td>
-                    <td className="py-3 text-right text-sm font-bold text-neutral-900">{formatCurrency(p.totalRevenue)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </ReportSection>
-
-      {packages.length > 0 && (
-        <div className="grid gap-5 xl:grid-cols-2">
-          <ReportSection title="Bookings vs Enquiries">
-            <ResponsiveContainer width="100%" height={280}>
-              <BarChart data={packages.slice(0, 8).map((p) => ({ name: (p.package?.name || 'N/A').substring(0, 15), bookings: p.bookingCount, leads: p.leads }))} barGap={4}>
-                <ChartGradients />
-                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-                <XAxis dataKey="name" tick={{ fontSize: 11, fill: '#475569', fontWeight: 500 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} allowDecimals={false} />
-                <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(99,102,241,0.04)' }} />
-                <Legend iconType="circle" wrapperStyle={{ fontSize: '12px', paddingTop: '16px' }} />
-                <Bar dataKey="leads" fill="url(#barSecondary)" radius={[8, 8, 0, 0]} name="Enquiries" barSize={28} />
-                <Bar dataKey="bookings" fill="url(#barAccent)" radius={[8, 8, 0, 0]} name="Bookings" barSize={28} />
-              </BarChart>
-            </ResponsiveContainer>
-          </ReportSection>
-
-          <ReportSection title="Revenue by Package">
-            <ResponsiveContainer width="100%" height={280}>
-              <BarChart data={packages.slice(0, 8).map((p) => ({ name: (p.package?.name || 'N/A').substring(0, 15), revenue: Math.round(p.totalRevenue / 100) }))}>
-                <ChartGradients />
-                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-                <XAxis dataKey="name" tick={{ fontSize: 11, fill: '#475569', fontWeight: 500 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} tickFormatter={(v) => `₹${v >= 1000 ? (v / 1000).toFixed(0) + 'K' : v}`} />
-                <Tooltip content={<CustomTooltip formatter={(v) => `₹${v.toLocaleString('en-IN')}`} />} cursor={{ fill: 'rgba(99,102,241,0.04)' }} />
-                <Bar dataKey="revenue" fill="url(#barPrimary)" radius={[8, 8, 0, 0]} name="Revenue (₹)" barSize={32} />
-              </BarChart>
-            </ResponsiveContainer>
-          </ReportSection>
-        </div>
-      )}
-    </div>
-  );
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   9. REVIEWS & HEALTH TAB
-   ═══════════════════════════════════════════════════════════════════════════ */
-
-function ReviewsHealthTab({ params }) {
-  const { data, isLoading } = useReviewReport(params);
-  const d = data?.data || {};
-
-  const ratingData = useMemo(() =>
-    [5, 4, 3, 2, 1].map((r) => {
-      const match = (d.ratingDistribution || []).find((x) => parseInt(x.rating, 10) === r);
-      return { stars: `${r} ⭐`, count: parseInt(match?.count || '0', 10) };
-    }), [d.ratingDistribution]);
-
-  if (isLoading) return <ChartSkeleton />;
-
-  const npsEstimate = d.avgRating >= 4.5 ? 'Promoter-heavy' : d.avgRating >= 3.5 ? 'Mixed' : 'Detractor-heavy';
-  const npsColor = d.avgRating >= 4.5 ? 'success' : d.avgRating >= 3.5 ? 'warning' : 'danger';
-
-  return (
-    <div className="space-y-5">
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <KpiCard label="Avg Rating" value={`${d.avgRating || 0} ⭐`} icon={HeartIcon} color="amber" />
-        <KpiCard label="Total Reviews" value={d.totalReviews || 0} icon={EyeIcon} color="indigo" />
-        <KpiCard label="Negative Reviews" value={(d.negativeReviews || []).length} subValue="rating ≤ 2" icon={ExclamationTriangleIcon} color="rose" />
-        <KpiCard label="Sentiment" value={npsEstimate} icon={SparklesIcon} color={npsColor === 'success' ? 'emerald' : npsColor === 'warning' ? 'amber' : 'rose'} />
-      </div>
-
-      <div className="grid gap-5 xl:grid-cols-2">
-        <ReportSection title="Rating Distribution">
-          <ResponsiveContainer width="100%" height={260}>
-            <BarChart data={ratingData} layout="vertical">
-              <ChartGradients />
-              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
-              <XAxis type="number" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} allowDecimals={false} />
-              <YAxis dataKey="stars" type="category" tick={{ fontSize: 12, fill: '#475569', fontWeight: 500 }} width={60} axisLine={false} tickLine={false} />
-              <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(245,158,11,0.06)' }} />
-              <Bar dataKey="count" fill="url(#barAmber)" radius={[0, 8, 8, 0]} name="Reviews" barSize={24} />
-            </BarChart>
-          </ResponsiveContainer>
-        </ReportSection>
-
-        <ReportSection title="Ratings by Destination" description="Top rated destinations">
-          {(d.reviewsByDestination || []).length === 0 ? <EmptyState message="No destination reviews yet." /> : (
-            <div className="space-y-2">
-              {(d.reviewsByDestination || []).map((r, i) => (
-                <div key={i} className="flex items-center justify-between rounded-xl bg-neutral-50 px-4 py-3">
-                  <span className="text-sm font-medium text-neutral-700">{r.destination}</span>
-                  <div className="flex items-center gap-3">
-                    <span className="text-sm font-bold text-amber-600">{r.avgRating} ⭐</span>
-                    <span className="text-xs text-neutral-400">({r.count} reviews)</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </ReportSection>
-      </div>
-
-      {(d.negativeReviews || []).length > 0 && (
-        <ReportSection title="Negative Feedback Alert" description="Reviews with rating ≤ 2 — take action">
+      </Card>
+
+      <div className="grid gap-5 lg:grid-cols-[1fr_1.1fr]">
+        {/* Attention list */}
+        <SectionCard title="What needs your attention" eyebrow="Priorities" description={revenueEnabled ? 'Ranked by impact on revenue' : 'Ranked by pipeline impact'}>
           <div className="space-y-3">
-            {d.negativeReviews.map((r, i) => (
-              <div key={i} className="rounded-xl border border-rose-100 bg-rose-50/50 p-4">
-                <div className="flex items-center justify-between">
-                  <p className="text-sm font-semibold text-neutral-800">{r.customer?.name || 'Anonymous'}</p>
-                  <span className="text-sm font-bold text-rose-600">{r.rating} ⭐</span>
+            {attention.slice(0, 4).map((a, i) => (
+              <Note key={i} tone={a.tone} title={a.title}>{a.body}</Note>
+            ))}
+          </div>
+        </SectionCard>
+
+        {/* Pipeline snapshot */}
+        <SectionCard title="Pipeline right now" eyebrow="Live" description="Where every open lead is sitting today">
+          {pipeline.length === 0 ? <Empty /> : (
+            <div className="space-y-0.5">
+              {pipeline.map((stage, i) => {
+                const pct = Math.round(((stage.count || 0) / pipeTotal) * 100);
+                return (
+                  <BarRow
+                    key={i}
+                    label={text(stage.status).replace(/_/g, ' ')}
+                    value={fmtNum(stage.count)}
+                    pct={pct}
+                    color={SERIES[i % SERIES.length]}
+                    trailing={<span className="nums text-[12px] font-medium text-[#a8a299]">{pct}%</span>}
+                  />
+                );
+              })}
+            </div>
+          )}
+        </SectionCard>
+      </div>
+
+      {/* Momentum strip */}
+      <SectionCard title="Momentum" eyebrow="Last 12 months" description={revenueEnabled ? 'Bookings and leads, month by month' : 'Leads, month by month'}>
+        {trend.length === 0 ? <Empty /> : (
+          <ResponsiveContainer width="100%" height={240}>
+            <ComposedChart data={trend} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+              <ChartDefs />
+              <CartesianGrid {...gridProps} />
+              <XAxis dataKey="x" tick={axisTick} axisLine={false} tickLine={false} />
+              <YAxis tick={axisTick} axisLine={false} tickLine={false} allowDecimals={false} width={32} />
+              <Tooltip content={<BriefTooltip />} cursor={{ fill: 'rgba(28,25,20,0.03)' }} />
+              <Bar dataKey="leads" name="Leads" fill="#e7e1d4" radius={[5, 5, 0, 0]} barSize={18} />
+              {revenueEnabled && <Area type="monotone" dataKey="bookings" name="Bookings" stroke={EMERALD} strokeWidth={2.5} fill="url(#briefArea)" dot={false} />}
+            </ComposedChart>
+          </ResponsiveContainer>
+        )}
+      </SectionCard>
+
+      {/* Upcoming departures — operational CRM detail */}
+      {revenueEnabled && <SectionCard title="Upcoming departures" eyebrow="Next 30 days" description="Trips leaving soon — make sure documents and payments are in order">
+        {departures.length === 0 ? <Empty message="No departures scheduled in the next 30 days." /> : (
+          <div className="grid gap-2.5 md:grid-cols-2">
+            {departures.slice(0, 8).map((b, i) => (
+              <div key={b.id || i} className="flex items-center gap-3 rounded-[12px] border border-[#f1ede4] bg-[#fbfaf7] px-4 py-3">
+                <div className="flex h-11 w-11 shrink-0 flex-col items-center justify-center rounded-[10px] bg-white" style={{ border: '1px solid #ece8e0' }}>
+                  <span className="font-brief nums text-[16px] font-semibold leading-none text-[#1c1916]">{b.travelDate ? new Date(b.travelDate).getDate() : '—'}</span>
+                  <span className="text-[9px] font-bold uppercase tracking-wider text-[#a8a299]">{b.travelDate ? new Date(b.travelDate).toLocaleDateString('en-IN', { month: 'short' }) : ''}</span>
                 </div>
-                {r.testimonial && <p className="mt-2 text-sm text-neutral-600">"{r.testimonial}"</p>}
-                {r.destination && <p className="mt-1 text-xs text-neutral-400">Destination: {r.destination}</p>}
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[13.5px] font-semibold text-[#1c1916]">{text(b.customer?.name, 'Traveller')}</p>
+                  <p className="truncate text-[11.5px] text-[#a8a299]">{text(b.package?.name, 'Package')}</p>
+                </div>
+                <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.1em] ${b.status === 'CONFIRMED' ? 'bg-[#f3f8f5] text-[#0f6a52]' : 'bg-[#fbf7ec] text-[#8a6418]'}`}>{text(b.status)}</span>
               </div>
             ))}
           </div>
-        </ReportSection>
+        )}
+      </SectionCard>}
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   2 · REVENUE — the money story
+   ════════════════════════════════════════════════════════════════════════ */
+
+function RevenueReport({ params }) {
+  const { data: salesRes, isLoading: l1 } = useSalesReport(params);
+  const { data: growthRes, isLoading: l2 } = useGrowthReport(params);
+  const { data: profitRes, isLoading: l3 } = useProfitReport(params);
+  const { data: bookRes, isLoading: l4 } = useBookingReport(params);
+
+  const sales = salesRes?.data || {};
+  const g = growthRes?.data || {};
+  const profit = profitRes?.data || {};
+  const bookings = bookRes?.data || {};
+
+  const revTrend = useMemo(() => (sales.revenueByDay || []).map((r) => ({
+    date: dayLabel(r.date), revenue: rupees(r.revenue), count: Number(r.count) || 0,
+  })), [sales.revenueByDay]);
+
+  const profitData = useMemo(() => (profit.byPackage || []).slice(0, 8).map((r) => ({
+    name: (r.packageName || 'Unknown').slice(0, 16),
+    revenue: rupees(r.selling), cost: rupees(r.cost), profit: rupees(r.profit),
+  })), [profit.byPackage]);
+
+  if (l1 || l2 || l3 || l4) return <ReportSkeleton />;
+
+  const revPerLead = sales.totalRevenue > 0 && g.totalLeads > 0
+    ? Math.round(sales.totalRevenue / g.totalLeads) : 0;
+
+  return (
+    <div className="space-y-5">
+      <StatCards items={[
+        { label: 'Revenue', value: formatCurrency(sales.totalRevenue || 0), delta: sales.revenueChange, spark: toSpark(sales.revenueByDay, 'revenue') },
+        { label: 'Estimated profit', value: formatCurrency(profit.totalProfit || 0), sub: `${fmtPct(profit.profitMargin || 0)} margin`, accent: EMERALD },
+        { label: 'Avg booking value', value: formatCurrency(sales.avgBookingValue || 0) },
+        { label: 'Outstanding', value: formatCurrency(sales.outstanding || 0), sub: 'pending payment', accent: sales.outstanding > 0 ? CLAY : INK },
+      ]} />
+
+      <div className="grid gap-4 md:grid-cols-3">
+        <Note tone={profit.profitMargin >= 30 ? 'positive' : profit.profitMargin >= 15 ? 'warning' : 'critical'} title={`Profit margin · ${fmtPct(profit.profitMargin || 0)}`}>
+          {profit.profitMargin >= 30 ? 'Healthy margins — your pricing is working.'
+            : profit.profitMargin >= 15 ? 'Moderate margins. Upsell premium packages to lift this.'
+            : 'Thin margins. Review supplier costs and package pricing.'}
+        </Note>
+        <Note tone={bookings.cancellationRate <= 5 ? 'positive' : bookings.cancellationRate <= 15 ? 'warning' : 'critical'} title={`Cancellations · ${fmtPct(bookings.cancellationRate || 0)}`}>
+          {bookings.cancellationRate <= 5 ? 'Very low — customers are committed.'
+            : 'Watch cancellation reasons and firm up your booking policy.'}
+        </Note>
+        <Note tone="neutral" title="Revenue per lead">
+          {revPerLead > 0 ? `Each lead is worth ~${formatCurrency(revPerLead)} on average. Use it to cap your acquisition spend.`
+            : 'Track revenue per lead to guide marketing spend.'}
+        </Note>
+      </div>
+
+      <SectionCard
+        title="Revenue over time" eyebrow="Cash in" description="Daily revenue and number of transactions"
+        action={<ExportButton onClick={() => downloadCsv(analyticsApi, 'sales', params)} />}
+      >
+        {revTrend.length === 0 ? <Empty /> : (
+          <ResponsiveContainer width="100%" height={300}>
+            <ComposedChart data={revTrend} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+              <ChartDefs />
+              <CartesianGrid {...gridProps} />
+              <XAxis dataKey="date" tick={axisTick} axisLine={false} tickLine={false} minTickGap={24} />
+              <YAxis yAxisId="l" tick={axisTick} axisLine={false} tickLine={false} width={52} tickFormatter={moneyTick} />
+              <YAxis yAxisId="r" orientation="right" tick={axisTick} axisLine={false} tickLine={false} width={28} allowDecimals={false} />
+              <Tooltip content={<BriefTooltip formatter={(v, p) => (p?.dataKey === 'revenue' ? moneyTip(v) : fmtNum(v))} />} cursor={{ fill: 'rgba(28,25,20,0.03)' }} />
+              <Bar yAxisId="r" dataKey="count" name="Transactions" fill="#e7e1d4" radius={[5, 5, 0, 0]} barSize={14} />
+              <Area yAxisId="l" type="monotone" dataKey="revenue" name="Revenue" stroke={EMERALD} strokeWidth={2.5} fill="url(#briefArea)" dot={false} />
+            </ComposedChart>
+          </ResponsiveContainer>
+        )}
+      </SectionCard>
+
+      <SectionCard title="Profit by package" eyebrow="Margins" description="Revenue, estimated cost and profit per package">
+        {profitData.length === 0 ? <Empty message="No profit data yet." /> : (
+          <ResponsiveContainer width="100%" height={300}>
+            <BarChart data={profitData} barGap={3} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+              <CartesianGrid {...gridProps} />
+              <XAxis dataKey="name" tick={{ ...axisTick, fill: INK_SOFT }} axisLine={false} tickLine={false} />
+              <YAxis tick={axisTick} axisLine={false} tickLine={false} width={52} tickFormatter={moneyTick} />
+              <Tooltip content={<BriefTooltip formatter={moneyTip} />} cursor={{ fill: 'rgba(28,25,20,0.03)' }} />
+              <Legend iconType="circle" wrapperStyle={{ fontSize: 12, paddingTop: 12 }} />
+              <Bar dataKey="revenue" name="Revenue" fill={INK} radius={[5, 5, 0, 0]} barSize={16} />
+              <Bar dataKey="cost" name="Est. cost" fill="#d9d2c4" radius={[5, 5, 0, 0]} barSize={16} />
+              <Bar dataKey="profit" name="Profit" fill={EMERALD} radius={[5, 5, 0, 0]} barSize={16} />
+            </BarChart>
+          </ResponsiveContainer>
+        )}
+      </SectionCard>
+
+      <SectionCard title="Top destinations by revenue" eyebrow="Where the money is" description="Your most lucrative places to sell">
+        {(bookings.topDestinations || []).length === 0 ? <Empty message="No destination revenue yet." /> : (
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-[#ece8e0] text-left text-[10px] font-bold uppercase tracking-[0.16em] text-[#a8a299]">
+                  <th className="py-2.5 pr-4">Destination</th>
+                  <th className="px-3 py-2.5 text-right">Bookings</th>
+                  <th className="px-3 py-2.5 text-right">Travellers</th>
+                  <th className="py-2.5 pl-3 text-right">Revenue</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#f1ede4]">
+                {(bookings.topDestinations || []).map((r, i) => (
+                  <tr key={i} className="text-[13px]">
+                    <td className="py-3 pr-4 font-semibold text-[#1c1916]">{text(r.destination)}</td>
+                    <td className="nums px-3 py-3 text-right text-[#6b655c]">{fmtNum(r.booking_count)}</td>
+                    <td className="nums px-3 py-3 text-right text-[#6b655c]">{fmtNum(r.total_travellers)}</td>
+                    <td className="nums py-3 pl-3 text-right font-bold text-[#1c1916]">{formatCurrency(r.revenue)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </SectionCard>
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   3 · LEADS — lead management
+   ════════════════════════════════════════════════════════════════════════ */
+
+function LeadsReport({ params, revenueEnabled = true }) {
+  const { data: funnelRes, isLoading: l1 } = useLeadFunnelReport(params);
+  const { data: growthRes, isLoading: l2 } = useGrowthReport(params);
+  const { data: lostRes } = useLostLeadsReport(params);
+
+  const d = funnelRes?.data || {};
+  const g = growthRes?.data || {};
+  const lost = lostRes?.data || {};
+
+  const funnel = d.funnel || [];
+  const maxFunnel = Math.max(...funnel.map((f) => f.count || 0), 1);
+
+  const byDay = useMemo(() => (d.leadsByDay || []).map((r) => ({
+    date: dayLabel(r.date), leads: Number(r.count) || 0,
+  })), [d.leadsByDay]);
+
+  const statusData = useMemo(() => (d.leadsByStatus || []).map((r) => ({
+    name: text(r.status).replace(/_/g, ' '), value: Number(r.count) || 0,
+  })), [d.leadsByStatus]);
+  const statusTotal = statusData.reduce((s, r) => s + r.value, 0) || 1;
+
+  const lostReasons = useMemo(() => {
+    const rows = (lost.lostReasons || []).map((r) => ({ reason: text(r.lostReason, 'Other'), count: Number(r.count) || 0 }));
+    if (lost.noReasonCount > 0) rows.push({ reason: 'No reason recorded', count: lost.noReasonCount });
+    return rows.sort((a, b) => b.count - a.count);
+  }, [lost.lostReasons, lost.noReasonCount]);
+  const maxLost = Math.max(...lostReasons.map((r) => r.count), 1);
+
+  if (l1 || l2) return <ReportSkeleton />;
+
+  return (
+    <div className="space-y-5">
+      <StatCards items={[
+        { label: 'Total leads', value: fmtNum(d.totalLeads || 0), delta: d.leadsChange, spark: toSpark(d.leadsByDay, 'count') },
+        ...(revenueEnabled ? [{ label: 'Lead → booking', value: fmtPct(d.conversionRate || 0, 1), accent: EMERALD }] : []),
+        { label: 'Sales velocity', value: `${g.avgVelocityDays || 0} days`, sub: `median ${g.medianVelocityDays || 0}d` },
+        ...(revenueEnabled ? [{ label: 'Booked', value: fmtNum((d.leadsByStatus || []).find((r) => text(r.status) === 'BOOKED')?.count || 0) }] : []),
+      ]} />
+
+      <Note tone={g.avgVelocityDays <= 7 ? 'positive' : g.avgVelocityDays <= 14 ? 'warning' : 'critical'} title="Pipeline velocity">
+        {g.avgVelocityDays <= 7
+          ? `Leads convert in just ${g.avgVelocityDays} days on average — a fast, efficient pipeline.`
+          : g.avgVelocityDays <= 14
+          ? `Leads take ${g.avgVelocityDays} days to convert. Faster first replies and nurturing will tighten this.`
+          : `Leads take ${g.avgVelocityDays} days to convert — too slow. Add drip campaigns and quicker staff responses.`}
+      </Note>
+
+      <LeadHeatmap />
+
+      <div className="grid gap-5 xl:grid-cols-2">
+        <SectionCard
+          title="Conversion funnel" eyebrow="Lead journey" description="Enquiry → contacted → quoted → booked"
+          action={<ExportButton onClick={() => downloadCsv(analyticsApi, 'leads', params)} />}
+        >
+          {funnel.length === 0 ? <Empty /> : (
+            <div className="space-y-1.5 py-1">
+              {funnel.map((stage, i) => {
+                const pct = ((stage.count || 0) / maxFunnel) * 100;
+                const rate = i > 0 && funnel[i - 1].count > 0 ? Math.round((stage.count / funnel[i - 1].count) * 100) : null;
+                return (
+                  <BarRow
+                    key={i}
+                    label={text(stage.stage, 'Stage')}
+                    value={fmtNum(stage.count)}
+                    pct={pct}
+                    color={i === funnel.length - 1 ? EMERALD : INK}
+                    trailing={rate !== null && <span className="rounded-full bg-[#f3f8f5] px-2 py-0.5 text-[11px] font-bold text-[#0f6a52]">{rate}%</span>}
+                  />
+                );
+              })}
+            </div>
+          )}
+        </SectionCard>
+
+        <div className="space-y-5">
+          <SectionCard title="Status mix" eyebrow="Distribution">
+            {statusData.length === 0 ? <Empty height={120} /> : (
+              <div className="flex items-center gap-4">
+                <ResponsiveContainer width="50%" height={200}>
+                  <PieChart>
+                    <Pie data={statusData} cx="50%" cy="50%" innerRadius={52} outerRadius={82} dataKey="value" nameKey="name" paddingAngle={2} stroke="none">
+                      {statusData.map((_, i) => <Cell key={i} fill={SERIES[i % SERIES.length]} />)}
+                    </Pie>
+                    <Tooltip content={<BriefTooltip />} />
+                  </PieChart>
+                </ResponsiveContainer>
+                <div className="flex-1 space-y-2">
+                  {statusData.slice(0, 6).map((s, i) => (
+                    <div key={i} className="flex items-center justify-between gap-2 text-[12.5px]">
+                      <span className="flex items-center gap-2 truncate font-medium text-[#6b655c]">
+                        <span className="h-2 w-2 rounded-full" style={{ background: SERIES[i % SERIES.length] }} />
+                        {s.name}
+                      </span>
+                      <span className="nums font-bold text-[#1c1916]">{Math.round((s.value / statusTotal) * 100)}%</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </SectionCard>
+
+          <SectionCard title="Leads over time" eyebrow="Inbound" description="New leads per day">
+            {byDay.length === 0 ? <Empty height={120} /> : (
+              <ResponsiveContainer width="100%" height={170}>
+                <AreaChart data={byDay} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                  <ChartDefs />
+                  <CartesianGrid {...gridProps} />
+                  <XAxis dataKey="date" tick={axisTick} axisLine={false} tickLine={false} minTickGap={24} />
+                  <YAxis tick={axisTick} axisLine={false} tickLine={false} width={28} allowDecimals={false} />
+                  <Tooltip content={<BriefTooltip />} cursor={{ fill: 'rgba(28,25,20,0.03)' }} />
+                  <Area type="monotone" dataKey="leads" name="Leads" stroke={SLATE} strokeWidth={2.5} fill="url(#briefAreaInk)" dot={false} />
+                </AreaChart>
+              </ResponsiveContainer>
+            )}
+          </SectionCard>
+        </div>
+      </div>
+
+      {/* Why leads are lost */}
+      <SectionCard
+        title="Why you’re losing leads" eyebrow={`Loss rate · ${fmtPct(lost.lossRate || 0)}`}
+        description={`${fmtNum(lost.lostCount || 0)} of ${fmtNum(lost.totalLeads || 0)} leads were lost or cancelled this period`}
+      >
+        {lostReasons.length === 0 ? <Empty message="No lost leads recorded — nicely done." /> : (
+          <div className="space-y-0.5">
+            {lostReasons.map((r, i) => (
+              <BarRow key={i} label={r.reason} value={fmtNum(r.count)} pct={(r.count / maxLost) * 100} color={CLAY} />
+            ))}
+          </div>
+        )}
+      </SectionCard>
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   4 · CHANNELS — where leads come from (Instagram, Facebook, WhatsApp…)
+   ════════════════════════════════════════════════════════════════════════ */
+
+function ChannelsReport({ params, revenueEnabled = true }) {
+  const { data: cacRes, isLoading: l1 } = useCacReport(params);
+  const { data: srcRes, isLoading: l2 } = useSourceReport(params);
+  const { data: adRes } = useLeadsByAdReport(params);
+
+  const cac = cacRes?.data || {};
+  const src = srcRes?.data || {};
+  const ads = useMemo(() => (adRes?.data?.ads || []), [adRes]);
+  const maxAdLeads = Math.max(...ads.map((a) => a.leads || 0), 1);
+
+  const channels = useMemo(() => (cac.sources || [])
+    .map((s) => ({ ...s, meta: channelMeta(s.source) }))
+    .sort((a, b) => (b.leads || 0) - (a.leads || 0)), [cac.sources]);
+
+  const totalLeads = channels.reduce((s, c) => s + (c.leads || 0), 0) || 1;
+  const maxLeads = Math.max(...channels.map((c) => c.leads || 0), 1);
+  const bestQuality = [...channels].filter((c) => c.leads >= 3).sort((a, b) => (b.conversionRate || 0) - (a.conversionRate || 0))[0];
+  const bestRevenue = revenueEnabled ? [...channels].sort((a, b) => (b.revenue || 0) - (a.revenue || 0))[0] : null;
+
+  // Pivot daily source counts into a multi-line trend for the top channels.
+  const topLabels = channels.slice(0, 4).map((c) => c.meta.label);
+  const trend = useMemo(() => {
+    const rows = {};
+    (src.sourceByDay || []).forEach((r) => {
+      const dl = dayLabel(r.date);
+      const m = channelMeta(r.source);
+      if (!topLabels.includes(m.label)) return;
+      rows[dl] = rows[dl] || { date: dl };
+      rows[dl][m.label] = (rows[dl][m.label] || 0) + (Number(r.count) || 0);
+    });
+    return Object.values(rows);
+  }, [src.sourceByDay, topLabels.join(',')]);
+
+  if (l1 || l2) return <ReportSkeleton />;
+
+  return (
+    <div className="space-y-5">
+      <StatCards items={[
+        { label: 'Leads from channels', value: fmtNum(cac.totalLeads || totalLeads) },
+        { label: 'Best for volume', value: channels[0]?.meta.label || '—', sub: `${fmtNum(channels[0]?.leads || 0)} leads`, accent: channels[0]?.meta.color },
+        { label: 'Best for quality', value: bestQuality?.meta.label || '—', sub: bestQuality ? `${fmtPct(bestQuality.conversionRate)} convert` : 'n/a', accent: bestQuality?.meta.color },
+        ...(revenueEnabled ? [{ label: 'Top earner', value: bestRevenue?.meta.label || '—', sub: bestRevenue ? formatCurrency(bestRevenue.revenue) : 'n/a', accent: EMERALD }] : []),
+      ]} />
+
+      <div className="grid gap-5 xl:grid-cols-2">
+        <SectionCard title="Where your leads come from" eyebrow="Acquisition" description="Share of leads by channel">
+          {channels.length === 0 ? <Empty /> : (
+            <div className="space-y-0.5">
+              {channels.map((c, i) => (
+                <BarRow
+                  key={i}
+                  label={c.meta.label}
+                  meta={c.meta}
+                  value={fmtNum(c.leads)}
+                  pct={((c.leads || 0) / maxLeads) * 100}
+                  color={c.meta.color}
+                  trailing={<span className="nums text-[12px] font-medium text-[#a8a299]">{Math.round(((c.leads || 0) / totalLeads) * 100)}%</span>}
+                />
+              ))}
+            </div>
+          )}
+        </SectionCard>
+
+        <SectionCard title="Channel quality" eyebrow="Conversion" description={revenueEnabled ? 'How well each channel turns into bookings' : 'How well each channel creates qualified leads'}>
+          {channels.length === 0 ? <Empty /> : (
+            <div className="overflow-hidden rounded-[12px] border border-[#ece8e0]">
+              <table className="w-full">
+                <thead>
+                  <tr className="bg-[#fbfaf7] text-left text-[10px] font-bold uppercase tracking-[0.16em] text-[#a8a299]">
+                    <th className="px-4 py-2.5">Channel</th>
+                    <th className="px-3 py-2.5 text-right">Leads</th>
+                    <th className="px-3 py-2.5 text-right">Booked</th>
+                    <th className="px-3 py-2.5 text-right">Conv.</th>
+                    {revenueEnabled && <th className="px-4 py-2.5 text-right">Revenue</th>}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#f1ede4]">
+                  {channels.map((c, i) => (
+                    <tr key={i} className="text-[13px]">
+                      <td className="px-4 py-3">
+                        <span className="flex items-center gap-2 font-semibold text-[#3a352e]">
+                          <span className="h-2.5 w-2.5 rounded-full" style={{ background: c.meta.color }} />
+                          {c.meta.label}
+                        </span>
+                      </td>
+                      <td className="nums px-3 py-3 text-right text-[#6b655c]">{fmtNum(c.leads)}</td>
+                      <td className="nums px-3 py-3 text-right font-semibold text-[#1c1916]">{fmtNum(c.booked)}</td>
+                      <td className="px-3 py-3 text-right">
+                        <span className={`nums rounded-full px-2 py-0.5 text-[11px] font-bold ${c.conversionRate >= 20 ? 'bg-[#f3f8f5] text-[#0f6a52]' : c.conversionRate >= 10 ? 'bg-[#fbf7ec] text-[#8a6418]' : 'bg-[#f1ede4] text-[#8a8278]'}`}>
+                          {fmtPct(c.conversionRate)}
+                        </span>
+                      </td>
+                      {revenueEnabled && <td className="nums px-4 py-3 text-right font-bold text-[#1c1916]">{formatCurrency(c.revenue)}</td>}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </SectionCard>
+      </div>
+
+      <SectionCard title="Channel momentum" eyebrow="Trend" description="Daily leads from your top channels">
+        {trend.length === 0 ? <Empty message="No channel trend for this period." /> : (
+          <ResponsiveContainer width="100%" height={260}>
+            <LineChart data={trend} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+              <CartesianGrid {...gridProps} />
+              <XAxis dataKey="date" tick={axisTick} axisLine={false} tickLine={false} minTickGap={24} />
+              <YAxis tick={axisTick} axisLine={false} tickLine={false} width={28} allowDecimals={false} />
+              <Tooltip content={<BriefTooltip />} cursor={{ stroke: '#ece8e0' }} />
+              <Legend iconType="circle" wrapperStyle={{ fontSize: 12, paddingTop: 12 }} />
+              {channels.slice(0, 4).map((c) => (
+                <Line key={c.meta.label} type="monotone" dataKey={c.meta.label} name={c.meta.label} stroke={c.meta.color} strokeWidth={2.5} dot={false} />
+              ))}
+            </LineChart>
+          </ResponsiveContainer>
+        )}
+      </SectionCard>
+
+      <SectionCard title="Leads by ad" eyebrow="Click-to-WhatsApp" description="Which Meta ad each lead came from — even when every ad points to the same WhatsApp number">
+        {ads.length === 0 ? (
+          <Empty message="No ad-attributed leads yet. New Click-to-WhatsApp leads will appear here automatically." />
+        ) : (
+          <div className="overflow-hidden rounded-[12px] border border-[#ece8e0]">
+            <table className="w-full">
+              <thead>
+                <tr className="bg-[#fbfaf7] text-left text-[10px] font-bold uppercase tracking-[0.16em] text-[#a8a299]">
+                  <th className="px-4 py-2.5">Ad</th>
+                  <th className="px-3 py-2.5">Campaign</th>
+                  <th className="px-3 py-2.5 text-right">Leads</th>
+                  <th className="px-3 py-2.5 text-right">Booked</th>
+                  <th className="px-3 py-2.5 text-right">Conv.</th>
+                  <th className="px-4 py-2.5 w-32">Share</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#f1ede4]">
+                {ads.map((a) => (
+                  <tr key={a.adId} className="text-[13px]">
+                    <td className="px-4 py-3">
+                      <span className="flex items-center gap-2 font-semibold text-[#3a352e]">
+                        <span className="rounded bg-sky-600 px-1 text-[9px] font-bold uppercase tracking-wide text-white">Ad</span>
+                        <span className="truncate max-w-[200px]">{a.adName}</span>
+                      </span>
+                    </td>
+                    <td className="px-3 py-3 text-[#6b655c]">{a.campaignName || '—'}</td>
+                    <td className="nums px-3 py-3 text-right font-semibold text-[#1c1916]">{fmtNum(a.leads)}</td>
+                    <td className="nums px-3 py-3 text-right text-[#6b655c]">{fmtNum(a.booked)}</td>
+                    <td className="px-3 py-3 text-right">
+                      <span className={`nums rounded-full px-2 py-0.5 text-[11px] font-bold ${a.conversionRate >= 20 ? 'bg-[#f3f8f5] text-[#0f6a52]' : a.conversionRate >= 10 ? 'bg-[#fbf7ec] text-[#8a6418]' : 'bg-[#f1ede4] text-[#8a8278]'}`}>
+                        {fmtPct(a.conversionRate)}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="h-1.5 w-full overflow-hidden rounded-full bg-[#f1ede4]">
+                        <div className="h-full rounded-full bg-sky-500" style={{ width: `${((a.leads || 0) / maxAdLeads) * 100}%` }} />
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </SectionCard>
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   5 · MARKETING — broadcast / campaign ROI
+   ════════════════════════════════════════════════════════════════════════ */
+
+function MarketingReport({ params, revenueEnabled = true }) {
+  const { data, isLoading } = useCampaignRoiReport(params);
+  const d = data?.data || {};
+
+  const chartData = (d.campaigns || []).slice(0, 10).map((c) => ({
+    name: (c.name || 'Campaign').slice(0, 14),
+    read: c.read || 0, leads: c.leadsGenerated || 0, revenue: rupees(c.revenue),
+  }));
+
+  if (isLoading) return <ReportSkeleton />;
+
+  return (
+    <div className="space-y-5">
+      <StatCards items={[
+        { label: 'Campaigns sent', value: fmtNum(d.totalCampaigns || 0), sub: `${fmtNum(d.totalSent || 0)} messages` },
+        { label: 'Delivery rate', value: fmtPct(d.avgDeliveryRate || 0), sub: `${fmtNum(d.totalDelivered || 0)} delivered` },
+        { label: 'Read rate', value: fmtPct(d.avgReadRate || 0), sub: `${fmtNum(d.totalRead || 0)} read`, accent: GOLD },
+        ...(revenueEnabled ? [{ label: 'Campaign revenue', value: formatCurrency(d.totalRevenue || 0), sub: `${fmtNum(d.totalBookings || 0)} bookings`, accent: EMERALD }] : []),
+      ]} />
+
+      <div className="grid gap-4 md:grid-cols-3">
+        <Note tone={d.avgLeadRate >= 5 ? 'positive' : 'warning'} title={`Lead generation · ${fmtPct(d.avgLeadRate || 0)}`}>
+          {d.avgLeadRate >= 5 ? 'Strong — each broadcast sparks real interest.' : 'Sharpen targeting and messaging to lift response.'}
+        </Note>
+        {revenueEnabled && (
+          <Note tone={d.avgBookingRate >= 1 ? 'positive' : 'warning'} title={`Booking rate · ${fmtPct(d.avgBookingRate || 0)}`}>
+            {d.avgBookingRate >= 1 ? 'Campaigns convert into bookings — scale your best templates.' : 'Add stronger CTAs and direct booking links.'}
+          </Note>
+        )}
+        <Note tone="neutral" title={`Reply rate · ${fmtPct(d.avgReplyRate || 0)}`}>
+          {d.avgReplyRate >= 10 ? 'High engagement — your audience is responding.' : 'Try more personal, interactive templates.'}
+        </Note>
+      </div>
+
+      <SectionCard title="Top campaigns" eyebrow="Performance" description={revenueEnabled ? 'Reads, leads and revenue per broadcast' : 'Reads and leads per broadcast'}>
+        {chartData.length === 0 ? <Empty message="No campaigns sent in this period." /> : (
+          <ResponsiveContainer width="100%" height={320}>
+            <ComposedChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+              <CartesianGrid {...gridProps} />
+              <XAxis dataKey="name" tick={axisTick} axisLine={false} tickLine={false} />
+              <YAxis yAxisId="l" tick={axisTick} axisLine={false} tickLine={false} width={30} allowDecimals={false} />
+              <YAxis yAxisId="r" orientation="right" tick={axisTick} axisLine={false} tickLine={false} width={52} tickFormatter={moneyTick} />
+              <Tooltip content={<BriefTooltip formatter={(v, p) => (p?.dataKey === 'revenue' ? moneyTip(v) : fmtNum(v))} />} cursor={{ fill: 'rgba(28,25,20,0.03)' }} />
+              <Legend iconType="circle" wrapperStyle={{ fontSize: 12, paddingTop: 12 }} />
+              <Bar yAxisId="l" dataKey="read" name="Read" fill="#e0d8c8" radius={[5, 5, 0, 0]} barSize={14} />
+              <Bar yAxisId="l" dataKey="leads" name="Leads" fill={SLATE} radius={[5, 5, 0, 0]} barSize={14} />
+              {revenueEnabled && <Line yAxisId="r" type="monotone" dataKey="revenue" name="Revenue" stroke={EMERALD} strokeWidth={2.5} dot={{ r: 3, fill: EMERALD }} />}
+            </ComposedChart>
+          </ResponsiveContainer>
+        )}
+      </SectionCard>
+
+      <SectionCard title="Campaign ledger" eyebrow="Detail" description="Every broadcast in this period">
+        {(d.campaigns || []).length === 0 ? <Empty /> : (
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-[#ece8e0] text-left text-[10px] font-bold uppercase tracking-[0.16em] text-[#a8a299]">
+                  <th className="py-2.5 pr-4">Campaign</th>
+                  <th className="px-3 py-2.5 text-right">Sent</th>
+                  <th className="px-3 py-2.5 text-right">Read</th>
+                  <th className="px-3 py-2.5 text-right">Reply</th>
+                  <th className="px-3 py-2.5 text-right">Leads</th>
+                  {revenueEnabled && <th className="px-3 py-2.5 text-right">Bookings</th>}
+                  {revenueEnabled && <th className="py-2.5 pl-3 text-right">Revenue</th>}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#f1ede4]">
+                {(d.campaigns || []).map((c) => (
+                  <tr key={c.id} className="text-[13px]">
+                    <td className="py-3 pr-4">
+                      <p className="font-semibold text-[#1c1916]">{text(c.name)}</p>
+                      <p className="text-[11px] text-[#a8a299]">{text(c.type, '')}</p>
+                    </td>
+                    <td className="nums px-3 py-3 text-right text-[#6b655c]">{fmtNum(c.sent)}</td>
+                    <td className="px-3 py-3 text-right">
+                      <span className={`nums rounded-full px-2 py-0.5 text-[11px] font-bold ${c.readRate >= 50 ? 'bg-[#f3f8f5] text-[#0f6a52]' : c.readRate >= 25 ? 'bg-[#fbf7ec] text-[#8a6418]' : 'bg-[#f1ede4] text-[#8a8278]'}`}>{fmtPct(c.readRate)}</span>
+                    </td>
+                    <td className="nums px-3 py-3 text-right text-[#6b655c]">{fmtPct(c.replyRate)}</td>
+                    <td className="nums px-3 py-3 text-right font-semibold text-[#1c1916]">{fmtNum(c.leadsGenerated)}</td>
+                    {revenueEnabled && <td className="nums px-3 py-3 text-right font-semibold text-[#1c1916]">{fmtNum(c.bookings)}</td>}
+                    {revenueEnabled && <td className="nums py-3 pl-3 text-right font-bold text-[#1c1916]">{formatCurrency(c.revenue)}</td>}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </SectionCard>
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   6 · CUSTOMERS
+   ════════════════════════════════════════════════════════════════════════ */
+
+function CustomersReport({ params, revenueEnabled = true }) {
+  const { data: ltvRes, isLoading: l1 } = useCustomerLtvReport(params);
+  const { data: cacRes, isLoading: l2 } = useCacReport(params);
+
+  const ltv = ltvRes?.data || {};
+  const cac = cacRes?.data || {};
+  const top = ltv.topCustomers || [];
+  const maxSpent = Math.max(...top.map((c) => c.totalSpent || 0), 1);
+
+  if (l1 || l2) return <ReportSkeleton />;
+
+  return (
+    <div className="space-y-5">
+      <StatCards items={[
+        ...(revenueEnabled ? [{ label: 'Avg lifetime value', value: formatCurrency(ltv.avgLtv || 0), accent: EMERALD }] : []),
+        { label: 'Total customers', value: fmtNum(ltv.totalCustomers || 0) },
+        ...(revenueEnabled ? [{ label: 'Repeat rate', value: fmtPct(ltv.repeatRate || 0), sub: '2+ bookings' }] : []),
+        ...(revenueEnabled ? [{ label: 'Blended conversion', value: fmtPct(cac.avgConversionRate || 0), sub: 'lead → booking' }] : []),
+      ]} />
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <Note tone="neutral" title="Acquisition cost">{text(cac.note, 'Track spend per channel to compute cost per customer.')}</Note>
+        {revenueEnabled && <Note tone={ltv.repeatRate >= 30 ? 'positive' : 'warning'} title="Repeat bookings">
+          {ltv.repeatRate >= 30 ? 'Strong loyalty — launch a referral or loyalty program to push it higher.'
+            : 'Most customers book once. Post-trip drips and referral incentives will change that.'}
+        </Note>}
+      </div>
+
+      <SectionCard title={revenueEnabled ? 'Your most valuable customers' : 'Customer directory'} eyebrow={revenueEnabled ? 'Top by lifetime value' : 'Customers'} description={revenueEnabled ? 'The relationships worth protecting' : 'Known customers from your workspace'}>
+        {top.length === 0 ? <Empty /> : (
+          <div className="space-y-2.5">
+            {top.map((c, i) => (
+              <div key={c.id || i} className="flex items-center gap-4 rounded-[12px] border border-[#f1ede4] bg-[#fbfaf7] px-4 py-3">
+                <Rank n={i + 1} />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[14px] font-semibold text-[#1c1916]">{text(c.name)}</p>
+                  <p className="text-[11.5px] text-[#a8a299]">{revenueEnabled ? `${text(c.phone, '')} · ${fmtNum(c.totalBookings)} bookings${c.lastBooking ? ` · last ${formatDate(c.lastBooking)}` : ''}` : text(c.phone, '')}</p>
+                </div>
+                {revenueEnabled && <div className="hidden w-40 sm:block">
+                  <div className="h-[6px] w-full overflow-hidden rounded-full bg-[#efe9dd]">
+                    <div className="h-full rounded-full" style={{ width: `${((c.totalSpent || 0) / maxSpent) * 100}%`, background: EMERALD }} />
+                  </div>
+                </div>}
+                {revenueEnabled && <div className="w-28 text-right">
+                  <p className="nums text-[14px] font-bold text-[#1c1916]">{formatCurrency(c.totalSpent)}</p>
+                  <p className="text-[11px] text-[#a8a299]">avg {formatCurrency(c.avgBookingValue)}</p>
+                </div>}
+              </div>
+            ))}
+          </div>
+        )}
+      </SectionCard>
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   7 · PACKAGES
+   ════════════════════════════════════════════════════════════════════════ */
+
+function PackagesReport({ params, revenueEnabled = true }) {
+  const { data, isLoading } = usePackageReport(params);
+  const packages = data?.data?.packages || [];
+
+  if (isLoading) return <ReportSkeleton />;
+
+  const totalBookings = packages.reduce((s, p) => s + (p.bookingCount || 0), 0);
+  const totalRevenue = packages.reduce((s, p) => s + (p.totalRevenue || 0), 0);
+  const avgConv = packages.length ? packages.reduce((s, p) => s + (p.conversionRate || 0), 0) / packages.length : 0;
+
+  const revChart = packages.slice(0, 8).map((p) => ({
+    name: (p.package?.name || 'N/A').slice(0, 14),
+    bookings: p.bookingCount || 0, leads: p.leads || 0, revenue: rupees(p.totalRevenue),
+  }));
+
+  return (
+    <div className="space-y-5">
+      <StatCards items={[
+        { label: 'Live packages', value: fmtNum(packages.length) },
+        ...(revenueEnabled ? [
+          { label: 'Total bookings', value: fmtNum(totalBookings) },
+          { label: 'Package revenue', value: formatCurrency(totalRevenue), accent: EMERALD },
+          { label: 'Avg conversion', value: fmtPct(avgConv, 1) },
+        ] : [
+          { label: 'Package enquiries', value: fmtNum(packages.reduce((s, p) => s + (p.leads || 0), 0)) },
+        ]),
+      ]} />
+
+      <SectionCard
+        title="Package performance" eyebrow="Products" description={revenueEnabled ? 'Leads, bookings, conversion and revenue per package' : 'Leads per package'}
+        action={<ExportButton onClick={() => downloadCsv(analyticsApi, 'packages', params)} />}
+      >
+        {packages.length === 0 ? <Empty message="No package data yet." /> : (
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-[#ece8e0] text-left text-[10px] font-bold uppercase tracking-[0.16em] text-[#a8a299]">
+                  <th className="py-2.5 pr-3">#</th>
+                  <th className="py-2.5 pr-4">Package</th>
+                  <th className="px-3 py-2.5">Destination</th>
+                  <th className="px-3 py-2.5 text-right">Leads</th>
+                  {revenueEnabled && <th className="px-3 py-2.5 text-right">Bookings</th>}
+                  {revenueEnabled && <th className="px-3 py-2.5 text-right">Conv.</th>}
+                  {revenueEnabled && <th className="py-2.5 pl-3 text-right">Revenue</th>}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#f1ede4]">
+                {packages.map((p, i) => (
+                  <tr key={p.package?.id || i} className="text-[13px]">
+                    <td className="py-3 pr-3 text-[#a8a299]"><Rank n={i + 1} /></td>
+                    <td className="py-3 pr-4">
+                      <p className="font-semibold text-[#1c1916]">{text(p.package?.name, 'N/A')}</p>
+                      <p className="text-[11px] text-[#a8a299]">{text(p.package?.category, '')}</p>
+                    </td>
+                    <td className="px-3 py-3 text-[#6b655c]">{text((p.package?.destinations || []).join(', '), '—')}</td>
+                    <td className="nums px-3 py-3 text-right text-[#6b655c]">{fmtNum(p.leads)}</td>
+                    {revenueEnabled && <td className="nums px-3 py-3 text-right font-semibold text-[#1c1916]">{fmtNum(p.bookingCount)}</td>}
+                    {revenueEnabled && (
+                      <td className="px-3 py-3 text-right">
+                        <span className={`nums rounded-full px-2 py-0.5 text-[11px] font-bold ${p.conversionRate >= 30 ? 'bg-[#f3f8f5] text-[#0f6a52]' : p.conversionRate >= 15 ? 'bg-[#fbf7ec] text-[#8a6418]' : 'bg-[#f1ede4] text-[#8a8278]'}`}>{fmtPct(p.conversionRate)}</span>
+                      </td>
+                    )}
+                    {revenueEnabled && <td className="nums py-3 pl-3 text-right font-bold text-[#1c1916]">{formatCurrency(p.totalRevenue)}</td>}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </SectionCard>
+
+      {revenueEnabled && revChart.length > 0 && (
+        <div className="grid gap-5 xl:grid-cols-2">
+          <SectionCard title="Bookings vs enquiries" eyebrow="Demand">
+            <ResponsiveContainer width="100%" height={280}>
+              <BarChart data={revChart} barGap={3} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                <CartesianGrid {...gridProps} />
+                <XAxis dataKey="name" tick={{ ...axisTick, fill: INK_SOFT }} axisLine={false} tickLine={false} />
+                <YAxis tick={axisTick} axisLine={false} tickLine={false} width={28} allowDecimals={false} />
+                <Tooltip content={<BriefTooltip />} cursor={{ fill: 'rgba(28,25,20,0.03)' }} />
+                <Legend iconType="circle" wrapperStyle={{ fontSize: 12, paddingTop: 12 }} />
+                <Bar dataKey="leads" name="Enquiries" fill="#e0d8c8" radius={[5, 5, 0, 0]} barSize={20} />
+                <Bar dataKey="bookings" name="Bookings" fill={INK} radius={[5, 5, 0, 0]} barSize={20} />
+              </BarChart>
+            </ResponsiveContainer>
+          </SectionCard>
+
+          <SectionCard title="Revenue by package" eyebrow="Earnings">
+            <ResponsiveContainer width="100%" height={280}>
+              <BarChart data={revChart} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                <CartesianGrid {...gridProps} />
+                <XAxis dataKey="name" tick={{ ...axisTick, fill: INK_SOFT }} axisLine={false} tickLine={false} />
+                <YAxis tick={axisTick} axisLine={false} tickLine={false} width={52} tickFormatter={moneyTick} />
+                <Tooltip content={<BriefTooltip formatter={moneyTip} />} cursor={{ fill: 'rgba(28,25,20,0.03)' }} />
+                <Bar dataKey="revenue" name="Revenue" fill={EMERALD} radius={[5, 5, 0, 0]} barSize={30} />
+              </BarChart>
+            </ResponsiveContainer>
+          </SectionCard>
+        </div>
       )}
     </div>
   );
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
-   HELPERS
-   ═══════════════════════════════════════════════════════════════════════════ */
+/* ════════════════════════════════════════════════════════════════════════
+   8 · TEAM — staff & responsiveness
+   ════════════════════════════════════════════════════════════════════════ */
 
-function formatSourceName(source) {
-  const map = {
-    whatsapp_organic: 'WhatsApp Organic',
-    instagram_ad: 'Instagram Ads',
-    facebook_ad: 'Facebook Ads',
-    referral: 'Referral',
-    qr_code: 'QR Code',
-    website: 'Website',
-    manual: 'Manual Entry',
-    whatsapp: 'WhatsApp',
-  };
-  return map[source] || (source || 'Unknown').replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
-}
+function TeamReport({ params, revenueEnabled = true }) {
+  const { data: agentRes, isLoading: l1 } = useAgentPerformanceReport(params);
+  const { data: opRes, isLoading: l2 } = useOperationalReport(params);
 
-/* ═══════════════════════════════════════════════════════════════════════════
-   MAIN REPORTS PAGE
-   ═══════════════════════════════════════════════════════════════════════════ */
+  const agents = agentRes?.data?.agents || [];
+  const op = opRes?.data || {};
 
-export default function Analytics() {
-  const [activeTab, setActiveTab] = useState('executive');
-  const [datePreset, setDatePreset] = useState(30);
-  const params = useMemo(() => getDateRange(datePreset), [datePreset]);
+  const responseDist = (op.responseDistribution || []).map((r) => ({ name: r.bucket, count: r.count || 0 }));
+  const maxResp = Math.max(...responseDist.map((r) => r.count), 1);
+
+  if (l1 || l2) return <ReportSkeleton />;
+
+  const teamRevenue = agents.reduce((s, a) => s + (a.revenue || 0), 0);
 
   return (
-    <div className="w-full space-y-5">
-      {/* Header */}
-      <section className="flex flex-col gap-3 border-b border-neutral-200 pb-4 md:flex-row md:items-center md:justify-between">
-        <div>
-          <h1 className="page-heading">Founder Reports</h1>
-          <p className="page-subtext">Deep business intelligence across every aspect of your travel agency.</p>
+    <div className="space-y-5">
+      <StatCards items={[
+        { label: 'Team members', value: fmtNum(agents.length) },
+        ...(revenueEnabled ? [{ label: 'Bookings won', value: fmtNum(agents.reduce((s, a) => s + (a.leadsConverted || 0), 0)) }] : []),
+        { label: 'Leads going cold', value: fmtNum(op.missedFollowUps || 0), sub: 'no follow-up', accent: op.missedFollowUps > 0 ? CLAY : INK },
+        ...(revenueEnabled ? [{ label: 'Team revenue', value: formatCurrency(teamRevenue), accent: EMERALD }] : []),
+      ]} />
+
+      <Note tone={op.missedFollowUps === 0 ? 'positive' : op.missedFollowUps <= 5 ? 'warning' : 'critical'} title="Follow-up coverage">
+        {op.missedFollowUps === 0 ? 'Every lead has had at least one follow-up. Nothing slipping through.'
+          : `${op.missedFollowUps} leads have had no agent follow-up — hot leads going cold. Assign them now.`}
+      </Note>
+
+      <SectionCard
+        title="Staff leaderboard" eyebrow="Team performance" description={revenueEnabled ? 'Ranked by revenue generated' : 'Ranked by lead handling activity'}
+        action={<ExportButton onClick={() => downloadCsv(analyticsApi, 'agents', params)} />}
+      >
+        {agents.length === 0 ? <Empty message="No team members found." /> : (
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-[#ece8e0] text-left text-[10px] font-bold uppercase tracking-[0.16em] text-[#a8a299]">
+                  <th className="py-2.5 pr-3">#</th>
+                  <th className="py-2.5 pr-4">Staff</th>
+                  <th className="px-3 py-2.5 text-right">Leads</th>
+                  {revenueEnabled && <th className="px-3 py-2.5 text-right">Booked</th>}
+                  {revenueEnabled && <th className="px-3 py-2.5 text-right">Conv.</th>}
+                  <th className="px-3 py-2.5 text-right">Messages</th>
+                  {revenueEnabled && <th className="py-2.5 pl-3 text-right">Revenue</th>}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#f1ede4]">
+                {agents.map((a, i) => (
+                  <tr key={a.id || i} className="text-[13px]">
+                    <td className="py-3 pr-3"><Rank n={i + 1} /></td>
+                    <td className="py-3 pr-4">
+                      <p className="font-semibold text-[#1c1916]">{text(a.name)}</p>
+                      <p className="text-[11px] text-[#a8a299]">{text(a.role, '')}</p>
+                    </td>
+                    <td className="nums px-3 py-3 text-right text-[#6b655c]">{fmtNum(a.leadsAssigned)}</td>
+                    {revenueEnabled && <td className="nums px-3 py-3 text-right font-semibold text-[#1c1916]">{fmtNum(a.leadsConverted)}</td>}
+                    {revenueEnabled && (
+                      <td className="px-3 py-3 text-right">
+                        <span className={`nums rounded-full px-2 py-0.5 text-[11px] font-bold ${a.conversionRate >= 20 ? 'bg-[#f3f8f5] text-[#0f6a52]' : a.conversionRate >= 10 ? 'bg-[#fbf7ec] text-[#8a6418]' : 'bg-[#f1ede4] text-[#8a8278]'}`}>{fmtPct(a.conversionRate)}</span>
+                      </td>
+                    )}
+                    <td className="nums px-3 py-3 text-right text-[#6b655c]">{fmtNum(a.messagesSent)}</td>
+                    {revenueEnabled && <td className="nums py-3 pl-3 text-right font-bold text-[#1c1916]">{formatCurrency(a.revenue)}</td>}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </SectionCard>
+
+      <StaffScorecards agents={agents} revenueEnabled={revenueEnabled} />
+
+      <SectionCard title="How fast your team replies" eyebrow="Responsiveness" description="Distribution of first-response times">
+        {responseDist.length === 0 ? <Empty /> : (
+          <div className="space-y-0.5">
+            {responseDist.map((r, i) => (
+              <BarRow key={i} label={r.name} value={fmtNum(r.count)} pct={(r.count / maxResp) * 100} color={i === 0 ? EMERALD : SLATE} />
+            ))}
+          </div>
+        )}
+      </SectionCard>
+
+      {(op.agentWorkload || []).length > 0 && (
+        <SectionCard title="Workload balance" eyebrow="Distribution" description={revenueEnabled ? 'Leads, messages and bookings handled per person' : 'Leads and messages handled per person'}>
+          <ResponsiveContainer width="100%" height={300}>
+            <BarChart
+              data={(op.agentWorkload || []).slice(0, 8).map((a) => ({
+                name: (a.name || 'Staff').split(' ')[0],
+                leads: a.leadsAssigned, messages: a.messagesSent, bookings: a.conversions,
+              }))}
+              barGap={3} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
+            >
+              <CartesianGrid {...gridProps} />
+              <XAxis dataKey="name" tick={{ ...axisTick, fill: INK_SOFT }} axisLine={false} tickLine={false} />
+              <YAxis tick={axisTick} axisLine={false} tickLine={false} width={28} allowDecimals={false} />
+              <Tooltip content={<BriefTooltip />} cursor={{ fill: 'rgba(28,25,20,0.03)' }} />
+              <Legend iconType="circle" wrapperStyle={{ fontSize: 12, paddingTop: 12 }} />
+              <Bar dataKey="leads" name="Leads" fill="#dfd9cc" radius={[5, 5, 0, 0]} barSize={16} />
+              <Bar dataKey="messages" name="Messages" fill={SLATE} radius={[5, 5, 0, 0]} barSize={16} />
+              {revenueEnabled && <Bar dataKey="bookings" name="Bookings" fill={EMERALD} radius={[5, 5, 0, 0]} barSize={16} />}
+            </BarChart>
+          </ResponsiveContainer>
+        </SectionCard>
+      )}
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   9 · REVIEWS
+   ════════════════════════════════════════════════════════════════════════ */
+
+function ReviewsReport({ params }) {
+  const { data, isLoading } = useReviewReport(params);
+  const d = data?.data || {};
+
+  const ratingRows = useMemo(() => [5, 4, 3, 2, 1].map((r) => {
+    const match = (d.ratingDistribution || []).find((x) => parseInt(x.rating, 10) === r);
+    return { stars: r, count: parseInt(match?.count || '0', 10) };
+  }), [d.ratingDistribution]);
+  const maxRating = Math.max(...ratingRows.map((r) => r.count), 1);
+
+  if (isLoading) return <ReportSkeleton />;
+
+  const sentiment = d.avgRating >= 4.5 ? 'Promoter-heavy' : d.avgRating >= 3.5 ? 'Mixed' : 'Detractor-heavy';
+  const sentimentTone = d.avgRating >= 4.5 ? EMERALD : d.avgRating >= 3.5 ? GOLD : CLAY;
+  const negatives = d.negativeReviews || [];
+
+  return (
+    <div className="space-y-5">
+      <StatCards items={[
+        { label: 'Average rating', value: `${d.avgRating || 0} ★`, accent: GOLD },
+        { label: 'Total reviews', value: fmtNum(d.totalReviews || 0) },
+        { label: 'Negative reviews', value: fmtNum(negatives.length), sub: 'rating ≤ 2', accent: negatives.length ? CLAY : INK },
+        { label: 'Sentiment', value: sentiment, accent: sentimentTone },
+      ]} />
+
+      <div className="grid gap-5 xl:grid-cols-2">
+        <SectionCard title="Rating distribution" eyebrow="Satisfaction">
+          <div className="space-y-0.5">
+            {ratingRows.map((r) => (
+              <BarRow key={r.stars} label={`${r.stars} ★`} value={fmtNum(r.count)} pct={(r.count / maxRating) * 100} color={r.stars >= 4 ? EMERALD : r.stars === 3 ? GOLD : CLAY} />
+            ))}
+          </div>
+        </SectionCard>
+
+        <SectionCard title="Best-loved destinations" eyebrow="By rating" description="Where you delight customers most">
+          {(d.reviewsByDestination || []).length === 0 ? <Empty message="No destination reviews yet." /> : (
+            <div className="space-y-2">
+              {(d.reviewsByDestination || []).map((r, i) => (
+                <div key={i} className="flex items-center justify-between rounded-[12px] border border-[#f1ede4] bg-[#fbfaf7] px-4 py-3">
+                  <span className="text-[13px] font-semibold text-[#3a352e]">{text(r.destination)}</span>
+                  <span className="flex items-center gap-2">
+                    <span className="nums text-[13px] font-bold" style={{ color: GOLD }}>{r.avgRating} ★</span>
+                    <span className="text-[11px] text-[#a8a299]">({fmtNum(r.count)})</span>
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </SectionCard>
+      </div>
+
+      {negatives.length > 0 && (
+        <SectionCard title="Needs a personal call" eyebrow="Negative feedback" description="Reviews rated 2 stars or lower">
+          <div className="grid gap-3 md:grid-cols-2">
+            {negatives.map((r, i) => (
+              <div key={i} className="rounded-[12px] border border-[#eccfc4] bg-[#fbf2ee] p-4">
+                <div className="flex items-center justify-between">
+                  <p className="text-[13px] font-semibold text-[#1c1916]">{text(r.customer?.name, 'Anonymous')}</p>
+                  <span className="nums text-[13px] font-bold text-[#b4533a]">{r.rating} ★</span>
+                </div>
+                {r.testimonial && <p className="mt-2 text-[12.5px] italic leading-relaxed text-[#6b655c]">“{r.testimonial}”</p>}
+                {r.destination && <p className="mt-1.5 text-[11px] text-[#a8a299]">{text(r.destination)}</p>}
+              </div>
+            ))}
+          </div>
+        </SectionCard>
+      )}
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   ORCHESTRATOR
+   ════════════════════════════════════════════════════════════════════════ */
+
+const ITEM_FINANCE_TYPES = [
+  { key: 'PACKAGE', label: 'Package', endpoint: '/packages', name: (item) => item.name, meta: (item) => (item.destinations || []).join(', ') || item.duration },
+  { key: 'PROPERTY', label: 'Property', endpoint: '/properties', name: (item) => item.name, meta: (item) => item.location || item.propertyType },
+  { key: 'CRUISE', label: 'Cruise', endpoint: '/cruises', name: (item) => item.name, meta: (item) => item.cruiseLine || item.departurePort },
+  { key: 'VISA', label: 'Visa', endpoint: '/visas', name: (item) => `${item.country || 'Visa'}${item.visaType ? ` - ${item.visaType}` : ''}`, meta: (item) => item.processingTime },
+  { key: 'SERVICE', label: 'Service', endpoint: '/services', name: (item) => item.name, meta: (item) => item.category || item.pricingType },
+];
+
+function listFromResponse(response) {
+  const data = response?.data;
+  if (Array.isArray(data?.data?.data)) return data.data.data;
+  if (Array.isArray(data?.data)) return data.data;
+  if (Array.isArray(data)) return data;
+  return [];
+}
+
+function ItemFinanceReport() {
+  const navigate = useNavigate();
+  const [itemType, setItemType] = useState('PACKAGE');
+  const selectedType = ITEM_FINANCE_TYPES.find((type) => type.key === itemType) || ITEM_FINANCE_TYPES[0];
+
+  const { data: items = [], isLoading } = useQuery({
+    queryKey: ['report-item-finance-catalog', selectedType.key],
+    queryFn: () => client.get(selectedType.endpoint, { params: { limit: 200 } }).then(listFromResponse),
+  });
+
+  const openReport = (item) => {
+    if (selectedType.key === 'PACKAGE') {
+      navigate(`/packages/${item.id}/finance`);
+      return;
+    }
+    navigate(`/finance/${selectedType.key}/${item.id}`);
+  };
+
+  return (
+    <div className="space-y-5">
+      <StatCards items={[
+        { label: 'Report type', value: 'P&L' },
+        { label: 'Receivables', value: 'Customer wise', accent: EMERALD },
+        { label: 'Payables', value: 'Vendor wise', accent: CLAY },
+        { label: 'Current catalog', value: fmtNum(items.length) },
+      ]} />
+
+      <SectionCard
+        title="Item finance reports"
+        eyebrow="Finance"
+        description="Open profit & loss, receivables, payables and vendor analysis for any package, property, cruise, visa or service."
+      >
+        <div className="mb-4 flex flex-wrap gap-2">
+          {ITEM_FINANCE_TYPES.map((type) => (
+            <button
+              key={type.key}
+              type="button"
+              onClick={() => setItemType(type.key)}
+              className={`rounded-full px-3.5 py-1.5 text-[12.5px] font-semibold transition ${itemType === type.key
+                ? 'bg-[#1c1916] text-white shadow-sm'
+                : 'border border-[#ece8e0] bg-white text-[#8a8278] hover:border-[#d9d4c8] hover:text-[#1c1916]'}`}
+            >
+              {type.label}
+            </button>
+          ))}
         </div>
-        <div className="flex items-center gap-2">
+
+        {isLoading ? <ReportSkeleton /> : items.length === 0 ? <Empty message={`No ${selectedType.label.toLowerCase()} records found.`} /> : (
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-[#ece8e0] text-left text-[10px] font-bold uppercase tracking-[0.16em] text-[#a8a299]">
+                  <th className="py-2.5 pr-3">#</th>
+                  <th className="py-2.5 pr-4">{selectedType.label}</th>
+                  <th className="px-3 py-2.5">Details</th>
+                  <th className="py-2.5 pl-3 text-right">Report</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#f1ede4]">
+                {items.map((item, index) => (
+                  <tr key={item.id || index} className="text-[13px]">
+                    <td className="py-3 pr-3 text-[#a8a299]"><Rank n={index + 1} /></td>
+                    <td className="py-3 pr-4">
+                      <p className="font-semibold text-[#1c1916]">{text(selectedType.name(item), selectedType.label)}</p>
+                      <p className="text-[11px] text-[#a8a299]">{item.isActive === false ? 'Inactive' : 'Active'}</p>
+                    </td>
+                    <td className="px-3 py-3 text-[#6b655c]">{text(selectedType.meta(item), '-')}</td>
+                    <td className="py-3 pl-3 text-right">
+                      <button
+                        type="button"
+                        onClick={() => openReport(item)}
+                        className="rounded-full bg-[#0f8a6b] px-3 py-1.5 text-[11px] font-bold text-white transition hover:bg-[#0b7258]"
+                      >
+                        Open Report
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </SectionCard>
+    </div>
+  );
+}
+
+const REPORTS = [
+  { key: 'pulse', label: 'Pulse', Component: PulseReport },
+  { key: 'crm', label: 'CRM', Component: CrmReport },
+  { key: 'revenue', label: 'Revenue', Component: RevenueReport, requiresRevenue: true },
+  { key: 'leads', label: 'Leads', Component: LeadsReport },
+  { key: 'channels', label: 'Channels', Component: ChannelsReport },
+  { key: 'marketing', label: 'Marketing', Component: MarketingReport },
+  { key: 'customers', label: 'Customers', Component: CustomersReport },
+  { key: 'packages', label: 'Packages', Component: PackagesReport },
+  { key: 'item-finance', label: 'Item Finance', Component: ItemFinanceReport },
+  { key: 'team', label: 'Team', Component: TeamReport },
+  { key: 'reviews', label: 'Reviews', Component: ReviewsReport },
+];
+
+export default function Analytics() {
+  const [active, setActive] = useState('pulse');
+  const [preset, setPreset] = useState(30);
+  const { moduleEnabled } = useIndustry();
+  const revenueEnabled = moduleEnabled('/bookings') && moduleEnabled('/revenue');
+  const params = useMemo(() => getDateRange(preset), [preset]);
+  const periodLabel = DATE_PRESETS.find((p) => p.value === preset)?.label || '30 days';
+  const visibleReports = useMemo(
+    () => REPORTS.filter((report) => revenueEnabled || !report.requiresRevenue),
+    [revenueEnabled]
+  );
+
+  useEffect(() => {
+    if (!visibleReports.some((report) => report.key === active)) {
+      setActive('pulse');
+    }
+  }, [active, visibleReports]);
+
+  const current = visibleReports.find((r) => r.key === active) || visibleReports[0];
+  const Active = current.Component;
+
+  return (
+    <div className="min-h-full bg-[#fbfaf8] p-4 sm:p-6 lg:p-8">
+      {/* Toolbar — section nav + date range */}
+      <div className="flex flex-col gap-3 border-b border-[#ece8e0] lg:flex-row lg:items-center lg:justify-between">
+        <nav className="hide-scrollbar -mb-px flex gap-0.5 overflow-x-auto">
+          {visibleReports.map((r) => {
+            const on = active === r.key;
+            return (
+              <button
+                key={r.key}
+                onClick={() => setActive(r.key)}
+                className={`relative shrink-0 px-3.5 py-3 text-[13.5px] font-semibold transition ${on ? 'text-[#1c1916]' : 'text-[#a8a299] hover:text-[#6b655c]'}`}
+              >
+                {r.label}
+                {on && <span className="absolute inset-x-2.5 bottom-0 h-[2.5px] rounded-full bg-[#0f8a6b]" />}
+              </button>
+            );
+          })}
+        </nav>
+        <div className="flex flex-wrap items-center gap-1.5 pb-3 lg:pb-0 lg:pl-4">
           {DATE_PRESETS.map((p) => (
             <button
               key={p.label}
-              onClick={() => setDatePreset(p.days)}
-              className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${datePreset === p.days ? 'bg-gradient-to-r from-indigo-500 to-violet-500 text-white shadow-md shadow-indigo-500/25' : 'border border-slate-200 bg-white text-slate-500 hover:bg-slate-50'}`}
+              onClick={() => setPreset(p.value)}
+              className={`rounded-full px-3.5 py-1.5 text-[12.5px] font-semibold transition ${preset === p.value
+                ? 'bg-[#1c1916] text-white shadow-sm'
+                : 'border border-[#ece8e0] bg-white text-[#8a8278] hover:border-[#d9d4c8] hover:text-[#1c1916]'}`}
             >
               {p.label}
             </button>
           ))}
         </div>
-      </section>
+      </div>
 
-      {/* Tab Navigation */}
-      <section className="hide-scrollbar -mx-1 flex gap-1 overflow-x-auto px-1">
-        {TABS.map((tab) => {
-          const Icon = tab.icon;
-          return (
-            <button
-              key={tab.key}
-              onClick={() => setActiveTab(tab.key)}
-              className={`flex shrink-0 items-center gap-1.5 rounded-xl px-4 py-2.5 text-sm font-semibold transition ${activeTab === tab.key
-                  ? 'bg-neutral-900 text-white shadow-sm'
-                  : 'border border-neutral-200 bg-white text-neutral-500 hover:border-neutral-300 hover:text-neutral-700'
-                }`}
-            >
-              <Icon className="w-4 h-4" />
-              <span>{tab.label}</span>
-            </button>
-          );
-        })}
-      </section>
-
-      {/* Active Tab Content */}
-      <section>
-        {activeTab === 'executive' && <ExecutiveSummaryTab params={params} />}
-        {activeTab === 'growth' && <GrowthVelocityTab params={params} />}
-        {activeTab === 'financial' && <FinancialDeepDiveTab params={params} />}
-        {activeTab === 'pipeline' && <PipelineFunnelTab params={params} />}
-        {activeTab === 'operational' && <OperationalTab params={params} />}
-        {activeTab === 'customers' && <CustomerIntelligenceTab params={params} />}
-        {activeTab === 'marketing' && <MarketingRoiTab params={params} />}
-        {activeTab === 'agents' && <TeamPerformanceTab params={params} />}
-        {activeTab === 'products' && <ProductsPackagesTab params={params} />}
-        {activeTab === 'reviews' && <ReviewsHealthTab params={params} />}
-      </section>
+      {/* Active report */}
+      <main key={active} className="mt-6 page-enter">
+        <Active params={params} periodLabel={periodLabel} revenueEnabled={revenueEnabled} />
+      </main>
     </div>
   );
 }

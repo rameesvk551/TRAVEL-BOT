@@ -7,6 +7,7 @@ const propertyRepository = require('../repositories/propertyRepository');
 const ALLOWED_UPDATE_FIELDS = [
   'name', 'propertyType', 'location', 'address', 'amenities',
   'description', 'pricePerNight', 'imageUrl', 'images', 'isActive',
+  'brochureUrl', 'brochureFileName',
 ];
 
 /**

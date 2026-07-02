@@ -2,10 +2,10 @@
 // DEPS: express, cors, helmet, morgan
 
 const express = require('express');
+const expressStatic = require('express').static;
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
-const expressStatic = require('express').static;
 const { apiLimiter } = require('./middleware/rateLimiter');
 const errorHandler = require('./middleware/errorHandler');
 const { registerApiRoutes } = require('./routes');
@@ -17,12 +17,30 @@ app.set('trust proxy', 1);
 
 // Global middleware
 app.use(helmet());
-app.use(cors({
-  origin: process.env.NODE_ENV === 'production'
-    ? process.env.BASE_URL
-    : ['http://localhost:5173', 'http://localhost:3000'],
+
+// Locked-down CORS for the authenticated dashboard API. The allowlist is
+// dynamic: the platform admin host, the public root domain's subdomains, and
+// every active white-label partner's custom domain (see corsOriginService).
+// A static single-origin policy here silently broke partner-host sessions.
+const corsOriginService = require('./services/corsOriginService');
+const restrictedCors = cors({
+  origin: (origin, callback) => {
+    corsOriginService.isAllowedOrigin(origin)
+      .then((ok) => callback(null, ok))
+      .catch((err) => callback(err));
+  },
   credentials: true,
-}));
+});
+
+// The public embed API (/api/public/*) is meant to be called from arbitrary
+// customer-owned websites, so it manages its own permissive CORS at the router
+// level. We skip the restrictive policy here so it cannot clobber that or break
+// cross-origin preflight. Security for that surface is the publishable key +
+// scopes + per-key rate limits, not the Origin header.
+app.use((req, res, next) => {
+  if (req.path.startsWith('/api/public/')) return next();
+  return restrictedCors(req, res, next);
+});
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 
 // Parse JSON for all routes EXCEPT payment webhook (needs raw body)

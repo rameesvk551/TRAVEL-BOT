@@ -3,6 +3,13 @@ const { Package } = require(path.resolve(__dirname, '../../../backend/src/models
 const whatsappService = require(path.resolve(__dirname, '../../../backend/src/services/whatsappService.ts'));
 const { updateSession } = require('../utils/sessionManager');
 
+function packagePriceLine(pkg) {
+  const amount = Number(pkg?.basePrice || 0);
+  return Number.isFinite(amount) && amount > 0
+    ? `Price: Rs.${(amount / 100).toLocaleString('en-IN')} / person`
+    : 'Price: On request';
+}
+
 async function sendQuote(session, customer, agency, packageId) {
   const ctx = { customerId: customer.id, agencyId: agency.id };
   const lang = customer.language || 'EN';
@@ -13,7 +20,6 @@ async function sendQuote(session, customer, agency, packageId) {
     return;
   }
 
-  const priceFormatted = `Rs.${(pkg.basePrice / 100).toLocaleString('en-IN')}`;
   const destinations = pkg.destinations?.join(', ') || 'Multiple destinations';
   const duration = pkg.duration || 'Custom duration';
   const inclusions = Array.isArray(pkg.inclusions) && pkg.inclusions.length > 0
@@ -37,7 +43,7 @@ async function sendQuote(session, customer, agency, packageId) {
         '',
         `Duration: ${duration}`,
         `Destinations: ${destinations}`,
-        `Price: ${priceFormatted} / person`,
+        packagePriceLine(pkg),
         '',
         'Inclusions:',
         inclusions,
@@ -51,7 +57,7 @@ async function sendQuote(session, customer, agency, packageId) {
         '',
         `Duration: ${duration}`,
         `Destinations: ${destinations}`,
-        `Price: ${priceFormatted} / person`,
+        packagePriceLine(pkg),
         '',
         'Inclusions:',
         inclusions,

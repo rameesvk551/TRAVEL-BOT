@@ -1,23 +1,18 @@
-import { useState, useEffect } from 'react';
-import { PlusIcon, XMarkIcon } from '@heroicons/react/24/outline';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { ArrowDownTrayIcon, PlusIcon, XMarkIcon } from '@heroicons/react/24/outline';
+import { useQuery } from '@tanstack/react-query';
+import toast from 'react-hot-toast';
 import { bookingsApi } from '../api/bookingsApi';
-import client from '../api/client';
+import { packagesApi } from '../api/packagesApi';
+import { servicesApi } from '../api/servicesApi';
+import { useCustomers } from '../api/customersApi';
 import { formatCurrency, formatDate } from '../utils/formatters';
 import { getStatusTone } from '../components/uiHelpers';
 import MobileRecordCard, { MobileField } from '../components/MobileRecordCard';
+import { useIndustry } from '../hooks/useIndustry';
 
-const EMPTY_BOOKING_FORM = {
-  customerId: '',
-  packageId: '',
-  itineraryId: '',
-  totalAmount: '',
-  advanceAmount: '',
-  travelDate: '',
-  returnDate: '',
-  travellers: '2',
-  notes: '',
-};
+
 
 function getListPayload(response) {
   if (Array.isArray(response?.data?.data)) return response.data.data;
@@ -28,15 +23,6 @@ function getListPayload(response) {
 
 function getSinglePayload(response) {
   return response?.data?.data || response?.data || response || null;
-}
-
-function Field({ label, children }) {
-  return (
-    <label className="block">
-      <span className="mb-2 block text-xs font-bold uppercase tracking-[0.15em] text-neutral-400">{label}</span>
-      {children}
-    </label>
-  );
 }
 
 function DetailItem({ label, value, children }) {
@@ -51,16 +37,42 @@ function DetailItem({ label, value, children }) {
 }
 
 export default function Bookings() {
-  const queryClient = useQueryClient();
-  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const navigate = useNavigate();
+  const { t } = useIndustry();
   const [selectedBookingId, setSelectedBookingId] = useState(null);
-  const [form, setForm] = useState(EMPTY_BOOKING_FORM);
+  const [downloadingInvoiceId, setDownloadingInvoiceId] = useState(null);
+
+  const [filterCustomer, setFilterCustomer] = useState('');
+  const [filterPackage, setFilterPackage] = useState('');
+  const [filterService, setFilterService] = useState('');
+  const [filterItemType, setFilterItemType] = useState('');
+
+  const { data: customersData } = useCustomers({ pageSize: 1000 });
+  const customers = getListPayload(customersData);
+
+  const { data: packagesData } = useQuery({
+    queryKey: ['packagesList'],
+    queryFn: () => packagesApi.list({ pageSize: 1000 }),
+  });
+  const packages = getListPayload(packagesData);
+
+  const { data: servicesData } = useQuery({
+    queryKey: ['servicesList'],
+    queryFn: () => servicesApi.list({ pageSize: 1000 }),
+  });
+  const services = getListPayload(servicesData);
 
   const { data: bookingsData, isLoading } = useQuery({
-    queryKey: ['bookings'],
-    queryFn: () => bookingsApi.list({}),
+    queryKey: ['bookings', { filterCustomer, filterPackage, filterService, filterItemType }],
+    queryFn: () => bookingsApi.list({
+      customerId: filterCustomer || undefined,
+      packageId: filterPackage || undefined,
+      serviceId: filterService || undefined,
+      itemType: filterItemType || undefined,
+    }),
   });
   const bookings = getListPayload(bookingsData);
+  const stats = bookingsData?.data?.stats;
 
   const { data: bookingDetailsResponse, isLoading: isDetailsLoading } = useQuery({
     queryKey: ['booking', selectedBookingId],
@@ -69,51 +81,96 @@ export default function Bookings() {
   });
   const selectedBooking = getSinglePayload(bookingDetailsResponse);
 
-  const { data: customersResponse } = useQuery({
-    queryKey: ['customers'],
-    queryFn: () => client.get('/customers').then(r => r.data),
-  });
-  const customers = getListPayload(customersResponse);
 
-  const { data: packagesResponse } = useQuery({
-    queryKey: ['packages'],
-    queryFn: () => client.get('/packages').then(r => r.data),
-  });
-  const packages = getListPayload(packagesResponse);
 
-  const { data: itinerariesResponse } = useQuery({
-    queryKey: ['itineraries'],
-    queryFn: () => client.get('/itineraries').then(r => r.data),
-  });
-  const itineraries = getListPayload(itinerariesResponse);
+  const getBookingItemName = (b) => {
+    if (!b) return '';
+    if (b.itemType === 'PROPERTY') return b.property?.name || 'Property';
+    if (b.itemType === 'CRUISE') return b.cruise?.name || 'Cruise';
+    if (b.itemType === 'VISA') return b.visa ? `${b.visa.country} Visa` : 'Visa';
+    if (b.itemType === 'SERVICE') return b.service?.name || 'Service';
+    if (b.itemType === 'CUSTOM') return b.customItemName || 'Custom';
+    return b.package?.name || 'Package';
+  };
 
-  const createBooking = useMutation({
-    mutationFn: bookingsApi.create,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['bookings'] });
-      setIsCreateOpen(false);
-      setForm(EMPTY_BOOKING_FORM);
+  const downloadInvoice = async (booking) => {
+    if (!booking?.id) return;
+    setDownloadingInvoiceId(booking.id);
+    try {
+      const response = await bookingsApi.downloadInvoice(booking.id);
+      const disposition = response.headers?.['content-disposition'] || '';
+      const match = disposition.match(/filename="?([^"]+)"?/i);
+      const fallbackName = `${booking.bookingRef || 'booking'}-invoice.pdf`;
+      const filename = match?.[1] || fallbackName;
+      const url = URL.createObjectURL(response.data);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      toast.success('Invoice PDF downloaded');
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to download invoice');
+    } finally {
+      setDownloadingInvoiceId(null);
     }
-  });
-
-  async function handleCreate(e) {
-    e.preventDefault();
-    await createBooking.mutateAsync({
-      customerId: form.customerId,
-      packageId: form.packageId || undefined,
-      itineraryId: form.itineraryId || undefined,
-      totalAmount: Number(form.totalAmount) * 100,
-      advanceAmount: Number(form.advanceAmount) * 100,
-      travelDate: form.travelDate,
-      returnDate: form.returnDate || undefined,
-      travellers: Number(form.travellers),
-      notes: form.notes.trim() || undefined,
-    });
-  }
+  };
 
   return (
     <div className="w-full space-y-4">
-      {/* Bookings header removed per request */}
+      <div className="flex items-center justify-between pb-4 border-b border-neutral-100">
+        <h1 className="text-2xl font-semibold text-slate-900">{t('bookings', 'Bookings')}</h1>
+        <button onClick={() => navigate('/bookings/new')} className="shell-button-primary flex items-center gap-2">
+          <PlusIcon className="h-4 w-4" />
+          <span>New Booking</span>
+        </button>
+      </div>
+
+      {stats && (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <DetailItem label="Total Bookings" value={stats.totalBookings} />
+          <DetailItem label="Total Revenue" value={formatCurrency(stats.totalRevenue)} />
+          <DetailItem label="Advance Paid" value={formatCurrency(stats.totalAdvancePaid)} />
+          <DetailItem label="Balance Due" value={formatCurrency(stats.totalBalanceDue)} />
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 bg-white p-4 rounded-[12px] shadow-sm border border-neutral-100">
+        <div>
+          <label className="block text-xs font-medium text-slate-500 mb-1">Customer</label>
+          <select value={filterCustomer} onChange={(e) => setFilterCustomer(e.target.value)} className="w-full rounded-lg border-neutral-200 text-sm py-2">
+            <option value="">All Customers</option>
+            {customers.map(c => <option key={c.id} value={c.id}>{c.name} {c.phone ? `(${c.phone})` : ''}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-slate-500 mb-1">Item Type</label>
+          <select value={filterItemType} onChange={(e) => setFilterItemType(e.target.value)} className="w-full rounded-lg border-neutral-200 text-sm py-2">
+            <option value="">All Types</option>
+            <option value="PACKAGE">Package</option>
+            <option value="SERVICE">Service</option>
+            <option value="EXT">Custom (Ext)</option>
+            <option value="CRUISE">Cruise</option>
+            <option value="VISA">Visa</option>
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-slate-500 mb-1">Package</label>
+          <select value={filterPackage} onChange={(e) => setFilterPackage(e.target.value)} className="w-full rounded-lg border-neutral-200 text-sm py-2" disabled={filterItemType && filterItemType !== 'PACKAGE'}>
+            <option value="">All Packages</option>
+            {packages.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-slate-500 mb-1">Service</label>
+          <select value={filterService} onChange={(e) => setFilterService(e.target.value)} className="w-full rounded-lg border-neutral-200 text-sm py-2" disabled={filterItemType && filterItemType !== 'SERVICE'}>
+            <option value="">All Services</option>
+            {services.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+        </div>
+      </div>
 
       <section className="mobile-card-list">
         {isLoading ? (
@@ -138,10 +195,10 @@ export default function Bookings() {
               badge={<span className={`badge ${getStatusTone(booking.status)}`}>{booking.status}</span>}
               onClick={() => setSelectedBookingId(booking.id)}
             >
-              <MobileField label="Trip" value={booking.package?.name || 'Custom'} />
-              <MobileField label="Travel" value={formatDate(booking.travelDate)} />
+              <MobileField label="Item" value={getBookingItemName(booking)} />
+              <MobileField label="Type" value={<span className="text-xs px-2 py-1 bg-slate-100 rounded-md font-medium text-slate-600">{booking.itemType}</span>} />
+              <MobileField label="Travel" value={formatDate(booking.travelDate) || '-'} />
               <MobileField label="Total" value={formatCurrency(booking.totalAmount)} />
-              <MobileField label="Advance" value={formatCurrency(booking.advancePaid)} />
             </MobileRecordCard>
           ))
         )}
@@ -152,7 +209,7 @@ export default function Bookings() {
           <table className="min-w-full text-left">
             <thead>
               <tr className="data-table-head">
-                {['Ref', 'Customer', 'Trip', 'Travel Date', 'Status'].map((heading) => (
+                {['Ref', 'Customer', 'Type', 'Item', 'Travel Date', 'Amount', 'Status'].map((heading) => (
                   <th key={heading} className="data-table-th">
                     {heading}
                   </th>
@@ -163,13 +220,13 @@ export default function Bookings() {
               {isLoading ? (
                 Array.from({ length: 5 }).map((_, index) => (
                   <tr key={index} className="border-b border-neutral-100">
-                    {Array.from({ length: 5 }).map((_, cell) => (
+                    {Array.from({ length: 7 }).map((_, cell) => (
                       <td key={cell} className="data-table-td"><div className="h-4 animate-pulse rounded bg-neutral-100" /></td>
                     ))}
                   </tr>
                 ))
               ) : bookings.length === 0 ? (
-                <tr><td colSpan={5} className="px-4 py-8 text-sm text-neutral-400">No bookings found.</td></tr>
+                <tr><td colSpan={7} className="px-4 py-8 text-sm text-neutral-400">No bookings found.</td></tr>
               ) : (
                 bookings.map((booking) => (
                   <tr
@@ -178,17 +235,13 @@ export default function Bookings() {
                     tabIndex={0}
                     role="button"
                     onClick={() => setSelectedBookingId(booking.id)}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter' || event.key === ' ') {
-                        event.preventDefault();
-                        setSelectedBookingId(booking.id);
-                      }
-                    }}
                   >
                     <td className="data-table-td font-semibold text-neutral-900">{booking.bookingRef}</td>
                     <td className="data-table-td text-neutral-700">{booking.customer?.name}</td>
-                    <td className="data-table-td text-neutral-500">{booking.package?.name || 'Custom'}</td>
-                    <td className="data-table-td text-neutral-600">{formatDate(booking.travelDate)}</td>
+                    <td className="data-table-td"><span className="text-xs px-2 py-1 bg-slate-100 rounded-md font-medium text-slate-600">{booking.itemType}</span></td>
+                    <td className="data-table-td text-neutral-500">{getBookingItemName(booking)}</td>
+                    <td className="data-table-td text-neutral-600">{formatDate(booking.travelDate) || '-'}</td>
+                    <td className="data-table-td text-neutral-900 font-medium">{formatCurrency(booking.totalAmount)}</td>
                     <td className="data-table-td">
                       <span className={`badge ${getStatusTone(booking.status)}`}>{booking.status}</span>
                     </td>
@@ -200,84 +253,34 @@ export default function Bookings() {
         </div>
       </section>
 
-      {isCreateOpen && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">
-          <div className="max-h-[92dvh] w-full overflow-y-auto rounded-t-[18px] border border-slate-200 bg-white p-4 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.35)] sm:max-w-2xl sm:rounded-[18px] sm:p-6">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="text-xs font-bold uppercase tracking-[0.22em] text-slate-400">New Booking</p>
-                <h2 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">Create Booking</h2>
-              </div>
-              <button onClick={() => setIsCreateOpen(false)} className="rounded-[10px] p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
-                <XMarkIcon className="h-5 w-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleCreate} className="mt-6 space-y-4">
-              <div className="grid gap-4 sm:grid-cols-2">
-                <Field label="Customer">
-                  <select required value={form.customerId} onChange={e => setForm({...form, customerId: e.target.value})} className="shell-input-rect">
-                    <option value="">Select customer...</option>
-                    {customers.map(c => <option key={c.id} value={c.id}>{c.name} ({c.phone})</option>)}
-                  </select>
-                </Field>
-                <Field label="Package">
-                  <select value={form.packageId} onChange={e => setForm({...form, packageId: e.target.value})} className="shell-input-rect">
-                    <option value="">None / Custom</option>
-                    {packages.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                  </select>
-                </Field>
-                <Field label="Itinerary">
-                  <select value={form.itineraryId} onChange={e => setForm({...form, itineraryId: e.target.value})} className="shell-input-rect">
-                    <option value="">None / Create Later</option>
-                    {itineraries.map(i => <option key={i.id} value={i.id}>{i.title}</option>)}
-                  </select>
-                </Field>
-                <Field label="Travelers">
-                  <input type="number" min="1" required value={form.travellers} onChange={e => setForm({...form, travellers: e.target.value})} className="shell-input-rect" />
-                </Field>
-                <Field label="Travel Date">
-                  <input type="date" required value={form.travelDate} onChange={e => setForm({...form, travelDate: e.target.value})} className="shell-input-rect" />
-                </Field>
-                <Field label="Return Date">
-                  <input type="date" value={form.returnDate} onChange={e => setForm({...form, returnDate: e.target.value})} className="shell-input-rect" />
-                </Field>
-                <Field label="Total Amount (₹)">
-                  <input type="number" min="0" required value={form.totalAmount} onChange={e => setForm({...form, totalAmount: e.target.value})} className="shell-input-rect" />
-                </Field>
-                <Field label="Advance Amount (₹)">
-                  <input type="number" min="0" required value={form.advanceAmount} onChange={e => setForm({...form, advanceAmount: e.target.value})} className="shell-input-rect" />
-                </Field>
-              </div>
-
-              <Field label="Notes">
-                <textarea rows="3" value={form.notes} onChange={e => setForm({...form, notes: e.target.value})} className="shell-input-rect rounded-[14px]" />
-              </Field>
-
-              <div className="flex justify-end gap-3 pt-2">
-                <button type="button" onClick={() => setIsCreateOpen(false)} className="shell-button-secondary">Cancel</button>
-                <button type="submit" disabled={createBooking.isPending} className="shell-button-primary">
-                  {createBooking.isPending ? 'Saving...' : 'Create Booking'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
+      {/* Detail Modal */}
       {selectedBookingId && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">
-          <div className="max-h-[92dvh] w-full overflow-y-auto rounded-t-[18px] border border-slate-200 bg-white p-4 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.35)] sm:max-w-3xl sm:rounded-[18px] sm:p-6">
-            <div className="flex items-start justify-between gap-4">
+        <div className="fixed inset-0 z-50 flex flex-col bg-white">
+          <div className="flex h-full w-full flex-col overflow-y-auto bg-white p-4 sm:p-8">
+            <div className="mx-auto w-full max-w-5xl">
+              <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="text-xs font-bold uppercase tracking-[0.22em] text-slate-400">Booking Details</p>
                 <h2 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">
                   {selectedBooking?.bookingRef || 'Loading booking'}
                 </h2>
               </div>
-              <button onClick={() => setSelectedBookingId(null)} className="rounded-[10px] p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
-                <XMarkIcon className="h-5 w-5" />
-              </button>
+              <div className="flex items-center gap-2">
+                {selectedBooking && (
+                  <button
+                    type="button"
+                    onClick={() => downloadInvoice(selectedBooking)}
+                    disabled={downloadingInvoiceId === selectedBooking.id}
+                    className="shell-button-secondary flex items-center gap-2"
+                  >
+                    <ArrowDownTrayIcon className="h-4 w-4" />
+                    <span>{downloadingInvoiceId === selectedBooking.id ? 'Preparing...' : 'Invoice PDF'}</span>
+                  </button>
+                )}
+                <button onClick={() => setSelectedBookingId(null)} className="rounded-[10px] p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
+                  <XMarkIcon className="h-5 w-5" />
+                </button>
+              </div>
             </div>
 
             {isDetailsLoading ? (
@@ -290,19 +293,20 @@ export default function Bookings() {
               <div className="mt-6 space-y-5">
                 <div className="flex flex-wrap items-center gap-3">
                   <span className={`badge ${getStatusTone(selectedBooking.status)}`}>{selectedBooking.status}</span>
-                  <span className="text-sm text-slate-500">{selectedBooking.package?.name || 'Custom itinerary'}</span>
+                  <span className="text-sm font-semibold px-2 py-1 bg-slate-100 rounded-md text-slate-600">{selectedBooking.itemType}</span>
+                  <span className="text-sm text-slate-600">{getBookingItemName(selectedBooking)}</span>
                 </div>
 
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                   <DetailItem label="Customer" value={selectedBooking.customer?.name} />
                   <DetailItem label="Phone" value={selectedBooking.customer?.phone} />
-                  <DetailItem label="Travellers" value={selectedBooking.travellers} />
+                  <DetailItem label="Payment Terms" value={selectedBooking.paymentMode} />
+                  <DetailItem label="Travellers" value={selectedBooking.travellers || '-'} />
                   <DetailItem label="Travel Date" value={formatDate(selectedBooking.travelDate)} />
-                  <DetailItem label="Return Date" value={formatDate(selectedBooking.returnDate)} />
+                  <DetailItem label="Base Price" value={formatCurrency(selectedBooking.basePrice || 0)} />
                   <DetailItem label="Total Amount" value={formatCurrency(selectedBooking.totalAmount)} />
                   <DetailItem label="Advance Paid" value={formatCurrency(selectedBooking.advancePaid)} />
                   <DetailItem label="Balance Due" value={formatCurrency(selectedBooking.balanceDue ?? (selectedBooking.totalAmount - selectedBooking.advancePaid))} />
-                  <DetailItem label="Lead Status" value={selectedBooking.lead?.status} />
                 </div>
 
                 <div className="grid gap-4 lg:grid-cols-2">
@@ -340,6 +344,7 @@ export default function Bookings() {
               <p className="mt-6 text-sm text-slate-400">Booking details could not be loaded.</p>
             )}
           </div>
+        </div>
         </div>
       )}
     </div>

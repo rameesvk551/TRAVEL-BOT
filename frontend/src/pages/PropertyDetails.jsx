@@ -13,6 +13,7 @@ import {
 } from '@heroicons/react/24/outline';
 import { propertiesApi } from '../api/propertiesApi';
 import { useAuthStore } from '../store/authStore';
+import { agentHasPermission } from '../utils/permissions';
 import { formatCurrency } from '../utils/formatters';
 
 const TYPE_ICONS = {
@@ -26,8 +27,8 @@ export default function PropertyDetails() {
   const { id } = useParams();
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const agentRole = useAuthStore((state) => state.agent?.role);
-  const canManage = agentRole === 'ADMIN';
+  const agent = useAuthStore((state) => state.agent);
+  const canManage = agentHasPermission(agent, 'properties.manage');
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['property', id],

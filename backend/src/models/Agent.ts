@@ -53,12 +53,21 @@ module.exports = (sequelize) => {
       type: DataTypes.DATE,
       allowNull: true,
     },
+    resetPasswordTokenHash: {
+      type: DataTypes.STRING(64),
+      allowNull: true,
+    },
+    resetPasswordExpiresAt: {
+      type: DataTypes.DATE,
+      allowNull: true,
+    },
   }, {
     tableName: 'agents',
     indexes: [
       { unique: true, fields: ['email'] },
       { fields: ['agency_id'] },
       { fields: ['agency_id', 'is_online'] },
+      { fields: ['reset_password_token_hash'] },
     ],
   });
 

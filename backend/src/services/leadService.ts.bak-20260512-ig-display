@@ -1,0 +1,803 @@
+// FILE: /backend/src/services/leadService.js
+// DEPS: sequelize
+
+const { Op } = require('sequelize');
+const { Lead, Customer, Agent, Package, Property, Campaign, Message, Booking, FollowUp, LeadNote } = require('../models');
+const { normalizePhone, isValidIndianPhone } = require('../utils/phoneUtils');
+const whatsappService = require('./whatsappService');
+
+/**
+ * Lists leads for an agency with filtering and pagination.
+ * @param {string} agencyId - Agency ID
+ * @param {object} filters - { status, agentId, search, dateFrom, dateTo, page, pageSize }
+ * @returns {Promise<object>} { data, total, page, pageSize }
+ */
+function isAdmin(requester) {
+  return requester?.role === 'ADMIN';
+}
+
+function scopedLeadWhere(agencyId, requester, extra = {}) {
+  const where = { agencyId, ...extra };
+  if (requester?.id && !isAdmin(requester)) {
+    where.assignedAgentId = requester?.id;
+  }
+  return where;
+}
+
+function normalizeTags(tags = []) {
+  if (!Array.isArray(tags)) return [];
+  const seen = new Set();
+  return tags
+    .map((tag) => String(tag || '').trim())
+    .filter(Boolean)
+    .map((tag) => tag.slice(0, 40))
+    .filter((tag) => {
+      const key = tag.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, 12);
+}
+
+function normalizeSelectedItems(items = []) {
+  if (!Array.isArray(items)) return [];
+  const seen = new Set();
+
+  return items
+    .map((item) => ({
+      itemType: String(item?.itemType || item?.type || '').trim().toUpperCase(),
+      itemId: String(item?.itemId || item?.id || '').trim(),
+    }))
+    .filter((item) => ['PACKAGE', 'PROPERTY'].includes(item.itemType) && item.itemId)
+    .filter((item) => {
+      const key = `${item.itemType}:${item.itemId}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, 50);
+}
+
+function normalizeCustomTripDetails(details = {}) {
+  if (!details || typeof details !== 'object' || Array.isArray(details)) return {};
+
+  const normalized = {};
+  const stringFields = [
+    'name',
+    'destination',
+    'travelDate',
+    'travellersText',
+    'budgetText',
+    'notes',
+    'campaignName',
+    'source',
+    'service',
+    'serviceCategory',
+    'serviceDetails',
+    'staycationInterest',
+    'staycationViewedAt',
+    'propertyLocation',
+    'propertyName',
+    'checkInDate',
+    'checkOutDate',
+  ];
+
+  for (const field of stringFields) {
+    const value = details[field];
+    if (value === undefined || value === null) continue;
+    const text = String(value).trim();
+    if (text) normalized[field] = text.slice(0, 1000);
+  }
+
+  const travellers = Number.parseInt(String(details.travellers || ''), 10);
+  if (Number.isFinite(travellers) && travellers > 0) normalized.travellers = travellers;
+
+  const budgetPerPerson = Number.parseInt(String(details.budgetPerPerson || ''), 10);
+  if (Number.isFinite(budgetPerPerson) && budgetPerPerson >= 0) normalized.budgetPerPerson = budgetPerPerson;
+
+  if (details.submittedAt) {
+    const submittedAt = new Date(details.submittedAt);
+    if (!Number.isNaN(submittedAt.getTime())) normalized.submittedAt = submittedAt.toISOString();
+  }
+
+  return normalized;
+}
+
+function calculateLeadScore(lead) {
+  let score = 10;
+  const status = String(lead?.status || '');
+  const budget = Number(lead?.budgetPerPerson || 0);
+  const travellers = Number(lead?.travellers || 1);
+  const tags = normalizeTags(lead?.tags);
+  const selectedCount = Number(
+    lead?.selectedCatalogItems?.length
+    || normalizeSelectedItems(lead?.selectedItems).length
+    || 0
+  );
+  const hasPackageOrProperty = Boolean(lead?.packageId || lead?.propertyId || selectedCount > 0);
+
+  if (lead?.assignedAgentId) score += 8;
+  if (hasPackageOrProperty) score += 15;
+  if (lead?.destination) score += 8;
+  if (budget > 0) score += Math.min(18, Math.round(budget / 500000));
+  if (travellers > 1) score += Math.min(10, travellers * 2);
+  if (lead?.travelStart || lead?.travelDates) score += 6;
+  if (tags.some((tag) => /urgent|hot|vip|high/i.test(tag))) score += 12;
+
+  if (['PACKAGE_INTERESTED', 'ENQUIRY', 'QUOTED'].includes(status)) score += 18;
+  if (['CONTACTED', 'NEGOTIATING'].includes(status)) score += 10;
+  if (status === 'CONVERTED' || status === 'BOOKED') score = 100;
+  if (status === 'LOST' || status === 'CANCELLED') score = Math.min(score, 15);
+
+  return Math.max(0, Math.min(100, score));
+}
+
+function enrichLeadPayload(lead) {
+  const payload = lead?.toJSON ? lead.toJSON() : { ...lead };
+  payload.tags = normalizeTags(payload.tags);
+  payload.selectedItems = normalizeSelectedItems(payload.selectedItems);
+  payload.customTripDetails = normalizeCustomTripDetails(payload.customTripDetails);
+
+  const capturedPhone = String(payload.customTripDetails?.phone || '').trim();
+  if (capturedPhone && payload.customer) {
+    payload.customer = {
+      ...payload.customer,
+      phone: capturedPhone,
+      channelContactId: payload.customer.phone,
+    };
+  }
+
+  if (String(payload.source || '').toLowerCase() === 'instagram_dm') {
+    payload.source = 'instagram';
+  }
+
+  payload.leadScore = calculateLeadScore(payload);
+  return payload;
+}
+
+async function listLeads(agencyId, filters = {}, requester = null) {
+  const { status, agentId, search, dateFrom, dateTo, page = 1, pageSize = 20 } = filters;
+
+  const where = scopedLeadWhere(agencyId, requester);
+
+  if (status) {
+    if (Array.isArray(status)) {
+      where.status = { [Op.in]: status };
+    } else {
+      where.status = status;
+    }
+  }
+
+  if (agentId && isAdmin(requester)) where.assignedAgentId = agentId;
+
+  if (dateFrom || dateTo) {
+    where.createdAt = {};
+    if (dateFrom) where.createdAt[Op.gte] = new Date(dateFrom);
+    if (dateTo) where.createdAt[Op.lte] = new Date(dateTo);
+  }
+
+  // Search by customer name or phone
+  const customerWhere = {};
+  if (search) {
+    customerWhere[Op.or] = [
+      { name: { [Op.iLike]: `%${search}%` } },
+      { phone: { [Op.iLike]: `%${search}%` } },
+    ];
+  }
+
+  const offset = (page - 1) * pageSize;
+
+  const { count, rows } = await Lead.findAndCountAll({
+    where,
+    include: [
+      { model: Customer, as: 'customer', where: Object.keys(customerWhere).length ? customerWhere : undefined },
+      { model: Agent, as: 'assignedAgent', attributes: ['id', 'name', 'email'] },
+      { model: Package, as: 'package', attributes: ['id', 'name', 'basePrice'] },
+      { model: Property, as: 'property', attributes: ['id', 'name', 'propertyType', 'location', 'pricePerNight'] },
+      { model: FollowUp, as: 'followUps', required: false, where: { status: 'Scheduled' } },
+    ],
+    order: [['createdAt', 'DESC']],
+    limit: pageSize,
+    offset,
+  });
+
+  return { data: rows.map(enrichLeadPayload), total: count, page: parseInt(page), pageSize: parseInt(pageSize) };
+}
+
+/**
+ * Gets a single lead with full details including messages and booking.
+ * @param {string} leadId - Lead ID
+ * @param {string} agencyId - Agency ID (for scoping)
+ * @returns {Promise<object>} Lead with all relations
+ */
+async function getLeadById(leadId, agencyId, requester = null) {
+  const lead = await Lead.findOne({
+    where: scopedLeadWhere(agencyId, requester, { id: leadId }),
+    include: [
+      { model: Customer, as: 'customer' },
+      { model: Agent, as: 'assignedAgent', attributes: ['id', 'name', 'email', 'phone'] },
+      { model: Package, as: 'package' },
+      { model: Property, as: 'property' },
+      {
+        model: Campaign,
+        as: 'campaign',
+        attributes: ['id', 'name', 'linkedPackageIds', 'campaignSections'],
+      },
+      { model: Booking, as: 'booking' },
+    ],
+  });
+
+  if (!lead) {
+    throw Object.assign(new Error('Lead not found'), { statusCode: 404, code: 'NOT_FOUND' });
+  }
+
+  // Get followups and notes
+  const leadJson = enrichLeadPayload(lead);
+  const selectedPackageIds = new Set();
+  const selectedPropertyIds = new Set();
+  const campaignSections = Array.isArray(leadJson.campaign?.campaignSections) ? leadJson.campaign.campaignSections : [];
+
+  normalizeSelectedItems(leadJson.selectedItems).forEach((item) => {
+    if (item.itemType === 'PACKAGE') selectedPackageIds.add(item.itemId);
+    if (item.itemType === 'PROPERTY') selectedPropertyIds.add(item.itemId);
+  });
+
+  if (campaignSections.length > 0) {
+    campaignSections
+      .filter((section) => section?.enabled !== false)
+      .forEach((section) => {
+        const selectedIds = Array.isArray(section?.selectedItemIds) ? section.selectedItemIds : [];
+        const itemType = String(section?.itemType || '').toUpperCase();
+        if (itemType === 'PROPERTY') {
+          selectedIds.forEach((id) => id && selectedPropertyIds.add(id));
+          return;
+        }
+        if (itemType === 'PACKAGE') {
+          selectedIds.forEach((id) => id && selectedPackageIds.add(id));
+        }
+      });
+  } else {
+    const linkedPackageIds = Array.isArray(leadJson.campaign?.linkedPackageIds) ? leadJson.campaign.linkedPackageIds : [];
+    linkedPackageIds.forEach((id) => id && selectedPackageIds.add(id));
+  }
+
+  if (leadJson.packageId) selectedPackageIds.add(leadJson.packageId);
+  if (leadJson.propertyId) selectedPropertyIds.add(leadJson.propertyId);
+
+  const [followUps, notes, messages, selectedPackages, selectedProperties] = await Promise.all([
+    FollowUp.findAll({ where: { leadId, agencyId }, order: [['scheduledAt', 'ASC']] }),
+    LeadNote.findAll({ 
+      where: { leadId }, 
+      include: [{ model: Agent, as: 'agent', attributes: ['id', 'name'] }],
+      order: [['createdAt', 'DESC']] 
+    }),
+    Message.findAll({
+      where: { customerId: lead.customerId, agencyId },
+      order: [['timestamp', 'DESC']],
+      limit: 20,
+    }),
+    selectedPackageIds.size
+      ? Package.findAll({
+        where: { agencyId, id: { [Op.in]: [...selectedPackageIds] } },
+        attributes: ['id', 'name', 'category', 'duration', 'basePrice'],
+      })
+      : [],
+    selectedPropertyIds.size
+      ? Property.findAll({
+        where: { agencyId, id: { [Op.in]: [...selectedPropertyIds] } },
+        attributes: ['id', 'name', 'propertyType', 'location', 'pricePerNight'],
+      })
+      : [],
+  ]);
+
+  const selectedCatalogItems = [
+    ...selectedPackages.map((pkg) => ({
+      id: pkg.id,
+      itemType: 'PACKAGE',
+      name: pkg.name,
+      subtitle: [pkg.category, pkg.duration].filter(Boolean).join(' | ') || null,
+      price: pkg.basePrice || null,
+    })),
+    ...selectedProperties.map((property) => ({
+      id: property.id,
+      itemType: 'PROPERTY',
+      name: property.name,
+      subtitle: [property.propertyType, property.location].filter(Boolean).join(' | ') || null,
+      price: property.pricePerNight || null,
+    })),
+  ];
+
+  return {
+    ...enrichLeadPayload({ ...leadJson, selectedCatalogItems }),
+    messages: messages.reverse(),
+    followUps,
+    notesList: notes,
+    selectedPackages,
+    selectedProperties,
+    selectedCatalogItems,
+  };
+}
+
+/**
+ * Creates a new lead.
+ * @param {object} data - Lead data
+ * @param {string} agencyId - Agency ID
+ * @returns {Promise<object>} Created lead
+ */
+async function resolveCustomer(data, agencyId) {
+  if (data.customerId) {
+    const customer = await Customer.findOne({ where: { id: data.customerId, agencyId } });
+    if (!customer) {
+      throw Object.assign(new Error('Customer not found'), { statusCode: 404, code: 'CUSTOMER_NOT_FOUND' });
+    }
+    return customer;
+  }
+
+  const rawPhone = String(data.customerPhone || '').trim();
+  if (!rawPhone) {
+    throw Object.assign(new Error('Customer phone is required'), { statusCode: 400, code: 'CUSTOMER_PHONE_REQUIRED' });
+  }
+
+  const phone = normalizePhone(rawPhone);
+  if (!isValidIndianPhone(phone)) {
+    throw Object.assign(new Error('Invalid customer phone'), { statusCode: 400, code: 'INVALID_CUSTOMER_PHONE' });
+  }
+
+  const customerName = String(data.customerName || '').trim() || null;
+  const customerEmail = String(data.customerEmail || '').trim() || null;
+  const customerSource = String(data.customerSource || 'manual').trim() || 'manual';
+
+  const [customer, created] = await Customer.findOrCreate({
+    where: { agencyId, phone },
+    defaults: {
+      agencyId,
+      phone,
+      name: customerName,
+      email: customerEmail,
+      source: customerSource,
+    },
+  });
+
+  if (!created) {
+    const customerUpdates = {};
+    if (customerName && customer.name !== customerName) customerUpdates.name = customerName;
+    if (customerEmail && customer.email !== customerEmail) customerUpdates.email = customerEmail;
+    if (!customer.source && customerSource) customerUpdates.source = customerSource;
+
+    if (Object.keys(customerUpdates).length > 0) {
+      await customer.update(customerUpdates);
+    }
+  }
+
+  return customer;
+}
+
+async function createLead(data, agencyId) {
+  const {
+    destination,
+    travelDates,
+    travellers,
+    budgetPerPerson,
+    interest,
+    notes,
+    assignedAgentId,
+    packageId,
+    propertyId,
+    itemType,
+    campaignId,
+    campaignName,
+    campaignAction,
+    lostReason,
+    tags,
+    selectedItems,
+    customTripDetails,
+    travelStart,
+    travelEnd,
+    status = 'NEW',
+  } = data;
+
+  const customer = await resolveCustomer(data, agencyId);
+
+  if (assignedAgentId) {
+    const agent = await Agent.findOne({ where: { id: assignedAgentId, agencyId } });
+    if (!agent) {
+      throw Object.assign(new Error('Assigned agent not found'), { statusCode: 404, code: 'AGENT_NOT_FOUND' });
+    }
+  }
+
+  if (packageId) {
+    const pkg = await Package.findOne({ where: { id: packageId, agencyId } });
+    if (!pkg) {
+      throw Object.assign(new Error('Package not found'), { statusCode: 404, code: 'PACKAGE_NOT_FOUND' });
+    }
+  }
+
+  if (propertyId) {
+    const property = await Property.findOne({ where: { id: propertyId, agencyId } });
+    if (!property) {
+      throw Object.assign(new Error('Property not found'), { statusCode: 404, code: 'PROPERTY_NOT_FOUND' });
+    }
+  }
+
+  const lead = await Lead.create({
+    customerId: customer.id,
+    agencyId,
+    assignedAgentId: assignedAgentId || null,
+    destination,
+    travelDates,
+    travellers,
+    budgetPerPerson,
+    interest,
+    packageId: packageId || null,
+    propertyId: propertyId || null,
+    itemType: itemType || (propertyId ? 'PROPERTY' : packageId ? 'PACKAGE' : null),
+    campaignId: campaignId || null,
+    campaignName: campaignName || null,
+    campaignAction: campaignAction || null,
+    notes,
+    lostReason,
+    tags: normalizeTags(tags),
+    selectedItems: normalizeSelectedItems(selectedItems),
+    customTripDetails: normalizeCustomTripDetails(customTripDetails),
+    travelStart,
+    travelEnd,
+    status,
+    source: data.source || customer.source || 'whatsapp_organic',
+  });
+
+  const fullLead = await getLeadById(lead.id, agencyId);
+
+  if (lead.status === 'CONVERTED') {
+    if (customer && !customer.isCustomer) {
+      await customer.update({ isCustomer: true });
+    }
+  }
+
+  if (assignedAgentId) {
+    const agent = fullLead.assignedAgent;
+    if (agent && agent.phone) {
+      const pkgName = fullLead.package ? fullLead.package.name : 'None';
+      const msg = `*New Lead Assigned*\n\nCustomer: ${fullLead.customer?.name || 'Unknown'}\nPhone: ${fullLead.customer?.phone || 'Unknown'}\nDestination: ${fullLead.destination || 'Not specified'}\nPackage: ${pkgName}\nEnquiry Date: ${fullLead.createdAt ? new Date(fullLead.createdAt).toDateString() : new Date().toDateString()}`;
+      whatsappService.sendSystemNotificationWhatsApp(agent.phone, msg, { agencyId }).catch(err => {
+        console.error('Failed to send agent notification', err);
+      });
+    }
+  }
+
+  return fullLead;
+}
+
+async function assertPackageBelongsToAgency(packageId, agencyId) {
+  if (!packageId) return null;
+  const pkg = await Package.findOne({ where: { id: packageId, agencyId } });
+  if (!pkg) {
+    throw Object.assign(new Error('Package not found'), { statusCode: 404, code: 'PACKAGE_NOT_FOUND' });
+  }
+  return pkg;
+}
+
+async function assertPropertyBelongsToAgency(propertyId, agencyId) {
+  if (!propertyId) return null;
+  const property = await Property.findOne({ where: { id: propertyId, agencyId } });
+  if (!property) {
+    throw Object.assign(new Error('Property not found'), { statusCode: 404, code: 'PROPERTY_NOT_FOUND' });
+  }
+  return property;
+}
+
+/**
+ * Updates a lead's fields.
+ * @param {string} leadId - Lead ID
+ * @param {string} agencyId - Agency ID
+ * @param {object} updates - Allowed fields to update
+ * @returns {Promise<object>} Updated lead
+ */
+async function updateLead(leadId, agencyId, updates, requester = null) {
+  const lead = await Lead.findOne({ where: scopedLeadWhere(agencyId, requester, { id: leadId }) });
+  if (!lead) {
+    throw Object.assign(new Error('Lead not found'), { statusCode: 404, code: 'NOT_FOUND' });
+  }
+
+  const allowedFields = [
+    'status', 'assignedAgentId', 'destination', 'travelDates',
+    'travellers', 'budgetPerPerson', 'packageId', 'propertyId', 'itemType',
+    'campaignId', 'campaignName', 'campaignAction', 'notes', 'lostReason',
+    'travelStart', 'travelEnd', 'interest', 'source', 'tags', 'selectedItems',
+    'customTripDetails',
+  ];
+
+  const filtered = {};
+  for (const key of allowedFields) {
+    if (updates[key] !== undefined) filtered[key] = updates[key];
+  }
+  if (filtered.tags !== undefined) filtered.tags = normalizeTags(filtered.tags);
+  if (filtered.selectedItems !== undefined) filtered.selectedItems = normalizeSelectedItems(filtered.selectedItems);
+  if (filtered.customTripDetails !== undefined) filtered.customTripDetails = normalizeCustomTripDetails(filtered.customTripDetails);
+  if (filtered.packageId) await assertPackageBelongsToAgency(filtered.packageId, agencyId);
+  if (filtered.propertyId) await assertPropertyBelongsToAgency(filtered.propertyId, agencyId);
+  if (filtered.status === 'LOST' && !String(filtered.lostReason || lead.lostReason || '').trim()) {
+    throw Object.assign(new Error('Lost reason is required when marking a lead lost'), {
+      statusCode: 400,
+      code: 'LOST_REASON_REQUIRED',
+    });
+  }
+
+  // Handle Customer updates
+  const customerUpdates = {};
+  if (updates.customerName !== undefined) customerUpdates.name = updates.customerName;
+  if (updates.customerPhone !== undefined) customerUpdates.phone = updates.customerPhone;
+  if (updates.customerEmail !== undefined) customerUpdates.email = updates.customerEmail;
+
+  if (Object.keys(customerUpdates).length > 0) {
+    const customer = await Customer.findByPk(lead.customerId);
+    if (customer) {
+      await customer.update(customerUpdates);
+    }
+  }
+
+  const isNewAgentAssigned = updates.assignedAgentId && lead.assignedAgentId !== updates.assignedAgentId;
+  await lead.update(filtered);
+
+  if (filtered.status === 'CONVERTED') {
+    const customer = await Customer.findByPk(lead.customerId);
+    if (customer && !customer.isCustomer) {
+      await customer.update({ isCustomer: true });
+    }
+  }
+
+  if (isNewAgentAssigned) {
+    const fullLead = await getLeadById(lead.id, agencyId, { role: 'ADMIN' });
+    const agent = fullLead.assignedAgent;
+    if (agent && agent.phone) {
+      const pkgName = fullLead.package ? fullLead.package.name : 'None';
+      const msg = `*New Lead Assigned*\n\nCustomer: ${fullLead.customer?.name || 'Unknown'}\nPhone: ${fullLead.customer?.phone || 'Unknown'}\nDestination: ${fullLead.destination || 'Not specified'}\nPackage: ${pkgName}\nEnquiry Date: ${fullLead.createdAt ? new Date(fullLead.createdAt).toDateString() : new Date().toDateString()}`;
+      whatsappService.sendSystemNotificationWhatsApp(agent.phone, msg, { agencyId }).catch(err => {
+        console.error('Failed to send agent notification', err);
+      });
+    }
+  }
+
+  return getLeadById(lead.id, agencyId, { role: 'ADMIN' });
+}
+
+/**
+ * Soft-deletes a lead by setting status to CANCELLED.
+ * @param {string} leadId - Lead ID
+ * @param {string} agencyId - Agency ID
+ */
+async function deleteLead(leadId, agencyId, requester = null) {
+  const lead = await Lead.findOne({ where: scopedLeadWhere(agencyId, requester, { id: leadId }) });
+  if (!lead) {
+    throw Object.assign(new Error('Lead not found'), { statusCode: 404, code: 'NOT_FOUND' });
+  }
+  await lead.update({ status: 'CANCELLED' });
+  return lead;
+}
+
+/**
+ * Finds the least-busy online agent for an agency.
+ * @param {string} agencyId - Agency ID
+ * @returns {Promise<object|null>} Agent or null
+ */
+async function findLeastBusyAgent(agencyId) {
+  const agents = await Agent.findAll({
+    where: { agencyId, isOnline: true },
+    attributes: ['id', 'name', 'email', 'phone'],
+  });
+
+  if (agents.length === 0) return null;
+
+  // Count active leads per agent
+  const agentLoads = await Promise.all(
+    agents.map(async (agent) => {
+      const count = await Lead.count({
+        where: {
+          assignedAgentId: agent.id,
+          status: { [Op.in]: ['JUST_CONTACTED', 'PACKAGE_SEARCHED', 'PACKAGE_INTERESTED', 'NEW', 'ENQUIRY', 'CONTACTED', 'QUOTED', 'NEGOTIATING'] },
+        },
+      });
+      return { agent, count };
+    })
+  );
+
+  // Sort by load ascending, return least busy
+  agentLoads.sort((a, b) => a.count - b.count);
+  return agentLoads[0].agent;
+}
+
+/**
+ * Follow Ups
+ */
+async function addFollowUp(leadId, agencyId, data, requester = null) {
+  const { scheduledAt, note, agentId } = data;
+  const lead = await Lead.findOne({ where: scopedLeadWhere(agencyId, requester, { id: leadId }) });
+  if (!lead) throw Object.assign(new Error('Lead not found'), { statusCode: 404 });
+
+  const followUp = await FollowUp.create({
+    leadId,
+    agencyId,
+    agentId: isAdmin(requester) ? (agentId || lead.assignedAgentId || null) : requester?.id,
+    scheduledAt,
+    note,
+    status: 'Scheduled',
+  });
+
+  return followUp;
+}
+
+async function listFollowUps(agencyId, filters = {}, requester = null) {
+  const {
+    status,
+    agentId,
+    search,
+    dateFrom,
+    dateTo,
+    page = 1,
+    pageSize = 50,
+  } = filters;
+
+  const where = { agencyId };
+  const leadWhere = { agencyId };
+
+  if (status && status !== 'All') where.status = status;
+  if (isAdmin(requester) && agentId) where.agentId = agentId;
+  if (!isAdmin(requester)) where.agentId = requester?.id;
+
+  if (dateFrom || dateTo) {
+    where.scheduledAt = {};
+    if (dateFrom) where.scheduledAt[Op.gte] = new Date(dateFrom);
+    if (dateTo) where.scheduledAt[Op.lte] = new Date(dateTo);
+  }
+
+  if (search) {
+    const matchedLeads = await Lead.findAll({
+      attributes: ['id'],
+      where: {
+        agencyId,
+        [Op.or]: [
+          { destination: { [Op.iLike]: `%${search}%` } },
+          { '$customer.name$': { [Op.iLike]: `%${search}%` } },
+          { '$customer.phone$': { [Op.iLike]: `%${search}%` } },
+          { '$customer.email$': { [Op.iLike]: `%${search}%` } },
+        ],
+      },
+      include: [{ model: Customer, as: 'customer', attributes: [], required: false }],
+      raw: true,
+    });
+    where.leadId = { [Op.in]: matchedLeads.map((lead) => lead.id) };
+  }
+
+  const limit = Math.min(parseInt(pageSize, 10) || 50, 200);
+  const currentPage = parseInt(page, 10) || 1;
+  const offset = (currentPage - 1) * limit;
+
+  const { count, rows } = await FollowUp.findAndCountAll({
+    where,
+    include: [
+      {
+        model: Lead,
+        as: 'lead',
+        required: true,
+        where: leadWhere,
+        include: [
+          { model: Customer, as: 'customer' },
+          { model: Package, as: 'package', attributes: ['id', 'name', 'basePrice'] },
+          { model: Agent, as: 'assignedAgent', attributes: ['id', 'name', 'email'] },
+        ],
+      },
+      { model: Agent, as: 'agent', attributes: ['id', 'name', 'email', 'phone'] },
+    ],
+    order: [['scheduledAt', 'ASC']],
+    limit,
+    offset,
+  });
+
+  return { data: rows, total: count, page: currentPage, pageSize: limit };
+}
+
+async function updateFollowUp(leadId, followUpId, agencyId, updates, requester = null) {
+  const where = { id: followUpId, leadId, agencyId };
+  if (!isAdmin(requester)) where.agentId = requester?.id;
+  const followUp = await FollowUp.findOne({ where });
+  if (!followUp) throw Object.assign(new Error('FollowUp not found'), { statusCode: 404 });
+
+  const allowed = ['status', 'scheduledAt', 'note', 'agentId'];
+  const filtered = {};
+  for(const k of allowed) if (updates[k] !== undefined) filtered[k] = updates[k];
+  if (!isAdmin(requester)) delete filtered.agentId;
+
+  await followUp.update(filtered);
+  return followUp;
+}
+
+async function deleteFollowUp(leadId, followUpId, agencyId, requester = null) {
+  const where = { id: followUpId, leadId, agencyId };
+  if (!isAdmin(requester)) where.agentId = requester?.id;
+  const followUp = await FollowUp.findOne({ where });
+  if (!followUp) throw Object.assign(new Error('FollowUp not found'), { statusCode: 404 });
+  await followUp.destroy();
+  return { success: true };
+}
+
+/**
+ * Lead Notes
+ */
+async function addNote(leadId, agencyId, agentId, content) {
+  const lead = await Lead.findOne({ where: { id: leadId, agencyId } });
+  if (!lead) throw Object.assign(new Error('Lead not found'), { statusCode: 404 });
+
+  const note = await LeadNote.create({
+    leadId,
+    agentId,
+    content,
+  });
+
+  return LeadNote.findByPk(note.id, {
+    include: [{ model: Agent, as: 'agent', attributes: ['id', 'name'] }]
+  });
+}
+
+/**
+ * Bulk-assign multiple leads to a single agent.
+ * @param {string[]} leadIds - Array of lead IDs to assign
+ * @param {string} agentId - Agent ID to assign leads to (null to unassign)
+ * @param {string} agencyId - Agency ID for scoping
+ * @returns {Promise<object>} { updated: number }
+ */
+async function bulkAssignLeads(leadIds, agentId, agencyId) {
+  if (!Array.isArray(leadIds) || leadIds.length === 0) {
+    throw Object.assign(new Error('leadIds must be a non-empty array'), { statusCode: 400, code: 'INVALID_INPUT' });
+  }
+
+  if (leadIds.length > 100) {
+    throw Object.assign(new Error('Cannot bulk-assign more than 100 leads at once'), { statusCode: 400, code: 'TOO_MANY_LEADS' });
+  }
+
+  let agent = null;
+  if (agentId) {
+    agent = await Agent.findOne({ where: { id: agentId, agencyId } });
+    if (!agent) {
+      throw Object.assign(new Error('Agent not found'), { statusCode: 404, code: 'AGENT_NOT_FOUND' });
+    }
+  }
+
+  const [updated] = await Lead.update(
+    { assignedAgentId: agentId || null },
+    { where: { id: { [Op.in]: leadIds }, agencyId } }
+  );
+
+  // Send a single notification to the assigned agent
+  if (agent && agent.phone && updated > 0) {
+    const leads = await Lead.findAll({
+      where: { id: { [Op.in]: leadIds }, agencyId },
+      include: [{ model: Customer, as: 'customer', attributes: ['name', 'phone'] }],
+    });
+
+    const leadSummary = leads
+      .map((l, i) => `${i + 1}. ${l.customer?.name || 'Unknown'} — ${l.destination || 'No destination'}`)
+      .join('\n');
+
+    const msg = `*${updated} Leads Assigned To You*\n\n${leadSummary}\n\nPlease follow up at your earliest convenience.`;
+    whatsappService.sendSystemNotificationWhatsApp(agent.phone, msg, { agencyId }).catch(err => {
+      console.error('Failed to send bulk-assign notification', err);
+    });
+  }
+
+  return { updated };
+}
+
+module.exports = {
+  listLeads,
+  getLeadById,
+  createLead,
+  updateLead,
+  deleteLead,
+  findLeastBusyAgent,
+  bulkAssignLeads,
+  listFollowUps,
+  addFollowUp,
+  updateFollowUp,
+  deleteFollowUp,
+  addNote,
+};

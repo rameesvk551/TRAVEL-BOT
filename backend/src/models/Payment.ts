@@ -35,6 +35,10 @@ module.exports = (sequelize) => {
       allowNull: false,
       comment: 'In paise',
     },
+    paymentMethodId: {
+      type: DataTypes.UUID,
+      allowNull: true,
+    },
     status: {
       type: DataTypes.ENUM('PENDING', 'PAID', 'EXPIRED', 'FAILED', 'REFUNDED'),
       defaultValue: 'PENDING',
@@ -60,6 +64,7 @@ module.exports = (sequelize) => {
     indexes: [
       { fields: ['booking_id'] },
       { fields: ['agency_id'] },
+      { fields: ['payment_method_id'] },
       { fields: ['razorpay_payment_link_id'] },
       { fields: ['status'] },
     ],

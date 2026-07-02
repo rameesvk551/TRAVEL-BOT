@@ -1,22 +1,26 @@
 const { Router } = require('express');
 const { z } = require('zod');
 const multer = require('multer');
+const path = require('path');
 const propertyController = require('../controllers/propertyController');
 const authenticate = require('../middleware/authenticate');
-const requireRole = require('../middleware/requireRole');
 const requirePermission = require('../middleware/requirePermission');
 const validateBody = require('../middleware/validateBody');
 const { PERMISSIONS } = require('../constants/permissions');
 
 const router = Router();
+const IMAGE_FILE_SIZE_LIMIT = 25 * 1024 * 1024;
+const imageExtensions = new Set(['.avif', '.gif', '.heic', '.heif', '.jpg', '.jpeg', '.png', '.webp']);
 
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 5 * 1024 * 1024,
+    fileSize: IMAGE_FILE_SIZE_LIMIT,
   },
   fileFilter: (_req, file, cb) => {
-    if (!file.mimetype.startsWith('image/')) {
+    const isImageMime = String(file.mimetype || '').startsWith('image/');
+    const isImageExtension = imageExtensions.has(path.extname(file.originalname || '').toLowerCase());
+    if (!isImageMime && !isImageExtension) {
       cb(Object.assign(new Error('Only image files are allowed'), {
         statusCode: 400,
         code: 'INVALID_FILE_TYPE',
@@ -32,7 +36,7 @@ const nullableText = z.string().max(2000).optional().nullable();
 
 const propertySchema = z.object({
   name: z.string().min(2),
-  propertyType: z.enum(['Hotel', 'Resort', 'Villa', 'Apartment']),
+  propertyType: z.string().min(1).max(50),
   location: z.string().max(255).optional().nullable(),
   address: nullableText,
   amenities: z.array(z.string().max(120)).optional(),
@@ -50,7 +54,6 @@ router.get('/', authenticate, propertyViewGuard, propertyController.listProperti
 router.post(
   '/upload-image',
   authenticate,
-  requireRole('ADMIN'),
   requirePermission(PERMISSIONS.PROPERTIES_MANAGE),
   upload.single('image'),
   propertyController.uploadImage
@@ -61,7 +64,6 @@ router.get('/:id', authenticate, propertyViewGuard, propertyController.getProper
 router.post(
   '/',
   authenticate,
-  requireRole('ADMIN'),
   requirePermission(PERMISSIONS.PROPERTIES_MANAGE),
   validateBody(propertySchema),
   propertyController.createProperty
@@ -70,7 +72,6 @@ router.post(
 router.put(
   '/:id',
   authenticate,
-  requireRole('ADMIN'),
   requirePermission(PERMISSIONS.PROPERTIES_MANAGE),
   validateBody(propertySchema.partial()),
   propertyController.updateProperty
@@ -79,7 +80,6 @@ router.put(
 router.patch(
   '/:id',
   authenticate,
-  requireRole('ADMIN'),
   requirePermission(PERMISSIONS.PROPERTIES_MANAGE),
   validateBody(propertySchema.partial()),
   propertyController.updateProperty
@@ -88,7 +88,6 @@ router.patch(
 router.delete(
   '/:id',
   authenticate,
-  requireRole('ADMIN'),
   requirePermission(PERMISSIONS.PROPERTIES_MANAGE),
   propertyController.deleteProperty
 );

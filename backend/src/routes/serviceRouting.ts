@@ -15,7 +15,11 @@ const replaceRoutingSchema = z.object({
     agentId: z.string().uuid(),
     priority: z.number().int().optional(),
     isActive: z.boolean().optional(),
-  })).max(50),
+  })).max(300),
+});
+
+const strategySchema = z.object({
+  strategy: z.enum(['INTENT', 'ROUND_ROBIN']),
 });
 
 router.get(
@@ -32,6 +36,15 @@ router.put(
   requirePermission(PERMISSIONS.USERS_MANAGE),
   validateBody(replaceRoutingSchema),
   serviceRoutingController.replace
+);
+
+router.put(
+  '/strategy',
+  authenticate,
+  requireRole('ADMIN'),
+  requirePermission(PERMISSIONS.USERS_MANAGE),
+  validateBody(strategySchema),
+  serviceRoutingController.setStrategy
 );
 
 module.exports = router;

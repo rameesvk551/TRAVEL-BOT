@@ -70,7 +70,7 @@ const routeMeta = {
   },
   '/analytics': {
     title: 'Reports',
-    placeholder: 'Search metrics, campaigns, or agents...',
+    placeholder: 'Search metrics, campaigns, or staff...',
   },
   '/agents': {
     title: 'Users',
@@ -175,7 +175,7 @@ export default function AppTopbar() {
                   }}
                   className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm font-medium text-neutral-700 transition hover:bg-neutral-100 hover:text-neutral-900"
                 >
-                  <ArrowRightOnRectangleIcon className="h-4.5 w-4.5 shrink-0" />
+                  <ArrowRightOnRectangleIcon className="h-5 w-5 shrink-0" />
                   <span>Logout</span>
                 </button>
               </div>

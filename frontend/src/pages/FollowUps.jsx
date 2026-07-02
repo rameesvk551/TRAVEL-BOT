@@ -13,12 +13,14 @@ import {
   PlusIcon,
 } from '@heroicons/react/24/outline';
 import client from '../api/client';
-import { useFollowUps, useUpdateFollowUp } from '../hooks/useLeads';
+import { useAddFollowUp, useFollowUps, useUpdateFollowUp } from '../hooks/useLeads';
 import { useAuthStore } from '../store/authStore';
 import { formatDateTime, formatPhone } from '../utils/formatters';
 import { getInitials, getStatusTone } from '../components/uiHelpers';
 import FollowUpCard from '../components/FollowUpCard';
+import FollowUpTimeline from '../components/FollowUpTimeline';
 import Pagination from '../components/Pagination';
+import CompleteFollowUpModal from '../components/CompleteFollowUpModal';
 
 const FILTERS = ['All', 'Upcoming', 'Overdue', 'Today', 'Done', 'Cancelled'];
 const PAGE_SIZE = 12;
@@ -45,15 +47,29 @@ function isOverdue(followUp) {
   return followUp?.status === 'Scheduled' && new Date(followUp.scheduledAt).getTime() < Date.now();
 }
 
+function getDefaultFollowupDateTime() {
+  const date = new Date(Date.now() + 60 * 60 * 1000);
+  date.setMinutes(Math.ceil(date.getMinutes() / 15) * 15, 0, 0);
+  const offsetMs = date.getTimezoneOffset() * 60000;
+  return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16);
+}
+
 export default function FollowUps() {
   const agent = useAuthStore((state) => state.agent);
   const isAdmin = agent?.role === 'ADMIN';
-  const [activeFilter, setActiveFilter] = useState('Upcoming');
+  const [activeFilter, setActiveFilter] = useState('Today');
   const [search, setSearch] = useState('');
   const [agentId, setAgentId] = useState('');
   const [isFilterDrawerOpen, setIsFilterDrawerOpen] = useState(false);
   const [isStatsDrawerOpen, setIsStatsDrawerOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
+  const [selectedDoneFollowUp, setSelectedDoneFollowUp] = useState(null);
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [createLeadSearch, setCreateLeadSearch] = useState('');
+  const [createLeadId, setCreateLeadId] = useState('');
+  const [createDate, setCreateDate] = useState('');
+  const [createNote, setCreateNote] = useState('');
+  const [createAgentId, setCreateAgentId] = useState('');
 
   const statusParam = ['Done', 'Cancelled'].includes(activeFilter)
     ? activeFilter
@@ -63,7 +79,7 @@ export default function FollowUps() {
 
   const followUpsQuery = useFollowUps({
     page: currentPage,
-    pageSize: PAGE_SIZE,
+    pageSize: activeFilter === 'Today' ? 1000 : PAGE_SIZE,
     status: statusParam,
     due: activeFilter === 'Overdue' ? 'overdue' : activeFilter === 'Today' ? 'today' : undefined,
     search: search || undefined,
@@ -77,9 +93,25 @@ export default function FollowUps() {
   });
 
   const updateFollowUp = useUpdateFollowUp();
+  const addFollowUp = useAddFollowUp();
   const agents = agentsResponse?.data || [];
+
+  const createLeadsQuery = useQuery({
+    queryKey: ['followup-create-leads', createLeadSearch],
+    queryFn: () => client.get('/leads', {
+      params: {
+        page: 1,
+        pageSize: 8,
+        search: createLeadSearch.trim() || undefined,
+        sortBy: 'newest',
+      },
+    }).then((r) => r.data),
+    enabled: isCreateModalOpen,
+  });
+
   const followUpsResponse = followUpsQuery.data?.data || {};
   const visibleFollowUps = followUpsResponse.data || [];
+  const createLeadOptions = createLeadsQuery.data?.data?.data || [];
   const totalItems = Number(followUpsResponse.total || 0);
   const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE));
   const safeCurrentPage = Math.min(currentPage, totalPages);
@@ -104,11 +136,53 @@ export default function FollowUps() {
 
   function markStatus(followUp, status) {
     if (!followUp?.leadId || !followUp?.id) return;
+    if (status === 'Done') {
+      setSelectedDoneFollowUp(followUp);
+      return;
+    }
     updateFollowUp.mutate({
       id: followUp.leadId,
       followUpId: followUp.id,
       data: { status },
     });
+  }
+
+  function openCreateModal() {
+    setIsCreateModalOpen(true);
+    setCreateLeadSearch('');
+    setCreateLeadId('');
+    setCreateDate(getDefaultFollowupDateTime());
+    setCreateNote('');
+    setCreateAgentId(isAdmin && agentId ? agentId : '');
+  }
+
+  function closeCreateModal() {
+    if (addFollowUp.isPending) return;
+    setIsCreateModalOpen(false);
+    setCreateLeadSearch('');
+    setCreateLeadId('');
+    setCreateDate('');
+    setCreateNote('');
+    setCreateAgentId('');
+  }
+
+  function handleCreateFollowUp(event) {
+    event.preventDefault();
+    if (!createLeadId || !createDate || !createNote.trim()) return;
+
+    addFollowUp.mutate(
+      {
+        id: createLeadId,
+        data: {
+          scheduledAt: new Date(createDate).toISOString(),
+          note: createNote.trim(),
+          ...(isAdmin && createAgentId ? { agentId: createAgentId } : {}),
+        },
+      },
+      {
+        onSuccess: closeCreateModal,
+      }
+    );
   }
 
   return (
@@ -138,6 +212,8 @@ export default function FollowUps() {
           </button>
 
           <button
+            type="button"
+            onClick={openCreateModal}
             className="shell-button-primary h-10 flex-1 justify-center rounded-xl bg-neutral-900 px-4 text-sm font-semibold shadow-sm hover:bg-black flex items-center gap-1 ml-auto"
           >
             <PlusIcon className="h-4 w-4" />
@@ -167,6 +243,14 @@ export default function FollowUps() {
                 ))}
               </select>
             )}
+            <button
+              type="button"
+              onClick={openCreateModal}
+              className="shell-button-primary h-11 px-4 text-sm"
+            >
+              <PlusIcon className="h-4 w-4" />
+              Add Follow-up
+            </button>
           </div>
         </div>
       </div>
@@ -240,6 +324,13 @@ export default function FollowUps() {
         </div>
       </div>
 
+      {/* Dynamic View based on filter */}
+      {activeFilter === 'Today' ? (
+        <div className="flex justify-center w-full py-4 md:py-8">
+          <FollowUpTimeline followUps={visibleFollowUps} onStatusChange={markStatus} />
+        </div>
+      ) : (
+        <>
       {/* Mobile Card List */}
       <div className="md:hidden">
         {followUpsQuery.isLoading ? (
@@ -386,8 +477,10 @@ export default function FollowUps() {
           </table>
         </div>
       </div>
+      </>
+      )}
 
-      {!followUpsQuery.isLoading && !followUpsQuery.isError && totalItems > 0 && (
+      {!followUpsQuery.isLoading && !followUpsQuery.isError && totalItems > 0 && activeFilter !== 'Today' && (
         <Pagination
           currentPage={safeCurrentPage}
           totalPages={totalPages}
@@ -408,6 +501,189 @@ export default function FollowUps() {
       />
 
       <StatsDrawer isOpen={isStatsDrawerOpen} onClose={() => setIsStatsDrawerOpen(false)} metrics={metrics} />
+
+      <CreateFollowUpModal
+        agents={agents}
+        agentId={createAgentId}
+        date={createDate}
+        isAdmin={isAdmin}
+        isLoadingLeads={createLeadsQuery.isLoading}
+        isOpen={isCreateModalOpen}
+        isSaving={addFollowUp.isPending}
+        leadId={createLeadId}
+        leads={createLeadOptions}
+        note={createNote}
+        search={createLeadSearch}
+        onAgentChange={setCreateAgentId}
+        onClose={closeCreateModal}
+        onDateChange={setCreateDate}
+        onLeadChange={setCreateLeadId}
+        onNoteChange={setCreateNote}
+        onSearchChange={setCreateLeadSearch}
+        onSubmit={handleCreateFollowUp}
+      />
+
+      <CompleteFollowUpModal
+        isOpen={!!selectedDoneFollowUp}
+        onClose={() => setSelectedDoneFollowUp(null)}
+        followUp={selectedDoneFollowUp}
+        lead={selectedDoneFollowUp?.lead}
+        agentId={agentId || agent?.id}
+      />
+    </div>
+  );
+}
+
+function CreateFollowUpModal({
+  agents,
+  agentId,
+  date,
+  isAdmin,
+  isLoadingLeads,
+  isOpen,
+  isSaving,
+  leadId,
+  leads,
+  note,
+  search,
+  onAgentChange,
+  onClose,
+  onDateChange,
+  onLeadChange,
+  onNoteChange,
+  onSearchChange,
+  onSubmit,
+}) {
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-[80] flex items-center justify-center px-4">
+      <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={onClose} />
+      <form
+        onSubmit={onSubmit}
+        className="relative z-10 flex max-h-[88vh] w-full max-w-lg flex-col rounded-2xl border border-neutral-200 bg-white shadow-2xl"
+      >
+        <div className="flex items-start justify-between gap-4 border-b border-neutral-100 p-5">
+          <div>
+            <h3 className="text-lg font-bold text-neutral-900">Create Follow-up</h3>
+            <p className="mt-1 text-sm text-neutral-500">Choose a lead and schedule the next action.</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg p-2 text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-700"
+          >
+            <XMarkIcon className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="flex-1 space-y-4 overflow-y-auto p-5">
+          <label className="block">
+            <span className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-neutral-500">Find Lead</span>
+            <div className="relative">
+              <MagnifyingGlassIcon className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
+              <input
+                type="text"
+                value={search}
+                onChange={(event) => onSearchChange(event.target.value)}
+                className="shell-input-rect h-11 w-full bg-neutral-50 pl-10 text-sm"
+                placeholder="Search customer, phone, destination..."
+              />
+            </div>
+          </label>
+
+          <div className="space-y-2">
+            <span className="block text-xs font-bold uppercase tracking-wide text-neutral-500">Lead</span>
+            <div className="max-h-48 space-y-2 overflow-y-auto rounded-xl border border-neutral-200 bg-neutral-50 p-2">
+              {isLoadingLeads ? (
+                <p className="px-3 py-6 text-center text-sm text-neutral-400">Loading leads...</p>
+              ) : leads.length === 0 ? (
+                <p className="px-3 py-6 text-center text-sm text-neutral-400">No matching leads found.</p>
+              ) : (
+                leads.map((lead) => {
+                  const customer = lead.customer || {};
+                  const selected = String(lead.id) === String(leadId);
+                  return (
+                    <button
+                      key={lead.id}
+                      type="button"
+                      onClick={() => onLeadChange(lead.id)}
+                      className={`flex w-full items-center gap-3 rounded-lg border p-3 text-left transition-colors ${
+                        selected
+                          ? 'border-neutral-900 bg-white shadow-sm'
+                          : 'border-transparent bg-white hover:border-neutral-200'
+                      }`}
+                    >
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-neutral-100 text-xs font-bold text-neutral-600">
+                        {getInitials(customer.name, 'L')}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-semibold text-neutral-900">{customer.name || 'Unnamed Lead'}</p>
+                        <p className="truncate text-xs text-neutral-500">
+                          {[formatPhone(customer.phone), lead.destination].filter(Boolean).join(' - ') || customer.email || 'No contact'}
+                        </p>
+                      </div>
+                      <span className={`h-3 w-3 rounded-full border ${selected ? 'border-neutral-900 bg-neutral-900' : 'border-neutral-300'}`} />
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </div>
+
+          <label className="block">
+            <span className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-neutral-500">Date & Time</span>
+            <input
+              type="datetime-local"
+              required
+              value={date}
+              onChange={(event) => onDateChange(event.target.value)}
+              className="shell-input-rect h-11 w-full bg-neutral-50 text-sm"
+            />
+          </label>
+
+          {isAdmin && (
+            <label className="block">
+              <span className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-neutral-500">Assign To</span>
+              <select
+                value={agentId}
+                onChange={(event) => onAgentChange(event.target.value)}
+                className="shell-input-rect h-11 w-full bg-neutral-50 text-sm"
+              >
+                <option value="">Lead owner</option>
+                {agents.map((item) => (
+                  <option key={item.id} value={item.id}>{item.name}</option>
+                ))}
+              </select>
+            </label>
+          )}
+
+          <label className="block">
+            <span className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-neutral-500">Note</span>
+            <textarea
+              required
+              rows="3"
+              value={note}
+              onChange={(event) => onNoteChange(event.target.value)}
+              className="shell-input-rect w-full resize-none bg-neutral-50 py-2 text-sm"
+              placeholder="Call back regarding package, pricing, or availability"
+            />
+          </label>
+        </div>
+
+        <div className="flex justify-end gap-3 border-t border-neutral-100 bg-neutral-50/60 p-5">
+          <button type="button" onClick={onClose} className="shell-button-secondary h-10 px-4 text-sm">
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={isSaving || !leadId || !date || !note.trim()}
+            className="shell-button-primary h-10 px-5 text-sm disabled:opacity-60"
+          >
+            {isSaving ? 'Creating...' : 'Create'}
+          </button>
+        </div>
+      </form>
     </div>
   );
 }
@@ -430,9 +706,9 @@ function FilterDrawer({ isOpen, onClose, agentId, setAgentId, clearFilters, agen
 
         <div className="flex-1 overflow-y-auto p-4 space-y-6">
           <div className="space-y-2">
-            <label className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">Agent</label>
+            <label className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">Staff</label>
             <select value={agentId} onChange={(e) => setAgentId(e.target.value)} className="shell-input-rect w-full h-11 bg-neutral-50 text-sm">
-              <option value="">All Agents</option>
+              <option value="">All Staff</option>
               {agents.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
             </select>
           </div>

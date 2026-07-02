@@ -14,6 +14,7 @@ import {
 import Pagination from '../components/Pagination';
 import { propertiesApi } from '../api/propertiesApi';
 import { useAuthStore } from '../store/authStore';
+import { agentHasPermission } from '../utils/permissions';
 import PropertyCard from '../components/PropertyCard';
 import PropertyListCard from '../components/PropertyListCard';
 import BottomFiltersDrawer from '../components/BottomFiltersDrawer';
@@ -37,8 +38,8 @@ const SORT_OPTIONS = [
 export default function Properties() {
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const agentRole = useAuthStore((state) => state.agent?.role);
-  const canManage = agentRole === 'ADMIN';
+  const agent = useAuthStore((state) => state.agent);
+  const canManage = agentHasPermission(agent, 'properties.manage');
 
   const [viewMode, setViewMode] = useState('grid');
   const [search, setSearch] = useState('');

@@ -14,9 +14,11 @@ import {
 import Pagination from '../components/Pagination';
 import { packagesApi } from '../api/packagesApi';
 import { useAuthStore } from '../store/authStore';
+import { agentHasPermission } from '../utils/permissions';
 import PackageCard from '../components/PackageCard';
 import PackageListCard from '../components/PackageListCard';
 import BottomFiltersDrawer from '../components/BottomFiltersDrawer';
+import { useIndustry } from '../hooks/useIndustry';
 
 const ITEMS_PER_PAGE = 15;
 
@@ -37,8 +39,9 @@ const SORT_OPTIONS = [
 export default function Packages() {
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const agentRole = useAuthStore((state) => state.agent?.role);
-  const canManage = agentRole === 'ADMIN';
+  const { t } = useIndustry();
+  const agent = useAuthStore((state) => state.agent);
+  const canManage = agentHasPermission(agent, 'packages.manage');
 
   const [viewMode, setViewMode] = useState('grid');
   const [search, setSearch] = useState('');
@@ -64,12 +67,8 @@ export default function Packages() {
     queryFn: () => packagesApi.list(listParams),
   });
 
-  const toggleActiveMutation = useMutation({
-    mutationFn: (pkg) => (
-      pkg.isActive
-        ? packagesApi.delete(pkg.id)
-        : packagesApi.update(pkg.id, { isActive: true })
-    ),
+  const deleteMutation = useMutation({
+    mutationFn: (id) => packagesApi.delete(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['packages'] }),
   });
 
@@ -100,7 +99,7 @@ export default function Packages() {
       {/* ── Top Header Bar ── */}
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div className="hidden sm:block">
-          <h1 className="text-xl font-bold text-neutral-900 tracking-tight md:text-2xl">Packages</h1>
+          <h1 className="text-xl font-bold text-neutral-900 tracking-tight md:text-2xl">{t('packages', 'Packages')}</h1>
           <p className="text-xs text-neutral-500 mt-0.5 md:text-sm">Browse and manage all your travel packages</p>
         </div>
 
@@ -244,7 +243,7 @@ export default function Packages() {
                 pkg={pkg}
                 canManage={canManage}
                 onEdit={() => navigate(`/packages/${pkg.id}/edit`)}
-                onToggleActive={(item) => toggleActiveMutation.mutate(item)}
+                onToggleActive={(item) => deleteMutation.mutate(item.id)}
                 onClick={() => navigate(`/packages/${pkg.id}/edit`)}
               />
             ))
@@ -278,7 +277,7 @@ export default function Packages() {
                 pkg={pkg}
                 canManage={canManage}
                 onEdit={() => navigate(`/packages/${pkg.id}/edit`)}
-                onToggleActive={(item) => toggleActiveMutation.mutate(item)}
+                onToggleActive={(item) => deleteMutation.mutate(item.id)}
                 onClick={() => navigate(`/packages/${pkg.id}/edit`)}
               />
             ))

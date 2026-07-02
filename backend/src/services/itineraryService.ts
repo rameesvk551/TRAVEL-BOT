@@ -13,26 +13,24 @@ async function getItineraryById(itineraryId, agencyId) {
 }
 
 async function createItinerary(data, agencyId) {
-  // Validate and correct pricing natively
-  const totals = calculateTotals(data.days || []);
   return itineraryRepository.create({
     ...data,
     agencyId,
-    totalCost: totals.cost,
-    totalPrice: totals.price,
+    totalPrice: resolveTotalPrice(data, data.totalPrice),
   });
 }
 
 async function updateItinerary(itineraryId, agencyId, updates) {
   const itinerary = await getItineraryById(itineraryId, agencyId);
-  
-  if (updates.days) {
-    const totals = calculateTotals(updates.days);
-    updates.totalCost = totals.cost;
-    updates.totalPrice = totals.price;
+
+  const patch = { ...updates };
+  // Recompute the stored total (paise) whenever pricing inputs change.
+  if (updates.pricing !== undefined || updates.priceRooms !== undefined || updates.totalPrice !== undefined) {
+    const current = typeof itinerary.toJSON === 'function' ? itinerary.toJSON() : itinerary;
+    patch.totalPrice = resolveTotalPrice({ ...current, ...updates }, updates.totalPrice);
   }
 
-  return itineraryRepository.update(itinerary, updates);
+  return itineraryRepository.update(itinerary, patch);
 }
 
 async function deleteItinerary(itineraryId, agencyId) {
@@ -40,27 +38,22 @@ async function deleteItinerary(itineraryId, agencyId) {
   return itineraryRepository.deleteOne(itineraryId, agencyId);
 }
 
-// Ensure cost and price accurately match the days
-function calculateTotals(days) {
-  let cost = 0;
-  let price = 0;
-
-  for (const day of days) {
-    (day.hotels || []).forEach(h => {
-      cost += Number(h.cost) || 0;
-      price += Number(h.price) || 0;
-    });
-    (day.activities || []).forEach(a => {
-      cost += Number(a.cost) || 0;
-      price += Number(a.price) || 0;
-    });
-    (day.transports || []).forEach(t => {
-      cost += Number(t.cost) || 0;
-      price += Number(t.price) || 0;
-    });
+/**
+ * Resolves the legacy `totalPrice` column (stored in paise) from the new
+ * itinerary pricing model. Priority: pricing.grossTotal (rupees) → price-room
+ * sum (rupees) → an explicitly provided paise value → 0.
+ */
+function resolveTotalPrice(data, explicitPaise) {
+  const pricing = data && data.pricing;
+  if (pricing && pricing.grossTotal != null && pricing.grossTotal !== '') {
+    return Math.round(Number(pricing.grossTotal) * 100) || 0;
   }
-
-  return { cost, price };
+  const rooms = Array.isArray(data && data.priceRooms) ? data.priceRooms : [];
+  if (rooms.length) {
+    const sum = rooms.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+    if (sum) return Math.round(sum * 100);
+  }
+  return Number(explicitPaise) || 0;
 }
 
 module.exports = {

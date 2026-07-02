@@ -47,7 +47,8 @@ async function findLatestLeadForAgent(agent, agency, leadId = '') {
     where: {
       agencyId: agency.id,
       assignedAgentId: agent.id,
-      status: { [Op.in]: ACTIVE_STATUSES },
+      // Entry-stage leads carry a null status; match those too.
+      [Op.or]: [{ status: null }, { status: { [Op.in]: ACTIVE_STATUSES } }],
     },
     order: [['createdAt', 'DESC']],
   });

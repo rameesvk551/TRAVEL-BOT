@@ -39,7 +39,7 @@ export default function BottomFiltersDrawer({
         <div className="flex items-center justify-between px-5 pb-3 pt-4">
           <div>
             <h3 className="flex items-center gap-2 text-base font-bold text-neutral-900">
-              <FunnelIcon className="h-4.5 w-4.5 text-neutral-500" /> Filters
+              <FunnelIcon className="h-4 w-4 text-neutral-500" /> Filters
             </h3>
           </div>
           <button

@@ -27,7 +27,16 @@ module.exports = (sequelize) => {
       type: DataTypes.UUID,
       allowNull: true,
     },
+    pipelineStageId: {
+      type: DataTypes.UUID,
+      allowNull: true,
+      comment: 'FK to PipelineStage for custom funnels',
+    },
     destination: {
+      type: DataTypes.STRING(500),
+      allowNull: true,
+    },
+    place: {
       type: DataTypes.STRING(500),
       allowNull: true,
     },
@@ -87,22 +96,10 @@ module.exports = (sequelize) => {
       comment: 'Travel interest selected by the customer, e.g. DOMESTIC or INTERNATIONAL',
     },
     status: {
-      type: DataTypes.ENUM(
-        'JUST_CONTACTED',
-        'PACKAGE_SEARCHED',
-        'PACKAGE_INTERESTED',
-        'NEW',
-        'ENQUIRY',
-        'CONTACTED',
-        'QUOTED',
-        'NEGOTIATING',
-        'BOOKED',
-        'CONVERTED',
-        'LOST',
-        'CANCELLED',
-        'UNKNOWN'
-      ),
-      defaultValue: 'JUST_CONTACTED',
+      type: DataTypes.STRING(50),
+      allowNull: true,
+      defaultValue: null,
+      comment: 'Legacy system status or custom status string',
     },
     lostReason: {
       type: DataTypes.TEXT,

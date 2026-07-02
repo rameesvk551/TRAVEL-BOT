@@ -78,7 +78,7 @@ export default function PackageCard({ pkg, onEdit, onToggleActive, canManage, on
         {/* Price Row */}
         <div className="mt-2.5 flex items-end justify-between">
           <span className="text-[17px] font-black tracking-tight text-neutral-900">
-            {formatCurrency(pkg.basePrice)}
+            {pkg.basePrice ? formatCurrency(pkg.basePrice) : 'Price on request'}
           </span>
           <span className="text-[9px] font-semibold tracking-wide text-neutral-400">
             {categoryLabel}
@@ -87,7 +87,7 @@ export default function PackageCard({ pkg, onEdit, onToggleActive, canManage, on
 
         {/* Management Actions */}
         {canManage && (
-          <div className="absolute inset-x-2.5 bottom-2.5 hidden gap-2 rounded-lg bg-white/95 p-1.5 shadow-lg ring-1 ring-neutral-100 backdrop-blur-sm group-hover:flex">
+          <div className="absolute inset-x-2.5 bottom-2.5 hidden gap-1.5 rounded-lg bg-white/95 p-1.5 shadow-lg ring-1 ring-neutral-100 backdrop-blur-sm group-hover:flex">
             <button
               onClick={(e) => { e.stopPropagation(); onEdit(pkg); }}
               className="flex-1 rounded-md bg-neutral-900 py-1.5 text-[11px] font-bold text-white transition hover:bg-neutral-800"

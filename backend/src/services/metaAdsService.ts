@@ -24,6 +24,31 @@ function normalizePlatform(value) {
   return normalized || 'facebook';
 }
 
+/**
+ * For a freshly-imported Meta lead, apply round-robin assignment (when the
+ * agency uses that strategy) and notify the owning agent. INTENT-strategy
+ * agencies leave Meta leads unassigned, as before. Requires are lazy to avoid
+ * a circular dependency with leadService.
+ */
+async function autoAssignAndNotify(lead, agencyId) {
+  try {
+    const serviceRoutingService = require('./serviceRoutingService');
+    const strategy = await serviceRoutingService.getRoutingStrategy(agencyId);
+    if (strategy !== 'ROUND_ROBIN') return;
+
+    const agent = await serviceRoutingService.resolveNextRoundRobinAgent(agencyId);
+    if (!agent?.id) return;
+
+    await lead.update({ assignedAgentId: agent.id });
+
+    const leadService = require('./leadService');
+    const fullLead = await leadService.getLeadById(lead.id, agencyId);
+    await leadService.notifyAssignedAgent(fullLead, agencyId, 'meta lead');
+  } catch (err) {
+    console.error('Failed to auto-assign Meta lead', err);
+  }
+}
+
 function sourceForPlatform(platform) {
   return normalizePlatform(platform) === 'instagram' ? 'instagram_ad' : 'facebook_ad';
 }
@@ -724,6 +749,7 @@ async function importMetaLead(agencyId, payload = {}, options = {}) {
     } else {
       lead = await Lead.create(leadValues);
       await syncEvent.update({ status: 'IMPORTED', leadId: lead.id });
+      await autoAssignAndNotify(lead, agencyId);
     }
 
     if (ids.metaCampaignId) {
@@ -754,6 +780,58 @@ async function importMetaLead(agencyId, payload = {}, options = {}) {
     });
     throw err;
   }
+}
+
+/**
+ * Resolve a Click-to-WhatsApp ad ID (referral.source_id) into a readable ad
+ * reference: ad name + ad set + campaign. Best-effort — if the partner API has no
+ * ad-level lookup, or Meta is not connected, returns null and the caller keeps the
+ * ad headline as the display label. Caches the parent campaign when resolvable.
+ */
+async function resolveAdReference(agencyId, adId) {
+  const cleanAdId = compact(adId);
+  if (!cleanAdId) return null;
+
+  let tenantToken;
+  try {
+    ({ tenantToken } = await resolveTenant(agencyId));
+  } catch (_err) {
+    return null; // Meta not connected — nothing to resolve against.
+  }
+
+  let response;
+  try {
+    response = await marketingOsPartnerService.getTenantMetaAd(tenantToken, cleanAdId);
+  } catch (_err) {
+    return null; // Endpoint unsupported / ad not found — fall back to headline.
+  }
+
+  const item = getData(response) || {};
+  const adSet = item.adset || item.adSet || item.ad_set || {};
+  const campaign = item.campaign || {};
+
+  const reference = {
+    metaAdId: compact(item.id || item.adId || cleanAdId) || cleanAdId,
+    metaAdName: compact(item.name || item.adName),
+    metaAdSetId: compact(adSet.id || item.adset_id || item.adSetId),
+    metaAdSetName: compact(adSet.name || item.adset_name || item.adSetName),
+    metaCampaignId: compact(campaign.id || item.campaign_id || item.campaignId),
+    metaCampaignName: compact(campaign.name || item.campaign_name || item.campaignName),
+    metaAdAccountId: compact(item.account_id || item.adAccountId || item.metaAdAccountId),
+    metaPlatform: normalizePlatform(item.platform || item.publisher_platform),
+  };
+
+  if (reference.metaCampaignId) {
+    await cacheCampaign(agencyId, {
+      metaCampaignId: reference.metaCampaignId,
+      metaAdAccountId: reference.metaAdAccountId,
+      name: reference.metaCampaignName,
+      platform: reference.metaPlatform,
+      rawPayload: item,
+    }).catch(() => {});
+  }
+
+  return reference;
 }
 
 async function handleLeadgenWebhook(payload = {}) {
@@ -795,4 +873,5 @@ module.exports = {
   backfillForm,
   handleLeadgenWebhook,
   importMetaLead,
+  resolveAdReference,
 };

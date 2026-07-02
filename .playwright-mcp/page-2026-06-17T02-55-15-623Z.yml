@@ -1,0 +1,38 @@
+- generic [ref=e2]:
+  - complementary [ref=e3]
+  - main [ref=e5]:
+    - complementary [ref=e9]:
+      - generic [ref=e11]:
+        - heading "WhatsApp Business" [level=1] [ref=e12]
+        - generic [ref=e13]:
+          - button "A" [ref=e14] [cursor=pointer]
+          - button "B" [ref=e15] [cursor=pointer]
+          - button "C" [ref=e16] [cursor=pointer]
+          - button "D" [ref=e17] [cursor=pointer]
+      - generic [ref=e18]:
+        - button "All" [ref=e19] [cursor=pointer]:
+          - generic [ref=e20]: All
+        - button "WhatsApp" [ref=e21] [cursor=pointer]:
+          - generic [ref=e22]: WhatsApp
+        - button "Instagram" [ref=e23] [cursor=pointer]:
+          - generic [ref=e24]: Instagram
+        - button "Messenger SOON" [ref=e25] [cursor=pointer]:
+          - generic [ref=e26]: Messenger
+          - generic [ref=e27]: SOON
+      - generic [ref=e28]:
+        - button "CHATS" [ref=e29] [cursor=pointer]
+        - combobox [ref=e30]:
+          - option "All Numbers" [selected]
+      - generic [ref=e31]:
+        - generic [ref=e32]:
+          - generic [ref=e33]: Q
+          - textbox "Search or start new chat" [ref=e34]
+        - button "F" [ref=e35] [cursor=pointer]
+      - button "R Travel Hub Holidays 1 Jun 2025 *Properties* Choose your stay location and travel dates to continue Lead" [ref=e38] [cursor=pointer]:
+        - generic [ref=e39]: R
+        - generic [ref=e40]:
+          - generic [ref=e41]:
+            - paragraph [ref=e42]: Travel Hub Holidays
+            - generic [ref=e43]: 1 Jun 2025
+          - paragraph [ref=e45]: "*Properties* Choose your stay location and travel dates to continue"
+        - generic [ref=e46]: Lead

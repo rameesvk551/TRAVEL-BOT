@@ -1,0 +1,11 @@
+{
+  "name": "Siaa Holidays",
+  "agencySlug": "siaa-holidays",
+  "sourceTemplate": "IRISTOURCO.IN",
+  "notes": "Mirror the IRISTOURCO WhatsApp flow: entry -> packages/properties/cruises/visas/services, with package PDF step between pkg_detail and pkg_q_travelDate.",
+  "flowConfig": {
+    "entryFlowId": "entry",
+    "schemaVersion": 4,
+    "updatedAt": "2026-06-23T00:00:00.000Z"
+  }
+}

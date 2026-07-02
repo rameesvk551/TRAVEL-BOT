@@ -93,11 +93,97 @@ function propertyFlowDefinition() {
     version: '7.2',
     data_api_version: '3.0',
     routing_model: {
-      PROPERTY_FILTER: ['PROPERTY_SELECTOR'],
+      STAY_REQUEST: [],
+      PROPERTY_FILTER: ['PROPERTY_SELECTOR', 'STAY_REQUEST'],
       PROPERTY_SELECTOR: ['PROPERTY_DATES'],
       PROPERTY_DATES: [],
     },
     screens: [
+      {
+        id: 'STAY_REQUEST',
+        title: 'Stay Request',
+        terminal: true,
+        data: {
+          propertyLocation: {
+            type: 'string',
+            __example__: 'Goa',
+          },
+          propertyType: {
+            type: 'string',
+            __example__: 'Villa',
+          },
+        },
+        layout: {
+          type: 'SingleColumnLayout',
+          children: [
+            {
+              type: 'Form',
+              name: 'stay_request_form',
+              children: [
+                { type: 'TextHeading', text: 'Request a Stay' },
+                { type: 'TextBody', text: 'Share what you need and our team will help with matching stay options.' },
+                {
+                  type: 'TextInput',
+                  name: 'propertyLocation',
+                  label: 'Location',
+                  required: true,
+                  'input-type': 'text',
+                  'helper-text': 'Example: Munnar',
+                },
+                {
+                  type: 'Dropdown',
+                  name: 'propertyType',
+                  label: 'Stay Type',
+                  required: true,
+                  'data-source': [
+                    { id: 'Villa', title: 'Villa' },
+                    { id: 'Resort', title: 'Resort' },
+                    { id: 'Hotel', title: 'Hotel' },
+                    { id: 'Apartment', title: 'Apartment' },
+                    { id: 'Homestay', title: 'Homestay' },
+                    { id: 'Any', title: 'Any stay type' },
+                  ],
+                },
+                {
+                  type: 'DatePicker',
+                  name: 'checkInDate',
+                  label: 'Check-in Date',
+                  required: true,
+                },
+                {
+                  type: 'DatePicker',
+                  name: 'checkOutDate',
+                  label: 'Check-out Date',
+                  required: true,
+                },
+                {
+                  type: 'TextInput',
+                  name: 'guests',
+                  label: 'Number of People',
+                  required: true,
+                  'input-type': 'number',
+                  'helper-text': 'Total people',
+                },
+                {
+                  type: 'Footer',
+                  label: 'Submit Request',
+                  'on-click-action': {
+                    name: 'complete',
+                    payload: {
+                      stayRequest: 'true',
+                      propertyLocation: '${form.propertyLocation}',
+                      propertyType: '${form.propertyType}',
+                      checkInDate: '${form.checkInDate}',
+                      checkOutDate: '${form.checkOutDate}',
+                      guests: '${form.guests}',
+                    },
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      },
       {
         id: 'PROPERTY_FILTER',
         title: 'Find a Stay',
@@ -144,18 +230,20 @@ function propertyFlowDefinition() {
                 { type: 'TextHeading', text: 'Find Your Stay' },
                 { type: 'TextBody', text: 'Choose a place and stay type to see matching properties.' },
                 {
-                  type: 'Dropdown',
+                  type: 'TextInput',
                   name: 'propertyLocation',
                   label: 'Location',
                   required: true,
-                  'data-source': '${data.property_locations}',
+                  'input-type': 'text',
+                  'helper-text': 'Example: Munnar',
                 },
                 {
-                  type: 'Dropdown',
+                  type: 'TextInput',
                   name: 'propertyType',
                   label: 'Stay Type',
                   required: true,
-                  'data-source': '${data.property_types}',
+                  'input-type': 'text',
+                  'helper-text': 'Villa, Resort, Hotel, Apartment, Homestay, or Any',
                 },
                 {
                   type: 'Footer',
@@ -269,20 +357,16 @@ function propertyFlowDefinition() {
                 { type: 'TextHeading', text: 'Check Availability' },
                 { type: 'TextBody', text: 'Add your dates and guests for the selected property.' },
                 {
-                  type: 'TextInput',
+                  type: 'DatePicker',
                   name: 'checkInDate',
                   label: 'Check-in Date',
                   required: true,
-                  'input-type': 'text',
-                  'helper-text': 'Example: 20 May 2026',
                 },
                 {
-                  type: 'TextInput',
+                  type: 'DatePicker',
                   name: 'checkOutDate',
                   label: 'Check-out Date',
                   required: true,
-                  'input-type': 'text',
-                  'helper-text': 'Example: 23 May 2026',
                 },
                 {
                   type: 'TextInput',
@@ -355,11 +439,10 @@ function customTripFlowDefinition() {
                   'input-type': 'text',
                 },
                 {
-                  type: 'TextInput',
+                  type: 'DatePicker',
                   name: 'travelDate',
-                  label: 'Travel Date or Month',
+                  label: 'Travel Date',
                   required: true,
-                  'input-type': 'text',
                 },
                 {
                   type: 'TextInput',
@@ -411,14 +494,15 @@ function travelReadinessQuestionnaireFlowDefinition() {
     version: '7.2',
     data_api_version: '3.0',
     routing_model: {
-      TRAVELLER_COUNT: ['BOOKING_READINESS'],
-      BOOKING_READINESS: ['DEPARTURE_AIRPORT'],
-      DEPARTURE_AIRPORT: [],
+      TRAVELLER_COUNT: ['TRIP_TYPE'],
+      TRIP_TYPE: ['DEPARTURE_AIRPORT'],
+      DEPARTURE_AIRPORT: ['ROOM_TYPE'],
+      ROOM_TYPE: [],
     },
     screens: [
       {
         id: 'TRAVELLER_COUNT',
-        title: 'Trip Questionnaire',
+        title: 'Kashmir Onam',
         layout: {
           type: 'SingleColumnLayout',
           children: [
@@ -426,21 +510,21 @@ function travelReadinessQuestionnaireFlowDefinition() {
               type: 'Form',
               name: 'travel_readiness_form',
               children: [
-                { type: 'TextHeading', text: 'Plan Your Trip' },
+                { type: 'TextHeading', text: 'Hi 👋' },
                 {
                   type: 'TextBody',
-                  text: 'Answer a few quick questions so our team can match the right travel option.',
+                  text: 'Thank you for your interest in our Kashmir Onam Special (27th–31st August).',
                 },
                 {
                   type: 'RadioButtonsGroup',
                   name: 'travellerCount',
-                  label: 'How many people are planning to travel?',
+                  label: 'May I know the number of travellers joining the trip?',
                   required: true,
                   'data-source': [
-                    { id: '1_PERSON', title: '1 person' },
-                    { id: '2_PEOPLE', title: '2 people' },
-                    { id: '3_TO_5_PEOPLE', title: '3-5 people' },
-                    { id: 'FAMILY_OR_GROUP', title: 'Family / Group' },
+                    { id: 'ONE_PERSON', title: '1 traveller' },
+                    { id: 'TWO_PEOPLE', title: '2 travellers' },
+                    { id: 'THREE_TO_FIVE', title: '3-5 travellers' },
+                    { id: 'SIX_OR_MORE', title: '6 or more travellers' },
                   ],
                 },
                 {
@@ -448,7 +532,7 @@ function travelReadinessQuestionnaireFlowDefinition() {
                   label: 'Next',
                   'on-click-action': {
                     name: 'navigate',
-                    next: { type: 'screen', name: 'BOOKING_READINESS' },
+                    next: { type: 'screen', name: 'TRIP_TYPE' },
                     payload: {
                       travellerCount: '${form.travellerCount}',
                     },
@@ -460,12 +544,12 @@ function travelReadinessQuestionnaireFlowDefinition() {
         },
       },
       {
-        id: 'BOOKING_READINESS',
-        title: 'Trip Questionnaire',
+        id: 'TRIP_TYPE',
+        title: 'Kashmir Onam',
         data: {
           travellerCount: {
             type: 'string',
-            __example__: '2_PEOPLE',
+            __example__: 'TWO_PEOPLE',
           },
         },
         layout: {
@@ -475,16 +559,17 @@ function travelReadinessQuestionnaireFlowDefinition() {
               type: 'Form',
               name: 'travel_readiness_form',
               children: [
-                { type: 'TextHeading', text: 'Plan Your Trip' },
+                { type: 'TextHeading', text: 'Travel Details' },
                 {
                   type: 'RadioButtonsGroup',
-                  name: 'bookingReadiness',
-                  label: 'Are you ready if the details match?',
+                  name: 'tripType',
+                  label: 'Could you please tell us who this trip is for?',
                   required: true,
                   'data-source': [
-                    { id: 'READY_TO_BOOK', title: 'Yes, ready to book' },
-                    { id: 'NEED_MORE_DETAILS', title: 'Need more details' },
-                    { id: 'JUST_EXPLORING', title: 'Just exploring' },
+                    { id: 'SOLO', title: 'Solo traveller' },
+                    { id: 'BACHELOR_GROUP', title: 'Bachelor group' },
+                    { id: 'COUPLE', title: 'Couple' },
+                    { id: 'FAMILY', title: 'Family' },
                   ],
                 },
                 {
@@ -495,7 +580,7 @@ function travelReadinessQuestionnaireFlowDefinition() {
                     next: { type: 'screen', name: 'DEPARTURE_AIRPORT' },
                     payload: {
                       travellerCount: '${data.travellerCount}',
-                      bookingReadiness: '${form.bookingReadiness}',
+                      tripType: '${form.tripType}',
                     },
                   },
                 },
@@ -506,16 +591,15 @@ function travelReadinessQuestionnaireFlowDefinition() {
       },
       {
         id: 'DEPARTURE_AIRPORT',
-        title: 'Trip Questionnaire',
-        terminal: true,
+        title: 'Kashmir Onam',
         data: {
           travellerCount: {
             type: 'string',
-            __example__: '2_PEOPLE',
+            __example__: 'TWO_PEOPLE',
           },
-          bookingReadiness: {
+          tripType: {
             type: 'string',
-            __example__: 'READY_TO_BOOK',
+            __example__: 'COUPLE',
           },
         },
         layout: {
@@ -525,17 +609,72 @@ function travelReadinessQuestionnaireFlowDefinition() {
               type: 'Form',
               name: 'travel_readiness_form',
               children: [
-                { type: 'TextHeading', text: 'Plan Your Trip' },
+                { type: 'TextHeading', text: 'Departure Airport' },
                 {
-                  type: 'RadioButtonsGroup',
+                  type: 'Dropdown',
                   name: 'departureAirport',
-                  label: 'Preferred departure airport',
+                  label: 'Please choose your preferred departure airport',
                   required: true,
                   'data-source': [
-                    { id: 'CCJ', title: 'Kozhikode' },
-                    { id: 'COK', title: 'Kochi' },
-                    { id: 'TRV', title: 'Thiruvananthapuram' },
-                    { id: 'FLEXIBLE', title: 'Flexible' },
+                    { id: 'COK', title: 'Kochi (COK)' },
+                    { id: 'TRV', title: 'Thiruvananthapuram (TRV)' },
+                    { id: 'CCJ', title: 'Kozhikode (CCJ)' },
+                    { id: 'CNN', title: 'Kannur (CNN)' },
+                    { id: 'FLEXIBLE', title: 'Flexible / Any Kerala airport' },
+                  ],
+                },
+                {
+                  type: 'Footer',
+                  label: 'Next',
+                  'on-click-action': {
+                    name: 'navigate',
+                    next: { type: 'screen', name: 'ROOM_TYPE' },
+                    payload: {
+                      travellerCount: '${data.travellerCount}',
+                      tripType: '${data.tripType}',
+                      departureAirport: '${form.departureAirport}',
+                    },
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      },
+      {
+        id: 'ROOM_TYPE',
+        title: 'Kashmir Onam',
+        terminal: true,
+        data: {
+          travellerCount: {
+            type: 'string',
+            __example__: 'TWO_PEOPLE',
+          },
+          tripType: {
+            type: 'string',
+            __example__: 'COUPLE',
+          },
+          departureAirport: {
+            type: 'string',
+            __example__: 'COK',
+          },
+        },
+        layout: {
+          type: 'SingleColumnLayout',
+          children: [
+            {
+              type: 'Form',
+              name: 'travel_readiness_form',
+              children: [
+                { type: 'TextHeading', text: 'Room Preference' },
+                {
+                  type: 'RadioButtonsGroup',
+                  name: 'roomType',
+                  label: 'What is your preferred room type?',
+                  required: true,
+                  'data-source': [
+                    { id: 'COUPLE_ROOM', title: 'Couple room' },
+                    { id: 'FAMILY_ROOM', title: 'Family room' },
                   ],
                 },
                 {
@@ -545,8 +684,9 @@ function travelReadinessQuestionnaireFlowDefinition() {
                     name: 'complete',
                     payload: {
                       travellerCount: '${data.travellerCount}',
-                      bookingReadiness: '${data.bookingReadiness}',
-                      departureAirport: '${form.departureAirport}',
+                      tripType: '${data.tripType}',
+                      departureAirport: '${data.departureAirport}',
+                      roomType: '${form.roomType}',
                     },
                   },
                 },
@@ -715,6 +855,252 @@ function reviewFlowDefinition() {
   };
 }
 
+function visaFlowDefinition() {
+  return {
+    version: '7.2',
+    data_api_version: '3.0',
+    routing_model: {
+      VISA_SELECTOR: [],
+    },
+    screens: [
+      {
+        id: 'VISA_SELECTOR',
+        title: 'Visa Services',
+        terminal: true,
+        data: {
+          category_label: {
+            type: 'string',
+            __example__: 'Visa Services',
+          },
+          visa_options: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                id: { type: 'string' },
+                title: { type: 'string' },
+                description: { type: 'string' },
+                metadata: { type: 'string' },
+                image: { type: 'string' },
+              },
+            },
+            __example__: [
+              {
+                id: 'visa_uae_01',
+                title: 'UAE Tourist Visa',
+                description: 'INR 6,500 - 3 to 4 working days\nSingle entry, 30 days validity.',
+                metadata: 'Tourist',
+                image: EMPTY_PIXEL,
+              },
+              {
+                id: 'visa_schengen_01',
+                title: 'Schengen Visa',
+                description: 'INR 9,500 - 10 to 15 working days\nMulti-country Europe travel.',
+                metadata: 'Tourist',
+                image: EMPTY_PIXEL,
+              },
+            ],
+          },
+        },
+        layout: {
+          type: 'SingleColumnLayout',
+          children: [
+            {
+              type: 'Form',
+              name: 'visa_selector_form',
+              children: [
+                { type: 'TextHeading', text: 'Visa Services' },
+                { type: 'TextBody', text: 'Choose a visa to view documents, fees, and processing time.' },
+                {
+                  type: 'RadioButtonsGroup',
+                  name: 'visaId',
+                  label: 'Available Visas',
+                  required: true,
+                  'data-source': '${data.visa_options}',
+                },
+                {
+                  type: 'Footer',
+                  label: 'View Visa',
+                  'on-click-action': {
+                    name: 'complete',
+                    payload: {
+                      visaId: '${form.visaId}',
+                    },
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      },
+    ],
+  };
+}
+
+function cruiseFlowDefinition() {
+  return {
+    version: '7.2',
+    data_api_version: '3.0',
+    routing_model: {
+      CRUISE_SELECTOR: [],
+    },
+    screens: [
+      {
+        id: 'CRUISE_SELECTOR',
+        title: 'Cruise Holidays',
+        terminal: true,
+        data: {
+          category_label: {
+            type: 'string',
+            __example__: 'Cruise Holidays',
+          },
+          cruise_options: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                id: { type: 'string' },
+                title: { type: 'string' },
+                description: { type: 'string' },
+                metadata: { type: 'string' },
+                image: { type: 'string' },
+              },
+            },
+            __example__: [
+              {
+                id: 'cruise_dubai_01',
+                title: 'Dubai Getaway Cruise',
+                description: 'INR 32,000 - 4 Nights\nDubai, Sir Bani Yas, Abu Dhabi.',
+                metadata: 'Costa',
+                image: EMPTY_PIXEL,
+              },
+              {
+                id: 'cruise_singapore_01',
+                title: 'Singapore - Malaysia',
+                description: 'INR 45,000 - 5 Nights\nSingapore, Penang, Phuket.',
+                metadata: 'Royal Caribbean',
+                image: EMPTY_PIXEL,
+              },
+            ],
+          },
+        },
+        layout: {
+          type: 'SingleColumnLayout',
+          children: [
+            {
+              type: 'Form',
+              name: 'cruise_selector_form',
+              children: [
+                { type: 'TextHeading', text: 'Cruise Holidays' },
+                { type: 'TextBody', text: 'Choose a cruise to view itinerary, cabins, and pricing.' },
+                {
+                  type: 'RadioButtonsGroup',
+                  name: 'cruiseId',
+                  label: 'Available Cruises',
+                  required: true,
+                  'data-source': '${data.cruise_options}',
+                },
+                {
+                  type: 'Footer',
+                  label: 'View Cruise',
+                  'on-click-action': {
+                    name: 'complete',
+                    payload: {
+                      cruiseId: '${form.cruiseId}',
+                    },
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      },
+    ],
+  };
+}
+
+function serviceFlowDefinition() {
+  return {
+    version: '7.2',
+    data_api_version: '3.0',
+    routing_model: {
+      SERVICE_SELECTOR: [],
+    },
+    screens: [
+      {
+        id: 'SERVICE_SELECTOR',
+        title: 'Our Services',
+        terminal: true,
+        data: {
+          category_label: {
+            type: 'string',
+            __example__: 'Our Services',
+          },
+          service_options: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                id: { type: 'string' },
+                title: { type: 'string' },
+                description: { type: 'string' },
+                metadata: { type: 'string' },
+                image: { type: 'string' },
+              },
+            },
+            __example__: [
+              {
+                id: 'service_flight_01',
+                title: 'Flight Ticketing',
+                description: 'Domestic and international air tickets at the best fares.',
+                metadata: 'Ticketing',
+                image: EMPTY_PIXEL,
+              },
+              {
+                id: 'service_insurance_01',
+                title: 'Travel Insurance',
+                description: 'Comprehensive cover for medical, baggage, and delays.',
+                metadata: 'Insurance',
+                image: EMPTY_PIXEL,
+              },
+            ],
+          },
+        },
+        layout: {
+          type: 'SingleColumnLayout',
+          children: [
+            {
+              type: 'Form',
+              name: 'service_selector_form',
+              children: [
+                { type: 'TextHeading', text: 'Our Services' },
+                { type: 'TextBody', text: 'Choose a service to view details or start an enquiry.' },
+                {
+                  type: 'RadioButtonsGroup',
+                  name: 'serviceId',
+                  label: 'Available Services',
+                  required: true,
+                  'data-source': '${data.service_options}',
+                },
+                {
+                  type: 'Footer',
+                  label: 'View Service',
+                  'on-click-action': {
+                    name: 'complete',
+                    payload: {
+                      serviceId: '${form.serviceId}',
+                    },
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      },
+    ],
+  };
+}
+
 function getDefaultFlowDefinitions(agency) {
   const prefix = agencyPrefix(agency);
 
@@ -733,9 +1119,36 @@ function getDefaultFlowDefinitions(agency) {
       flowType: 'PROPERTY',
       status: 'DRAFT',
       endpointUri: DEFAULT_ENDPOINT_URI,
-      firstScreenId: 'PROPERTY_FILTER',
+      firstScreenId: 'STAY_REQUEST',
       categories: ['OTHER'],
       jsonDefinition: propertyFlowDefinition(),
+    },
+    {
+      name: `${prefix} Visa Flow`,
+      flowType: 'VISA',
+      status: 'DRAFT',
+      endpointUri: DEFAULT_ENDPOINT_URI,
+      firstScreenId: 'VISA_SELECTOR',
+      categories: ['OTHER'],
+      jsonDefinition: visaFlowDefinition(),
+    },
+    {
+      name: `${prefix} Cruise Flow`,
+      flowType: 'CRUISE',
+      status: 'DRAFT',
+      endpointUri: DEFAULT_ENDPOINT_URI,
+      firstScreenId: 'CRUISE_SELECTOR',
+      categories: ['OTHER'],
+      jsonDefinition: cruiseFlowDefinition(),
+    },
+    {
+      name: `${prefix} Service Flow`,
+      flowType: 'SERVICE',
+      status: 'DRAFT',
+      endpointUri: DEFAULT_ENDPOINT_URI,
+      firstScreenId: 'SERVICE_SELECTOR',
+      categories: ['OTHER'],
+      jsonDefinition: serviceFlowDefinition(),
     },
     {
       name: `${prefix} Custom Trip Flow`,

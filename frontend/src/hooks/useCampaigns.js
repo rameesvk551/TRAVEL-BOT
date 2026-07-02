@@ -45,6 +45,15 @@ export function useCampaignAnalytics(params = {}) {
   });
 }
 
+export function useCampaignReports(params = {}, options = {}) {
+  return useQuery({
+    queryKey: ['campaign-reports', params],
+    queryFn: () => campaignsApi.reports(params),
+    enabled: options.enabled ?? true,
+    staleTime: 60 * 1000,
+  });
+}
+
 export function useCreateCampaign() {
   const qc = useQueryClient();
   return useMutation({

@@ -13,7 +13,54 @@ const CTA_BUTTON_ACTIONS = new Set([
   'SEND_ITINERARY',
   'CHECK_AVAILABILITY',
   'TALK_TO_AGENT',
+  // Industry-agnostic actions: bind a template button to any of the agency's own
+  // published WhatsApp flows, or to an external link. These carry their target in
+  // `flowId` / `url` instead of a travel catalog item.
+  'OPEN_FLOW',
+  'OPEN_URL',
 ]);
+
+// A campaign button that opens a flow can target either of the two flow engines:
+//  - GRAPH: the agency's bot conversational flow graph (whatsappFlowConfig.flows[])
+//           — supports Send-PDF, branching, catalog lists, sub-flows, etc.
+//  - META : a published Meta native WhatsApp form flow (WhatsAppFlow.metaFlowId)
+// Default is META for backward-compatibility with existing OPEN_FLOW bindings.
+const FLOW_KINDS = new Set(['GRAPH', 'META']);
+
+function normalizeFlowKind(value: string): string {
+  const kind = String(value || '').toUpperCase();
+  return FLOW_KINDS.has(kind) ? kind : 'META';
+}
+
+// Shared normalizer for a single button that may carry a flow/url binding plus an
+// optional keyword passed into the launched flow as the {campaign_keyword} variable.
+function normalizeFlowButton(value: any = {}, index = 0): any {
+  const action = String(value.action || '').toUpperCase();
+  const keyword = String(value.keyword || '').trim().slice(0, 60) || null;
+  return {
+    ...value,
+    buttonKey: String(value.buttonKey || `btn_${index + 1}`),
+    buttonText: String(value.buttonText || value.text || '').trim(),
+    buttonIndex: Number.isFinite(Number(value.buttonIndex)) ? Number(value.buttonIndex) : index,
+    action: CTA_BUTTON_ACTIONS.has(action) ? action : null,
+    flowKind: action === 'OPEN_FLOW' ? normalizeFlowKind(value.flowKind) : null,
+    flowId: action === 'OPEN_FLOW' ? (value.flowId || null) : null,
+    // The node the flow graph should start at for this button (multi-entry campaign
+    // flow: each template button enters the shared graph at its own starter node).
+    entryNodeId: action === 'OPEN_FLOW' ? (value.entryNodeId || null) : null,
+    url: action === 'OPEN_URL' ? String(value.url || '').trim() || null : null,
+    keyword,
+  };
+}
+
+const RECIPIENT_REPORT_STATUSES = ['SENT', 'DELIVERED', 'READ', 'REPLIED', 'FAILED'];
+const RECIPIENT_LIFECYCLE_STATUS_MAP = {
+  SENT: ['SENT', 'DELIVERED', 'READ', 'REPLIED'],
+  DELIVERED: ['DELIVERED', 'READ', 'REPLIED'],
+  READ: ['READ', 'REPLIED'],
+  REPLIED: ['REPLIED'],
+  FAILED: ['FAILED'],
+};
 
 function normalizeArray(value) {
   return Array.isArray(value) ? value.filter(Boolean) : [];
@@ -57,15 +104,33 @@ function normalizeCampaignSections(data = {}) {
 
 function normalizeCarouselConfig(data = {}) {
   const config = data.carouselConfig && typeof data.carouselConfig === 'object' ? data.carouselConfig : {};
+  // CATALOG = cards derived from selected packages/properties (default).
+  // UPLOAD  = free-form cards the agency built by uploading their own media, with
+  //           no catalog item behind them (for agencies without a package catalog).
+  const mode = String(config.mode || 'CATALOG').toUpperCase() === 'UPLOAD' ? 'UPLOAD' : 'CATALOG';
   const rawItems = normalizeArray(config.items || data.carouselItems);
-  const cards = normalizeArray(config.cards || data.carouselCards);
+  // Each carousel card may carry an optional `keyword` (passed into a launched flow
+  // as {campaign_keyword}) and its own buttons that can open a flow / url per image.
+  // UPLOAD cards additionally carry their own mediaUrl/title/body and a stable id.
+  const cards = normalizeArray(config.cards || data.carouselCards).map((card: any, index: number) => ({
+    ...card,
+    id: card?.id || card?.itemId || `card_${index + 1}`,
+    mediaUrl: String(card?.mediaUrl || '').trim() || null,
+    mediaType: String(card?.mediaType || '').toUpperCase() === 'VIDEO' ? 'VIDEO' : (card?.mediaUrl ? 'IMAGE' : null),
+    title: String(card?.title || '').trim().slice(0, 120) || null,
+    body: String(card?.body || '').trim().slice(0, 1024) || null,
+    keyword: String(card?.keyword || '').trim().slice(0, 60) || null,
+    buttons: normalizeArray(card?.buttons).map((btn: any, i: number) => normalizeFlowButton(btn, i)),
+  }));
   const mediaMode = ['IMAGE', 'VIDEO', 'MIXED'].includes(String(config.mediaMode || data.mediaType || 'IMAGE').toUpperCase())
     ? String(config.mediaMode || data.mediaType || 'IMAGE').toUpperCase()
     : 'IMAGE';
 
   return {
+    mode,
     contentType: String(config.contentType || 'MIXED').toUpperCase(),
     mediaMode,
+    flowGraphId: config.flowGraphId || null,
     items: rawItems.map((item) => ({
       itemType: ITEM_TYPES.has(String(item.itemType || '').toUpperCase()) ? String(item.itemType).toUpperCase() : 'PACKAGE',
       itemId: item.itemId || item.id,
@@ -94,7 +159,22 @@ function normalizeCtaConfig(data = {}) {
         action,
         itemType,
         itemId: value.itemId || null,
+        // Targets for the industry-agnostic actions.
+        flowKind: action === 'OPEN_FLOW' ? normalizeFlowKind(value.flowKind) : null,
+        flowId: action === 'OPEN_FLOW' ? (value.flowId || null) : null,
+        entryNodeId: action === 'OPEN_FLOW' ? (value.entryNodeId || null) : null,
+        url: action === 'OPEN_URL' ? String(value.url || '').trim() || null : null,
+        keyword: String(value.keyword || '').trim().slice(0, 60) || null,
       };
+      return acc;
+    }, {})
+    : {};
+
+  // Named template variable values filled at campaign time (keyed by variable name).
+  const variableValues = source.variableValues && typeof source.variableValues === 'object' && !Array.isArray(source.variableValues)
+    ? Object.entries(source.variableValues).reduce((acc, [key, value]) => {
+      const name = String(key || '').trim().toLowerCase();
+      if (name) acc[name] = String(value ?? '');
       return acc;
     }, {})
     : {};
@@ -104,6 +184,7 @@ function normalizeCtaConfig(data = {}) {
     featuredItemType,
     featuredItemId: source.featuredItemId || null,
     buttonActions,
+    variableValues,
   };
 }
 
@@ -118,12 +199,16 @@ function validateCampaignPayload(payload = {}) {
     const sections = normalizeArray(payload.campaignSections).filter((section) => section.enabled !== false);
     const buttonActions = Object.values(payload.ctaConfig?.buttonActions || {});
     const hasButtonActions = buttonActions.length > 0;
+    const sectionCanResolveItems = (section) => {
+      if (!section) return false;
+      const selectedIds = normalizeArray(section.selectedItemIds);
+      if (selectedIds.length > 0) return true;
+      return String(section.selectionMode || '').toUpperCase() !== 'MANUAL';
+    };
 
     if (hasButtonActions) {
       const packageSection = sections.find((section) => String(section.itemType || '').toUpperCase() === 'PACKAGE');
       const propertySection = sections.find((section) => String(section.itemType || '').toUpperCase() === 'PROPERTY');
-      const packageIds = normalizeArray(packageSection?.selectedItemIds);
-      const propertyIds = normalizeArray(propertySection?.selectedItemIds);
 
       const missingAction = buttonActions.find((entry) => !CTA_BUTTON_ACTIONS.has(String(entry.action || '').toUpperCase()));
       if (missingAction) {
@@ -133,28 +218,26 @@ function validateCampaignPayload(payload = {}) {
       const missingSelection = buttonActions.find((entry) => {
         const action = String(entry.action || '').toUpperCase();
         const itemType = String(entry.itemType || '').toUpperCase();
-        if (action === 'VIEW_PACKAGES') return packageIds.length === 0;
-        if (action === 'VIEW_PROPERTIES') return propertyIds.length === 0;
-        if (action === 'VIEW_DETAILS') return !entry.itemId && packageIds.length + propertyIds.length === 0;
-        if (action === 'SEND_ITINERARY') return !(itemType === 'PACKAGE' && entry.itemId) && packageIds.length === 0;
-        if (action === 'CHECK_AVAILABILITY') return !(itemType === 'PACKAGE' && entry.itemId) && packageIds.length === 0;
+        if (action === 'VIEW_PACKAGES') return !sectionCanResolveItems(packageSection);
+        if (action === 'VIEW_PROPERTIES') return !sectionCanResolveItems(propertySection);
+        if (action === 'VIEW_DETAILS') return !entry.itemId && !sectionCanResolveItems(packageSection) && !sectionCanResolveItems(propertySection);
+        if (action === 'SEND_ITINERARY') return !(itemType === 'PACKAGE' && entry.itemId) && !sectionCanResolveItems(packageSection);
+        if (action === 'CHECK_AVAILABILITY') return !(itemType === 'PACKAGE' && entry.itemId) && !sectionCanResolveItems(packageSection);
+        if (action === 'OPEN_FLOW') return !entry.flowId;
+        if (action === 'OPEN_URL') return !/^https?:\/\//i.test(String(entry.url || '').trim());
         return false;
       });
 
       if (missingSelection) {
-        throw new Error(`${missingSelection.buttonText || 'CTA button'} needs selected campaign items`);
+        const label = missingSelection.buttonText || 'CTA button';
+        const action = String(missingSelection.action || '').toUpperCase();
+        if (action === 'OPEN_FLOW') throw new Error(`${label} needs a WhatsApp flow selected`);
+        if (action === 'OPEN_URL') throw new Error(`${label} needs a valid https link`);
+        throw new Error(`${label} needs selected campaign items`);
       }
     } else {
-      if (sections.length === 0) {
-        throw new Error('CTA campaigns need at least one enabled action');
-      }
-
       const catalogSections = sections.filter((section) => ['PACKAGE', 'PROPERTY'].includes(String(section.itemType || '').toUpperCase()));
-      if (catalogSections.length === 0) {
-        throw new Error('CTA campaigns must include at least one selected package or property');
-      }
-
-      const missingSelection = catalogSections.find((section) => normalizeArray(section.selectedItemIds).length === 0);
+      const missingSelection = catalogSections.find((section) => !sectionCanResolveItems(section));
       if (missingSelection) {
         throw new Error(`${missingSelection.label || 'CTA action'} needs at least one selected item`);
       }
@@ -162,10 +245,33 @@ function validateCampaignPayload(payload = {}) {
   }
 
   if (format === 'ITEM_CAROUSEL') {
-    const items = normalizeArray(payload.carouselConfig?.items);
-    if (items.length < 2 || items.length > 10) {
-      throw new Error('Carousel campaigns must select between 2 and 10 packages or properties');
+    const carouselMode = String(payload.carouselConfig?.mode || 'CATALOG').toUpperCase();
+    const cards = normalizeArray(payload.carouselConfig?.cards);
+    if (carouselMode === 'UPLOAD') {
+      // Free-form upload carousel: cards carry their own media, no catalog needed.
+      const mediaCards = cards.filter((card: any) => String(card?.mediaUrl || '').trim());
+      if (mediaCards.length < 2 || mediaCards.length > 10) {
+        throw new Error('Upload carousels must have between 2 and 10 cards, each with an image or video');
+      }
+    } else {
+      const items = normalizeArray(payload.carouselConfig?.items);
+      if (items.length < 2 || items.length > 10) {
+        throw new Error('Carousel campaigns must select between 2 and 10 packages or properties');
+      }
     }
+    // Validate any per-card flow/url buttons the agency bound to carousel images.
+    cards.forEach((card: any, index: number) => {
+      normalizeArray(card?.buttons).forEach((btn: any) => {
+        const action = String(btn?.action || '').toUpperCase();
+        const label = String(btn?.buttonText || `Card ${index + 1} button`).trim();
+        if (action === 'OPEN_FLOW' && !btn?.flowId) {
+          throw new Error(`${label} needs a flow selected`);
+        }
+        if (action === 'OPEN_URL' && !/^https?:\/\//i.test(String(btn?.url || '').trim())) {
+          throw new Error(`${label} needs a valid https link`);
+        }
+      });
+    });
   }
 
   return payload;
@@ -461,9 +567,56 @@ async function updateCampaign(id, agencyId, data) {
 /**
  * List campaigns for an agency.
  */
-async function listCampaigns(agencyId, { status, page = 1, pageSize = 20 } = {}) {
+function buildCampaignReportWhere(agencyId, { status, type, from, to, q } = {}) {
   const where = { agencyId };
   if (status) where.status = status;
+  if (type) where.type = type;
+  if (from || to) {
+    where.createdAt = {};
+    if (from) where.createdAt[Op.gte] = new Date(from);
+    if (to) where.createdAt[Op.lte] = new Date(to);
+  }
+  if (q) {
+    where.name = { [Op.iLike]: `%${String(q).trim()}%` };
+  }
+
+  return where;
+}
+
+async function getCampaignSummary(where) {
+  const campaigns = await Campaign.findAll({ where, raw: true });
+  const totalCampaigns = campaigns.length;
+  const activeCampaigns = campaigns.filter((c) => ['SENDING', 'SCHEDULED'].includes(c.status)).length;
+  const sentCampaigns = campaigns.filter((c) => ['SENT', 'SENDING'].includes(c.status)).length;
+  const totalRecipients = campaigns.reduce((sum, c) => sum + (c.totalRecipients || 0), 0);
+  const totalSent = campaigns.reduce((sum, c) => sum + (c.sent || 0), 0);
+  const totalDelivered = campaigns.reduce((sum, c) => sum + (c.delivered || 0), 0);
+  const totalRead = campaigns.reduce((sum, c) => sum + (c.read || 0), 0);
+  const totalReplied = campaigns.reduce((sum, c) => sum + (c.replied || 0), 0);
+  const totalFailed = campaigns.reduce((sum, c) => sum + (c.failed || 0), 0);
+  const percentageOfRecipients = (value) => {
+    if (!totalRecipients) return 0;
+    return Math.min(100, Math.round(((value || 0) / totalRecipients) * 100));
+  };
+
+  return {
+    totalCampaigns,
+    activeCampaigns,
+    sentCampaigns,
+    totalRecipients,
+    totalSent,
+    totalDelivered,
+    totalRead,
+    totalReplied,
+    totalFailed,
+    deliveryRate: percentageOfRecipients(Math.max(totalDelivered, totalRead, totalReplied)),
+    readRate: percentageOfRecipients(Math.max(totalRead, totalReplied)),
+    failureRate: totalRecipients > 0 ? Math.round((totalFailed / totalRecipients) * 100) : 0,
+  };
+}
+
+async function listCampaigns(agencyId, { status, type, from, to, q, page = 1, pageSize = 20 } = {}) {
+  const where = buildCampaignReportWhere(agencyId, { status, type, from, to, q });
 
   const { count, rows } = await Campaign.findAndCountAll({
     where,
@@ -473,7 +626,9 @@ async function listCampaigns(agencyId, { status, page = 1, pageSize = 20 } = {})
     offset: (page - 1) * pageSize,
   });
 
-  return { total: count, data: rows, page, pageSize };
+  const summary = await getCampaignSummary(where);
+
+  return { total: count, data: rows, page, pageSize, summary };
 }
 
 /**
@@ -532,6 +687,9 @@ async function getCampaignStats(id, agencyId) {
 
   const stats = {};
   (statusCounts || []).forEach((s) => { stats[s.status] = parseInt(s.count, 10); });
+  const sentCount = (stats.SENT || 0) + (stats.DELIVERED || 0) + (stats.READ || 0) + (stats.REPLIED || 0);
+  const deliveredCount = (stats.DELIVERED || 0) + (stats.READ || 0) + (stats.REPLIED || 0);
+  const readCount = (stats.READ || 0) + (stats.REPLIED || 0);
 
   const [clicked, leads, bookings, revenue] = await Promise.all([
     CampaignRecipient.count({ where: { campaignId: id, clickedAt: { [Op.ne]: null } } }),
@@ -551,9 +709,9 @@ async function getCampaignStats(id, agencyId) {
     stats: {
       total: campaign.totalRecipients,
       pending: stats.PENDING || 0,
-      sent: stats.SENT || 0,
-      delivered: stats.DELIVERED || 0,
-      read: stats.READ || 0,
+      sent: sentCount,
+      delivered: deliveredCount,
+      read: readCount,
       replied: stats.REPLIED || 0,
       failed: stats.FAILED || 0,
       clicked,
@@ -805,30 +963,176 @@ async function getCampaignReport(id, agencyId) {
   };
 }
 
+async function getCampaignRecipientReports(agencyId, {
+  from, to, status, type, q, campaignId, recipientStatus, page = 1, pageSize, limit,
+} = {}) {
+  const campaignWhere = buildCampaignReportWhere(agencyId, { from, to, status, type, q });
+  if (campaignId) campaignWhere.id = campaignId;
+
+  const normalizedRecipientStatus = String(recipientStatus || '').toUpperCase();
+  const recipientWhere = {};
+  if (RECIPIENT_LIFECYCLE_STATUS_MAP[normalizedRecipientStatus]) {
+    recipientWhere.status = { [Op.in]: RECIPIENT_LIFECYCLE_STATUS_MAP[normalizedRecipientStatus] };
+  } else {
+    recipientWhere.status = { [Op.in]: RECIPIENT_REPORT_STATUSES };
+  }
+
+  const safePage = Math.max(parseInt(page, 10) || 1, 1);
+  const requestedPageSize = pageSize ?? limit ?? 50;
+  const safePageSize = Math.min(Math.max(parseInt(requestedPageSize, 10) || 50, 1), 50000);
+  const offset = (safePage - 1) * safePageSize;
+
+  const [campaigns, statusRows, campaignRows, totalRecipientRows, recipients] = await Promise.all([
+    Campaign.findAll({
+      where: campaignWhere,
+      attributes: ['id', 'name', 'type', 'status', 'totalRecipients', 'sent', 'delivered', 'read', 'replied', 'failed', 'createdAt', 'sentAt'],
+      order: [['createdAt', 'DESC']],
+      raw: true,
+    }),
+    CampaignRecipient.findAll({
+      where: recipientWhere,
+      attributes: ['status', [fn('COUNT', col('CampaignRecipient.id')), 'count']],
+      include: [{ model: Campaign, as: 'campaign', attributes: [], where: campaignWhere, required: true }],
+      group: ['CampaignRecipient.status'],
+      raw: true,
+    }),
+    CampaignRecipient.findAll({
+      where: recipientWhere,
+      attributes: [
+        'campaignId',
+        [fn('COUNT', col('CampaignRecipient.id')), 'total'],
+        [fn('SUM', literal("CASE WHEN \"CampaignRecipient\".\"status\" = 'SENT' THEN 1 ELSE 0 END")), 'sent'],
+        [fn('SUM', literal("CASE WHEN \"CampaignRecipient\".\"status\" = 'DELIVERED' THEN 1 ELSE 0 END")), 'delivered'],
+        [fn('SUM', literal("CASE WHEN \"CampaignRecipient\".\"status\" = 'READ' THEN 1 ELSE 0 END")), 'read'],
+        [fn('SUM', literal("CASE WHEN \"CampaignRecipient\".\"status\" = 'REPLIED' THEN 1 ELSE 0 END")), 'replied'],
+        [fn('SUM', literal("CASE WHEN \"CampaignRecipient\".\"status\" = 'FAILED' THEN 1 ELSE 0 END")), 'failed'],
+      ],
+      include: [{ model: Campaign, as: 'campaign', attributes: ['id', 'name', 'type', 'status', 'createdAt', 'sentAt'], where: campaignWhere, required: true }],
+      group: [col('CampaignRecipient.campaign_id'), col('campaign.id')],
+      order: [[{ model: Campaign, as: 'campaign' }, 'createdAt', 'DESC']],
+      raw: true,
+      nest: true,
+    }),
+    CampaignRecipient.count({
+      where: recipientWhere,
+      include: [{ model: Campaign, as: 'campaign', attributes: [], where: campaignWhere, required: true }],
+    }),
+    CampaignRecipient.findAll({
+      where: recipientWhere,
+      include: [
+        {
+          model: Campaign,
+          as: 'campaign',
+          attributes: ['id', 'name', 'type', 'status', 'createdAt', 'sentAt'],
+          where: campaignWhere,
+          required: true,
+        },
+        { model: Customer, as: 'customer', attributes: ['name', 'phone'] },
+      ],
+      order: [
+        [{ model: Campaign, as: 'campaign' }, 'createdAt', 'DESC'],
+        ['updatedAt', 'DESC'],
+      ],
+      limit: safePageSize,
+      offset,
+    }),
+  ]);
+
+  const statusBreakdown = RECIPIENT_REPORT_STATUSES.reduce((acc, key) => {
+    acc[key] = 0;
+    return acc;
+  }, {});
+  statusRows.forEach((row) => {
+    statusBreakdown[row.status] = parseInt(row.count, 10) || 0;
+  });
+
+  const lifecycleSummary = {
+    sent: statusBreakdown.SENT + statusBreakdown.DELIVERED + statusBreakdown.READ + statusBreakdown.REPLIED,
+    delivered: statusBreakdown.DELIVERED + statusBreakdown.READ + statusBreakdown.REPLIED,
+    read: statusBreakdown.READ + statusBreakdown.REPLIED,
+    replied: statusBreakdown.REPLIED,
+    failed: statusBreakdown.FAILED,
+  };
+
+  return {
+    filters: {
+      campaignId: campaignId || null,
+      recipientStatus: RECIPIENT_LIFECYCLE_STATUS_MAP[normalizedRecipientStatus] ? normalizedRecipientStatus : 'ALL',
+      page: safePage,
+      pageSize: safePageSize,
+    },
+    pagination: {
+      page: safePage,
+      pageSize: safePageSize,
+      total: totalRecipientRows,
+      totalPages: Math.max(1, Math.ceil(totalRecipientRows / safePageSize)),
+    },
+    summary: {
+      campaigns: campaigns.length,
+      recipientRows: totalRecipientRows,
+      ...lifecycleSummary,
+      statusBreakdown,
+    },
+    campaigns: campaignRows.map((row) => ({
+      id: row.campaign?.id || row.campaignId,
+      name: row.campaign?.name || 'Untitled campaign',
+      type: row.campaign?.type || '',
+      status: row.campaign?.status || '',
+      createdAt: row.campaign?.createdAt || null,
+      sentAt: row.campaign?.sentAt || null,
+      total: parseInt(row.total, 10) || 0,
+      sent: parseInt(row.sent, 10) || 0,
+      delivered: parseInt(row.delivered, 10) || 0,
+      read: parseInt(row.read, 10) || 0,
+      replied: parseInt(row.replied, 10) || 0,
+      failed: parseInt(row.failed, 10) || 0,
+    })),
+    recipients: recipients.map((recipient) => ({
+      id: recipient.id,
+      campaignId: recipient.campaignId,
+      campaignName: recipient.campaign?.name || '',
+      campaignType: recipient.campaign?.type || '',
+      campaignStatus: recipient.campaign?.status || '',
+      customerName: recipient.customer?.name || '',
+      phone: recipient.customer?.phone || '',
+      status: recipient.status,
+      waMessageId: recipient.waMessageId,
+      sentAt: recipient.sentAt,
+      deliveredAt: recipient.deliveredAt,
+      readAt: recipient.readAt,
+      repliedAt: recipient.repliedAt,
+      clickedAt: recipient.clickedAt,
+      errorMessage: recipient.errorMessage,
+    })),
+  };
+}
+
 /**
  * Get aggregate campaign analytics for an agency.
  */
-async function getCampaignAnalytics(agencyId, { from, to } = {}) {
-  const where = { agencyId };
-  if (from || to) {
-    where.createdAt = {};
-    if (from) where.createdAt[Op.gte] = new Date(from);
-    if (to) where.createdAt[Op.lte] = new Date(to);
-  }
+async function getCampaignAnalytics(agencyId, { from, to, status, type, q } = {}) {
+  const where = buildCampaignReportWhere(agencyId, { from, to, status, type, q });
 
   // Overall stats
   const campaigns = await Campaign.findAll({ where, raw: true });
   const totalCampaigns = campaigns.length;
   const sentCampaigns = campaigns.filter((c) => ['SENT', 'SENDING'].includes(c.status)).length;
+  const activeCampaigns = campaigns.filter((c) => ['SENDING', 'SCHEDULED'].includes(c.status)).length;
   const totalRecipients = campaigns.reduce((s, c) => s + (c.totalRecipients || 0), 0);
+  const totalSent = campaigns.reduce((s, c) => s + (c.sent || 0), 0);
   const totalDelivered = campaigns.reduce((s, c) => s + (c.delivered || 0), 0);
   const totalRead = campaigns.reduce((s, c) => s + (c.read || 0), 0);
   const totalReplied = campaigns.reduce((s, c) => s + (c.replied || 0), 0);
   const totalFailed = campaigns.reduce((s, c) => s + (c.failed || 0), 0);
+  const percentageOfRecipients = (value) => {
+    if (!totalRecipients) return 0;
+    return Math.min(100, Math.round(((value || 0) / totalRecipients) * 100));
+  };
 
-  const deliveryRate = totalRecipients > 0 ? Math.round((totalDelivered / totalRecipients) * 100) : 0;
-  const readRate = totalDelivered > 0 ? Math.round((totalRead / totalDelivered) * 100) : 0;
-  const replyRate = totalRead > 0 ? Math.round((totalReplied / totalRead) * 100) : 0;
+  const deliveryRate = percentageOfRecipients(Math.max(totalDelivered, totalRead, totalReplied));
+  const readRate = percentageOfRecipients(Math.max(totalRead, totalReplied));
+  const replyRate = percentageOfRecipients(totalReplied);
+  const failureRate = totalRecipients > 0 ? Math.round((totalFailed / totalRecipients) * 100) : 0;
 
   // Campaigns over time
   const campaignsByDay = await Campaign.findAll({
@@ -845,7 +1149,7 @@ async function getCampaignAnalytics(agencyId, { from, to } = {}) {
 
   // Best performing campaigns
   const topCampaigns = await Campaign.findAll({
-    where: { agencyId, status: { [Op.in]: ['SENT', 'SENDING'] } },
+    where: status ? where : { ...where, status: { [Op.in]: ['SENT', 'SENDING'] } },
     order: [['read', 'DESC']],
     limit: 5,
     include: [{ model: MessageTemplate, as: 'template', attributes: ['displayName', 'icon'] }],
@@ -853,7 +1157,7 @@ async function getCampaignAnalytics(agencyId, { from, to } = {}) {
 
   // Template performance
   const templateStats = await Campaign.findAll({
-    where: { agencyId, templateId: { [Op.ne]: null }, status: { [Op.in]: ['SENT', 'SENDING'] } },
+    where: status ? { ...where, templateId: { [Op.ne]: null } } : { ...where, templateId: { [Op.ne]: null }, status: { [Op.in]: ['SENT', 'SENDING'] } },
     attributes: [
       'templateId',
       [fn('COUNT', col('Campaign.id')), 'campaignCount'],
@@ -870,7 +1174,9 @@ async function getCampaignAnalytics(agencyId, { from, to } = {}) {
   return {
     totalCampaigns,
     sentCampaigns,
+    activeCampaigns,
     totalRecipients,
+    totalSent,
     totalDelivered,
     totalRead,
     totalReplied,
@@ -878,6 +1184,7 @@ async function getCampaignAnalytics(agencyId, { from, to } = {}) {
     deliveryRate,
     readRate,
     replyRate,
+    failureRate,
     campaignsByDay: (campaignsByDay || []).map((d) => ({
       date: d.date,
       count: parseInt(d.count, 10),
@@ -911,5 +1218,6 @@ module.exports = {
   deleteCampaign,
   duplicateCampaign,
   getCampaignReport,
+  getCampaignRecipientReports,
   getCampaignAnalytics,
 };

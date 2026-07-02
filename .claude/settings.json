@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(rm -rf /c/tmp/proddeploy/distsnap)",
+      "Bash(cp -r /c/Users/ACER/www/travel-bot/frontend/dist /c/tmp/proddeploy/distsnap)",
+      "Bash(ssh -i *)"
+    ]
+  }
+}

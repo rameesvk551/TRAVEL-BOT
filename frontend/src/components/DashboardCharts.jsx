@@ -10,6 +10,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
+import { displayText } from '../utils/displayText';
 
 const CHART_PRIMARY = '#6366f1';
 const CHART_SECONDARY = '#a78bfa';
@@ -22,7 +23,7 @@ function ChartTooltip({ active, payload, label, formatter }) {
       <p className="mb-1.5 text-[11px] font-bold uppercase tracking-widest text-neutral-400">{label}</p>
       {payload.map((p, i) => (
         <p key={i} className="text-sm font-semibold" style={{ color: p.color }}>
-          {p.name}: {formatter ? formatter(p.value) : p.value?.toLocaleString('en-IN')}
+          {displayText(p.name)}: {formatter ? formatter(p.value) : displayText(p.value, 0)}
         </p>
       ))}
     </div>
@@ -104,15 +105,18 @@ export function LeadStatusDonut({ data }) {
         </ResponsiveContainer>
       </div>
       <div className="w-full space-y-2 sm:w-1/2">
-        {data.map((d, i) => (
+        {data.map((d, i) => {
+          const name = displayText(d.name, 'Unknown');
+          return (
           <div key={i} className="flex items-center justify-between rounded-[var(--radius-sm)] bg-neutral-50 px-3 py-2 transition hover:bg-neutral-100">
             <div className="flex items-center gap-2.5">
               <span className="h-3 w-3 rounded-full" style={{ background: PIE_COLORS[i % PIE_COLORS.length] }} />
-              <span className="text-[13px] text-neutral-600 capitalize">{d.name.toLowerCase()}</span>
+              <span className="text-[13px] text-neutral-600 capitalize">{name.toLowerCase()}</span>
             </div>
-            <span className="text-[13px] font-bold text-neutral-900">{d.value}</span>
+            <span className="text-[13px] font-bold text-neutral-900">{displayText(d.value, 0)}</span>
           </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

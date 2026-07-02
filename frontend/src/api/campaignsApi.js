@@ -15,4 +15,5 @@ export const campaignsApi = {
   previewAudience: (filter) => client.post('/campaigns/preview-audience', filter).then(r => r.data),
   importContacts: (contacts) => client.post('/campaigns/import-contacts', { contacts }).then(r => r.data),
   analytics: (params) => client.get('/campaigns/analytics', { params }).then(r => r.data),
+  reports: (params) => client.get('/campaigns/reports', { params }).then(r => r.data),
 };

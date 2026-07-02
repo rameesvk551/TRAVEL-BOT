@@ -32,6 +32,11 @@ module.exports = (sequelize) => {
       type: DataTypes.UUID,
       allowNull: true,
     },
+    templateId: {
+      type: DataTypes.UUID,
+      allowNull: true,
+      comment: 'Themed ItineraryTemplate used to render the PDF',
+    },
     name: {
       type: DataTypes.STRING(255),
       allowNull: false,
@@ -40,6 +45,16 @@ module.exports = (sequelize) => {
     destination: {
       type: DataTypes.STRING(500),
       allowNull: true,
+    },
+    productCode: {
+      type: DataTypes.STRING(120),
+      allowNull: true,
+      comment: 'Header band product code, e.g. TS0170-RGPJS',
+    },
+    summary: {
+      type: DataTypes.STRING(500),
+      allowNull: true,
+      comment: 'Route summary line, e.g. "Shimla 2N · Manali 2N"',
     },
     status: {
       type: DataTypes.ENUM('DRAFT', 'SENT', 'CONFIRMED'),
@@ -80,7 +95,37 @@ module.exports = (sequelize) => {
     days: {
       type: DataTypes.JSONB,
       defaultValue: [],
-      comment: 'Array of { id, title, description, date, hotels[], activities[], transports[] }',
+      comment: 'Array of { id, title, description, date } (day-by-day plan)',
+    },
+    hotels: {
+      type: DataTypes.JSONB,
+      defaultValue: [],
+      comment: 'Array of { name, category, city, nights, roomType, mealPlan, imageUrl }',
+    },
+    vehicle: {
+      type: DataTypes.JSONB,
+      defaultValue: {},
+      comment: '{ type, features: [string] }',
+    },
+    priceRooms: {
+      type: DataTypes.JSONB,
+      defaultValue: [],
+      comment: 'Array of { label, rate, pax, amount } — price breakup rows (rupees)',
+    },
+    pricing: {
+      type: DataTypes.JSONB,
+      defaultValue: {},
+      comment: '{ currency, packageTotal, gstPercent, gstAmount, grossTotal } in rupees',
+    },
+    inclusions: {
+      type: DataTypes.JSONB,
+      defaultValue: [],
+      comment: 'Array of strings',
+    },
+    exclusions: {
+      type: DataTypes.JSONB,
+      defaultValue: [],
+      comment: 'Array of strings',
     },
     pdfUrl: {
       type: DataTypes.STRING(1000),

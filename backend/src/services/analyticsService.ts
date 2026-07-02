@@ -4,8 +4,10 @@
 const { Op, fn, col, literal, cast } = require('sequelize');
 const {
   Lead, Booking, Payment, Package, Customer, Agent,
-  Message, Review, Campaign, CampaignRecipient, sequelize,
+  Message, Review, Campaign, CampaignRecipient,
+  FollowUp, CallLog, sequelize,
 } = require('../models');
+const pipelineService = require('./pipelineService');
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -706,6 +708,103 @@ async function getSourceReport(agencyId, from, to) {
   });
 
   return { sources, sourceByDay };
+}
+
+function isWeakAdLabel(value) {
+  const label = String(value || '').trim().toLowerCase();
+  return !label
+    || label === 'api.whatsapp.com'
+    || label === 'whatsapp'
+    || label === 'www.whatsapp.com'
+    || label.includes('api.whatsapp.com');
+}
+
+function summarizeAdBody(value) {
+  const firstLine = String(value || '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find(Boolean);
+  if (!firstLine) return null;
+  return firstLine.length > 72 ? `${firstLine.slice(0, 69)}...` : firstLine;
+}
+
+function preferredAdReportName(row, fallbackId) {
+  return row.metaAdSetName
+    || row.metaCampaignName
+    || (!isWeakAdLabel(row.metaAdName) ? row.metaAdName : null)
+    || (!isWeakAdLabel(row.adHeadline) ? row.adHeadline : null)
+    || summarizeAdBody(row.adBody)
+    || fallbackId;
+}
+
+/**
+ * Click-to-WhatsApp ad attribution: how many leads each Meta ad produced. Groups
+ * leads that carry an `adId` (captured from the ad referral) so an agency running
+ * several ads to the same number can compare them. The display name prefers the
+ * resolved ad set/campaign, then a usable ad name/headline, then the raw ad ID.
+ */
+async function getLeadsByAd(agencyId, from, to) {
+  const { start, end } = defaultRange(from, to);
+
+  const rows = await Lead.findAll({
+    where: {
+      agencyId,
+      adId: { [Op.ne]: null },
+      createdAt: { [Op.between]: [start, end] },
+    },
+    attributes: [
+      'adId',
+      'metaAdName',
+      'adHeadline',
+      'metaAdSetName',
+      'metaCampaignName',
+      'metaPlatform',
+      [fn('COUNT', col('id')), 'count'],
+      [fn('COUNT', literal(`CASE WHEN status = 'BOOKED' THEN 1 END`)), 'booked'],
+      [literal(`MAX("Lead"."meta_raw_payload" #>> '{ctwaReferral,body}')`), 'adBody'],
+    ],
+    group: ['adId', 'metaAdName', 'adHeadline', 'metaAdSetName', 'metaCampaignName', 'metaPlatform'],
+    order: [[literal('"count"'), 'DESC']],
+    raw: true,
+  });
+
+  // One ad can span multiple (name, headline) snapshots if enrichment landed late;
+  // collapse to a single row per adId.
+  const byAd = new Map();
+  for (const r of rows) {
+    const key = r.adId;
+    const leads = parseInt(r.count, 10) || 0;
+    const booked = parseInt(r.booked, 10) || 0;
+    const existing = byAd.get(key);
+    if (existing) {
+      existing.leads += leads;
+      existing.booked += booked;
+      existing.adName = !isWeakAdLabel(existing.adName) ? existing.adName : preferredAdReportName(r, key);
+      existing.adSetName = existing.adSetName || r.metaAdSetName;
+      existing.campaignName = existing.campaignName || r.metaCampaignName;
+    } else {
+      byAd.set(key, {
+        adId: key,
+        adName: preferredAdReportName(r, key),
+        adSetName: r.metaAdSetName || null,
+        campaignName: r.metaCampaignName || null,
+        platform: r.metaPlatform || null,
+        leads,
+        booked,
+      });
+    }
+  }
+
+  const ads = Array.from(byAd.values())
+    .map((a) => ({
+      ...a,
+      conversionRate: a.leads > 0 ? parseFloat((a.booked / a.leads * 100).toFixed(1)) : 0,
+    }))
+    .sort((a, b) => b.leads - a.leads);
+
+  const totalAttributed = ads.reduce((sum, a) => sum + a.leads, 0);
+
+  return { ads, totalAttributed };
 }
 
 // ─── ORIGINAL SUMMARY (kept for dashboard) ──────────────────────────────────
@@ -1444,8 +1543,633 @@ async function getGrowthReport(agencyId, from, to) {
   };
 }
 
+// ─── CRM REPORT (dynamic dashboard) ───────────────────────────────────────────
+
+function pctChange(curr, prev) {
+  if (!prev) return curr > 0 ? 100 : null;
+  return parseFloat((((curr - prev) / prev) * 100).toFixed(1));
+}
+
+/**
+ * getCrmReport — single payload powering the whole CRM dashboard tab.
+ * Lead-volume metrics respect the [from,to] range; the "Month at a Glance" and
+ * "Won this month" blocks use calendar months; the action lists (needs
+ * attention, today's schedule, smart suggestions) are live (not range-bound).
+ */
+async function getCrmReport(agencyId, from, to) {
+  const { start, end } = defaultRange(from, to);
+  const prev = prevRange(start, end);
+  const now = new Date();
+  const inRange = { [Op.between]: [start, end] };
+
+  // ── Configurable pipeline → status buckets ──
+  const stages = await pipelineService.listStages(agencyId);
+  const activeStages = stages.filter((s) => s.isActive);
+  const dedupe = (arr) => [...new Set(arr)];
+  const safe = (arr, fallback) => (arr.length ? arr : fallback);
+  const wonStatuses = safe(dedupe(stages.filter((s) => s.kind === 'WON').flatMap((s) => s.leadStatuses)), ['BOOKED', 'CONVERTED']);
+  const lostStatuses = safe(dedupe(stages.filter((s) => s.kind === 'LOST').flatMap((s) => s.leadStatuses)), ['LOST', 'CANCELLED']);
+  const openStatuses = safe(
+    dedupe(activeStages.filter((s) => s.kind === 'OPEN').flatMap((s) => s.leadStatuses)),
+    ['JUST_CONTACTED', 'PACKAGE_SEARCHED', 'PACKAGE_INTERESTED', 'NEW', 'ENQUIRY', 'CONTACTED', 'QUOTED', 'NEGOTIATING', 'UNKNOWN']
+  );
+
+  // ── Lead counts grouped by status, within range ──
+  const statusRows = await Lead.findAll({
+    where: { agencyId, createdAt: inRange },
+    attributes: ['status', [fn('COUNT', col('id')), 'count']],
+    group: ['status'],
+    raw: true,
+  });
+  const countByStatus = {};
+  // Entry-stage leads carry a null status; bucket them under JUST_CONTACTED.
+  statusRows.forEach((r) => { countByStatus[r.status || 'JUST_CONTACTED'] = (countByStatus[r.status || 'JUST_CONTACTED'] || 0) + parseInt(r.count, 10); });
+  const sumOf = (statuses) => statuses.reduce((acc, s) => acc + (countByStatus[s] || 0), 0);
+
+  const totalLeads = Object.values(countByStatus).reduce((a, b) => a + b, 0);
+  const openDeals = activeStages
+    .filter((s) => s.kind === 'OPEN')
+    .reduce((acc, s) => acc + sumOf(s.leadStatuses), 0);
+  const wonInRange = sumOf(wonStatuses);
+  const lostInRange = sumOf(lostStatuses);
+  const conversion = (wonInRange + lostInRange) > 0
+    ? parseFloat(((wonInRange / (wonInRange + lostInRange)) * 100).toFixed(1))
+    : 0;
+
+  // ── Funnel (per configured stage, within range) ──
+  const funnel = activeStages.map((s) => ({
+    id: s.id,
+    name: s.name,
+    color: s.color,
+    kind: s.kind,
+    count: sumOf(s.leadStatuses),
+  }));
+
+  // ── Hot leads (live): high score, still open ──
+  const hotCount = await Lead.count({
+    where: { agencyId, status: { [Op.in]: openStatuses }, leadScore: { [Op.gte]: 70 } },
+  });
+
+  // ── Month at a Glance (calendar months) ──
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const lastMonthEnd = new Date(monthStart.getTime() - 1);
+  const monthName = (d) => d.toLocaleString('en-US', { month: 'long' });
+
+  const countLeads = (where) => Lead.count({ where: { agencyId, ...where } });
+  const [
+    newThis, newLast,
+    wonThis, wonLast,
+    lostThis, lostLast,
+  ] = await Promise.all([
+    countLeads({ createdAt: { [Op.gte]: monthStart } }),
+    countLeads({ createdAt: { [Op.between]: [lastMonthStart, lastMonthEnd] } }),
+    countLeads({ status: { [Op.in]: wonStatuses }, updatedAt: { [Op.gte]: monthStart } }),
+    countLeads({ status: { [Op.in]: wonStatuses }, updatedAt: { [Op.between]: [lastMonthStart, lastMonthEnd] } }),
+    countLeads({ status: { [Op.in]: lostStatuses }, updatedAt: { [Op.gte]: monthStart } }),
+    countLeads({ status: { [Op.in]: lostStatuses }, updatedAt: { [Op.between]: [lastMonthStart, lastMonthEnd] } }),
+  ]);
+
+  const monthAtGlance = {
+    thisMonthLabel: monthName(monthStart),
+    lastMonthLabel: monthName(lastMonthStart),
+    newLeads: { value: newThis, change: pctChange(newThis, newLast) },
+    won: { value: wonThis, change: pctChange(wonThis, wonLast) },
+    lost: { value: lostThis, change: pctChange(lostThis, lostLast) },
+  };
+
+  // ── Won vs Lost — last 8 weeks (normalized buckets) ──
+  const wonVsLostRows = await sequelize.query(`
+    SELECT gs::date AS week_start,
+           COALESCE(b.won, 0)  AS won,
+           COALESCE(b.lost, 0) AS lost
+    FROM generate_series(
+      date_trunc('week', NOW()) - interval '7 weeks',
+      date_trunc('week', NOW()),
+      interval '1 week'
+    ) gs
+    LEFT JOIN (
+      SELECT date_trunc('week', updated_at) AS week,
+             SUM(CASE WHEN status IN (:wonStatuses)  THEN 1 ELSE 0 END) AS won,
+             SUM(CASE WHEN status IN (:lostStatuses) THEN 1 ELSE 0 END) AS lost
+      FROM leads
+      WHERE agency_id = :agencyId
+        AND updated_at >= date_trunc('week', NOW()) - interval '7 weeks'
+      GROUP BY 1
+    ) b ON b.week = gs
+    ORDER BY gs
+  `, {
+    replacements: { agencyId, wonStatuses, lostStatuses },
+    type: sequelize.QueryTypes.SELECT,
+  });
+  const wonVsLost8w = wonVsLostRows.map((r) => ({
+    weekStart: r.week_start,
+    won: parseInt(r.won, 10),
+    lost: parseInt(r.lost, 10),
+  }));
+
+  // ── Top sources (within range) ──
+  const sourceRows = await Lead.findAll({
+    where: { agencyId, createdAt: inRange },
+    attributes: ['source', [fn('COUNT', col('id')), 'count']],
+    group: ['source'],
+    order: [[fn('COUNT', col('id')), 'DESC']],
+    raw: true,
+  });
+  const topSources = sourceRows.map((r) => ({ source: r.source || 'unknown', count: parseInt(r.count, 10) }));
+
+  // ── Needs attention (live) ──
+  const staleThreshold = new Date(now.getTime() - 7 * 86400000);
+  const [overdueCount, staleCount] = await Promise.all([
+    FollowUp.count({ where: { agencyId, status: 'Scheduled', scheduledAt: { [Op.lt]: now } } }),
+    Lead.count({ where: { agencyId, status: { [Op.in]: openStatuses }, updatedAt: { [Op.lt]: staleThreshold } } }),
+  ]);
+  const needsAttention = { hot: hotCount, overdue: overdueCount, stale: staleCount };
+
+  // ── Top performers (closed-won, last 30 days) ──
+  const performerRows = await sequelize.query(`
+    SELECT a.id AS "agentId", a.name AS name, COUNT(l.id) AS won
+    FROM leads l
+    JOIN agents a ON a.id = l.assigned_agent_id
+    WHERE l.agency_id = :agencyId
+      AND l.status IN (:wonStatuses)
+      AND l.updated_at >= NOW() - interval '30 days'
+    GROUP BY a.id, a.name
+    ORDER BY won DESC
+    LIMIT 5
+  `, {
+    replacements: { agencyId, wonStatuses },
+    type: sequelize.QueryTypes.SELECT,
+  });
+  const topPerformers = performerRows.map((r) => ({ agentId: r.agentId, name: r.name, won: parseInt(r.won, 10) }));
+
+  // ── Today's schedule (live) ──
+  const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const dayEnd = new Date(dayStart.getTime() + 86400000 - 1);
+  const todayWindow = { [Op.between]: [dayStart, dayEnd] };
+  const [callsToday, followUpsToday] = await Promise.all([
+    CallLog.count({ where: { agencyId, startedAt: todayWindow } }),
+    FollowUp.count({ where: { agencyId, scheduledAt: todayWindow } }),
+  ]);
+  const scheduleRows = await FollowUp.findAll({
+    where: { agencyId, scheduledAt: todayWindow },
+    include: [{ model: Lead, as: 'lead', attributes: ['id'], include: [{ model: Customer, as: 'customer', attributes: ['name', 'phone'] }] }],
+    order: [['scheduledAt', 'ASC']],
+    limit: 6,
+  });
+  const todaySchedule = {
+    calls: callsToday,
+    followUps: followUpsToday,
+    overdue: overdueCount,
+    items: scheduleRows.map((f) => ({
+      id: f.id,
+      at: f.scheduledAt,
+      note: f.note,
+      status: f.status,
+      who: f.lead?.customer?.name || f.lead?.customer?.phone || 'Lead',
+      leadId: f.leadId,
+    })),
+  };
+
+  // ── Recent activity (live, merged) ──
+  const recentRows = await sequelize.query(`
+    SELECT * FROM (
+      SELECT 'note' AS type, ln.content AS detail, ln.created_at AS at, c.name AS who, l.id AS "leadId"
+        FROM lead_notes ln
+        JOIN leads l ON l.id = ln.lead_id
+        LEFT JOIN customers c ON c.id = l.customer_id
+        WHERE l.agency_id = :agencyId
+      UNION ALL
+      SELECT 'call' AS type, cl.status::text AS detail, cl.started_at AS at, c.name AS who, cl.lead_id AS "leadId"
+        FROM call_logs cl
+        LEFT JOIN customers c ON c.id = cl.customer_id
+        WHERE cl.agency_id = :agencyId
+      UNION ALL
+      SELECT 'followup' AS type, fu.note AS detail, fu.scheduled_at AS at, c.name AS who, fu.lead_id AS "leadId"
+        FROM follow_ups fu
+        JOIN leads l2 ON l2.id = fu.lead_id
+        LEFT JOIN customers c ON c.id = l2.customer_id
+        WHERE fu.agency_id = :agencyId
+    ) x
+    ORDER BY at DESC NULLS LAST
+    LIMIT 8
+  `, {
+    replacements: { agencyId },
+    type: sequelize.QueryTypes.SELECT,
+  });
+  const recentActivity = recentRows.map((r) => ({
+    type: r.type,
+    detail: r.detail,
+    at: r.at,
+    who: r.who || 'Lead',
+    leadId: r.leadId,
+  }));
+
+  // ── Activity pulse (this calendar year, by month + best weekday) ──
+  const yearStart = new Date(now.getFullYear(), 0, 1);
+  const pulseRows = await sequelize.query(`
+    SELECT EXTRACT(MONTH FROM at)::int AS month, COUNT(*) AS events
+    FROM (
+      SELECT created_at AS at FROM leads      WHERE agency_id = :agencyId AND created_at >= :yearStart
+      UNION ALL
+      SELECT started_at AS at FROM call_logs  WHERE agency_id = :agencyId AND started_at >= :yearStart
+      UNION ALL
+      SELECT scheduled_at AS at FROM follow_ups WHERE agency_id = :agencyId AND scheduled_at >= :yearStart
+    ) e
+    GROUP BY 1
+    ORDER BY 1
+  `, {
+    replacements: { agencyId, yearStart },
+    type: sequelize.QueryTypes.SELECT,
+  });
+  const monthlyVolume = Array.from({ length: 12 }, (_, i) => {
+    const row = pulseRows.find((r) => r.month === i + 1);
+    return { month: i + 1, events: row ? parseInt(row.events, 10) : 0 };
+  });
+  const totalEvents = monthlyVolume.reduce((a, b) => a + b.events, 0);
+
+  const weekdayRows = await sequelize.query(`
+    SELECT EXTRACT(DOW FROM at)::int AS dow, COUNT(*) AS events
+    FROM (
+      SELECT created_at AS at FROM leads      WHERE agency_id = :agencyId AND created_at >= :yearStart
+      UNION ALL
+      SELECT started_at AS at FROM call_logs  WHERE agency_id = :agencyId AND started_at >= :yearStart
+      UNION ALL
+      SELECT scheduled_at AS at FROM follow_ups WHERE agency_id = :agencyId AND scheduled_at >= :yearStart
+    ) e
+    GROUP BY 1
+    ORDER BY events DESC
+    LIMIT 1
+  `, {
+    replacements: { agencyId, yearStart },
+    type: sequelize.QueryTypes.SELECT,
+  });
+  const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const activityPulse = {
+    year: now.getFullYear(),
+    totalEvents,
+    monthlyVolume,
+    bestWeekday: weekdayRows.length ? WEEKDAYS[weekdayRows[0].dow] : null,
+  };
+
+  // ── Smart suggestions (stale open leads worth a nudge) ──
+  const suggestionLeads = await Lead.findAll({
+    where: { agencyId, status: { [Op.in]: openStatuses } },
+    include: [{ model: Customer, as: 'customer', attributes: ['name', 'phone'] }],
+    order: [['updatedAt', 'ASC']],
+    limit: 5,
+  });
+  const smartSuggestions = suggestionLeads.map((l) => {
+    const days = Math.max(0, Math.floor((now.getTime() - new Date(l.updatedAt).getTime()) / 86400000));
+    return {
+      leadId: l.id,
+      name: l.customer?.name || l.customer?.phone || 'Lead',
+      daysSinceContact: days,
+      leadScore: l.leadScore,
+      priority: l.leadScore >= 70 || days >= 7 ? 'High' : 'Medium',
+      reason: `Lead hasn't been contacted in ${days} day${days === 1 ? '' : 's'}`,
+    };
+  });
+
+  return {
+    range: { from: start, to: end },
+    cards: {
+      totalLeads,
+      activeLeads: openDeals,
+      openDeals,
+      won: wonThis,
+      conversion,
+      wonInRange,
+      lostInRange,
+      hot: hotCount,
+    },
+    stages,
+    funnel,
+    monthAtGlance,
+    wonVsLost8w,
+    topSources,
+    needsAttention,
+    topPerformers,
+    todaySchedule,
+    recentActivity,
+    activityPulse,
+    smartSuggestions,
+  };
+}
+
+// ─── CALLING REPORT ───────────────────────────────────────────────────────
+// A tracked-call analytics report: KPIs, daily volume trend, status & hour
+// breakdowns, per-staff and per-lead rollups, recent call log, and rule-based
+// recommendations. Non-admin agents are scoped to their own calls.
+
+function pad2(n) {
+  return String(n).padStart(2, '0');
+}
+
+function dayKey(date) {
+  const d = new Date(date);
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+
+// A call counts as "connected" if the customer leg answered, or it completed
+// with real talk time. Everything else (no_answer, busy, failed, canceled,
+// ringing-only) is a miss.
+function isCallConnected(c) {
+  if (c.customerAnsweredAt) return true;
+  return c.status === 'completed' && Number(c.durationSeconds || 0) > 0;
+}
+
+function pctChange(cur, prev) {
+  if (prev > 0) return Math.round(((cur - prev) / prev) * 100);
+  return cur > 0 ? 100 : 0;
+}
+
+// Open pipeline statuses worth a phone call (used for "never called" nudges).
+const CALLABLE_LEAD_STATUSES = [
+  'JUST_CONTACTED', 'PACKAGE_SEARCHED', 'PACKAGE_INTERESTED', 'NEW', 'ENQUIRY',
+  'CONTACTED', 'QUOTED', 'NEGOTIATING',
+];
+
+async function getCallingReport(agencyId, from, to, opts = {}) {
+  const { start, end } = defaultRange(from, to);
+  const prev = prevRange(start, end);
+
+  const requester = opts.requester || null;
+  const isAdmin = requester?.role === 'ADMIN';
+
+  // Scope: non-admins only ever see their own calls; admins may filter by staff.
+  const scopeAgentId = !isAdmin ? requester?.id : (opts.agentId || null);
+
+  const rangeWhere = { agencyId, startedAt: { [Op.between]: [start, end] } };
+  if (scopeAgentId) rangeWhere.agentId = scopeAgentId;
+  if (opts.leadId) rangeWhere.leadId = opts.leadId;
+
+  const calls = await CallLog.findAll({
+    where: rangeWhere,
+    include: [
+      { model: Agent, as: 'agent', attributes: ['id', 'name'] },
+      { model: Customer, as: 'customer', attributes: ['id', 'name', 'phone'] },
+      { model: Lead, as: 'lead', attributes: ['id', 'status'] },
+    ],
+    order: [['startedAt', 'DESC']],
+    limit: 5000,
+  });
+
+  // ── KPIs ──────────────────────────────────────────────────────────────────
+  let connected = 0;
+  let totalTalk = 0;
+  let recorded = 0;
+  let ttaSum = 0;
+  let ttaCount = 0;
+  const calledLeadIds = new Set();
+
+  for (const c of calls) {
+    const conn = isCallConnected(c);
+    if (conn) {
+      connected += 1;
+      totalTalk += Number(c.durationSeconds || 0);
+      if (c.customerAnsweredAt && c.startedAt) {
+        const tta = (new Date(c.customerAnsweredAt).getTime() - new Date(c.startedAt).getTime()) / 1000;
+        if (tta >= 0 && tta < 600) { ttaSum += tta; ttaCount += 1; }
+      }
+    }
+    if (c.recordingUrl) recorded += 1;
+    if (c.leadId) calledLeadIds.add(c.leadId);
+  }
+
+  const total = calls.length;
+  const missed = total - connected;
+  const answerRate = total ? parseFloat(((connected / total) * 100).toFixed(1)) : 0;
+  const avgTalkSec = connected ? Math.round(totalTalk / connected) : 0;
+  const avgTimeToAnswerSec = ttaCount ? Math.round(ttaSum / ttaCount) : 0;
+
+  // Previous period (for deltas) — light count queries.
+  const prevWhere = { agencyId, startedAt: { [Op.between]: [prev.start, prev.end] } };
+  if (scopeAgentId) prevWhere.agentId = scopeAgentId;
+  if (opts.leadId) prevWhere.leadId = opts.leadId;
+  const connectedClause = {
+    [Op.or]: [
+      { customerAnsweredAt: { [Op.ne]: null } },
+      { status: 'completed', durationSeconds: { [Op.gt]: 0 } },
+    ],
+  };
+  const prevTotal = await CallLog.count({ where: prevWhere });
+  const prevConnected = await CallLog.count({ where: { ...prevWhere, ...connectedClause } });
+  const prevAnswerRate = prevTotal ? (prevConnected / prevTotal) * 100 : 0;
+
+  // ── Daily volume trend (continuous days) ────────────────────────────────────
+  const dayMap = new Map();
+  for (const c of calls) {
+    const key = dayKey(c.startedAt);
+    if (!dayMap.has(key)) dayMap.set(key, { date: key, total: 0, connected: 0, missed: 0 });
+    const row = dayMap.get(key);
+    row.total += 1;
+    if (isCallConnected(c)) row.connected += 1; else row.missed += 1;
+  }
+  const byDay = [];
+  for (let t = new Date(start.getFullYear(), start.getMonth(), start.getDate()); t <= end; t.setDate(t.getDate() + 1)) {
+    const key = dayKey(t);
+    byDay.push(dayMap.get(key) || { date: key, total: 0, connected: 0, missed: 0 });
+  }
+
+  // ── Status breakdown ────────────────────────────────────────────────────────
+  const statusMap = new Map();
+  for (const c of calls) statusMap.set(c.status, (statusMap.get(c.status) || 0) + 1);
+  const byStatus = [...statusMap.entries()]
+    .map(([status, count]) => ({ status, count }))
+    .sort((a, b) => b.count - a.count);
+
+  // ── Hour-of-day connect rate (best call window) ─────────────────────────────
+  const byHour = Array.from({ length: 24 }, (_, hour) => ({ hour, total: 0, connected: 0 }));
+  for (const c of calls) {
+    const h = new Date(c.startedAt).getHours();
+    byHour[h].total += 1;
+    if (isCallConnected(c)) byHour[h].connected += 1;
+  }
+  let bestWindow = null;
+  for (const b of byHour) {
+    if (b.total < 3) continue;
+    const rate = b.connected / b.total;
+    if (!bestWindow || rate > bestWindow.rate) {
+      bestWindow = { hour: b.hour, rate, connectRate: Math.round(rate * 100), calls: b.total };
+    }
+  }
+
+  // ── Per-staff rollup ────────────────────────────────────────────────────────
+  const agentMap = new Map();
+  for (const c of calls) {
+    const id = c.agentId;
+    if (!agentMap.has(id)) {
+      agentMap.set(id, { agentId: id, name: c.agent?.name || 'Unknown', total: 0, connected: 0, missed: 0, talk: 0 });
+    }
+    const a = agentMap.get(id);
+    a.total += 1;
+    if (isCallConnected(c)) { a.connected += 1; a.talk += Number(c.durationSeconds || 0); } else { a.missed += 1; }
+  }
+  const agentStats = [...agentMap.values()]
+    .map((a) => ({
+      agentId: a.agentId,
+      name: a.name,
+      total: a.total,
+      connected: a.connected,
+      missed: a.missed,
+      answerRate: a.total ? parseFloat(((a.connected / a.total) * 100).toFixed(1)) : 0,
+      totalTalkSec: a.talk,
+      avgTalkSec: a.connected ? Math.round(a.talk / a.connected) : 0,
+    }))
+    .sort((x, y) => y.total - x.total);
+
+  // ── Per-lead rollup ─────────────────────────────────────────────────────────
+  const leadMap = new Map();
+  for (const c of calls) {
+    const id = c.leadId;
+    if (!leadMap.has(id)) {
+      leadMap.set(id, {
+        leadId: id,
+        customerName: c.customer?.name || c.customerPhone || 'Lead',
+        customerPhone: c.customerPhone,
+        leadStatus: c.lead?.status || null,
+        total: 0, connected: 0, missed: 0, lastCallAt: null, lastStatus: null,
+      });
+    }
+    const l = leadMap.get(id);
+    l.total += 1;
+    if (isCallConnected(c)) l.connected += 1; else l.missed += 1;
+    if (!l.lastCallAt || new Date(c.startedAt) > new Date(l.lastCallAt)) {
+      l.lastCallAt = c.startedAt;
+      l.lastStatus = c.status;
+    }
+  }
+  const leadStats = [...leadMap.values()].sort((a, b) => b.total - a.total);
+
+  // ── Recent call log (for the table; recordings streamed via /calls/:id/recording) ──
+  const recentCalls = calls.slice(0, 50).map((c) => ({
+    id: c.id,
+    startedAt: c.startedAt,
+    status: c.status,
+    durationSeconds: c.durationSeconds,
+    connected: isCallConnected(c),
+    hasRecording: Boolean(c.recordingUrl),
+    agentName: c.agent?.name || null,
+    customerName: c.customer?.name || null,
+    customerPhone: c.customerPhone,
+    leadId: c.leadId,
+  }));
+
+  // ── Rule-based recommendations ──────────────────────────────────────────────
+  const suggestions = [];
+
+  // 1. Leads attempted 2+ times but never reached.
+  const neverReached = leadStats.filter((l) => l.total >= 2 && l.connected === 0);
+  if (neverReached.length) {
+    const top = neverReached[0];
+    suggestions.push({
+      id: 'never-reached',
+      severity: 'critical',
+      title: `${neverReached.length} lead${neverReached.length === 1 ? '' : 's'} attempted but never reached`,
+      detail: `e.g. ${top.customerName} — ${top.total} tries, 0 connects. Try a different time of day or confirm the number.`,
+      leadId: top.leadId,
+    });
+  }
+
+  // 2. Open pipeline leads that have never been called at all.
+  const uncalledWhere = { agencyId, [Op.or]: [{ status: { [Op.is]: null } }, { status: { [Op.in]: CALLABLE_LEAD_STATUSES } }] };
+  if (scopeAgentId) uncalledWhere.assignedAgentId = scopeAgentId;
+  if (calledLeadIds.size) uncalledWhere.id = { [Op.notIn]: [...calledLeadIds] };
+  const uncalledCount = await Lead.count({ where: uncalledWhere });
+  if (uncalledCount > 0) {
+    const sample = await Lead.findAll({
+      where: uncalledWhere,
+      include: [{ model: Customer, as: 'customer', attributes: ['name'] }],
+      order: [['createdAt', 'DESC']],
+      limit: 1,
+    });
+    suggestions.push({
+      id: 'uncalled-open',
+      severity: 'warning',
+      title: `${uncalledCount} open lead${uncalledCount === 1 ? '' : 's'} never called`,
+      detail: sample[0]
+        ? `Start with ${sample[0].customer?.name || 'the newest lead'} — open in your pipeline with no call logged.`
+        : 'Open leads in your pipeline have no call logged yet.',
+      leadId: sample[0]?.id || null,
+    });
+  }
+
+  // 3. Coaching: agents whose answer rate trails the team (admin view only).
+  if (isAdmin && !scopeAgentId && agentStats.length > 1) {
+    const laggard = agentStats.find((a) => a.total >= 5 && a.answerRate < answerRate - 15);
+    if (laggard) {
+      suggestions.push({
+        id: `coach-${laggard.agentId}`,
+        severity: 'warning',
+        title: `${laggard.name}'s answer rate is ${fmtRate(laggard.answerRate)} vs team ${fmtRate(answerRate)}`,
+        detail: 'Review call timing and talk-time — a coaching opportunity.',
+        agentId: laggard.agentId,
+      });
+    }
+  }
+
+  // 4. Best call window (positive, actionable).
+  if (bestWindow) {
+    suggestions.push({
+      id: 'best-window',
+      severity: 'positive',
+      title: `Best time to call: ${pad2(bestWindow.hour)}:00–${pad2((bestWindow.hour + 1) % 24)}:00`,
+      detail: `${bestWindow.connectRate}% of calls in this hour connect (${bestWindow.calls} calls). Schedule attempts here.`,
+    });
+  }
+
+  // 5. Recordings worth reviewing.
+  if (recorded > 0) {
+    suggestions.push({
+      id: 'review-recordings',
+      severity: 'neutral',
+      title: `${recorded} call${recorded === 1 ? '' : 's'} recorded this period`,
+      detail: 'Review the longest calls for coaching and to capture follow-up commitments.',
+    });
+  }
+
+  const staff = isAdmin
+    ? await Agent.findAll({ where: { agencyId }, attributes: ['id', 'name'], order: [['name', 'ASC']], raw: true })
+    : [];
+
+  return {
+    range: { from: start, to: end },
+    kpis: {
+      totalCalls: total,
+      connectedCalls: connected,
+      missedCalls: missed,
+      answerRate,
+      totalTalkSec: totalTalk,
+      avgTalkSec,
+      avgTimeToAnswerSec,
+      recordedCalls: recorded,
+      uniqueLeadsCalled: calledLeadIds.size,
+    },
+    deltas: {
+      totalCalls: pctChange(total, prevTotal),
+      answerRate: prevAnswerRate ? Math.round(answerRate - prevAnswerRate) : (answerRate > 0 ? answerRate : 0),
+    },
+    byDay,
+    byStatus,
+    byHour,
+    bestWindow,
+    agentStats,
+    leadStats,
+    recentCalls,
+    suggestions,
+    staff: staff.map((s) => ({ id: s.id, name: s.name })),
+  };
+}
+
+function fmtRate(n) {
+  return `${Math.round(Number(n) || 0)}%`;
+}
+
 module.exports = {
   getSummary,
+  getCallingReport,
+  getCrmReport,
   getSalesReport,
   getLeadFunnelReport,
   getAgentPerformanceReport,
@@ -1456,6 +2180,7 @@ module.exports = {
   getSeasonalReport,
   getProfitReport,
   getSourceReport,
+  getLeadsByAd,
   getBookingReport,
   getCustomerLtvReport,
   getCacReport,

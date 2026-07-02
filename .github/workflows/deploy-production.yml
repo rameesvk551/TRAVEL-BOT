@@ -1,0 +1,173 @@
+name: Deploy TravelBot Production
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: travelbot-production
+  cancel-in-progress: false
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      EC2_HOST: ${{ secrets.EC2_HOST }}
+      EC2_USER: ${{ secrets.EC2_USER }}
+      PROD_ROOT: ${{ vars.PROD_ROOT || '/home/ec2-user/travel-bot-git' }}
+      FRONTEND_RELEASE: ${{ vars.FRONTEND_RELEASE || '/home/ec2-user/travel-bot-frontend-release' }}
+      API_PM2_NAME: ${{ vars.API_PM2_NAME || 'travel-bot-api' }}
+      BOT_PM2_NAME: ${{ vars.BOT_PM2_NAME || 'travel-bot-bot' }}
+      APP_URL: ${{ vars.APP_URL || 'https://travelbot.wayon.in' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            backend/package-lock.json
+            bot/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: npm ci
+
+      - name: Typecheck backend
+        working-directory: backend
+        run: npm run build:ts
+
+      - name: Install bot dependencies
+        working-directory: bot
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install
+          fi
+
+      - name: Create deploy artifacts
+        run: |
+          mkdir -p artifacts
+          tar \
+            --exclude='.git' \
+            --exclude='.github' \
+            --exclude='.codex-temp' \
+            --exclude='frontend/node_modules' \
+            --exclude='frontend/dist' \
+            --exclude='backend/node_modules' \
+            --exclude='backend/dist' \
+            --exclude='bot/node_modules' \
+            --exclude='tmp' \
+            --exclude='*.tgz' \
+            --exclude='*.zip' \
+            -czf artifacts/source.tgz .
+          tar -C frontend/dist -czf artifacts/frontend-dist.tgz .
+
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/travelbot-production.pem
+          chmod 600 ~/.ssh/travelbot-production.pem
+          ssh-keyscan -H "$EC2_HOST" >> ~/.ssh/known_hosts
+
+      - name: Upload artifacts
+        run: |
+          ssh -i ~/.ssh/travelbot-production.pem "$EC2_USER@$EC2_HOST" "mkdir -p /home/$EC2_USER/deploy-incoming/github-actions"
+          scp -i ~/.ssh/travelbot-production.pem artifacts/source.tgz "$EC2_USER@$EC2_HOST:/home/$EC2_USER/deploy-incoming/github-actions/source.tgz"
+          scp -i ~/.ssh/travelbot-production.pem artifacts/frontend-dist.tgz "$EC2_USER@$EC2_HOST:/home/$EC2_USER/deploy-incoming/github-actions/frontend-dist.tgz"
+
+      - name: Deploy on EC2
+        run: |
+          ssh -i ~/.ssh/travelbot-production.pem "$EC2_USER@$EC2_HOST" "PROD_ROOT='$PROD_ROOT' FRONTEND_RELEASE='$FRONTEND_RELEASE' API_PM2_NAME='$API_PM2_NAME' BOT_PM2_NAME='$BOT_PM2_NAME' bash -s" <<'REMOTE'
+          set -euo pipefail
+
+          incoming="/home/$USER/deploy-incoming/github-actions"
+          backup_root="/home/$USER/deploy-backups/github-actions-$(date +%Y%m%d-%H%M%S)"
+          source_stage="/home/$USER/deploy-incoming/github-actions-source"
+          frontend_stage="/home/$USER/deploy-incoming/github-actions-frontend"
+
+          mkdir -p "$backup_root" "$source_stage" "$frontend_stage"
+
+          if [ -d "$PROD_ROOT" ]; then
+            mkdir -p "$backup_root/source"
+            rsync -a --delete \
+              --exclude='.git' \
+              --exclude='backend/node_modules' \
+              --exclude='frontend/node_modules' \
+              --exclude='frontend/dist' \
+              --exclude='bot/node_modules' \
+              "$PROD_ROOT/" "$backup_root/source/"
+          fi
+
+          if [ -d "$FRONTEND_RELEASE" ]; then
+            mkdir -p "$backup_root/frontend"
+            rsync -a --delete "$FRONTEND_RELEASE/" "$backup_root/frontend/"
+          fi
+
+          rm -rf "$source_stage" "$frontend_stage"
+          mkdir -p "$source_stage" "$frontend_stage"
+          tar -xzf "$incoming/source.tgz" -C "$source_stage"
+          tar -xzf "$incoming/frontend-dist.tgz" -C "$frontend_stage"
+
+          mkdir -p "$PROD_ROOT" "$FRONTEND_RELEASE"
+          rsync -a --delete \
+            --exclude='.env' \
+            --exclude='backend/node_modules' \
+            --exclude='frontend/node_modules' \
+            --exclude='frontend/dist' \
+            --exclude='bot/node_modules' \
+            "$source_stage/" "$PROD_ROOT/"
+
+          cd "$PROD_ROOT/backend"
+          npm ci --omit=dev
+
+          if [ -d "$PROD_ROOT/bot" ]; then
+            cd "$PROD_ROOT/bot"
+            if [ -f package-lock.json ]; then
+              npm ci --omit=dev
+            else
+              npm install --omit=dev
+            fi
+          fi
+
+          rsync -a --delete "$frontend_stage/" "$FRONTEND_RELEASE/"
+          chmod -R a+rX "$FRONTEND_RELEASE"
+
+          pm2 restart "$API_PM2_NAME" --update-env
+          if pm2 describe "$BOT_PM2_NAME" >/dev/null 2>&1; then
+            pm2 restart "$BOT_PM2_NAME" --update-env
+          fi
+
+          echo "Deployed with backup: $backup_root"
+          REMOTE
+
+      - name: Health checks
+        run: |
+          sleep 8
+          curl -fsS "$APP_URL/health" || curl -fsS "$APP_URL/api"
+          for path in vendors visas cruises services invoice-templates; do
+            status=$(curl -s -o /tmp/health-$path.out -w "%{http_code}" "$APP_URL/api/$path")
+            if [ "$status" != "401" ] && [ "$status" != "200" ]; then
+              echo "Unexpected /api/$path status: $status"
+              cat "/tmp/health-$path.out"
+              exit 1
+            fi
+          done

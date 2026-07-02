@@ -9,9 +9,11 @@ const { handleVerification, handleIncoming } = require('./webhook');
 
 const app = express();
 const PORT = process.env.BOT_PORT || 3001;
+const BODY_LIMIT = process.env.BOT_WEBHOOK_BODY_LIMIT || '10mb';
 
 // Store raw body for signature verification
 app.use(express.json({
+  limit: BODY_LIMIT,
   verify: (req, res, buf) => {
     req.rawBody = buf;
   },

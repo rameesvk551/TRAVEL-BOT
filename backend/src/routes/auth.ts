@@ -18,6 +18,7 @@ const registerSchema = z.object({
   agentName: z.string().min(2, 'Agent name must be at least 2 characters'),
   agentEmail: z.string().email('Valid email required'),
   agentPassword: z.string().min(8, 'Password must be at least 8 characters'),
+  industry: z.enum(['TRAVEL', 'RESORT', 'CLEANING', 'LAUNDRY']).optional(),
 });
 
 const loginSchema = z.object({
@@ -25,8 +26,13 @@ const loginSchema = z.object({
   password: z.string().min(1, 'Password is required'),
 });
 
-const refreshSchema = z.object({
-  refreshToken: z.string().min(1, 'Refresh token is required'),
+const forgotPasswordSchema = z.object({
+  email: z.string().email('Valid email required'),
+});
+
+const resetPasswordSchema = z.object({
+  token: z.string().min(16, 'Reset token is required'),
+  password: z.string().min(8, 'Password must be at least 8 characters'),
 });
 
 /**
@@ -42,16 +48,30 @@ router.post('/register', validateBody(registerSchema), authController.register);
 router.post('/login', loginLimiter, validateBody(loginSchema), authController.login);
 
 /**
- * POST /api/auth/refresh
- * Refreshes access token using refresh token.
+ * POST /api/auth/forgot-password
+ * Sends a password reset email when the account exists.
  */
-router.post('/refresh', validateBody(refreshSchema), authController.refresh);
+router.post('/forgot-password', loginLimiter, validateBody(forgotPasswordSchema), authController.forgotPassword);
+
+/**
+ * POST /api/auth/reset-password
+ * Resets password using a valid one-time reset token.
+ */
+router.post('/reset-password', loginLimiter, validateBody(resetPasswordSchema), authController.resetPassword);
+
+/**
+ * POST /api/auth/refresh
+ * Refreshes access token using the refresh token from the request body or the
+ * HttpOnly `rt` cookie (no body validation — the cookie may be the only source
+ * on Safari PWAs where localStorage was evicted). Presence is checked in the controller.
+ */
+router.post('/refresh', authController.refresh);
 
 /**
  * POST /api/auth/logout
- * Revokes refresh token.
+ * Revokes the refresh token (from body or cookie) and clears the cookie.
  */
-router.post('/logout', validateBody(refreshSchema), authController.logout);
+router.post('/logout', authController.logout);
 
 /**
  * GET /api/auth/me

@@ -87,6 +87,18 @@ function formatCurrency(amountPaise) {
   return `₹${Math.round(amount).toLocaleString('en-IN')}`;
 }
 
+function packagePriceLabel(amountPaise) {
+  const amount = Number(amountPaise || 0);
+  return Number.isFinite(amount) && amount > 0 ? formatCurrency(amount) : '';
+}
+
+function packageSummaryLine(pkg, separator = ' - ') {
+  return [
+    packagePriceLabel(pkg?.basePrice),
+    escapeMarkdown(pkg?.duration || 'Custom itinerary'),
+  ].filter(Boolean).join(separator);
+}
+
 function toAbsoluteFlowImageUrl(imageUrl = '') {
   const url = String(imageUrl || '').trim();
   if (!url) return '';
@@ -230,7 +242,7 @@ async function buildPackageOptions(agencyId, category, limit = PACKAGE_BROWSE_LI
     .map((pkg) => ({
       id: pkg.id,
       title: escapeMarkdown(pkg.name).slice(0, 30) || 'Travel Package',
-      description: `${formatCurrency(pkg.basePrice)} • ${escapeMarkdown(pkg.duration || 'Custom itinerary')}\n${packageDescriptionText(pkg.summary || '')}`.slice(0, 300),
+      description: `${packageSummaryLine(pkg)}\n${packageDescriptionText(pkg.summary || '')}`.trim().slice(0, 300),
       metadata: escapeMarkdown(categoryLabel(inferPackageCategory(pkg))).slice(0, 20),
       image: pkg.imageUrl || '',
     }));
@@ -476,6 +488,22 @@ async function handleFlowRequest(payload = {}) {
         const filteredProperties = await findPropertyRecords(agencyId, filters, PROPERTY_BROWSE_LIMIT);
         const propertyLocation = String(data.propertyLocation || data.location || 'ALL').trim() || 'ALL';
         const propertyType = forcedPropertyType || String(data.propertyType || data.type || 'ALL').trim() || 'ALL';
+        if (!filteredProperties.length) {
+          const responsePayload = {
+            screen: 'STAY_REQUEST',
+            data: {
+              propertyLocation: propertyLocation.toLowerCase() === 'all' ? '' : propertyLocation,
+              propertyType: propertyType.toLowerCase() === 'all' ? 'Any' : propertyType,
+            },
+          };
+
+          return {
+            statusCode: 200,
+            isEncrypted: true,
+            body: encryptFlowResponse(responsePayload, aesKeyBuffer, initialVectorBuffer),
+          };
+        }
+
         const responsePayload = {
           screen: 'PROPERTY_SELECTOR',
           data: {

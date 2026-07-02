@@ -16,7 +16,7 @@ module.exports = (sequelize) => {
       allowNull: false,
     },
     flowType: {
-      type: DataTypes.ENUM('PACKAGE', 'PROPERTY', 'CUSTOM_TRIP', 'REVIEW', 'GENERIC'),
+      type: DataTypes.ENUM('PACKAGE', 'PROPERTY', 'VISA', 'CRUISE', 'SERVICE', 'CUSTOM_TRIP', 'REVIEW', 'GENERIC'),
       allowNull: false,
       defaultValue: 'GENERIC',
     },

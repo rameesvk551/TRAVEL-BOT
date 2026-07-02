@@ -1,6 +1,8 @@
 const itineraryService = require('../services/itineraryService');
 const { PDFDocument } = require('pdf-lib');
 const mediaService = require('../services/mediaService');
+const documentPdfService = require('../services/documentPdfService');
+const documentDeliveryService = require('../services/documentDeliveryService');
 
 function cleanPdfTitle(value = '') {
   return String(value || '')
@@ -53,8 +55,42 @@ async function create(req, res, next) {
 
 async function update(req, res, next) {
   try {
+    const existing = await itineraryService.getItineraryById(req.params.id, req.agency.id);
+    const wasSent = existing.status === 'SENT';
+
     const itinerary = await itineraryService.updateItinerary(req.params.id, req.agency.id, req.body);
+
+    // Auto-send over WhatsApp when an itinerary is freshly marked SENT and the
+    // agency has the toggle on. Best-effort, never blocks the response.
+    if (!wasSent && itinerary.status === 'SENT'
+      && documentDeliveryService.isAutoSendEnabled(req.agency, 'itinerary')) {
+      documentDeliveryService.sendItinerary(itinerary.id, req.agency, { agentId: req.agent?.id })
+        .catch((err) => console.error('[Itinerary] auto-send failed:', err.message));
+    }
+
     res.json({ success: true, data: itinerary, message: 'Itinerary updated' });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// GET /:id/pdf — render the themed itinerary PDF on demand.
+async function downloadPdf(req, res, next) {
+  try {
+    const generated = await documentPdfService.generateItineraryPdf(req.params.id, req.agency.id);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="${generated.filename}"`);
+    res.send(generated.buffer);
+  } catch (err) {
+    next(err);
+  }
+}
+
+// POST /:id/send-whatsapp — generate + send the itinerary to the customer.
+async function sendWhatsApp(req, res, next) {
+  try {
+    const result = await documentDeliveryService.sendItinerary(req.params.id, req.agency, { agentId: req.agent?.id });
+    res.json({ success: true, data: result, message: 'Itinerary sent on WhatsApp' });
   } catch (err) {
     next(err);
   }
@@ -112,5 +148,7 @@ module.exports = {
   create,
   update,
   uploadPdf,
+  downloadPdf,
+  sendWhatsApp,
   remove,
 };

@@ -100,6 +100,17 @@ exports.uploadMedia = async (req, res, next) => {
       });
     }
 
+    // WhatsApp/Meta caps template header video at 16 MB. The multer limit allows
+    // larger files for images, so reject oversized videos here with a clear message
+    // rather than letting Meta silently reject the template later.
+    const MAX_TEMPLATE_VIDEO_BYTES = 16 * 1024 * 1024;
+    if (String(req.file.mimetype || '').startsWith('video/') && req.file.size > MAX_TEMPLATE_VIDEO_BYTES) {
+      throw Object.assign(new Error('Video is too large. WhatsApp allows header videos up to 16 MB. Please compress it and try again.'), {
+        statusCode: 400,
+        code: 'VIDEO_TOO_LARGE',
+      });
+    }
+
     const uploaded = await mediaService.uploadTemplateMedia(
       req.file.buffer,
       req.user.agencyId,

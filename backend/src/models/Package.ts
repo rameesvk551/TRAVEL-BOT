@@ -55,7 +55,7 @@ module.exports = (sequelize) => {
     },
     basePrice: {
       type: DataTypes.INTEGER,
-      allowNull: false,
+      allowNull: true,
       comment: 'Per person in paise',
     },
     imageUrl: {

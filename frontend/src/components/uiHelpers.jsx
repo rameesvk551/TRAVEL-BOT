@@ -72,6 +72,17 @@ export function getStatusAccent(status) {
   return accents[status] || '#94a3b8';
 }
 
+/**
+ * Inline style for an agency pipeline-stage pill, tinted from the stage's own
+ * hex color (soft background + solid text). Falls back to neutral.
+ */
+export function getStagePillStyle(color) {
+  if (!color || !/^#([0-9a-f]{6})$/i.test(color)) {
+    return { backgroundColor: '#f1f5f9', color: '#475569' };
+  }
+  return { backgroundColor: `${color}1a`, color };
+}
+
 export function getRelativeDateLabel(dateValue) {
   if (!dateValue) return '';
   const date = new Date(dateValue);

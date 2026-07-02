@@ -53,13 +53,19 @@ function extractSearchQuery(messageText = '') {
   return query;
 }
 
+function packagePriceText(pkg) {
+  const amount = Number(pkg?.basePrice || 0);
+  return Number.isFinite(amount) && amount > 0
+    ? `Rs.${(amount / 100).toLocaleString('en-IN')}/person`
+    : 'Price on request';
+}
+
 function formatPackageList(packages, query, lang = 'EN') {
   if (lang === 'ML') {
     const lines = packages.map((pkg, index) => {
-      const price = `Rs.${(pkg.basePrice / 100).toLocaleString('en-IN')}`;
       const destinations = pkg.destinations?.slice(0, 2).join(', ') || 'Multiple destinations';
       const duration = pkg.duration || 'Custom duration';
-      return `${index + 1}. *${pkg.name}* - ${duration} - ${destinations} - ${price}/person`;
+      return `${index + 1}. *${pkg.name}* - ${duration} - ${destinations} - ${packagePriceText(pkg)}`;
     });
 
     return [
@@ -72,10 +78,9 @@ function formatPackageList(packages, query, lang = 'EN') {
   }
 
   const lines = packages.map((pkg, index) => {
-    const price = `Rs.${(pkg.basePrice / 100).toLocaleString('en-IN')}`;
     const destinations = pkg.destinations?.slice(0, 2).join(', ') || 'Multiple destinations';
     const duration = pkg.duration || 'Custom duration';
-    return `${index + 1}. *${pkg.name}* - ${duration} - ${destinations} - ${price}/person`;
+    return `${index + 1}. *${pkg.name}* - ${duration} - ${destinations} - ${packagePriceText(pkg)}`;
   });
 
   return [

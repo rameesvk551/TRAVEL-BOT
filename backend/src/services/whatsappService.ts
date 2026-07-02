@@ -1,6 +1,6 @@
 const axios = require('axios');
 const { Op } = require('sequelize');
-const { Agency, Campaign, CampaignRecipient, Customer, Message } = require('../models');
+const { Agency, AgencyChannel, Campaign, CampaignRecipient, Customer, Message } = require('../models');
 const marketingOsPartnerService = require('./marketingOsPartnerService');
 const { normalizePhone } = require('../utils/phoneUtils');
 
@@ -171,14 +171,60 @@ async function resolveAgencyChannel(context = {}) {
     };
   }
 
+  if (context.channelId) {
+    const channel = await AgencyChannel.findOne({
+      where: { id: context.channelId, agencyId: context.agencyId, isActive: true },
+    });
+    if (channel) {
+      return {
+        provider: channel.whatsappProvider || 'SELF_HOSTED',
+        phoneNumberId: channel.whatsappPhoneNumberId || process.env.WHATSAPP_PHONE_NUMBER_ID || null,
+        marketingOsTenantId: channel.marketingOsTenantId || null,
+        whatsappNumber: channel.whatsappNumber || null,
+        whatsappDisplayPhoneNumber: channel.whatsappDisplayPhoneNumber || null,
+        isInstagram: false,
+      };
+    }
+  }
+
   let isInstagram = false;
   if (context.customerId) {
     const customer = await Customer.findOne({
       where: { id: context.customerId, agencyId: context.agencyId },
-      attributes: ['id', 'phone', 'source'],
+      attributes: ['id', 'phone', 'source', 'channelId'],
     });
     isInstagram = String(customer?.phone || '').startsWith('ig_')
       || String(customer?.source || '').toLowerCase() === 'instagram';
+
+    if (customer?.channelId) {
+      const channel = await AgencyChannel.findOne({
+        where: { id: customer.channelId, agencyId: context.agencyId, isActive: true },
+      });
+      if (channel) {
+        return {
+          provider: channel.whatsappProvider || 'SELF_HOSTED',
+          phoneNumberId: channel.whatsappPhoneNumberId || process.env.WHATSAPP_PHONE_NUMBER_ID || null,
+          marketingOsTenantId: channel.marketingOsTenantId || null,
+          whatsappNumber: channel.whatsappNumber || null,
+          whatsappDisplayPhoneNumber: channel.whatsappDisplayPhoneNumber || null,
+          isInstagram,
+        };
+      }
+    }
+  }
+
+  const defaultChannel = await AgencyChannel.findOne({
+    where: { agencyId: context.agencyId, isDefault: true, isActive: true },
+  });
+  if (defaultChannel) {
+    return {
+      provider: defaultChannel.whatsappProvider || 'SELF_HOSTED',
+      phoneNumberId: defaultChannel.whatsappPhoneNumberId || process.env.WHATSAPP_PHONE_NUMBER_ID || null,
+      marketingOsTenantId: defaultChannel.marketingOsTenantId || null,
+      whatsappNumber: defaultChannel.whatsappNumber || null,
+      whatsappDisplayPhoneNumber: defaultChannel.whatsappDisplayPhoneNumber || null,
+      isInstagram,
+    };
   }
 
   const agency = await Agency.findByPk(context.agencyId, {
@@ -315,19 +361,64 @@ async function sendViaMarketingOs(phone, payload, tenantId, channel = {}) {
     : toMetaRecipient(phone, channel);
 
   if (isInstagram) {
-    // Currently, Instagram via Marketing OS only supports basic text/media proxying out-of-the-box
-    // For rich interactives, we send fallback text.
-    let textToSend = payload.text;
-    if (payload.type === 'interactive' || payload.type === 'template') {
-       textToSend = payload.content || payload.text || JSON.stringify(payload);
-    }
-    
-    data = await marketingOsPartnerService.sendTenantInstagramMessage(tenantToken, {
+    const igTarget = {
       tenantId,
       accountId: instagramAccountId || payload.accountId,
       recipientId: actualRecipient,
-      text: textToSend,
-    });
+    };
+
+    if (payload.type === 'media') {
+      // Instagram natively supports image / video / audio attachments from a hosted URL.
+      // Documents (PDFs) aren't supported as attachments, so they go out as a captioned link.
+      const mediaType = String(payload.mediaType || 'image').toLowerCase();
+      if (mediaType === 'image' || mediaType === 'video' || mediaType === 'audio') {
+        data = await marketingOsPartnerService.sendTenantInstagramMessage(tenantToken, {
+          ...igTarget,
+          mediaUrl: payload.mediaUrl,
+          mediaType,
+          caption: payload.caption || '',
+        });
+      } else {
+        const linkText = [payload.caption, payload.fileName || payload.filename, payload.mediaUrl]
+          .filter(Boolean)
+          .join('\n');
+        data = await marketingOsPartnerService.sendTenantInstagramMessage(tenantToken, {
+          ...igTarget,
+          text: linkText,
+        });
+      }
+    } else if (payload.type === 'cards') {
+      // Generic-template carousel: image + title + subtitle + buttons, all in one card unit.
+      data = await marketingOsPartnerService.sendTenantInstagramMessage(tenantToken, {
+        ...igTarget,
+        cards: payload.cards,
+      });
+    } else {
+      // Map WhatsApp-style interactives onto native Instagram messaging primitives:
+      //  - BUTTON / LIST  -> quick-reply chips (their payload echoes back as the inbound
+      //    actionId, so taps round-trip through the flow engine natively).
+      //  - CTA_URL        -> a button template carrying a web_url button.
+      // Lists with more options than Instagram allows (13 chips), and any other type, fall
+      // back to the readable numbered-text menu so nothing is silently dropped.
+      const ig = buildInstagramInteractive(payload);
+
+      // If the interactive carried an image header (media + buttons), send the image first
+      // as its own attachment so the picture is never lost, then the chips/text.
+      if (ig.imageUrl) {
+        await marketingOsPartnerService.sendTenantInstagramMessage(tenantToken, {
+          ...igTarget,
+          mediaUrl: ig.imageUrl,
+          mediaType: 'image',
+        });
+      }
+
+      data = await marketingOsPartnerService.sendTenantInstagramMessage(tenantToken, {
+        ...igTarget,
+        text: ig.text,
+        ...(ig.quickReplies ? { quickReplies: ig.quickReplies } : {}),
+        ...(ig.buttons ? { buttons: ig.buttons } : {}),
+      });
+    }
   } else if (payload.type === 'template') {
     data = await marketingOsPartnerService.sendTenantWhatsAppTemplate(tenantToken, {
       tenantId,
@@ -393,7 +484,121 @@ function renderListFallback(body, sections, options = {}) {
 function renderUrlButtonFallback(body, buttonText, url, options = {}) {
   const header = options.headerText ? `*${options.headerText}*\n` : '';
   const footer = options.footerText ? `\n${options.footerText}` : '';
-  return `${header}${body}\n\n${buttonText}${footer}`.trim();
+  // Include the actual URL so the message is still tappable on channels that do not render a
+  // native CTA button (WhatsApp auto-links the wa.me/https URL in plain text).
+  const cta = url ? `👉 ${buttonText}: ${url}` : buttonText;
+  return `${header}${body}\n\n${cta}${footer}`.trim();
+}
+
+/**
+ * Renders a Marketing OS `interactiveContent` payload (BUTTON / LIST / CTA_URL) into a
+ * plain numbered-text string. Channels that do not support native interactives — notably
+ * Instagram DMs via Marketing OS — fall back to this so users see a readable menu instead
+ * of a raw JSON dump. The numbering matches what the reply parser expects (numeric replies
+ * select an option by index).
+ */
+function renderInteractiveContentFallback(interactiveContent) {
+  if (!interactiveContent || typeof interactiveContent !== 'object') return '';
+  const header = interactiveContent.header ? `*${interactiveContent.header}*\n` : '';
+  const footer = interactiveContent.footer ? `\n${interactiveContent.footer}` : '';
+  const body = interactiveContent.body || '';
+
+  if (interactiveContent.type === 'BUTTON' && Array.isArray(interactiveContent.buttons)) {
+    const lines = interactiveContent.buttons
+      .map((button, index) => `${index + 1}. ${button.title}`)
+      .join('\n');
+    return `${header}${body}\n\n${lines}${footer}`.trim();
+  }
+
+  if (interactiveContent.type === 'LIST' && Array.isArray(interactiveContent.sections)) {
+    // Mirror renderListFallback exactly (per-section numbering) so the numbers shown match
+    // what the bot's numeric reply parser expects.
+    const sectionText = interactiveContent.sections.map((section) => {
+      const lines = (section.rows || []).map((row, index) =>
+        `${index + 1}. ${row.title}${row.description ? ` - ${row.description}` : ''}`).join('\n');
+      return section.title ? `*${section.title}*\n${lines}` : lines;
+    }).join('\n\n');
+    return `${header}${body}\n\n${sectionText}${footer}`.trim();
+  }
+
+  if (interactiveContent.type === 'CTA_URL') {
+    const cta = interactiveContent.button?.title
+      || interactiveContent.action?.parameters?.display_text
+      || '';
+    const url = interactiveContent.button?.url
+      || interactiveContent.action?.parameters?.url
+      || '';
+    return `${header}${body}\n\n${cta}${url ? `: ${url}` : ''}${footer}`.trim();
+  }
+
+  return `${header}${body}${footer}`.trim();
+}
+
+// Instagram messaging caps quick-reply chips at 13.
+const MAX_IG_QUICK_REPLIES = 13;
+
+/**
+ * Translates an outbound payload into native Instagram messaging primitives. Returns the
+ * message text plus, when applicable, `quickReplies` (BUTTON/LIST options as tappable chips)
+ * or `buttons` (a CTA_URL link). Each chip's payload is the option id the flow engine encodes
+ * (e.g. `flow_graph:node:option`), so a tap echoes back as the inbound actionId and routes
+ * exactly like a WhatsApp reply button. Anything that can't map natively — non-interactive
+ * sends, or lists longer than Instagram allows — falls back to the numbered-text menu.
+ */
+function buildInstagramInteractive(payload = {}) {
+  const fallbackText = payload.content
+    || payload.text
+    || (payload.type === 'interactive' ? renderInteractiveContentFallback(payload.interactiveContent) : '')
+    || payload.caption
+    || payload.mediaUrl
+    || '';
+
+  if (payload.type !== 'interactive' || !payload.interactiveContent) {
+    return { text: fallbackText };
+  }
+
+  const ic = payload.interactiveContent;
+  const body = ic.body || fallbackText || 'Please choose an option.';
+
+  if (ic.type === 'BUTTON' && Array.isArray(ic.buttons) && ic.buttons.length) {
+    // A media header (image + buttons) can't ride on an Instagram quick-reply message, so
+    // surface its URL — the caller sends it as a separate image attachment first.
+    const headerImageUrl = ic.header && typeof ic.header === 'object'
+      && (ic.header.type === 'image' || ic.header.imageUrl)
+      ? (ic.header.imageUrl || ic.header.url)
+      : undefined;
+    return {
+      text: body,
+      quickReplies: ic.buttons.slice(0, MAX_IG_QUICK_REPLIES).map((button) => ({
+        title: button.title,
+        payload: button.id,
+      })),
+      ...(headerImageUrl ? { imageUrl: headerImageUrl } : {}),
+    };
+  }
+
+  if (ic.type === 'LIST' && Array.isArray(ic.sections)) {
+    const rows = ic.sections.flatMap((section) => (Array.isArray(section.rows) ? section.rows : []));
+    // Only use chips when every option fits; otherwise keep the full numbered-text menu.
+    if (rows.length && rows.length <= MAX_IG_QUICK_REPLIES) {
+      return {
+        text: body,
+        quickReplies: rows.map((row) => ({ title: row.title, payload: row.id })),
+      };
+    }
+    return { text: fallbackText };
+  }
+
+  if (ic.type === 'CTA_URL') {
+    const title = ic.button?.title || ic.action?.parameters?.display_text || 'Open';
+    const url = ic.button?.url || ic.action?.parameters?.url || '';
+    if (url) {
+      return { text: ic.body || fallbackText, buttons: [{ title, url }] };
+    }
+    return { text: fallbackText };
+  }
+
+  return { text: fallbackText };
 }
 
 function normalizeImageUrlForWhatsApp(imageUrl) {
@@ -411,6 +616,16 @@ function normalizeImageUrlForWhatsApp(imageUrl) {
     return url
       .replace('/image/upload/', '/image/upload/f_png/')
       .replace(/\.(svg|webp)(\?|$)/i, '.png$2');
+  }
+
+  const cloudinaryImageTransform = 'w_800,h_600,c_limit,f_jpg,q_auto';
+  const uploadMarker = '/image/upload/';
+  const afterUpload = url.split(uploadMarker)[1] || '';
+  const firstSegment = afterUpload.split('/')[0] || '';
+  const alreadyTransformed = firstSegment.includes(',') || /^f_(jpg|png|webp|auto)(?:,|$)/i.test(firstSegment);
+
+  if (!alreadyTransformed) {
+    return url.replace(uploadMarker, `${uploadMarker}${cloudinaryImageTransform}/`);
   }
 
   return url;
@@ -471,6 +686,7 @@ async function sendButtonsMessage(phone, body, buttons, context, options = {}) {
     try {
       const response = await sendViaMarketingOs(phone, {
         type: 'interactive',
+        content: fallbackContent,
         interactiveContent: {
           type: 'BUTTON',
           header: options.headerText,
@@ -540,6 +756,7 @@ async function sendUrlButtonMessage(phone, body, buttonText, url, context, optio
     try {
       const response = await sendViaMarketingOs(phone, {
         type: 'interactive',
+        content: fallbackContent,
         interactiveContent: {
           type: 'CTA_URL',
           header: options.headerText,
@@ -618,6 +835,7 @@ async function sendMediaButtonsMessage(phone, body, imageUrl, buttons, context, 
     try {
       const response = await sendViaMarketingOs(phone, {
         type: 'interactive',
+        content: fallbackContent,
         interactiveContent: {
           type: 'BUTTON',
           header: {
@@ -634,7 +852,8 @@ async function sendMediaButtonsMessage(phone, body, imageUrl, buttons, context, 
       }, channel.marketingOsTenantId, channel);
       return markMessageSent(message, response);
     } catch (err) {
-      return markMessageFailed(message, 'sendMediaButtonsMessage', err);
+      await markMessageFailed(message, 'sendMediaButtonsMessage', err);
+      return sendTextMessage(phone, fallbackContent, context);
     }
   }
 
@@ -674,7 +893,8 @@ async function sendMediaButtonsMessage(phone, body, imageUrl, buttons, context, 
 
     return markMessageSent(message, response);
   } catch (err) {
-    return markMessageFailed(message, 'sendMediaButtonsMessage', err);
+    await markMessageFailed(message, 'sendMediaButtonsMessage', err);
+    return sendTextMessage(phone, fallbackContent, context);
   }
 }
 
@@ -691,6 +911,7 @@ async function sendListMessage(phone, body, buttonText, sections, context, optio
     try {
       const response = await sendViaMarketingOs(phone, {
         type: 'interactive',
+        content: fallbackContent,
         interactiveContent: {
           type: 'LIST',
           header: options.headerText,
@@ -1158,9 +1379,9 @@ async function refreshCampaignStats(campaignId) {
   if (!campaignId) return;
 
   const [sent, delivered, read, replied, failed, total] = await Promise.all([
-    CampaignRecipient.count({ where: { campaignId, status: 'SENT' } }),
-    CampaignRecipient.count({ where: { campaignId, status: 'DELIVERED' } }),
-    CampaignRecipient.count({ where: { campaignId, status: 'READ' } }),
+    CampaignRecipient.count({ where: { campaignId, status: { [Op.in]: ['SENT', 'DELIVERED', 'READ', 'REPLIED'] } } }),
+    CampaignRecipient.count({ where: { campaignId, status: { [Op.in]: ['DELIVERED', 'READ', 'REPLIED'] } } }),
+    CampaignRecipient.count({ where: { campaignId, status: { [Op.in]: ['READ', 'REPLIED'] } } }),
     CampaignRecipient.count({ where: { campaignId, status: 'REPLIED' } }),
     CampaignRecipient.count({ where: { campaignId, status: 'FAILED' } }),
     CampaignRecipient.count({ where: { campaignId } }),
@@ -1453,14 +1674,20 @@ function buildTextParameters(text, variableMap) {
     }));
 }
 
-function buildMediaParameter(mediaType, mediaUrl) {
+function buildMediaParameter(mediaType, mediaUrl, filename) {
   const type = String(mediaType || 'IMAGE').toLowerCase();
   const link = normalizeImageUrlForWhatsApp(mediaUrl);
   if (!link || !['image', 'video', 'document'].includes(type)) return null;
 
+  const media = { link };
+  // WhatsApp lets a document header carry a display filename for the customer.
+  if (type === 'document' && String(filename || '').trim()) {
+    media.filename = String(filename).trim();
+  }
+
   return {
     type,
-    [type]: { link },
+    [type]: media,
   };
 }
 
@@ -1477,7 +1704,7 @@ function buildStandardTemplateSendComponents(template, variableMap) {
       });
     }
   } else if (headerType !== 'NONE') {
-    const mediaParameter = buildMediaParameter(headerType, template.headerContent);
+    const mediaParameter = buildMediaParameter(headerType, template.headerContent, template.headerFilename);
     if (mediaParameter) {
       components.push({
         type: 'header',
@@ -1547,7 +1774,13 @@ function buildTemplateSendComponents(template, variables = []) {
           card.mediaType || card.headerType || 'IMAGE',
           card.mediaUrl || card.imageUrl || card.coverImageUrl
         );
-        const cardBodyParameters = buildTextParameters(card.body, variableMap);
+        // Each carousel card has its OWN {{n}} variables (numbered per card), so use
+        // this card's values when provided — otherwise fall back to the shared map.
+        // This is what lets every card show a distinct, agency-written description.
+        const cardVariableMap = Array.isArray(card.bodyVariables) && card.bodyVariables.length
+          ? getVariableMap(card.bodyVariables)
+          : variableMap;
+        const cardBodyParameters = buildTextParameters(card.body, cardVariableMap);
 
         if (mediaParameter) {
           cardComponents.push({
@@ -1674,6 +1907,40 @@ async function deleteTemplateFromMeta(agencyId, template) {
   throw new Error('No WhatsApp provider configured for template deletion');
 }
 
+/**
+ * Send a carousel of generic-template cards (image + title + subtitle + buttons) on Instagram.
+ * Instagram-only — if the channel isn't an IG Marketing OS channel, falls back to plain text so
+ * callers never have to branch. `cards` items: { title, subtitle, imageUrl, buttons:[{title,url}] }.
+ */
+async function sendInstagramCards(phone, cards, context, options = {}) {
+  const list = Array.isArray(cards) ? cards.filter(Boolean) : [];
+  const channel = await resolveAgencyChannel(context);
+  const isInstagram = String(phone).startsWith('ig_');
+
+  if (!list.length) return null;
+
+  if (!isInstagram || !canUseMarketingOs(channel)) {
+    // Non-Instagram safety net: render the cards as a numbered text summary.
+    const text = list.map((c, i) => `${i + 1}. ${c.title || ''}${c.subtitle ? ` - ${c.subtitle}` : ''}`).join('\n');
+    return sendTextMessage(phone, text, context);
+  }
+
+  const message = await createOutboundMessage(context, {
+    content: `[${list.length} cards]`,
+    type: 'TEXT',
+  });
+
+  try {
+    const response = await sendViaMarketingOs(phone, {
+      type: 'cards',
+      cards: list,
+    }, channel.marketingOsTenantId, channel);
+    return markMessageSent(message, response);
+  } catch (err) {
+    return markMessageFailed(message, 'sendInstagramCards', err);
+  }
+}
+
 module.exports = {
   sendTypingIndicator,
   waitForReplyPacing,
@@ -1683,6 +1950,7 @@ module.exports = {
   sendUrlButtonMessage,
   sendMediaButtonsMessage,
   sendListMessage,
+  sendInstagramCards,
   sendImageMessage,
   sendDocumentMessage,
   sendFlowMessage,

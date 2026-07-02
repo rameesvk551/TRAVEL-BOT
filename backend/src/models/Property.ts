@@ -59,6 +59,16 @@ module.exports = (sequelize) => {
       defaultValue: [],
       comment: 'Array of additional image URLs',
     },
+    brochureUrl: {
+      type: DataTypes.STRING(1000),
+      allowNull: true,
+      comment: 'Public PDF document URL (property brochure/details)',
+    },
+    brochureFileName: {
+      type: DataTypes.STRING(255),
+      allowNull: true,
+      comment: 'Preferred document filename for WhatsApp document sends',
+    },
     isActive: {
       type: DataTypes.BOOLEAN,
       defaultValue: true,
