@@ -18,6 +18,12 @@ function flowDefinition() {
         id: FIRST_SCREEN_ID,
         title: 'Stay Enquiry',
         terminal: true,
+        // The flow-graph engine (openGraphMetaFlow) always sends flow_action_payload.data
+        // = { customer_name }. A data_api_version flow must declare every data key it is
+        // navigated with, or Meta rejects the open with (#131009). Declare it here.
+        data: {
+          customer_name: { type: 'string', __example__: 'Guest' },
+        },
         layout: {
           type: 'SingleColumnLayout',
           children: [
