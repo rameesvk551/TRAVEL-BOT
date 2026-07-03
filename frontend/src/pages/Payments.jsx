@@ -51,7 +51,7 @@ export default function Payments() {
               >
                 <MobileField label="Total" value={formatCurrency(booking.totalAmount)} />
                 <MobileField label="Paid" value={formatCurrency(booking.advancePaid)} />
-                <MobileField label="Balance" value={formatCurrency(booking.totalAmount - booking.advancePaid)} />
+                <MobileField label="Balance" value={formatCurrency(booking.balanceDue ?? (booking.totalAmount - booking.advancePaid))} />
                 <MobileField label="Travel" value={formatDate(booking.travelDate)} />
               </MobileRecordCard>
             ))
@@ -94,7 +94,7 @@ export default function Payments() {
                     <td className="px-6 py-4 text-sm text-slate-600">{booking.customer?.name || '—'}</td>
                     <td className="px-6 py-4 text-sm font-semibold text-slate-900">{formatCurrency(booking.totalAmount)}</td>
                     <td className="px-6 py-4 text-sm font-semibold text-[#2d2d2d]">{formatCurrency(booking.advancePaid)}</td>
-                    <td className="px-6 py-4 text-sm font-semibold text-amber-700">{formatCurrency(booking.totalAmount - booking.advancePaid)}</td>
+                    <td className="px-6 py-4 text-sm font-semibold text-amber-700">{formatCurrency(booking.balanceDue ?? (booking.totalAmount - booking.advancePaid))}</td>
                     <td className="px-6 py-4"><PaymentBadge status={booking.status} /></td>
                     <td className="px-6 py-4 text-sm text-slate-500">{formatDate(booking.travelDate)}</td>
                   </tr>

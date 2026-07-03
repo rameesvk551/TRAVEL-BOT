@@ -2104,6 +2104,7 @@ async function ensureLead(session, customer, agency, extra = {}) {
       },
       status: extra.status || 'NEW',
       notes: notes || 'Lead created from WhatsApp sales funnel',
+      skipAutoAssign: extra.skipAutoAssign || false,
     }, agency.id);
   } else {
     const nextStatus = extra.preserveExistingStatus
@@ -2159,6 +2160,23 @@ async function ensureLead(session, customer, agency, extra = {}) {
       await notifyAgentOfServiceIntentSelection(assignment.agent, lead, customer, agency, routingIntentKey).catch((err) => {
         console.warn('[TravelFlow] Could not notify routed service agent:', err.message);
       });
+    }
+  }
+
+  // Enquiry captured (form submitted): land it on an agent right here, atomically with
+  // the capture. On agencies that defer assignment to enquiry-time (assignOnEnquiryOnly),
+  // a later NOTIFY_STAFF node would otherwise be the ONLY thing that assigns — so if that
+  // node is interrupted (e.g. a deploy restart) the submitted enquiry is left unassigned.
+  // For agencies without deferral the lead is already assigned, so this is a no-op.
+  // Suppress the generic ping; the staff-notify step sends the rich "New Enquiry" message.
+  if (extra.status === 'ENQUIRY' && !lead.assignedAgentId) {
+    const enquiryAgent = await leadService.findLeastBusyAgent(agency.id).catch(() => null);
+    if (enquiryAgent?.id) {
+      await leadService.updateLead(lead.id, agency.id, {
+        assignedAgentId: enquiryAgent.id,
+        suppressAssignmentNotification: true,
+      }).catch(() => null);
+      lead.assignedAgentId = enquiryAgent.id;
     }
   }
 
@@ -2513,9 +2531,24 @@ async function clearPendingMetaFlow(session) {
   });
 }
 
+// A customer who hasn't submitted the form yet SHOULD get it re-sent (with a polite
+// reminder) when they message again. We only guard against burst-spam: a short cooldown
+// collapses rapid-fire messages (e.g. several photos in a row) into one re-send, and a
+// cap stops it going on forever if they never fill it.
+const PENDING_FLOW_MAX_REMINDERS = 6;
+const PENDING_FLOW_REMINDER_COOLDOWN_MS = 2 * 60 * 1000; // 2 min
+
 async function remindPendingMetaFlow(session, customer, agency) {
   const pending = getPendingMetaFlow(session);
   if (!pending) return false;
+
+  // Only suppress rapid bursts / runaway repetition — otherwise re-send the form.
+  const reminderCount = Number(pending.reminderCount || 0);
+  const lastActivityMs = Date.parse(pending.lastRemindedAt || pending.openedAt || '') || 0;
+  const withinCooldown = lastActivityMs > 0 && (Date.now() - lastActivityMs) < PENDING_FLOW_REMINDER_COOLDOWN_MS;
+  if (reminderCount >= PENDING_FLOW_MAX_REMINDERS || withinCooldown) {
+    return true; // burst / cap reached — stay silent this time
+  }
 
   const reminderText = normalizeText(pending.reminderText)
     || 'Please fill this form so we can check the best available options, pricing, dates, guest count, and location for you.';
@@ -4925,6 +4958,10 @@ async function showPropertyDetail(session, customer, agency, propertyId) {
 async function handleFlowSubmission(session, incoming, customer, agency) {
   const pendingMetaFlow = getPendingMetaFlow(session);
   await clearPendingMetaFlow(session);
+  // The customer has now submitted the form — start the greeting cooldown so their
+  // follow-up "hi"/messages don't restart the flow and re-send it. Post-submission the
+  // conversation is personal (with the assigned staff), so the bot stays out of the way.
+  await recordMenuSent(session);
   const profile = getProfile(session);
   const rawResponse = incoming?.flowResponse || {};
   const response = typeof rawResponse === 'string'
@@ -5900,7 +5937,13 @@ async function resolveEnquiryNotificationAgent(lead, agency) {
   const leastBusyAgent = await leadService.findLeastBusyAgent(agency.id).catch(() => null);
   if (leastBusyAgent?.phone) {
     if (lead?.id && !lead.assignedAgentId) {
-      await leadService.updateLead(lead.id, agency.id, { assignedAgentId: leastBusyAgent.id }).catch(() => null);
+      // The caller (NOTIFY_STAFF / new-enquiry notification) sends its own rich staff
+      // message right after this, so suppress the generic "New Lead Assigned" auto-ping
+      // to avoid double-messaging the agent's personal number.
+      await leadService.updateLead(lead.id, agency.id, {
+        assignedAgentId: leastBusyAgent.id,
+        suppressAssignmentNotification: true,
+      }).catch(() => null);
       lead.assignedAgentId = leastBusyAgent.id;
     }
     return leastBusyAgent;
@@ -7046,10 +7089,12 @@ async function handleTravelFlow(session, incoming, customer, agency) {
     return handleEnquiryStep(session, incoming, customer, agency);
   }
 
+  // A form is already pending: route EVERY follow-up (text or media/no-text) through the
+  // throttled reminder instead of falling through to showMainMenu, which would re-send the
+  // whole form. Explicit menu/restart commands still fall through to restart the flow.
   if (
     getPendingMetaFlow(session)
     && !actionId
-    && text
     && !['menu', 'main menu', 'start', 'restart', 'start over'].includes(text)
   ) {
     return remindPendingMetaFlow(session, customer, agency);

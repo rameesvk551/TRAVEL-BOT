@@ -9,7 +9,9 @@ export default function SendPaymentModal({ booking, onClose, onSuccess }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const balanceDue = booking.totalAmount - booking.advancePaid;
+  // Settlement-aware balance owed to the agency. For COMMISSION_ONLY bookings the
+  // property balance is paid directly and must not be requested via a payment link.
+  const balanceDue = booking.balanceDue ?? (booking.totalAmount - booking.advancePaid);
 
   const handleSend = async () => {
     setLoading(true);

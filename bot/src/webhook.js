@@ -29,6 +29,26 @@ const ACTIVE_LEAD_STATUSES = [
 const LIVE_ECHO_HANDOFF_WINDOW_MS = 15 * 60 * 1000;
 const ECHO_CLOCK_SKEW_MS = 60 * 1000;
 
+// True when the agency's conversation flow defers lead ownership until the customer
+// submits an enquiry (flow builder → "Assign leads only after enquiry"). While on,
+// a bare inbound message creates an UNASSIGNED lead and the flow's staff-notify step
+// claims it on form submission — so staff aren't pinged for every "hi".
+function flowDefersLeadAssignment(agency, channel = 'WHATSAPP') {
+  if (!agency) return false;
+  const config = channel === 'INSTAGRAM'
+    ? (agency.instagramFlowConfig || agency.whatsappFlowConfig)
+    : agency.whatsappFlowConfig;
+  return Boolean(config && typeof config === 'object' && config.assignOnEnquiryOnly === true);
+}
+
+// True when the agency has turned off human agent handoff (flow builder → "Disable
+// agent handoff"). Suppresses the bot-pause + forward-to-staff that a coexistence
+// business-app reply would otherwise trigger.
+function agentHandoffDisabled(agency) {
+  const config = agency && agency.whatsappFlowConfig;
+  return Boolean(config && typeof config === 'object' && config.disableAgentHandoff === true);
+}
+
 async function applyWhatsAppProfileName({ profileName, customer, agency, session }) {
   const name = String(profileName || '').trim();
   if (!name || !customer || !agency) return;
@@ -302,10 +322,20 @@ async function upsertCustomerContact(agencyId, phone, updates = {}) {
 
 function normalizeStoredMessageType(type) {
   const normalized = String(type || '').toLowerCase();
-  if (normalized === 'image' || normalized === 'video') return 'IMAGE';
+  if (normalized === 'image' || normalized === 'sticker') return 'IMAGE';
+  if (normalized === 'video') return 'VIDEO';
   if (normalized === 'document') return 'DOCUMENT';
   if (normalized === 'audio' || normalized === 'voice') return 'AUDIO';
   return 'TEXT';
+}
+
+function extractMessageMedia(msg = {}) {
+  const media = msg.image || msg.video || msg.audio || msg.document || msg.sticker || null;
+  return {
+    mediaId: media?.id || null,
+    mimeType: media?.mime_type || media?.mimeType || null,
+    mediaFilename: msg.document?.filename || null,
+  };
 }
 
 function mapHistoryStatus(status) {
@@ -321,10 +351,9 @@ function extractMessageContent(msg = {}) {
   if (msg.image?.caption) return msg.image.caption;
   if (msg.video?.caption) return msg.video.caption;
   if (msg.document?.caption) return msg.document.caption;
-  if (msg.document?.filename) return `[Document: ${msg.document.filename}]`;
-  if (msg.image?.id) return `[Image Received: ${msg.image.id}]`;
-  if (msg.video?.id) return `[Video Received: ${msg.video.id}]`;
-  if (msg.audio?.id) return `[Audio Received: ${msg.audio.id}]`;
+  // Media with no caption: keep content empty. The bytes are served on demand
+  // from the stored mediaId, so no placeholder text is needed.
+  if (msg.image?.id || msg.video?.id || msg.audio?.id || msg.document?.id || msg.sticker?.id) return '';
   if (msg.type === 'media_placeholder') return '[Media message placeholder]';
   if (msg.type) return `[${String(msg.type).toUpperCase()} message]`;
   return '';
@@ -339,6 +368,7 @@ async function saveCoexistenceMessage({ agency, channel = null, customerPhone, m
   const customer = await upsertCustomerContact(agency.id, customerPhone, { source, channelId: channel?.id || null });
   if (!customer) return null;
 
+  const media = extractMessageMedia(msg);
   const message = await Message.create({
     customerId: customer.id,
     agencyId: agency.id,
@@ -346,6 +376,9 @@ async function saveCoexistenceMessage({ agency, channel = null, customerPhone, m
     direction,
     content: extractMessageContent(msg) || '',
     type: normalizeStoredMessageType(msg.type),
+    mediaId: media.mediaId,
+    mimeType: media.mimeType,
+    mediaFilename: media.mediaFilename,
     waMessageId: msg.id,
     status: status || 'SENT',
     timestamp: msg.timestamp ? new Date(parseInt(msg.timestamp, 10) * 1000) : new Date(),
@@ -607,7 +640,7 @@ async function processMessageEchoes(value = {}, metadata = {}) {
       agentId,
     });
 
-    if (shouldPauseForBusinessAppEcho(savedMessage, msg)) {
+    if (!agentHandoffDisabled(agency) && shouldPauseForBusinessAppEcho(savedMessage, msg)) {
       await pauseBotForManualReply({
         agency,
         customerId: customer.id,
@@ -785,10 +818,14 @@ async function processMessage(msg, metadata, contacts = []) {
     customerId: customer.id,
     agencyId: agency.id,
     direction: 'IN',
+    // For media, content is just the caption (may be empty). The bytes are
+    // served on demand from the stored mediaId, so no placeholder text.
     content: messageText
-      || (incoming.mediaId ? `[Media Received: ${incoming.mediaId}]` : '')
       || (shouldStartFromUnavailableMessage ? '[Unavailable WhatsApp message received]' : ''),
     type: normalizeInboundType(msg.type),
+    mediaId: incoming.mediaId || null,
+    mimeType: incoming.mimeType || null,
+    mediaFilename: incoming.mediaFilename || null,
     waMessageId,
     status: 'DELIVERED',
     timestamp,
@@ -819,6 +856,7 @@ async function processMessage(msg, metadata, contacts = []) {
     status: null,
     notes: 'First WhatsApp message received',
     preserveExistingStatus: true,
+    skipAutoAssign: flowDefersLeadAssignment(agency, 'WHATSAPP'),
   }).catch((err) => {
     console.warn('[Webhook] Could not ensure lead before routing:', err.message);
   });
@@ -1654,6 +1692,7 @@ async function processInstagramMessage(data) {
     status: null,
     notes: 'First Instagram DM received',
     preserveExistingStatus: true,
+    skipAutoAssign: flowDefersLeadAssignment(agency, 'INSTAGRAM'),
   });
 
   try {
@@ -1805,25 +1844,34 @@ function extractIncoming(msg) {
     };
   }
 
+  // WhatsApp Cloud API media shapes: image/video/document carry an optional
+  // caption; document carries a filename; voice notes arrive as `audio` with
+  // voice:true; stickers are image/webp. Capture id + mime for every type so
+  // the CRM can stream the bytes on demand.
+  const media = msg.image || msg.video || msg.audio || msg.document || msg.sticker || null;
   return {
     text: (typeof msg.text === 'string' ? msg.text : msg.text?.body)
       || msg.body
       || msg.message?.text?.body
       || msg.message?.body
       || msg.image?.caption
+      || msg.video?.caption
       || msg.document?.caption
       || '',
     actionId: msg.payload || msg.button?.payload || '',
     type: msg.type?.toUpperCase() || 'TEXT',
-    mediaId: msg.image?.id || msg.document?.id || msg.audio?.id || null,
+    mediaId: media?.id || null,
+    mimeType: media?.mime_type || media?.mimeType || null,
+    mediaFilename: msg.document?.filename || null,
   };
 }
 
 function normalizeInboundType(type) {
   const normalized = String(type || '').toLowerCase();
-  if (normalized === 'image') return 'IMAGE';
+  if (normalized === 'image' || normalized === 'sticker') return 'IMAGE';
   if (normalized === 'document') return 'DOCUMENT';
-  if (normalized === 'audio') return 'AUDIO';
+  if (normalized === 'audio' || normalized === 'voice') return 'AUDIO';
+  if (normalized === 'video') return 'VIDEO';
   return 'TEXT';
 }
 

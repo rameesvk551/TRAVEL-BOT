@@ -238,9 +238,11 @@ export default function PackageFinance() {
                       <td className="px-4 py-3 text-neutral-500">{row.dueDate ? formatDate(row.dueDate) : '-'}</td>
                       {canManage && (
                         <td className="px-4 py-3 text-right">
-                          <button type="button" onClick={() => deleteCost.mutate(row.id)} className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-neutral-400 hover:bg-rose-50 hover:text-rose-600" title="Delete cost">
-                            <TrashIcon className="h-4 w-4" />
-                          </button>
+                          {row.deletable && (
+                            <button type="button" onClick={() => deleteCost.mutate(row.id)} className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-neutral-400 hover:bg-rose-50 hover:text-rose-600" title="Delete cost">
+                              <TrashIcon className="h-4 w-4" />
+                            </button>
+                          )}
                         </td>
                       )}
                     </tr>

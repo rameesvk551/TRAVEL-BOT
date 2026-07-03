@@ -10,6 +10,7 @@ const {
   Property,
   Service,
   Vendor,
+  VendorBill,
   VendorPayment,
   Visa,
   sequelize,
@@ -258,9 +259,16 @@ function buildVendorPayables(costRows, payments) {
 
   const remainingByVendor = new Map(paidByVendor);
   const vendorPayables = costRows.map((cost) => {
-    const remainingPaid = remainingByVendor.get(cost.vendorId) || 0;
-    const paid = Math.min(toInt(cost.amount), remainingPaid);
-    remainingByVendor.set(cost.vendorId, Math.max(0, remainingPaid - paid));
+    // VendorBill rows track their own paidAmount (cost.ownPaid); ItemVendorCost rows are
+    // settled by allocating (non-bill) vendor payments across them per vendor.
+    let paid;
+    if (cost.ownPaid != null) {
+      paid = Math.min(toInt(cost.amount), toInt(cost.ownPaid));
+    } else {
+      const remainingPaid = remainingByVendor.get(cost.vendorId) || 0;
+      paid = Math.min(toInt(cost.amount), remainingPaid);
+      remainingByVendor.set(cost.vendorId, Math.max(0, remainingPaid - paid));
+    }
     return {
       id: cost.id,
       vendorId: cost.vendorId,
@@ -272,6 +280,10 @@ function buildVendorPayables(costRows, payments) {
       balance: Math.max(0, toInt(cost.amount) - paid),
       dueDate: cost.dueDate || null,
       notes: cost.notes || null,
+      // VendorBill rows (ownPaid set) are managed on the Vendors page, so they can't be
+      // deleted from the finance page; only ItemVendorCost rows are deletable here.
+      source: cost.ownPaid != null ? 'VENDOR_BILL' : 'ITEM_COST',
+      deletable: cost.ownPaid == null,
     };
   });
 
@@ -305,7 +317,7 @@ async function getItemFinance(agencyId, itemTypeInput, itemId) {
   const item = await assertItem(agencyId, itemType, itemId);
 
   const where = itemWhere(itemType, itemId);
-  const [bookings, costs, vendorPayments] = await Promise.all([
+  const [bookings, itemCosts, vendorPayments, vendorBills] = await Promise.all([
     Booking.findAll({
       where: { agencyId, ...where },
       include: [
@@ -324,7 +336,31 @@ async function getItemFinance(agencyId, itemTypeInput, itemId) {
       include: [{ model: Vendor, as: 'vendor', attributes: ['id', 'name', 'type'] }],
       order: [['paymentDate', 'ASC'], ['createdAt', 'ASC']],
     }),
+    VendorBill.findAll({
+      where: { agencyId, ...where },
+      include: [{ model: Vendor, as: 'vendor', attributes: ['id', 'name', 'type', 'phone', 'email'] }],
+      order: [['dueDate', 'ASC'], ['createdAt', 'ASC']],
+    }),
   ]);
+
+  // Vendor costs come from two entry points: the item/property finance page (ItemVendorCost)
+  // and the Vendors page (VendorBill). Merge both so the report reflects all vendor costs
+  // tagged to this item. VendorBills carry their own paidAmount; their bill-linked payments
+  // are therefore excluded from the ItemVendorCost allocation pool to avoid double-counting.
+  const costs = [
+    ...itemCosts,
+    ...vendorBills.map((bill) => ({
+      id: bill.id,
+      vendorId: bill.vendorId,
+      vendor: bill.vendor,
+      amount: bill.amount,
+      serviceLabel: bill.description || 'Vendor bill',
+      dueDate: bill.dueDate || null,
+      notes: bill.description || null,
+      ownPaid: bill.paidAmount,
+    })),
+  ];
+  const allocatablePayments = vendorPayments.filter((payment) => !payment.vendorBillId);
 
   const activeBookings = bookings.filter((booking) => booking.status !== 'CANCELLED');
   const cancelledBookings = bookings.filter((booking) => booking.status === 'CANCELLED');
@@ -334,7 +370,7 @@ async function getItemFinance(agencyId, itemTypeInput, itemId) {
   const receivedRevenue = sum(receivables, (row) => row.paid);
   const outstandingReceivables = sum(receivables, (row) => row.balance);
   const totalCost = sum(costs, (cost) => cost.amount);
-  const { vendorPayables, vendorWise } = buildVendorPayables(costs, vendorPayments);
+  const { vendorPayables, vendorWise } = buildVendorPayables(costs, allocatablePayments);
   const paidCost = sum(vendorPayables, (row) => row.paid);
   const unpaidCost = Math.max(0, totalCost - paidCost);
   const grossProfit = expectedRevenue - totalCost;

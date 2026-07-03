@@ -28,6 +28,7 @@ import {
   ChevronLeftIcon,
   ChevronRightIcon,
   ClipboardDocumentListIcon,
+  PhoneArrowDownLeftIcon,
   WrenchScrewdriverIcon,
   LifebuoyIcon,
   IdentificationIcon,
@@ -42,6 +43,7 @@ const navItems = [
   { to: '/bookings', icon: CalendarDaysIcon, label: 'Bookings' },
   { to: '/customers', icon: UserGroupIcon, label: 'Customers' },
   { to: '/whatsapp', icon: ChatBubbleLeftRightIcon, label: 'WhatsApp' },
+  { to: '/missed-calls', icon: PhoneArrowDownLeftIcon, label: 'Missed Calls' },
   { to: '/agents', icon: UsersIcon, label: 'Users' },
   { to: '/settings', icon: Cog6ToothIcon, label: 'Settings' },
 ];

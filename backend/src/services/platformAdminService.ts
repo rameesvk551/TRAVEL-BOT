@@ -25,6 +25,7 @@ const MODULE_CATALOG = Object.freeze([
   { path: '/quotations', label: 'Quotations', group: 'Core' },
   { path: '/customers', label: 'Customers', group: 'Core' },
   { path: '/whatsapp', label: 'WhatsApp', group: 'Core' },
+  { path: '/missed-calls', label: 'Missed Calls', group: 'Core' },
   { path: '/agents', label: 'Users', group: 'Core' },
   { path: '/settings', label: 'Settings', group: 'Core' },
   { path: '/settings/vendor-types', label: 'Vendor Types', group: 'Settings' },

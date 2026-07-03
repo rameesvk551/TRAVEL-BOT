@@ -48,11 +48,22 @@ function hasMetaFlowEntry(agency = {}) {
   return String(startNode?.type || '') === 'OPEN_META_FLOW';
 }
 
+// True when the agency has turned off human agent handoff (flow builder → "Disable
+// agent handoff") — no keyword handoff, no forwarding of customer messages to a
+// staff member's personal WhatsApp, no bot-pause on business-app replies.
+function agentHandoffDisabled(agency = {}) {
+  const config = agency.whatsappFlowConfig && typeof agency.whatsappFlowConfig === 'object'
+    ? agency.whatsappFlowConfig
+    : {};
+  return config.disableAgentHandoff === true;
+}
+
 async function routeMessage(session, incoming, customer, agency, options = {}) {
   const messageText = getMessageText(incoming);
   const normalizedText = String(messageText || '').trim().toLowerCase();
   const actionId = String(incoming?.actionId || '').trim();
   const isFirstInboundMessage = options.isFirstInboundMessage === true;
+  const handoffDisabled = agentHandoffDisabled(agency);
   const packageDeepLinkAction = !actionId ? extractPackageDeepLinkAction(messageText) : '';
   const isForceRestartCommand = normalizedText === 'restart';
 
@@ -73,7 +84,7 @@ async function routeMessage(session, incoming, customer, agency, options = {}) {
   // Explicit menu commands and greetings reset the flow to the welcome menu.
   if (RESET_TO_MENU_KEYWORDS.has(normalizedText) || GREETING_KEYWORDS.has(normalizedText)) {
     if (!isForceRestartCommand && !canSendMenu(session, { isFirstInboundMessage })) {
-      if (isManualPauseActive(session) && session.handedOffToId) {
+      if (!handoffDisabled && isManualPauseActive(session) && session.handedOffToId) {
         await forwardToAgent(session, messageText, customer, agency);
       }
       return;
@@ -160,7 +171,18 @@ async function routeMessage(session, incoming, customer, agency, options = {}) {
     return;
   }
 
-  if (session.isHandedOff || session.currentStep === 'HANDOFF') {
+  if (handoffDisabled && (session.isHandedOff || session.currentStep === 'HANDOFF')) {
+    // Handoff turned off for this agency — release any stale handoff state (from before
+    // it was disabled) and let the bot handle the message normally instead of forwarding
+    // it to a staff member's personal WhatsApp.
+    await updateSession(session, {
+      isHandedOff: false,
+      handedOffAt: null,
+      handedOffToId: null,
+      currentStep: session.currentStep === 'HANDOFF' ? 'NEW' : session.currentStep,
+      collectedData: { manualHandoff: null },
+    });
+  } else if (session.isHandedOff || session.currentStep === 'HANDOFF') {
     if (isManualPauseActive(session)) {
       if (session.handedOffToId) {
         await forwardToAgent(session, messageText, customer, agency);
@@ -220,10 +242,12 @@ async function routeMessage(session, incoming, customer, agency, options = {}) {
     return;
   }
 
-  const handoffCheck = shouldHandoff(messageText, session);
-  if (handoffCheck.shouldHandoff) {
-    await handoffToAgent(session, customer, agency, handoffCheck.reason);
-    return;
+  if (!handoffDisabled) {
+    const handoffCheck = shouldHandoff(messageText, session);
+    if (handoffCheck.shouldHandoff) {
+      await handoffToAgent(session, customer, agency, handoffCheck.reason);
+      return;
+    }
   }
 
   switch (session.currentStep) {

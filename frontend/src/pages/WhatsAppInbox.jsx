@@ -79,6 +79,96 @@ function statusIcon(status) {
   return <ClockIcon className="h-3.5 w-3.5 text-slate-400" />;
 }
 
+// Classify a message's media by its stored WhatsApp mime type. Requires both a
+// mediaId and a mimeType so text messages (and Instagram DMs, which carry no
+// mimeType) never render as media.
+function mediaKindOf(message) {
+  if (!message?.mediaId || !message?.mimeType) return null;
+  const mime = String(message.mimeType).toLowerCase();
+  if (mime.startsWith('image/')) return 'image';
+  if (mime.startsWith('audio/')) return 'audio';
+  if (mime.startsWith('video/')) return 'video';
+  return 'document';
+}
+
+// Short label for the thread list when the last message is media without a caption.
+function messagePreview(msg) {
+  if (!msg) return 'No messages yet';
+  if (msg.content) return truncate(msg.content, 48);
+  const kind = mediaKindOf(msg);
+  if (kind === 'image') return '📷 Photo';
+  if (kind === 'audio') return '🎤 Voice message';
+  if (kind === 'video') return '🎬 Video';
+  if (kind === 'document') return `📄 ${msg.mediaFilename || 'Document'}`;
+  return 'No messages yet';
+}
+
+// Fetches inbound media bytes through the authenticated API client (Bearer token),
+// then renders the photo/voice note/video/document inline. The object URL is
+// revoked on unmount to avoid leaking blobs.
+function MessageMedia({ message, kind }) {
+  const [url, setUrl] = useState(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    let objectUrl = null;
+    setUrl(null);
+    setFailed(false);
+    client
+      .get(`/messages/${message.id}/media`, { responseType: 'blob' })
+      .then((res) => {
+        if (cancelled) return;
+        objectUrl = URL.createObjectURL(res.data);
+        setUrl(objectUrl);
+      })
+      .catch(() => {
+        if (!cancelled) setFailed(true);
+      });
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [message.id]);
+
+  if (failed) {
+    return <p className="text-xs italic text-slate-400">Media unavailable</p>;
+  }
+  if (!url) {
+    return (
+      <div className="flex h-24 w-40 items-center justify-center rounded-lg bg-slate-100 text-xs text-slate-400">
+        Loading…
+      </div>
+    );
+  }
+  if (kind === 'image') {
+    return (
+      <img
+        src={url}
+        alt={message.content || 'Photo'}
+        onClick={() => window.open(url, '_blank', 'noopener')}
+        className="max-h-72 w-auto cursor-pointer rounded-lg"
+      />
+    );
+  }
+  if (kind === 'audio') {
+    return <audio controls src={url} className="max-w-full" />;
+  }
+  if (kind === 'video') {
+    return <video controls src={url} className="max-h-72 max-w-full rounded-lg" />;
+  }
+  return (
+    <a
+      href={url}
+      download={message.mediaFilename || 'document'}
+      className="flex items-center gap-2 font-semibold text-[#0b4f9f] underline"
+    >
+      <span>📄</span>
+      <span className="max-w-[220px] truncate">{message.mediaFilename || 'Document'}</span>
+    </a>
+  );
+}
+
 function Avatar({ customer, avatarUrl, size = 'h-12 w-12' }) {
   const [imageFailed, setImageFailed] = useState(false);
   const src = avatarUrl || getRealProfileImage(customer);
@@ -648,7 +738,7 @@ export default function WhatsAppInbox() {
                         <div className="mt-1 flex items-center gap-1.5">
                           {lastMessage?.direction === 'OUT' ? statusIcon(lastMessage.status) : null}
                           <p className="truncate text-xs text-slate-500">
-                            {lastMessage?.content ? truncate(lastMessage.content, 48) : 'No messages yet'}
+                            {messagePreview(lastMessage)}
                           </p>
                         </div>
                         {thread.assignedAgent ? (
@@ -656,7 +746,12 @@ export default function WhatsAppInbox() {
                             <UserPlusIcon className="h-3 w-3" />
                             <span className="truncate">{thread.assignedAgent.name}</span>
                           </div>
-                        ) : null}
+                        ) : (
+                          <div className="mt-1 inline-flex items-center gap-1 text-[10px] font-bold text-[#ff8a00]">
+                            <UserPlusIcon className="h-3 w-3" />
+                            <span className="truncate">Unassigned</span>
+                          </div>
+                        )}
                       </div>
                       <span className={`rounded-full px-2 py-0.5 text-[9px] font-extrabold text-white ${badge === 'Customer' ? 'bg-[#0b4f9f]' : 'bg-[#ff8a00]'}`}>
                         {badge}
@@ -829,6 +924,7 @@ export default function WhatsAppInbox() {
                     {messages.map((message, index) => {
                       const outgoing = message.direction === 'OUT';
                       const showTemplate = outgoing && index === 1;
+                      const mediaKind = mediaKindOf(message);
                       const match = chatSearch.trim() && String(message.content || '').toLowerCase().includes(chatSearch.trim().toLowerCase());
                       return (
                         <div key={message.id} className={`flex ${outgoing ? 'justify-end' : 'justify-start'}`}>
@@ -840,7 +936,16 @@ export default function WhatsAppInbox() {
                             )}
                           >
                             {showTemplate ? <TemplateBadge /> : null}
-                            <p className="whitespace-pre-wrap break-words">{message.content || '[Media message]'}</p>
+                            {mediaKind ? (
+                              <div className="mb-1">
+                                <MessageMedia message={message} kind={mediaKind} />
+                              </div>
+                            ) : null}
+                            {message.content ? (
+                              <p className="whitespace-pre-wrap break-words">{message.content}</p>
+                            ) : (!mediaKind ? (
+                              <p className="whitespace-pre-wrap break-words">[Media message]</p>
+                            ) : null)}
                             <div className="mt-1 flex items-center justify-end gap-1 text-[10px] font-semibold text-slate-500">
                               <span>{formatTime(message.timestamp)}</span>
                               {outgoing ? statusIcon(message.status) : null}

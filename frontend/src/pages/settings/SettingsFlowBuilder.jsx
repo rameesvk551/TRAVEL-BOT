@@ -2031,6 +2031,13 @@ export default function SettingsFlowBuilder({ fullScreen = false, initialFlowId 
     : initialLibrary.entryFlowId;
   const [flowLibrary, setFlowLibrary] = useState(initialLibrary.flows);
   const [entryFlowId, setEntryFlowId] = useState(initialLibrary.entryFlowId);
+  // When on, a bare inbound message creates an UNASSIGNED lead — staff ownership is
+  // only claimed once the customer submits an enquiry via this flow (its staff-notify
+  // step), so agents aren't pinged for every "hi".
+  const [assignOnEnquiryOnly, setAssignOnEnquiryOnly] = useState(agency?.whatsappFlowConfig?.assignOnEnquiryOnly === true);
+  // When on, the bot never hands the conversation to a human agent: no keyword handoff and
+  // no forwarding of customer messages to a staff member's personal WhatsApp.
+  const [disableAgentHandoff, setDisableAgentHandoff] = useState(agency?.whatsappFlowConfig?.disableAgentHandoff === true);
   const [activeFlowId, setActiveFlowId] = useState(seedFlowId);
   const initialActiveFlow = initialLibrary.flows.find((flow) => flow.id === seedFlowId) || initialLibrary.flows[0] || graphToEditableFlow(DEFAULT_GRAPH, 'entry', 'Entry Menu');
   const [nodes, setNodes, onNodesChange] = useNodesState(asReactNodes(initialActiveFlow));
@@ -2106,6 +2113,8 @@ export default function SettingsFlowBuilder({ fullScreen = false, initialFlowId 
     loadedConfigSignatureRef.current = configSignature;
     setFlowLibrary(nextLibrary.flows);
     setEntryFlowId(nextLibrary.entryFlowId);
+    setAssignOnEnquiryOnly(agency?.whatsappFlowConfig?.assignOnEnquiryOnly === true);
+    setDisableAgentHandoff(agency?.whatsappFlowConfig?.disableAgentHandoff === true);
     setActiveFlowId(nextActiveFlow.id);
     setNodes(asReactNodes(nextActiveFlow));
     setEdges(asReactEdges(nextActiveFlow));
@@ -2255,6 +2264,8 @@ export default function SettingsFlowBuilder({ fullScreen = false, initialFlowId 
       whatsappFlowConfig: {
         schemaVersion: 4,
         entryFlowId,
+        assignOnEnquiryOnly,
+        disableAgentHandoff,
         flows: flowsToSave,
       },
     });
@@ -2282,6 +2293,30 @@ export default function SettingsFlowBuilder({ fullScreen = false, initialFlowId 
           <h2 className="text-xl font-extrabold text-neutral-950">WhatsApp Flow Builder</h2>
           <p className="mt-1 text-sm text-neutral-500">Design the customer conversation that starts when someone messages your WhatsApp number.</p>
           <p className="mt-1 text-xs font-semibold text-neutral-400">Editing: {activeFlow.name}{entryFlowId === activeFlow.id ? ' · Entry flow' : ''}</p>
+          <label className="mt-2 flex max-w-md items-start gap-2 text-xs text-neutral-600">
+            <input
+              type="checkbox"
+              className="mt-0.5 h-4 w-4 rounded border-neutral-300 text-[#00A884] focus:ring-[#00A884]"
+              checked={assignOnEnquiryOnly}
+              onChange={(e) => setAssignOnEnquiryOnly(e.target.checked)}
+            />
+            <span>
+              <span className="font-bold text-neutral-800">Assign leads to staff only after an enquiry</span>
+              <span className="block text-neutral-500">A plain first message creates an unassigned lead; a staff member is notified and claims it only when the customer submits a form in this flow.</span>
+            </span>
+          </label>
+          <label className="mt-2 flex max-w-md items-start gap-2 text-xs text-neutral-600">
+            <input
+              type="checkbox"
+              className="mt-0.5 h-4 w-4 rounded border-neutral-300 text-[#00A884] focus:ring-[#00A884]"
+              checked={disableAgentHandoff}
+              onChange={(e) => setDisableAgentHandoff(e.target.checked)}
+            />
+            <span>
+              <span className="font-bold text-neutral-800">Disable agent handoff</span>
+              <span className="block text-neutral-500">The bot never hands the chat to a human: no “talk to agent” handoff and customer messages are never forwarded to a staff member’s personal WhatsApp.</span>
+            </span>
+          </label>
         </div>
         <div className="flex flex-wrap gap-2">
           <button type="button" onClick={undo} disabled={!history.length} className="shell-button-secondary px-3 py-2 text-xs"><Undo2 className="h-4 w-4" /> Undo</button>

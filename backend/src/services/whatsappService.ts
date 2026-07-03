@@ -1945,9 +1945,69 @@ async function sendInstagramCards(phone, cards, context, options = {}) {
   }
 }
 
+/**
+ * Fetches inbound WhatsApp media bytes on demand for the CRM inbox. Media is not
+ * downloaded at receive time; the message stores only the WhatsApp media id, and
+ * this resolves + streams the binary when an agent opens the chat.
+ * - Marketing OS channels: delegate to the tenant media endpoint.
+ * - Direct Cloud API channels: ask Graph for the temporary media URL, then
+ *   download it (the lookaside URL requires the same bearer token).
+ * @param {object} context - { agencyId, customerId, mediaId }
+ * @returns {Promise<{ stream: any, contentType: string|null, filename: string|null }>}
+ */
+async function fetchWhatsAppMedia(context = {}) {
+  const { agencyId, customerId, mediaId } = context;
+  if (!mediaId) {
+    throw Object.assign(new Error('No media id'), { statusCode: 404, code: 'MEDIA_NOT_FOUND' });
+  }
+
+  const channel = await resolveAgencyChannel({ agencyId, customerId });
+
+  if ((channel.provider === 'MARKETING_OS' || channel.isInstagram) && channel.marketingOsTenantId) {
+    const tenantToken = await marketingOsPartnerService.getTenantToken(channel.marketingOsTenantId);
+    return marketingOsPartnerService.getTenantWhatsAppMedia(tenantToken, mediaId);
+  }
+
+  const token = process.env.WHATSAPP_CLOUD_API_TOKEN;
+  if (!token) {
+    throw Object.assign(new Error('WhatsApp media retrieval is not configured for this channel'), {
+      statusCode: 501,
+      code: 'MEDIA_UNAVAILABLE',
+    });
+  }
+
+  let mediaUrl;
+  let mimeType = null;
+  try {
+    const meta = await axios.get(`https://graph.facebook.com/v21.0/${encodeURIComponent(mediaId)}`, {
+      headers: { Authorization: `Bearer ${token}` },
+      timeout: 15000,
+    });
+    mediaUrl = meta.data?.url;
+    mimeType = meta.data?.mime_type || null;
+  } catch (err) {
+    throw Object.assign(new Error('Media not found or expired'), { statusCode: 404, code: 'MEDIA_NOT_FOUND' });
+  }
+  if (!mediaUrl) {
+    throw Object.assign(new Error('Media not found or expired'), { statusCode: 404, code: 'MEDIA_NOT_FOUND' });
+  }
+
+  const binary = await axios.get(mediaUrl, {
+    headers: { Authorization: `Bearer ${token}` },
+    responseType: 'stream',
+    timeout: 30000,
+  });
+  return {
+    stream: binary.data,
+    contentType: binary.headers['content-type'] || mimeType,
+    filename: null,
+  };
+}
+
 module.exports = {
   sendTypingIndicator,
   waitForReplyPacing,
+  fetchWhatsAppMedia,
   sendProcessingPlaceholder,
   sendTextMessage,
   sendButtonsMessage,

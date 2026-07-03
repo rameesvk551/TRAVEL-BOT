@@ -89,9 +89,20 @@ function channelFilter(channel) {
 }
 
 async function listThreads(agencyId, options = {}) {
-  const { limit = 100, q, channelId, channel } = options;
+  const { limit = 100, q, channelId, channel, requester } = options;
   const where = { agencyId };
   const andConditions = [];
+
+  // Scope non-admin agents to conversations they own plus the shared unassigned
+  // pool (chats with no owner yet). Admins see every conversation.
+  if (requester && requester.id && requester.role !== 'ADMIN') {
+    andConditions.push({
+      [Op.or]: [
+        { assignedAgentId: requester.id },
+        { assignedAgentId: { [Op.is]: null } },
+      ],
+    });
+  }
 
   if (channelId) {
     where.channelId = channelId;
@@ -167,6 +178,91 @@ async function listThreads(agencyId, options = {}) {
       };
     })
     .sort((a, b) => new Date(b.lastActivityAt || 0) - new Date(a.lastActivityAt || 0));
+}
+
+/**
+ * Ensures a requester may access a conversation. Admins are unrestricted; a
+ * non-admin agent may only touch their own conversations or ones in the shared
+ * unassigned pool. Returns the customer record when allowed.
+ * @param {string} customerId - Customer ID
+ * @param {string} agencyId - Agency ID
+ * @param {object} requester - { id, role } of the acting agent
+ * @returns {Promise<object>} Customer record
+ */
+async function assertThreadAccess(customerId, agencyId, requester) {
+  const customer = await Customer.findOne({
+    where: { id: customerId, agencyId },
+    attributes: ['id', 'assignedAgentId'],
+  });
+  if (!customer) {
+    throw Object.assign(new Error('Customer not found'), { statusCode: 404, code: 'CUSTOMER_NOT_FOUND' });
+  }
+  if (!requester || requester.role === 'ADMIN') {
+    return customer;
+  }
+  const owner = customer.assignedAgentId;
+  if (owner && owner !== requester.id) {
+    throw Object.assign(new Error('You are not assigned to this conversation'), {
+      statusCode: 403,
+      code: 'FORBIDDEN_THREAD',
+    });
+  }
+  return customer;
+}
+
+/**
+ * Claims a conversation for an agent only if it currently has no owner, so a
+ * takeover of an unassigned chat pulls it out of the shared pool. No-op when the
+ * conversation is already owned.
+ * @param {string} customerId - Customer ID
+ * @param {string} agencyId - Agency ID
+ * @param {string} agentId - Agent claiming the conversation
+ * @returns {Promise<boolean>} Whether the conversation was claimed
+ */
+async function claimThreadIfUnassigned(customerId, agencyId, agentId) {
+  if (!agentId) return false;
+  const [updated] = await Customer.update(
+    { assignedAgentId: agentId },
+    { where: { id: customerId, agencyId, assignedAgentId: { [Op.is]: null } } }
+  );
+  return updated > 0;
+}
+
+/**
+ * Resolves inbound media for a message and returns a stream for the proxy to
+ * pipe to the agent. Enforces conversation access so an agent can only fetch
+ * media for a chat they may view.
+ * @param {string} messageId - Message ID
+ * @param {string} agencyId - Agency ID
+ * @param {object} requester - Acting agent { id, role }
+ * @returns {Promise<{ stream:any, contentType:string, filename:string|null, isDocument:boolean }>}
+ */
+async function getMessageMedia(messageId, agencyId, requester) {
+  const message = await Message.findOne({
+    where: { id: messageId, agencyId },
+    attributes: ['id', 'customerId', 'mediaId', 'mimeType', 'mediaFilename', 'type'],
+  });
+  if (!message) {
+    throw Object.assign(new Error('Message not found'), { statusCode: 404, code: 'MESSAGE_NOT_FOUND' });
+  }
+  if (!message.mediaId) {
+    throw Object.assign(new Error('Message has no media'), { statusCode: 404, code: 'NO_MEDIA' });
+  }
+
+  await assertThreadAccess(message.customerId, agencyId, requester);
+
+  const media = await whatsappService.fetchWhatsAppMedia({
+    agencyId,
+    customerId: message.customerId,
+    mediaId: message.mediaId,
+  });
+
+  return {
+    stream: media.stream,
+    contentType: media.contentType || message.mimeType || 'application/octet-stream',
+    filename: message.mediaFilename || media.filename || null,
+    isDocument: message.type === 'DOCUMENT',
+  };
 }
 
 /**
@@ -271,4 +367,7 @@ module.exports = {
   sendMessage,
   listAssignableAgents,
   assignThread,
+  assertThreadAccess,
+  claimThreadIfUnassigned,
+  getMessageMedia,
 };

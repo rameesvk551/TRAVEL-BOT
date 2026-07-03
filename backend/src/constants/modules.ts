@@ -31,6 +31,7 @@ const MODULE_API_GRANTS = Object.freeze({
   '/api/payments': ['/bookings', '/accounts'],
   '/api/analytics': ['/analytics'],
   '/api/whatsapp': ['/whatsapp'],
+  '/api/missed-calls': ['/missed-calls'],
   '/api/messages': ['/whatsapp', '/campaigns'],
   '/api/instagram': ['/social', '/flows'],
   '/api/ads': ['/ads'],

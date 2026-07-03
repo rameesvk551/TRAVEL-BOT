@@ -1221,6 +1221,7 @@ async function createLead(data, agencyId) {
     travelStart,
     travelEnd,
     status,
+    skipAutoAssign,
   } = data;
 
   const customer = await resolveCustomer(data, agencyId);
@@ -1272,7 +1273,11 @@ async function createLead(data, agencyId) {
 
   // Auto-assign when no explicit agent was provided. Always ask the routing
   // service for an owner so even a bare "hi" is claimed by a staff member.
-  if (!assignedAgentId) {
+  // Agencies whose conversation flow defers ownership until the customer submits
+  // an enquiry (flow builder → "Assign leads only after enquiry") pass
+  // skipAutoAssign, so a bare message lands unassigned and the flow's staff-notify
+  // step claims it once the form is submitted.
+  if (!assignedAgentId && !skipAutoAssign) {
     const routedAgent = await serviceRoutingService.resolveAgentForIntent(agencyId, enquiryType);
     if (routedAgent) {
       finalAssignedAgentId = routedAgent.id;
@@ -1469,7 +1474,11 @@ async function updateLead(leadId, agencyId, updates, requester = null) {
   }
 
   const hasAssignmentUpdate = Object.prototype.hasOwnProperty.call(updates, 'assignedAgentId');
-  const shouldNotifyAssignedAgent = !!updates.assignedAgentId && (hasAssignmentUpdate || lead.assignedAgentId !== updates.assignedAgentId);
+  // Callers that immediately send their own staff message after claiming ownership
+  // (e.g. the flow's NOTIFY_STAFF / new-enquiry notification) pass
+  // suppressAssignmentNotification so the agent isn't double-pinged on their personal number.
+  const shouldNotifyAssignedAgent = !updates.suppressAssignmentNotification
+    && !!updates.assignedAgentId && (hasAssignmentUpdate || lead.assignedAgentId !== updates.assignedAgentId);
   await lead.update(filtered);
 
   const activityNotes = [];
@@ -1531,10 +1540,20 @@ async function deleteLead(leadId, agencyId, requester = null) {
  * @returns {Promise<object|null>} Agent or null
  */
 async function findLeastBusyAgent(agencyId) {
-  const agents = await Agent.findAll({
-    where: { agencyId, isOnline: true },
-    attributes: ['id', 'name', 'email', 'phone'],
+  // Prefer front-line AGENT staff; admins are excluded so a rarely-loaded admin
+  // isn't picked as "least busy" and handed every new enquiry. Fall back to any
+  // online staff (incl. admin) only when the agency has no agents at all.
+  let agents = await Agent.findAll({
+    where: { agencyId, isOnline: true, role: 'AGENT' },
+    attributes: ['id', 'name', 'email', 'phone', 'role'],
   });
+
+  if (agents.length === 0) {
+    agents = await Agent.findAll({
+      where: { agencyId, isOnline: true },
+      attributes: ['id', 'name', 'email', 'phone', 'role'],
+    });
+  }
 
   if (agents.length === 0) return null;
 
@@ -1859,7 +1878,9 @@ async function bulkAssignLeads(leadIds, agentId, agencyId, requester = null) {
 
   const [updated] = await Lead.update(
     { assignedAgentId: agentId || null },
-    { where: { id: { [Op.in]: leadIds }, agencyId } }
+    // individualHooks so the Lead afterUpdate hook fires per row and each linked
+    // WhatsApp conversation follows its lead to the new owner.
+    { where: { id: { [Op.in]: leadIds }, agencyId }, individualHooks: true }
   );
 
   if (updated > 0) {

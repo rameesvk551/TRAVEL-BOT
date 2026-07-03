@@ -49,7 +49,7 @@ export const INDUSTRY_PROFILES = {
     },
     modules: [
       '/', '/leads', '/follow-ups', '/bookings', '/customers', '/whatsapp',
-      '/agents', '/settings',
+      '/missed-calls', '/agents', '/settings',
       '/properties', '/packages', '/services', '/vendors', '/vendor-payments',
       '/accounts', '/website-builder', '/hrm', '/analytics', '/activity', '/revenue',
       '/templates', '/flows', '/campaigns', '/ads', '/social', '/reviews',
@@ -76,7 +76,7 @@ export const INDUSTRY_PROFILES = {
     },
     modules: [
       '/', '/leads', '/follow-ups', '/bookings', '/customers', '/whatsapp',
-      '/agents', '/settings',
+      '/missed-calls', '/agents', '/settings',
       '/packages', '/services', '/vendors', '/vendor-payments',
       '/accounts', '/website-builder', '/hrm', '/analytics', '/activity', '/revenue',
       '/templates', '/flows', '/campaigns', '/ads', '/social', '/reviews',
@@ -103,7 +103,7 @@ export const INDUSTRY_PROFILES = {
     },
     modules: [
       '/', '/leads', '/follow-ups', '/bookings', '/customers', '/whatsapp',
-      '/agents', '/settings',
+      '/missed-calls', '/agents', '/settings',
       '/packages', '/services', '/vendors', '/vendor-payments',
       '/accounts', '/website-builder', '/hrm', '/analytics', '/activity', '/revenue',
       '/templates', '/flows', '/campaigns', '/ads', '/social', '/reviews',

@@ -70,6 +70,7 @@ const CreateAd = lazy(() => import('./pages/CreateAd'));
 const Reviews = lazy(() => import('./pages/Reviews'));
 const SocialMedia = lazy(() => import('./pages/SocialMedia'));
 const Agents = lazy(() => import('./pages/Agents'));
+const MissedCalls = lazy(() => import('./pages/MissedCalls'));
 const Signup = lazy(() => import('./pages/Signup'));
 const Brochure = lazy(() => import('./pages/Brochure'));
 const PlatformLogin = lazy(() => import('./pages/PlatformLogin'));
@@ -228,6 +229,7 @@ export default function App() {
                     <Route path="/quotations/:id/edit" element={<ModuleRoute modulePath="/quotations"><QuotationForm /></ModuleRoute>} />
                     <Route path="/customers" element={<ModuleRoute modulePath="/customers"><Customers /></ModuleRoute>} />
                     <Route path="/whatsapp" element={<ModuleRoute modulePath="/whatsapp"><WhatsAppInbox /></ModuleRoute>} />
+                    <Route path="/missed-calls" element={<ModuleRoute modulePath="/missed-calls"><MissedCalls /></ModuleRoute>} />
                     <Route path="/packages" element={<ModuleRoute modulePath="/packages"><Packages /></ModuleRoute>} />
                     <Route path="/packages/new" element={<ModuleRoute modulePath="/packages"><PackageForm /></ModuleRoute>} />
                     <Route path="/packages/:id/finance" element={<ModuleRoute modulePath="/packages"><PackageFinance /></ModuleRoute>} />

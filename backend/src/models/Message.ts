@@ -37,8 +37,26 @@ module.exports = (sequelize) => {
       allowNull: false,
     },
     type: {
-      type: DataTypes.ENUM('TEXT', 'TEMPLATE', 'IMAGE', 'DOCUMENT', 'AUDIO'),
+      type: DataTypes.ENUM('TEXT', 'TEMPLATE', 'IMAGE', 'DOCUMENT', 'AUDIO', 'VIDEO'),
       defaultValue: 'TEXT',
+    },
+    // Inbound media is not downloaded at receive time; we persist the WhatsApp
+    // media id + mime so the CRM can stream the bytes on demand via the media
+    // proxy endpoint. Stickers are stored as IMAGE with an image/webp mime.
+    mediaId: {
+      type: DataTypes.STRING(255),
+      allowNull: true,
+      comment: 'WhatsApp Cloud API media id, used to fetch the binary on demand',
+    },
+    mimeType: {
+      type: DataTypes.STRING(255),
+      allowNull: true,
+      comment: 'MIME type of the media, e.g. image/jpeg, audio/ogg, video/mp4',
+    },
+    mediaFilename: {
+      type: DataTypes.STRING(500),
+      allowNull: true,
+      comment: 'Original filename for document messages',
     },
     templateName: {
       type: DataTypes.STRING(255),

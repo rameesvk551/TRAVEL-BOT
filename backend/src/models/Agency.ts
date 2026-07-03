@@ -189,6 +189,23 @@ module.exports = (sequelize) => {
       defaultValue: true,
       comment: 'Whether to send Whatsapp reminders to agents before follow ups',
     },
+    whatsappMissedCallAutoReplyEnabled: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
+      comment: 'Auto-send a WhatsApp message when a customer WhatsApp call is missed',
+    },
+    whatsappMissedCallAutoReplyMessage: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+      comment: 'Free-form text sent back on a missed WhatsApp call (uses a default when empty)',
+    },
+    whatsappMissedCallUnknownAction: {
+      type: DataTypes.ENUM('LOG_ONLY', 'CREATE_LEAD'),
+      allowNull: false,
+      defaultValue: 'LOG_ONLY',
+      comment: 'What to do when a missed call comes from a number with no matching customer',
+    },
     followUpReminderMinutes: {
       type: DataTypes.INTEGER,
       defaultValue: 30,

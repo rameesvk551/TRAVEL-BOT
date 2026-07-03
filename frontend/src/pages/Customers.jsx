@@ -18,7 +18,10 @@ const getCustomerStats = (customer) => {
 
   customer.bookings.forEach(b => {
     totalBilled += b.totalAmount || 0;
-    balanceDue += Math.max(0, (b.totalAmount || 0) - (b.advancePaid || 0));
+    // Use the booking's settlement-aware balanceDue (COMMISSION_ONLY owes only the
+    // commission; the property balance is paid directly and is not due to the agency).
+    // Fall back to the legacy math only if the virtual field is missing.
+    balanceDue += Math.max(0, b.balanceDue ?? ((b.totalAmount || 0) - (b.advancePaid || 0)));
     
     const itemName = b.customItemName || b.package?.name || b.property?.name || b.cruise?.name || b.service?.name || b.visa?.country || b.itemType;
     

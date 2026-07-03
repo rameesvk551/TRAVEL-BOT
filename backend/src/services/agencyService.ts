@@ -5,6 +5,7 @@ const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const { z } = require('zod');
 const marketingOsPartnerService = require('./marketingOsPartnerService');
+const missedCallService = require('./missedCallService');
 const flowService = require('./flowService');
 const templateService = require('./templateService');
 const websiteBuilderService = require('./websiteBuilderService');
@@ -578,6 +579,12 @@ async function normalizeWhatsAppFlowLibraryConfig(agencyId, config = {}) {
   return {
     schemaVersion: 4,
     entryFlowId,
+    // Defer lead ownership until the customer submits an enquiry (the flow's staff-notify
+    // step claims the lead) instead of auto-assigning a staff member on the first message.
+    assignOnEnquiryOnly: config.assignOnEnquiryOnly === true,
+    // Turn off human agent handoff entirely: no keyword handoff, no forwarding of customer
+    // messages to a staff member's personal WhatsApp, no bot-pause on business-app replies.
+    disableAgentHandoff: config.disableAgentHandoff === true,
     flows,
     updatedAt: new Date().toISOString(),
   };
@@ -1267,6 +1274,19 @@ async function handleMarketingOsCallback(headers, payload, rawBody) {
         statusCode: 401,
         code: 'INVALID_PROVIDER_SIGNATURE',
       });
+    }
+
+    // WhatsApp call events (missed-call tracking + auto-reply) are handled in
+    // travel-bot directly, not relayed to the conversational bot. Meta sends
+    // calls in their own webhook, so a payload with calls has no messages.
+    if (missedCallService.hasCallEvents(payload)) {
+      await missedCallService.processCallWebhook(payload, {
+        tenantId: payload?.tenantId || headers['x-partner-tenant-id'],
+      });
+      return {
+        message: 'WhatsApp call webhook processed',
+        data: { calls: true },
+      };
     }
 
     await relayMarketingOsMessageWebhook(payload, rawPayload, headers);

@@ -42,6 +42,11 @@ router.get('/threads', authenticate, requirePermission(PERMISSIONS.MESSAGES_VIEW
 router.get('/agents', authenticate, requirePermission(PERMISSIONS.MESSAGES_VIEW), messageController.assignableAgents);
 
 /**
+ * GET /api/messages/:messageId/media - Stream inbound media (photo/audio/video/doc)
+ */
+router.get('/:messageId/media', authenticate, requirePermission(PERMISSIONS.MESSAGES_VIEW), messageController.media);
+
+/**
  * POST /api/messages/send - Send a message from agent to customer
  */
 router.post('/send', authenticate, requirePermission(PERMISSIONS.MESSAGES_SEND), validateBody(sendMessageSchema), messageController.send);

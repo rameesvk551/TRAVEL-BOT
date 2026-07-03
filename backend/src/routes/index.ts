@@ -52,6 +52,7 @@ function registerApiRoutes(app) {
   app.use('/api/platform', platformRoutes);
   app.use('/api/branding', brandingRoutes);
   app.use('/api/calls', callRoutes);
+  app.use('/api/missed-calls', requireModule('/api/missed-calls'), require('./missedCalls'));
   app.use('/api/activity', require('./activity'));
   app.use('/api/uploads', require('./uploads'));
   app.use('/api/vendor-types', vendorTypeRoutes);

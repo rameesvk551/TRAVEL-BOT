@@ -60,6 +60,7 @@ const ActivityLog = require('./ActivityLog')(sequelize);
 const Partner = require('./Partner')(sequelize);
 const PartnerInvoice = require('./PartnerInvoice')(sequelize);
 const CallLog = require('./CallLog')(sequelize);
+const WhatsAppCall = require('./WhatsAppCall')(sequelize);
 const AccountingLedger = require('./AccountingLedger')(sequelize);
 const AccountingPaymentMethod = require('./AccountingPaymentMethod')(sequelize);
 const JournalEntry = require('./JournalEntry')(sequelize);
@@ -465,6 +466,13 @@ CallLog.belongsTo(Lead, { foreignKey: 'leadId', as: 'lead' });
 CallLog.belongsTo(Customer, { foreignKey: 'customerId', as: 'customer' });
 CallLog.belongsTo(Agent, { foreignKey: 'agentId', as: 'agent' });
 
+// WhatsAppCall (inbound WhatsApp Cloud API calls; missed-call tracking)
+Agency.hasMany(WhatsAppCall, { foreignKey: 'agencyId', as: 'whatsappCalls' });
+WhatsAppCall.belongsTo(Agency, { foreignKey: 'agencyId', as: 'agency' });
+WhatsAppCall.belongsTo(Customer, { foreignKey: 'customerId', as: 'customer' });
+WhatsAppCall.belongsTo(Lead, { foreignKey: 'leadId', as: 'lead' });
+Customer.hasMany(WhatsAppCall, { foreignKey: 'customerId', as: 'whatsappCalls' });
+
 // ===== HRM =====
 Agency.hasMany(EmployeeProfile, { foreignKey: 'agencyId', as: 'employeeProfiles' });
 EmployeeProfile.belongsTo(Agency, { foreignKey: 'agencyId', as: 'agency' });
@@ -497,6 +505,44 @@ Agency.hasMany(Payslip, { foreignKey: 'agencyId', as: 'payslips' });
 Payslip.belongsTo(Agency, { foreignKey: 'agencyId', as: 'agency' });
 Payslip.belongsTo(Agent, { foreignKey: 'agentId', as: 'agent' });
 Agent.hasMany(Payslip, { foreignKey: 'agentId', as: 'payslips' });
+
+// ---------------------------------------------------------------------------
+// Keep the WhatsApp conversation owner in sync with its Lead owner.
+// A conversation/inbox thread is a Customer row; a Lead references that Customer
+// via customerId. When a lead is assigned or reassigned to a staff member, the
+// linked conversation moves to the same agent, so each agent's WhatsApp inbox
+// shows the chats for the leads they own. Unassigning a lead (null) returns the
+// conversation to the shared unassigned pool. This is the single point of truth
+// for the lead -> chat direction; it fires for every write path (manual update,
+// creation auto-assign, round-robin, bulk reassign, Meta ad leads, ...).
+// The reverse (chat -> lead) is handled directly in messageService.assignThread.
+// ---------------------------------------------------------------------------
+async function syncCustomerAssignmentFromLead(lead, options) {
+  if (!lead || !lead.customerId) return;
+  await Customer.update(
+    { assignedAgentId: lead.assignedAgentId || null },
+    {
+      where: { id: lead.customerId, agencyId: lead.agencyId },
+      transaction: options && options.transaction,
+    }
+  );
+}
+
+Lead.addHook('afterCreate', 'syncCustomerAssignmentOnCreate', async (lead, options) => {
+  // On creation only claim the conversation when the new lead has an owner;
+  // never overwrite an existing conversation owner with null.
+  if (!lead.assignedAgentId) return;
+  await syncCustomerAssignmentFromLead(lead, options);
+});
+
+Lead.addHook('afterUpdate', 'syncCustomerAssignmentOnUpdate', async (lead, options) => {
+  // Only act when the assignment actually changed, so unrelated lead edits
+  // (notes, status, dates) don't reshuffle a conversation that another of the
+  // customer's leads already owns.
+  const prev = typeof lead.previous === 'function' ? lead.previous('assignedAgentId') : undefined;
+  if (prev !== undefined && (prev || null) === (lead.assignedAgentId || null)) return;
+  await syncCustomerAssignmentFromLead(lead, options);
+});
 
 module.exports = {
   sequelize,
@@ -543,6 +589,7 @@ module.exports = {
   Partner,
   PartnerInvoice,
   CallLog,
+  WhatsAppCall,
   AccountingLedger,
   AccountingPaymentMethod,
   JournalEntry,

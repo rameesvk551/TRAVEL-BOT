@@ -113,6 +113,28 @@ async function sendTenantWhatsAppMedia(tenantToken, payload) {
   return response.data;
 }
 
+/**
+ * Streams inbound WhatsApp media bytes from Marketing OS by media id. MOS
+ * resolves the tenant's WABA token, fetches the media URL from Meta, downloads
+ * it and pipes the binary back. Returns an axios stream response.
+ * @param {string} tenantToken - Tenant JWT
+ * @param {string} mediaId - WhatsApp media id
+ * @returns {Promise<{ stream: any, contentType: string|null, filename: string|null }>}
+ */
+async function getTenantWhatsAppMedia(tenantToken, mediaId) {
+  const client = getTenantClient(tenantToken);
+  const response = await client.get(`/whatsapp/media/${encodeURIComponent(mediaId)}`, {
+    responseType: 'stream',
+  });
+  const disposition = response.headers['content-disposition'] || '';
+  const match = /filename="?([^"]+)"?/i.exec(disposition);
+  return {
+    stream: response.data,
+    contentType: response.headers['content-type'] || null,
+    filename: match ? match[1] : null,
+  };
+}
+
 async function sendTenantInstagramMessage(tenantToken, payload) {
   const client = getTenantClient(tenantToken);
   // payload expects { tenantId, accountId?, recipientId, text?, quickReplies?, buttons?,
@@ -409,6 +431,7 @@ module.exports = {
   sendTenantWhatsAppMessage,
   sendTenantWhatsAppInteractive,
   sendTenantWhatsAppMedia,
+  getTenantWhatsAppMedia,
   sendTenantWhatsAppTemplate,
   syncTenantWhatsAppBusinessAppData,
   disconnectTenantWhatsApp,
