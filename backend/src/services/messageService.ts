@@ -17,7 +17,7 @@ function toPlainRecord(record) {
  * @returns {Promise<object[]>} Messages
  */
 async function listMessages(customerId, agencyId, options = {}) {
-  const { limit = 50, since } = options;
+  const { limit = 50, since, before } = options;
 
   const where = { customerId, agencyId };
 
@@ -30,6 +30,19 @@ async function listMessages(customerId, agencyId, options = {}) {
       order: [['timestamp', 'ASC']],
       limit: parseInt(limit),
     });
+  }
+
+  if (before) {
+    // Scroll-up pagination: the `limit` messages just older than `before`,
+    // returned oldest -> newest so they can be prepended in order.
+    where.timestamp = { [Op.lt]: new Date(before) };
+    const olderRows = await Message.findAll({
+      where,
+      include: [{ model: Agent, as: 'agent', attributes: ['id', 'name'] }],
+      order: [['timestamp', 'DESC']],
+      limit: parseInt(limit),
+    });
+    return olderRows.reverse();
   }
 
   // Initial load: the most recent `limit` messages, returned oldest -> newest so

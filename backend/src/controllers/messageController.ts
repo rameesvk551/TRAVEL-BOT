@@ -3,7 +3,7 @@ const botSessionService = require('../services/botSessionService');
 
 async function list(req, res, next) {
   try {
-    const { customerId, limit, since } = req.query;
+    const { customerId, limit, since, before } = req.query;
     if (!customerId) {
       throw Object.assign(new Error('customerId is required'), {
         statusCode: 400,
@@ -11,7 +11,7 @@ async function list(req, res, next) {
       });
     }
     await messageService.assertThreadAccess(customerId, req.agency.id, req.agent);
-    const messages = await messageService.listMessages(customerId, req.agency.id, { limit, since });
+    const messages = await messageService.listMessages(customerId, req.agency.id, { limit, since, before });
     res.json({ success: true, data: messages });
   } catch (err) {
     next(err);

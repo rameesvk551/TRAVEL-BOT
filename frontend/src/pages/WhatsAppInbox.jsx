@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
@@ -26,6 +26,7 @@ import { useCreateCustomer } from '../api/customersApi';
 import client from '../api/client';
 import { getInstagramConnection, getMessages as getInstagramMessages } from '../api/instagramApi';
 import { useMessageThreads, useMessages, useSendMessage, useTakeover, useAssignableAgents, useAssignThread } from '../hooks/useMessages';
+import { messagesApi } from '../api/messagesApi';
 import { formatPhone, formatTime, timeAgo, truncate } from '../utils/formatters';
 
 const emptyContactForm = { name: '', phone: '', notes: '' };
@@ -379,7 +380,54 @@ export default function WhatsAppInbox() {
   const assignableAgentsQuery = useAssignableAgents();
   const assignableAgents = Array.isArray(assignableAgentsQuery.data?.data) ? assignableAgentsQuery.data.data : [];
   const assignThread = useAssignThread();
-  const messages = messagesQuery.data?.data || [];
+
+  // The live query returns the newest page (and polls for new messages). Older
+  // pages are loaded on scroll-up and prepended. `messages` is the merged,
+  // de-duplicated, chronologically-ordered view.
+  const liveMessages = messagesQuery.data?.data || [];
+  const [olderMessages, setOlderMessages] = useState([]);
+  const [hasMoreOlder, setHasMoreOlder] = useState(true);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const chatScrollRef = useRef(null);
+  const prependAnchorRef = useRef(null);
+
+  const messages = useMemo(() => {
+    const byId = new Map();
+    [...olderMessages, ...liveMessages].forEach((message) => byId.set(message.id, message));
+    return Array.from(byId.values()).sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+  }, [olderMessages, liveMessages]);
+
+  const loadOlderMessages = async () => {
+    if (loadingOlder || !hasMoreOlder || !selectedCustomerId || messages.length === 0) return;
+    const oldest = messages[0];
+    setLoadingOlder(true);
+    // Anchor the current scroll height so the viewport stays put after prepending.
+    prependAnchorRef.current = chatScrollRef.current?.scrollHeight ?? 0;
+    try {
+      const res = await messagesApi.list(selectedCustomerId, { before: oldest.timestamp, limit: 50 });
+      const rows = res?.data || [];
+      if (rows.length < 50) setHasMoreOlder(false);
+      if (rows.length > 0) {
+        setOlderMessages((prev) => {
+          const byId = new Map();
+          [...rows, ...prev].forEach((message) => byId.set(message.id, message));
+          return Array.from(byId.values()).sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+        });
+      } else {
+        prependAnchorRef.current = null;
+      }
+    } catch {
+      prependAnchorRef.current = null;
+    } finally {
+      setLoadingOlder(false);
+    }
+  };
+
+  const handleChatScroll = (event) => {
+    if (event.currentTarget.scrollTop < 80 && hasMoreOlder && !loadingOlder) {
+      loadOlderMessages();
+    }
+  };
   const isBotActive = Boolean(selectedThread?.session && !selectedThread.session.isHandedOff);
   const isReplyEnabled = Boolean(selectedCustomerId && !isBotActive);
   const chatMatches = chatSearch.trim()
@@ -404,9 +452,30 @@ export default function WhatsAppInbox() {
     }
   }, [selectedId, threads]);
 
+  // Reset pagination when switching conversations.
+  useEffect(() => {
+    setOlderMessages([]);
+    setHasMoreOlder(true);
+    setLoadingOlder(false);
+    prependAnchorRef.current = null;
+  }, [selectedCustomerId]);
+
+  // Keep the viewport anchored after older messages are prepended.
+  useLayoutEffect(() => {
+    if (prependAnchorRef.current != null && chatScrollRef.current) {
+      const el = chatScrollRef.current;
+      el.scrollTop = el.scrollHeight - prependAnchorRef.current;
+      prependAnchorRef.current = null;
+    }
+  }, [olderMessages]);
+
+  // Scroll to the newest message only when a new one arrives or the chat changes
+  // (keyed on the LAST message id, so prepending older history never yanks the
+  // view to the bottom).
+  const lastMessageId = messages.length ? messages[messages.length - 1].id : null;
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages.length, selectedCustomerId]);
+  }, [lastMessageId, selectedCustomerId]);
 
   useEffect(() => {
     if (chatSearchOpen) {
@@ -902,6 +971,8 @@ export default function WhatsAppInbox() {
               ) : null}
 
               <div
+                ref={chatScrollRef}
+                onScroll={handleChatScroll}
                 className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-10"
                 style={{
                   backgroundColor: '#efeae2',
@@ -921,6 +992,15 @@ export default function WhatsAppInbox() {
                   </div>
                 ) : (
                   <div className="mx-auto flex max-w-5xl flex-col gap-4">
+                    {loadingOlder ? (
+                      <div className="flex justify-center py-2">
+                        <div className="h-5 w-5 animate-spin rounded-full border-2 border-[#c6ead0] border-t-[#008069]" />
+                      </div>
+                    ) : (!hasMoreOlder && messages.length >= 80 ? (
+                      <p className="py-1 text-center text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                        Start of conversation
+                      </p>
+                    ) : null)}
                     {messages.map((message, index) => {
                       const outgoing = message.direction === 'OUT';
                       const showTemplate = outgoing && index === 1;
