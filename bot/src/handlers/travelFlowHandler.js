@@ -4536,10 +4536,16 @@ async function openPropertyFlow(session, customer, agency, routingIntentKey = 's
   const propertyLocationOptions = buildFlowPropertyLocationOptions(properties);
   const propertyTypeOptions = buildFilteredPropertyTypeOptions(properties, propertyFilter);
   const hasProperties = properties.length > 0;
-  const firstScreenId = hasProperties
-    ? PROPERTY_FLOW_FIRST_SCREEN_ID
-    : null;
-  const flowData = hasProperties
+  // Only the built-in multi-screen property flow starts on PROPERTY_FILTER and consumes the
+  // property_locations/types/options data. Custom agency flows (e.g. a single-screen stay
+  // enquiry form) declare their own first screen and no such bindings — sending them the
+  // PROPERTY_FILTER screen + filter data makes Meta reject the message and the form never opens.
+  const resolvedFirstScreenId = propertyFlowConfig.firstScreenId || PROPERTY_FLOW_FIRST_SCREEN_ID;
+  const isStandardPropertyFlow = resolvedFirstScreenId === PROPERTY_FLOW_FIRST_SCREEN_ID;
+  const firstScreenId = isStandardPropertyFlow
+    ? (hasProperties ? PROPERTY_FLOW_FIRST_SCREEN_ID : null)
+    : resolvedFirstScreenId;
+  const flowData = (isStandardPropertyFlow && hasProperties)
     ? {
       property_locations: propertyLocationOptions,
       property_types: propertyTypeOptions,
