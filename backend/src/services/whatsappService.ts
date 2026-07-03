@@ -1096,7 +1096,9 @@ async function sendFlowMessage(phone, body, flowConfig, context, options = {}) {
       if (action === 'navigate' && (firstScreenId || (data && Object.keys(data).length))) {
         parameters.flow_action_payload = {};
         if (firstScreenId) parameters.flow_action_payload.screen = firstScreenId;
-        if (data && Object.keys(data).length) parameters.flow_action_payload.data = data;
+        // Endpoint flows (data_api_version set) require flow_action_payload.data on navigate,
+        // even when the target screen declares no data — omitting it yields Meta (#131009).
+        parameters.flow_action_payload.data = (data && Object.keys(data).length) ? data : {};
       }
 
       const response = await sendViaMarketingOs(phone, {
@@ -1148,7 +1150,9 @@ async function sendFlowMessage(phone, body, flowConfig, context, options = {}) {
   if (action === 'navigate' && (firstScreenId || (data && Object.keys(data).length))) {
     parameters.flow_action_payload = {};
     if (firstScreenId) parameters.flow_action_payload.screen = firstScreenId;
-    if (data && Object.keys(data).length) parameters.flow_action_payload.data = data;
+    // Endpoint flows (data_api_version set) require flow_action_payload.data on navigate,
+    // even when the target screen declares no data — omitting it yields Meta (#131009).
+    parameters.flow_action_payload.data = (data && Object.keys(data).length) ? data : {};
   }
 
   try {
