@@ -20,18 +20,29 @@ async function listMessages(customerId, agencyId, options = {}) {
   const { limit = 50, since } = options;
 
   const where = { customerId, agencyId };
+
   if (since) {
+    // Incremental poll: everything newer than `since`, oldest -> newest.
     where.timestamp = { [Op.gt]: new Date(since) };
+    return Message.findAll({
+      where,
+      include: [{ model: Agent, as: 'agent', attributes: ['id', 'name'] }],
+      order: [['timestamp', 'ASC']],
+      limit: parseInt(limit),
+    });
   }
 
-  return Message.findAll({
+  // Initial load: the most recent `limit` messages, returned oldest -> newest so
+  // the chat renders in order and scrolls to the latest. The old ASC+limit
+  // returned the OLDEST N, which hid recent messages (incl. media) in long
+  // conversations.
+  const rows = await Message.findAll({
     where,
-    include: [
-      { model: Agent, as: 'agent', attributes: ['id', 'name'] },
-    ],
-    order: [['timestamp', 'ASC']],
+    include: [{ model: Agent, as: 'agent', attributes: ['id', 'name'] }],
+    order: [['timestamp', 'DESC']],
     limit: parseInt(limit),
   });
+  return rows.reverse();
 }
 
 /**
