@@ -365,6 +365,7 @@ export default function WhatsAppInbox() {
     return rawThreads.filter((thread) => {
       if (filterMode === 'customers') return Boolean(thread.session?.isHandedOff);
       if (filterMode === 'leads') return !thread.session?.isHandedOff;
+      if (filterMode === 'unassigned') return !thread.assignedAgent;
       return true;
     });
   }, [rawThreads, filterMode]);
@@ -750,6 +751,7 @@ export default function WhatsAppInbox() {
               <div className="absolute right-4 top-14 z-20 w-44 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-xl">
                 {[
                   ['all', 'All chats'],
+                  ['unassigned', 'Unassigned'],
                   ['customers', 'Customers'],
                   ['leads', 'Leads'],
                 ].map(([value, label]) => (
