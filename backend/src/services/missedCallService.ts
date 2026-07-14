@@ -308,10 +308,52 @@ async function listWhatsAppCalls(agencyId, query = {}) {
   return { rows, total: count, limit, offset };
 }
 
+/**
+ * Turn on WhatsApp voice calling for an agency's connected number (via marketing-os
+ * → Meta /settings). Required before inbound customer calls can happen at all.
+ */
+async function enableCallingForAgency(agencyId) {
+  const agency = await Agency.findByPk(agencyId);
+  if (!agency || !agency.marketingOsTenantId) {
+    throw Object.assign(new Error('WhatsApp is not connected via Marketing OS for this agency'), {
+      statusCode: 400,
+      code: 'WHATSAPP_NOT_CONNECTED',
+    });
+  }
+  const token = await marketingOsPartnerService.getTenantToken(agency.marketingOsTenantId);
+  try {
+    return await marketingOsPartnerService.enableTenantWhatsAppCalling(token);
+  } catch (err) {
+    // Surface the real reason (Meta's rejection message) instead of a generic 500.
+    const data = err && err.response && err.response.data;
+    const reason = (data && (data.error?.message || data.error || data.message))
+      || (err && err.message)
+      || 'Failed to enable calling';
+    console.error('[missedCall] enableCalling failed for agency', agencyId, '-', typeof reason === 'string' ? reason : JSON.stringify(reason));
+    throw Object.assign(new Error(typeof reason === 'string' ? reason : JSON.stringify(reason)), {
+      statusCode: (err && err.response && err.response.status) || 502,
+      code: 'CALLING_ENABLE_FAILED',
+    });
+  }
+}
+
+/** Read the agency number's current call settings (calling status etc.). */
+async function getCallingStatusForAgency(agencyId) {
+  const agency = await Agency.findByPk(agencyId);
+  if (!agency || !agency.marketingOsTenantId) {
+    return { connected: false };
+  }
+  const token = await marketingOsPartnerService.getTenantToken(agency.marketingOsTenantId);
+  const result = await marketingOsPartnerService.getTenantWhatsAppCallingSettings(token);
+  return (result && result.data) || result || { connected: false };
+}
+
 module.exports = {
   hasCallEvents,
   extractCalls,
   processCallWebhook,
   listWhatsAppCalls,
+  enableCallingForAgency,
+  getCallingStatusForAgency,
   DEFAULT_AUTO_REPLY,
 };

@@ -47,6 +47,36 @@ async function generateRefreshToken(agentId) {
   return rawToken;
 }
 
+// Subdomains that would collide with real routes on the public host.
+const RESERVED_SUBDOMAINS = new Set(['www', 'api', 'app', 'admin', 'lead', 'public', 'sites', 'static', 'assets']);
+
+/**
+ * Derives a unique, readable subdomain from an agency name ("GetOutHouse.in" ->
+ * "getouthouse-in"), appending -2, -3 … on collision. Never throws: falls back to a
+ * generic slug so registration can't fail over a name we can't slugify.
+ */
+async function generateAgencySubdomain(agencyName) {
+  try {
+    const root = String(agencyName || '')
+      .toLowerCase()
+      .normalize('NFKD')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 60)
+      .replace(/-+$/g, '') || 'agency';
+    const base = RESERVED_SUBDOMAINS.has(root) ? `${root}-travel` : root;
+
+    for (let n = 1; n <= 50; n += 1) {
+      const candidate = n === 1 ? base : `${base}-${n}`.slice(0, 63);
+      const clash = await Agency.findOne({ where: { subdomain: candidate }, attributes: ['id'] });
+      if (!clash) return candidate;
+    }
+  } catch (err) {
+    console.error('[authService] subdomain generation failed:', err.message);
+  }
+  return null; // link falls back to the agency UUID
+}
+
 /**
  * Registers a new agency and its first admin agent.
  * @param {object} data - Registration data
@@ -76,6 +106,10 @@ async function register(data) {
     phone: normalizePhone(agencyPhone),
     email: agencyEmail.toLowerCase(),
     whatsappNumber: normalizePhone(whatsappNumber),
+    // Every agency gets a readable subdomain up front — it is the :agencyKey in the
+    // public lead-form link (/lead/:agencyKey). Without it the link falls back to the
+    // raw agency UUID, which works but is useless in an Instagram bio.
+    subdomain: await generateAgencySubdomain(agencyName),
     // Passive vertical marker; column defaults to TRAVEL when omitted.
     ...(industry ? { industry } : {}),
   });

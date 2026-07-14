@@ -13,14 +13,17 @@ export function ChartWrapper({ children, height = 200, style }: ChartWrapperProp
   const { theme } = useTheme();
 
   return (
-    <View style={[{ height, width: '100%', justifyContent: 'center', alignItems: 'center' }, style]}>
-      {/* 
-        In Phase 0, we're not fully integrating victory-native yet to avoid native dependencies issues,
-        so we provide a placeholder container that injects the right styles.
-      */}
-      {children ? children : (
-        <Text style={[theme.typography.caption, { color: theme.colors.text.tertiary }]}>
-          Chart area (victory-native wrapper)
+    // Sized to include the chart's own axis band, so axis labels are never
+    // clipped into a nested scroll. Charts render at full width inside it.
+    <View style={[{ height, width: '100%', justifyContent: 'center' }, style]}>
+      {children ?? (
+        <Text
+          style={[
+            theme.typography.footnote,
+            { color: theme.colors.text.tertiary, textAlign: 'center' },
+          ]}
+        >
+          No data yet
         </Text>
       )}
     </View>

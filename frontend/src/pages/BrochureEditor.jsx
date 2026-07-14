@@ -1,0 +1,542 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import toast from 'react-hot-toast';
+import {
+  ArrowDownTrayIcon, ArrowLeftIcon, ArrowUturnLeftIcon, ArrowUturnRightIcon,
+  DocumentDuplicateIcon, PaperAirplaneIcon, PhotoIcon, PlusIcon,
+  Square2StackIcon, SquaresPlusIcon, TrashIcon,
+} from '@heroicons/react/24/outline';
+
+import { brochuresApi, downloadBrochurePdf } from '../api/brochuresApi';
+import BrochureCanvas from '../components/brochure/BrochureCanvas';
+import BrochureInspector from '../components/brochure/BrochureInspector';
+import {
+  cdnUrl, imageStyle, newImageElement, newPage, newShapeElement, newTextElement,
+  shapeStyle, textStyle, THUMB_IMAGE_WIDTH,
+} from '../utils/brochureDoc';
+
+const AUTOSAVE_MS = 1500;
+
+/** Non-interactive miniature of a page, for the left-hand rail. */
+function PageThumb({ doc, page, scale }) {
+  const bg = page.bg || { type: 'color', color: '#fff' };
+  return (
+    <div
+      className="relative overflow-hidden bg-white"
+      style={{ width: doc.pageW * scale, height: doc.pageH * scale }}
+    >
+      <div
+        className="absolute left-0 top-0 origin-top-left"
+        style={{
+          width: doc.pageW,
+          height: doc.pageH,
+          transform: `scale(${scale})`,
+          backgroundColor: bg.type === 'color' ? bg.color : '#fff',
+        }}
+      >
+        {bg.type === 'image' && bg.url && (
+          <img
+            src={cdnUrl(bg.url, THUMB_IMAGE_WIDTH)}
+            alt=""
+            style={{ position: 'absolute', inset: 0, width: doc.pageW, height: doc.pageH, objectFit: 'cover' }}
+          />
+        )}
+        {[...(page.elements || [])].sort((a, b) => (a.z || 1) - (b.z || 1)).map((el) => {
+          if (el.type === 'image') {
+            return el.url
+              ? <img key={el.id} src={cdnUrl(el.url, THUMB_IMAGE_WIDTH)} alt="" style={imageStyle(el)} />
+              : <div key={el.id} style={{ ...imageStyle(el), background: '#e2e8f0' }} />;
+          }
+          if (el.type === 'text') return <div key={el.id} style={textStyle(el)}>{el.text}</div>;
+          return <div key={el.id} style={shapeStyle(el)} />;
+        })}
+      </div>
+    </div>
+  );
+}
+
+export default function BrochureEditor() {
+  const { id } = useParams();
+  const navigate = useNavigate();
+  const fileInputRef = useRef(null);
+  const canvasWrapRef = useRef(null);
+
+  const [meta, setMeta] = useState(null);
+  const [brochure, setBrochure] = useState(null);
+  const [doc, setDoc] = useState(null);
+  const [fields, setFields] = useState({});
+  const [assets, setAssets] = useState([]);
+  const [templates, setTemplates] = useState([]);
+
+  const [pageIndex, setPageIndex] = useState(0);
+  const [selectedId, setSelectedId] = useState(null);
+  const [scale, setScale] = useState(0.5);
+  const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(0);
+
+  // Undo/redo. The doc is small (JSON, no bitmaps), so snapshotting whole documents
+  // is cheaper and far less bug-prone than diffing element patches.
+  const history = useRef({ past: [], future: [] });
+  const dirty = useRef(false);
+  const saveTimer = useRef(null);
+
+  const page = doc?.pages?.[pageIndex] || null;
+  const selected = page?.elements?.find((el) => el.id === selectedId) || null;
+
+  // --- load ------------------------------------------------------------------
+
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const [metaRes, brochureRes, assetsRes, templatesRes] = await Promise.all([
+          brochuresApi.meta(),
+          brochuresApi.getById(id),
+          brochuresApi.listAssets(),
+          brochuresApi.listTemplates(),
+        ]);
+        if (cancelled) return;
+
+        setMeta(metaRes.data);
+        setBrochure(brochureRes.data);
+        setDoc(brochureRes.data.doc);
+        setFields(brochureRes.data.fields || {});
+        setAssets(assetsRes.data);
+        setTemplates(templatesRes.data);
+      } catch (err) {
+        toast.error(err.response?.data?.error || 'Could not open this brochure');
+        navigate('/brochures');
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [id, navigate]);
+
+  // Fit the page to the available width.
+  useEffect(() => {
+    if (!doc) return undefined;
+    const fit = () => {
+      const el = canvasWrapRef.current;
+      if (!el) return;
+      const available = el.clientWidth - 64;
+      setScale(Math.min(1, Math.max(0.15, available / doc.pageW)));
+    };
+    fit();
+    window.addEventListener('resize', fit);
+    return () => window.removeEventListener('resize', fit);
+  }, [doc?.pageW]);
+
+  // --- mutation + autosave ---------------------------------------------------
+
+  const commit = useCallback((nextDoc, { snapshot = true } = {}) => {
+    setDoc((current) => {
+      if (snapshot && current) {
+        history.current.past.push(current);
+        if (history.current.past.length > 60) history.current.past.shift();
+        history.current.future = [];
+      }
+      return typeof nextDoc === 'function' ? nextDoc(current) : nextDoc;
+    });
+    dirty.current = true;
+  }, []);
+
+  const save = useCallback(async (docToSave, fieldsToSave) => {
+    setSaving(true);
+    try {
+      await brochuresApi.update(id, { doc: docToSave, fields: fieldsToSave });
+      dirty.current = false;
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Save failed');
+    } finally {
+      setSaving(false);
+    }
+  }, [id]);
+
+  useEffect(() => {
+    if (!doc || !dirty.current) return undefined;
+    clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => save(doc, fields), AUTOSAVE_MS);
+    return () => clearTimeout(saveTimer.current);
+  }, [doc, fields, save]);
+
+  const undo = () => {
+    const { past, future } = history.current;
+    if (!past.length) return;
+    const previous = past.pop();
+    future.push(doc);
+    setDoc(previous);
+    dirty.current = true;
+  };
+
+  const redo = () => {
+    const { past, future } = history.current;
+    if (!future.length) return;
+    const next = future.pop();
+    past.push(doc);
+    setDoc(next);
+    dirty.current = true;
+  };
+
+  const setElements = (elements) => {
+    commit((current) => ({
+      ...current,
+      pages: current.pages.map((p, i) => (i === pageIndex ? { ...p, elements } : p)),
+    }));
+  };
+
+  const patchPage = (patch) => {
+    commit((current) => ({
+      ...current,
+      pages: current.pages.map((p, i) => (i === pageIndex ? { ...p, ...patch } : p)),
+    }));
+  };
+
+  const patchElement = (patch) => {
+    if (!selected) return;
+    setElements(page.elements.map((el) => (el.id === selected.id ? { ...el, ...patch } : el)));
+  };
+
+  const patchFields = (patch) => {
+    const next = { ...fields, ...patch };
+    setFields(next);
+    // Text bound to a merge field mirrors the form immediately, so the canvas is
+    // never showing stale copy that the server would later overwrite on save.
+    commit((current) => ({
+      ...current,
+      pages: current.pages.map((p) => ({
+        ...p,
+        elements: p.elements.map((el) => (
+          el.type === 'text' && el.field && next[el.field] != null
+            ? { ...el, text: next[el.field] }
+            : el
+        )),
+      })),
+    }), { snapshot: false });
+    dirty.current = true;
+  };
+
+  const addElement = (factory) => {
+    const element = factory(doc.pageW, doc.pageH);
+    const topZ = (page.elements || []).reduce((max, el) => Math.max(max, el.z || 1), 0);
+    setElements([...(page.elements || []), { ...element, z: topZ + 1 }]);
+    setSelectedId(element.id);
+  };
+
+  const reorderSelected = (where) => {
+    if (!selected) return;
+    const zs = page.elements.map((el) => el.z || 1);
+    const z = where === 'front' ? Math.max(...zs) + 1 : Math.min(...zs) - 1;
+    patchElement({ z: Math.max(0, z) });
+  };
+
+  // --- pages -----------------------------------------------------------------
+
+  const addPage = () => {
+    commit((current) => ({ ...current, pages: [...current.pages, newPage()] }));
+    setPageIndex(doc.pages.length);
+    setSelectedId(null);
+  };
+
+  const duplicatePage = (index) => {
+    commit((current) => {
+      const copy = JSON.parse(JSON.stringify(current.pages[index]));
+      copy.id = `p${Date.now().toString(36)}`;
+      copy.elements = copy.elements.map((el, i) => ({ ...el, id: `${el.id}-c${i}${Date.now().toString(36)}` }));
+      const pages = [...current.pages];
+      pages.splice(index + 1, 0, copy);
+      return { ...current, pages };
+    });
+    setPageIndex(index + 1);
+  };
+
+  const deletePage = (index) => {
+    if (doc.pages.length === 1) {
+      toast.error('A brochure needs at least one page');
+      return;
+    }
+    commit((current) => ({ ...current, pages: current.pages.filter((_, i) => i !== index) }));
+    setPageIndex((current) => Math.max(0, current > index ? current - 1 : Math.min(current, doc.pages.length - 2)));
+    setSelectedId(null);
+  };
+
+  const movePage = (index, delta) => {
+    const target = index + delta;
+    if (target < 0 || target >= doc.pages.length) return;
+    commit((current) => {
+      const pages = [...current.pages];
+      [pages[index], pages[target]] = [pages[target], pages[index]];
+      return { ...current, pages };
+    });
+    setPageIndex(target);
+  };
+
+  // --- photos ----------------------------------------------------------------
+
+  const uploadPhotos = async (files) => {
+    if (!files?.length) return;
+    setUploading(1);
+    try {
+      const res = await brochuresApi.uploadAssets(files, null, setUploading);
+      setAssets((current) => [...current, ...res.data]);
+      toast.success(`${res.data.length} photo(s) added`);
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Upload failed');
+    } finally {
+      setUploading(0);
+    }
+  };
+
+  const removePhoto = async (assetId) => {
+    try {
+      await brochuresApi.deleteAsset(assetId);
+      setAssets((current) => current.filter((a) => a.id !== assetId));
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Could not remove photo');
+    }
+  };
+
+  // --- actions ---------------------------------------------------------------
+
+  const flushThenRun = async (action) => {
+    clearTimeout(saveTimer.current);
+    if (dirty.current) await save(doc, fields);
+    return action();
+  };
+
+  const downloadPdf = () => flushThenRun(async () => {
+    const pending = toast.loading('Rendering PDF…');
+    try {
+      await downloadBrochurePdf(id, brochure.title);
+      toast.success('PDF ready', { id: pending });
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Could not render the PDF', { id: pending });
+    }
+  });
+
+  const saveAsTemplate = () => flushThenRun(async () => {
+    const name = window.prompt('Name this design so you can reuse it for the next property:', `${brochure.title} layout`);
+    if (!name) return;
+    try {
+      const res = await brochuresApi.saveAsTemplate(id, name);
+      setTemplates((current) => [res.data, ...current]);
+      toast.success('Saved as a reusable template');
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Could not save template');
+    }
+  });
+
+  const applyTemplate = (templateId) => flushThenRun(async () => {
+    if (!templateId) return;
+    if (!window.confirm('Replace this brochure’s layout with the template? Your photos refill automatically.')) return;
+    try {
+      const res = await brochuresApi.applyTemplate(id, templateId);
+      setDoc(res.data.doc);
+      setPageIndex(0);
+      setSelectedId(null);
+      toast.success('Template applied');
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Could not apply template');
+    }
+  });
+
+  if (!doc || !meta) {
+    return <div className="p-10 text-slate-500">Loading brochure…</div>;
+  }
+
+  const thumbScale = 128 / doc.pageW;
+
+  return (
+    <div className="flex h-[calc(100vh-4rem)] flex-col">
+      {/* Toolbar */}
+      <header className="flex items-center gap-3 border-b border-slate-200 bg-white px-4 py-2">
+        <button onClick={() => navigate('/brochures')} className="rounded-md p-2 hover:bg-slate-100" title="Back">
+          <ArrowLeftIcon className="h-5 w-5" />
+        </button>
+
+        <input
+          className="min-w-0 flex-1 rounded-md border border-transparent px-2 py-1 text-lg font-semibold hover:border-slate-300 focus:border-blue-500 focus:outline-none"
+          value={brochure.title}
+          onChange={(e) => setBrochure({ ...brochure, title: e.target.value })}
+          onBlur={(e) => brochuresApi.update(id, { title: e.target.value }).catch(() => {})}
+        />
+
+        <span className="whitespace-nowrap text-xs text-slate-400">
+          {saving ? 'Saving…' : (dirty.current ? 'Unsaved' : 'All changes saved')}
+        </span>
+
+        <div className="flex items-center gap-1 border-l border-slate-200 pl-3">
+          <button onClick={undo} className="rounded-md p-2 hover:bg-slate-100" title="Undo">
+            <ArrowUturnLeftIcon className="h-5 w-5" />
+          </button>
+          <button onClick={redo} className="rounded-md p-2 hover:bg-slate-100" title="Redo">
+            <ArrowUturnRightIcon className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="flex items-center gap-1 border-l border-slate-200 pl-3">
+          <button onClick={() => addElement(newTextElement)} className="rounded-md px-2 py-1.5 text-sm hover:bg-slate-100" title="Add text">
+            Text
+          </button>
+          <button onClick={() => addElement(newImageElement)} className="rounded-md p-2 hover:bg-slate-100" title="Add image box">
+            <PhotoIcon className="h-5 w-5" />
+          </button>
+          <button onClick={() => addElement(newShapeElement)} className="rounded-md p-2 hover:bg-slate-100" title="Add shape">
+            <SquaresPlusIcon className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="ml-auto flex items-center gap-2">
+          <select
+            className="rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+            value=""
+            onChange={(e) => applyTemplate(e.target.value)}
+          >
+            <option value="">Apply a template…</option>
+            {templates.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name}{t.agencyId ? '' : ' (preset)'} · {t.slotCount} photos
+              </option>
+            ))}
+          </select>
+
+          <button onClick={saveAsTemplate} className="flex items-center gap-1.5 rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50">
+            <Square2StackIcon className="h-4 w-4" /> Save as template
+          </button>
+
+          <button onClick={downloadPdf} className="flex items-center gap-1.5 rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50">
+            <ArrowDownTrayIcon className="h-4 w-4" /> PDF
+          </button>
+
+          <button
+            onClick={() => flushThenRun(() => navigate(`/brochures?send=${id}`))}
+            className="flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
+          >
+            <PaperAirplaneIcon className="h-4 w-4" /> Send
+          </button>
+        </div>
+      </header>
+
+      <div className="flex min-h-0 flex-1">
+        {/* Pages rail */}
+        <aside className="w-44 shrink-0 overflow-y-auto border-r border-slate-200 bg-slate-50 p-3">
+          {doc.pages.map((p, i) => (
+            <div key={p.id} className="group mb-3">
+              <button
+                onClick={() => { setPageIndex(i); setSelectedId(null); }}
+                className={`block w-full overflow-hidden rounded-lg ring-2 ${
+                  i === pageIndex ? 'ring-blue-500' : 'ring-slate-200 hover:ring-slate-300'
+                }`}
+              >
+                <PageThumb doc={doc} page={p} scale={thumbScale} />
+              </button>
+              <div className="mt-1 flex items-center justify-between px-1">
+                <span className="text-xs text-slate-500">{i + 1}</span>
+                <div className="flex gap-0.5 opacity-0 transition group-hover:opacity-100">
+                  <button onClick={() => movePage(i, -1)} className="rounded p-0.5 text-xs hover:bg-slate-200" title="Move up">↑</button>
+                  <button onClick={() => movePage(i, 1)} className="rounded p-0.5 text-xs hover:bg-slate-200" title="Move down">↓</button>
+                  <button onClick={() => duplicatePage(i)} className="rounded p-0.5 hover:bg-slate-200" title="Duplicate">
+                    <DocumentDuplicateIcon className="h-3.5 w-3.5" />
+                  </button>
+                  <button onClick={() => deletePage(i)} className="rounded p-0.5 text-red-600 hover:bg-red-50" title="Delete page">
+                    <TrashIcon className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+
+          <button
+            onClick={addPage}
+            className="flex w-full items-center justify-center gap-1 rounded-lg border-2 border-dashed border-slate-300 py-3 text-sm text-slate-500 hover:border-slate-400 hover:text-slate-700"
+          >
+            <PlusIcon className="h-4 w-4" /> Page
+          </button>
+        </aside>
+
+        {/* Canvas + photo tray */}
+        <main className="flex min-w-0 flex-1 flex-col bg-slate-100">
+          <div ref={canvasWrapRef} className="flex flex-1 items-center justify-center overflow-auto p-8">
+            <BrochureCanvas
+              doc={doc}
+              page={page}
+              scale={scale}
+              selectedId={selectedId}
+              onSelect={setSelectedId}
+              onChangeElements={setElements}
+              onChangePage={patchPage}
+            />
+          </div>
+
+          <div className="border-t border-slate-200 bg-white p-3">
+            <div className="mb-2 flex items-center gap-3">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Photos ({assets.length})
+              </h3>
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-slate-50"
+              >
+                {uploading ? `Uploading ${uploading}%…` : '+ Add photos'}
+              </button>
+              <span className="text-xs text-slate-400">Drag a photo onto the page, or onto a photo box to swap it.</span>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                hidden
+                onChange={(e) => { uploadPhotos(e.target.files); e.target.value = ''; }}
+              />
+            </div>
+
+            <div className="flex gap-2 overflow-x-auto pb-1">
+              {assets.map((asset) => (
+                <div key={asset.id} className="group relative shrink-0">
+                  <img
+                    src={cdnUrl(asset.url, THUMB_IMAGE_WIDTH)}
+                    alt={asset.filename || ''}
+                    draggable
+                    onDragStart={(e) => e.dataTransfer.setData('text/brochure-image', asset.url)}
+                    className="h-16 w-24 cursor-grab rounded-md object-cover ring-1 ring-slate-200"
+                  />
+                  <button
+                    onClick={() => removePhoto(asset.id)}
+                    className="absolute -right-1 -top-1 hidden rounded-full bg-red-600 p-0.5 text-white group-hover:block"
+                    title="Remove"
+                  >
+                    <TrashIcon className="h-3 w-3" />
+                  </button>
+                </div>
+              ))}
+              {!assets.length && (
+                <p className="py-5 text-sm text-slate-400">
+                  No photos yet — add the resort’s images and drag them onto the pages.
+                </p>
+              )}
+            </div>
+          </div>
+        </main>
+
+        {/* Inspector */}
+        <aside className="w-72 shrink-0 overflow-y-auto border-l border-slate-200 bg-white p-4">
+          <BrochureInspector
+            element={selected}
+            page={page}
+            fields={fields}
+            mergeFields={meta.mergeFields}
+            assets={assets}
+            onPatchElement={patchElement}
+            onPatchPage={patchPage}
+            onPatchFields={patchFields}
+            onDeleteElement={() => {
+              setElements(page.elements.filter((el) => el.id !== selected.id));
+              setSelectedId(null);
+            }}
+            onReorder={reorderSelected}
+          />
+        </aside>
+      </div>
+    </div>
+  );
+}

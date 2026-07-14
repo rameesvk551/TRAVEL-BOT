@@ -19,5 +19,5 @@ export const templatesApi = {
   delete: (id) => client.delete(`/templates/${id}`).then(r => r.data),
   duplicate: (id) => client.post(`/templates/${id}/duplicate`).then(r => r.data),
   submit: (id) => client.post(`/templates/${id}/submit`).then(r => r.data),
-  sync: () => client.post('/templates/sync').then(r => r.data),
+  sync: (data) => client.post('/templates/sync', data || {}).then(r => r.data),
 };

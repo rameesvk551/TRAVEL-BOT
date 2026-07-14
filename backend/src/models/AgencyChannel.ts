@@ -25,6 +25,11 @@ module.exports = (sequelize) => {
       allowNull: false,
       defaultValue: true,
     },
+    usageType: {
+      type: DataTypes.STRING(20),
+      allowNull: false,
+      defaultValue: 'AGENCY',
+    },
     whatsappNumber: {
       type: DataTypes.STRING(30),
       allowNull: true,
@@ -96,11 +101,16 @@ module.exports = (sequelize) => {
       type: DataTypes.STRING(255),
       allowNull: true,
     },
+    defaultFirstOutreachTemplateId: {
+      type: DataTypes.UUID,
+      allowNull: true,
+    },
   }, {
     tableName: 'agency_channels',
     indexes: [
       { fields: ['agency_id'] },
       { fields: ['agency_id', 'is_default'] },
+      { fields: ['agency_id', 'usage_type'] },
       { fields: ['whatsapp_phone_number_id'] },
     ],
   });

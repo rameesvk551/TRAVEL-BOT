@@ -81,7 +81,7 @@ export function useSubmitTemplate() {
 export function useSyncTemplates() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () => templatesApi.sync(),
+    mutationFn: (data) => templatesApi.sync(data),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['templates'] }),
   });
 }

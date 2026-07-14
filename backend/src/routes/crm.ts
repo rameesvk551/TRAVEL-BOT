@@ -7,7 +7,9 @@ const requirePermission = require('../middleware/requirePermission');
 const { PERMISSIONS } = require('../constants/permissions');
 
 const router = Router();
-const canView = [authenticate, requirePermission(PERMISSIONS.ANALYTICS_VIEW)];
+// Agents who can view leads also need access to the stage list so the Leads
+// page can render and change statuses without requiring analytics permission.
+const canView = [authenticate, requirePermission(PERMISSIONS.LEADS_VIEW)];
 const canManage = [authenticate, requirePermission(PERMISSIONS.AGENCY_MANAGE)];
 
 /**

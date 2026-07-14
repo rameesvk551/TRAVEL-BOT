@@ -1481,8 +1481,8 @@ async function sendSystemNotificationWhatsApp(phone, content, context = {}) {
   }
 }
 
-async function syncTemplatesWithMeta(agencyId) {
-  const channel = await resolveAgencyChannel({ agencyId });
+async function syncTemplatesWithMeta(agencyId, context = {}) {
+  const channel = await resolveAgencyChannel({ agencyId, channelId: context.channelId });
   
   if (canUseMarketingOs(channel)) {
     const tenantToken = await marketingOsPartnerService.getTenantToken(channel.marketingOsTenantId);
@@ -1725,6 +1725,20 @@ function buildStandardTemplateSendComponents(template, variableMap) {
     });
   }
 
+  if (Array.isArray(template.buttons) && template.buttons.length > 0) {
+    template.buttons.forEach((button, index) => {
+      if (String(button?.type || '').toUpperCase() !== 'URL') return;
+      const parameters = buildTextParameters(button?.url || '', variableMap);
+      if (!parameters.length) return;
+      components.push({
+        type: 'button',
+        sub_type: 'url',
+        index: String(index),
+        parameters,
+      });
+    });
+  }
+
   const flowButtonIndex = Array.isArray(template.buttons)
     ? template.buttons.findIndex((button) => String(button.type || '').toUpperCase() === 'FLOW')
     : -1;
@@ -1819,7 +1833,7 @@ function buildTemplateSendComponents(template, variables = []) {
 }
 
 async function upsertTemplateWithMeta(agencyId, template, { mode = 'upsert' } = {}) {
-  const channel = await resolveAgencyChannel({ agencyId });
+  const channel = await resolveAgencyChannel({ agencyId, channelId: template?.channelId || null });
 
   if (canUseMarketingOs(channel)) {
     const tenantToken = await marketingOsPartnerService.getTenantToken(channel.marketingOsTenantId);
@@ -1879,7 +1893,7 @@ async function upsertTemplateWithMeta(agencyId, template, { mode = 'upsert' } = 
 }
 
 async function submitTemplateToMeta(agencyId, template) {
-  const channel = await resolveAgencyChannel({ agencyId });
+  const channel = await resolveAgencyChannel({ agencyId, channelId: template?.channelId || null });
   
   if (canUseMarketingOs(channel)) {
     const tenantToken = await marketingOsPartnerService.getTenantToken(channel.marketingOsTenantId);
@@ -1896,7 +1910,7 @@ async function submitTemplateToMeta(agencyId, template) {
 }
 
 async function deleteTemplateFromMeta(agencyId, template) {
-  const channel = await resolveAgencyChannel({ agencyId });
+  const channel = await resolveAgencyChannel({ agencyId, channelId: template?.channelId || null });
 
   if (canUseMarketingOs(channel)) {
     const tenantToken = await marketingOsPartnerService.getTenantToken(channel.marketingOsTenantId);

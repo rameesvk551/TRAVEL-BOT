@@ -1,14 +1,20 @@
 // FILE: /backend/src/services/leadService.js
 // DEPS: sequelize
 
+const jwt = require('jsonwebtoken');
 const { Op } = require('sequelize');
-const { Lead, Customer, Agent, Package, Property, Service, Visa, Cruise, Campaign, Message, Booking, FollowUp, LeadNote, MessageTemplate, CallLog, Payment } = require('../models');
+const { Agency, AgencyChannel, Lead, Customer, Agent, Package, Property, Service, Visa, Cruise, Campaign, Message, Booking, FollowUp, LeadNote, MessageTemplate, CallLog, Payment } = require('../models');
 const { normalizePhone, isValidIndianPhone } = require('../utils/phoneUtils');
 const whatsappService = require('./whatsappService');
 const serviceRoutingService = require('./serviceRoutingService');
 const pipelineService = require('./pipelineService');
 const { resolveLeadSource } = require('./leadSource');
 const { PipelineStage } = require('../models');
+
+const BASE_URL = String(process.env.BASE_URL || 'https://travelbot.wayon.in').replace(/\/+$/, '');
+const STAFF_ASSIGNMENT_ACTION_SECRET = process.env.STAFF_ASSIGNMENT_ACTION_SECRET
+  || process.env.JWT_SECRET
+  || 'travelbot_staff_assignment_action_secret';
 
 /**
  * Lists leads for an agency with filtering and pagination.
@@ -60,6 +66,38 @@ function formatDateTimeForActivity(value) {
 
 function requesterAgentId(requester = null) {
   return requester?.id || requester?.agentId || null;
+}
+
+function isAssignmentAutoFirstOutreachEnabled(agency) {
+  return Boolean(
+    agency?.staffWhatsAppEnabled
+    && agency?.whatsappFlowConfig
+    && typeof agency.whatsappFlowConfig === 'object'
+    && agency.whatsappFlowConfig.assignmentAutoFirstOutreachButtonEnabled === true
+  );
+}
+
+function buildAssignmentActionUrl(token) {
+  return `${BASE_URL}/api/public/v1/staff-whatsapp/assignment-action?t=${encodeURIComponent(token)}`;
+}
+
+function buildCustomerChatUrl(phone) {
+  const digits = String(normalizePhone(phone) || phone || '')
+    .replace(/^\+/, '')
+    .replace(/\D/g, '');
+  return digits ? `https://wa.me/${digits}` : BASE_URL;
+}
+
+function signStaffAssignmentAction(payload) {
+  return jwt.sign(
+    { ...payload, action: 'STAFF_ASSIGNMENT_FIRST_OUTREACH' },
+    STAFF_ASSIGNMENT_ACTION_SECRET,
+    { expiresIn: '14d' }
+  );
+}
+
+function verifyStaffAssignmentAction(token) {
+  return jwt.verify(String(token || ''), STAFF_ASSIGNMENT_ACTION_SECRET);
 }
 
 async function appendLeadActivityNote(leadId, agentId, content) {
@@ -310,6 +348,9 @@ async function findApprovedAgentTemplate(agencyId, suffix) {
 async function notifyAssignedAgent(fullLead, agencyId, contextLabel = 'lead assignment') {
   const agent = fullLead?.assignedAgent;
   if (!agent?.phone) return;
+  const agency = await Agency.findByPk(agencyId, {
+    attributes: ['id', 'staffWhatsAppEnabled', 'whatsappFlowConfig'],
+  });
 
   const pkgName = fullLead.package ? fullLead.package.name : 'None';
   const variables = [
@@ -321,7 +362,18 @@ async function notifyAssignedAgent(fullLead, agencyId, contextLabel = 'lead assi
     formatBudgetForNotification(fullLead.budgetPerPerson),
     valueOrFallback(fullLead.notes),
   ];
-  const fallback = `*New Lead Assigned*\n\nCustomer: ${variables[0]}\nPhone: ${variables[1]}\nDestination: ${fullLead.destination || 'Not specified'}\nPackage: ${pkgName}\nEnquiry Date: ${fullLead.createdAt ? new Date(fullLead.createdAt).toDateString() : new Date().toDateString()}`;
+  let assignmentActionUrl = '';
+  if (agency && isAssignmentAutoFirstOutreachEnabled(agency) && fullLead?.id && agent?.id && fullLead?.customer?.phone) {
+    const actionToken = signStaffAssignmentAction({
+      agencyId,
+      leadId: fullLead.id,
+      assignedAgentId: agent.id,
+      customerPhone: fullLead.customer.phone,
+    });
+    assignmentActionUrl = buildAssignmentActionUrl(actionToken);
+    variables.push(actionToken);
+  }
+  const fallback = `*New Lead Assigned*\n\nCustomer: ${variables[0]}\nPhone: ${variables[1]}\nDestination: ${fullLead.destination || 'Not specified'}\nPackage: ${pkgName}\nEnquiry Date: ${fullLead.createdAt ? new Date(fullLead.createdAt).toDateString() : new Date().toDateString()}${assignmentActionUrl ? `\nStart chat: ${assignmentActionUrl}` : ''}`;
 
   try {
     const template = await findApprovedAgentTemplate(agencyId, 'agent_new_enquiry_assignment');
@@ -339,6 +391,191 @@ async function notifyAssignedAgent(fullLead, agencyId, contextLabel = 'lead assi
     await whatsappService.sendSystemNotificationWhatsApp(agent.phone, fallback, { agencyId, customerId: fullLead.customerId });
   } catch (err) {
     console.error(`Failed to send ${contextLabel} notification`, err);
+  }
+}
+
+function buildStaffFirstOutreachVariables(template, lead, customer, agent) {
+  const count = Math.max(Number(template?.variableCount || 0), 1);
+  const samples = Array.isArray(template?.sampleVariables) ? template.sampleVariables : [];
+  return Array.from({ length: count }, (_, index) => {
+    if (index === 0) {
+      return valueOrFallback(customer?.name, samples[index] || 'there');
+    }
+    if (index === 1) {
+      return valueOrFallback(lead?.destination || lead?.package?.name || lead?.property?.name, samples[index] || 'your enquiry');
+    }
+    if (index === 2) {
+      return valueOrFallback(agent?.name, samples[index] || 'our consultant');
+    }
+    return String(samples[index] || '').trim() || `Sample ${index + 1}`;
+  });
+}
+
+async function sendStaffFirstOutreach(leadId, agencyId, requester) {
+  const agency = await Agency.findByPk(agencyId, { attributes: ['id', 'staffWhatsAppEnabled'] });
+  if (!agency) {
+    throw Object.assign(new Error('Agency not found'), { statusCode: 404, code: 'NOT_FOUND' });
+  }
+  if (!agency.staffWhatsAppEnabled) {
+    throw Object.assign(new Error('Staff WhatsApp feature is not enabled for this agency'), {
+      statusCode: 403,
+      code: 'STAFF_WHATSAPP_DISABLED',
+    });
+  }
+
+  const lead = await Lead.findOne({
+    where: scopedLeadWhere(agencyId, requester, { id: leadId }),
+    include: [
+      { model: Customer, as: 'customer', attributes: ['id', 'name', 'phone'] },
+      { model: Agent, as: 'assignedAgent', attributes: ['id', 'name', 'primaryWhatsAppChannelId'] },
+      { model: Package, as: 'package', attributes: ['id', 'name'], required: false },
+      { model: Property, as: 'property', attributes: ['id', 'name'], required: false },
+    ],
+  });
+  if (!lead) {
+    throw Object.assign(new Error('Lead not found'), { statusCode: 404, code: 'LEAD_NOT_FOUND' });
+  }
+
+  const firstOutreach = lead.customTripDetails?.firstOutreach || null;
+  if (String(firstOutreach?.status || '').toUpperCase() === 'SENT') {
+    throw Object.assign(new Error('First outreach has already been sent for this lead'), {
+      statusCode: 409,
+      code: 'STAFF_FIRST_OUTREACH_ALREADY_SENT',
+    });
+  }
+
+  if (!lead.customer?.phone) {
+    throw Object.assign(new Error('Lead customer does not have a WhatsApp number'), {
+      statusCode: 400,
+      code: 'CUSTOMER_PHONE_MISSING',
+    });
+  }
+  if (!lead.assignedAgent?.id) {
+    throw Object.assign(new Error('Assign this lead to a staff member before sending first outreach'), {
+      statusCode: 400,
+      code: 'LEAD_UNASSIGNED',
+    });
+  }
+  if (!requester?.id || requester.id !== lead.assignedAgent.id) {
+    throw Object.assign(new Error('Only the assigned staff member can send first outreach from their staff WhatsApp number'), {
+      statusCode: 403,
+      code: 'STAFF_FIRST_OUTREACH_FORBIDDEN',
+    });
+  }
+
+  const channel = await AgencyChannel.findOne({
+    where: {
+      id: lead.assignedAgent.primaryWhatsAppChannelId || null,
+      agencyId,
+      usageType: 'STAFF',
+      isActive: true,
+    },
+  });
+  if (!channel) {
+    throw Object.assign(new Error('The assigned staff member does not have an active staff WhatsApp number'), {
+      statusCode: 400,
+      code: 'STAFF_WHATSAPP_CHANNEL_MISSING',
+    });
+  }
+
+  const template = await MessageTemplate.findOne({
+    where: {
+      id: channel.defaultFirstOutreachTemplateId || null,
+      agencyId,
+      channelId: channel.id,
+      status: 'APPROVED',
+    },
+  });
+  if (!template) {
+    throw Object.assign(new Error('Set an approved default first-outreach template for this staff number first'), {
+      statusCode: 400,
+      code: 'STAFF_WHATSAPP_TEMPLATE_MISSING',
+    });
+  }
+
+  const variables = buildStaffFirstOutreachVariables(template, lead, lead.customer, lead.assignedAgent);
+  const message = await whatsappService.sendTemplateMessage(
+    lead.customer.phone,
+    template.name,
+    variables,
+    {
+      agencyId,
+      customerId: lead.customerId,
+      channelId: channel.id,
+      agentId: requesterAgentId(requester),
+    },
+    { template }
+  );
+
+  const nextFirstOutreach = {
+    status: message?.status === 'FAILED' ? 'FAILED' : 'SENT',
+    sentAt: new Date().toISOString(),
+    sentByAgentId: requesterAgentId(requester),
+    assignedAgentId: lead.assignedAgent.id,
+    channelId: channel.id,
+    templateId: template.id,
+    templateName: template.name,
+    waMessageId: message?.waMessageId || null,
+    error: message?.status === 'FAILED' ? 'Provider send failed' : null,
+  };
+
+  await lead.update({
+    customTripDetails: {
+      ...(lead.customTripDetails || {}),
+      firstOutreach: nextFirstOutreach,
+    },
+  });
+
+  await appendLeadActivityNote(
+    lead.id,
+    requesterAgentId(requester),
+    `Staff first outreach ${nextFirstOutreach.status === 'SENT' ? 'sent' : 'failed'} using ${template.displayName || template.name}`
+  );
+
+  if (message?.status === 'FAILED') {
+    throw Object.assign(new Error('Failed to send the first WhatsApp outreach'), {
+      statusCode: 502,
+      code: 'STAFF_FIRST_OUTREACH_FAILED',
+    });
+  }
+
+  return getLeadById(leadId, agencyId, requester);
+}
+
+async function triggerStaffAssignmentAction(token) {
+  let payload;
+  try {
+    payload = verifyStaffAssignmentAction(token);
+  } catch (_err) {
+    throw Object.assign(new Error('This assignment action link is invalid or has expired'), {
+      statusCode: 400,
+      code: 'INVALID_ASSIGNMENT_ACTION',
+    });
+  }
+
+  if (payload?.action !== 'STAFF_ASSIGNMENT_FIRST_OUTREACH' || !payload?.leadId || !payload?.agencyId || !payload?.assignedAgentId) {
+    throw Object.assign(new Error('This assignment action link is invalid'), {
+      statusCode: 400,
+      code: 'INVALID_ASSIGNMENT_ACTION',
+    });
+  }
+
+  const requester = { id: payload.assignedAgentId, role: 'AGENT' };
+
+  try {
+    const lead = await sendStaffFirstOutreach(payload.leadId, payload.agencyId, requester);
+    return {
+      status: 'SENT',
+      redirectUrl: buildCustomerChatUrl(lead?.customer?.phone || payload.customerPhone || ''),
+    };
+  } catch (err) {
+    if (err?.code === 'STAFF_FIRST_OUTREACH_ALREADY_SENT') {
+      return {
+        status: 'ALREADY_SENT',
+        redirectUrl: buildCustomerChatUrl(payload.customerPhone || ''),
+      };
+    }
+    throw err;
   }
 }
 
@@ -1926,6 +2163,8 @@ module.exports = {
   getLeadById,
   createLead,
   notifyAssignedAgent,
+  sendStaffFirstOutreach,
+  triggerStaffAssignmentAction,
   updateLead,
   deleteLead,
   findLeastBusyAgent,

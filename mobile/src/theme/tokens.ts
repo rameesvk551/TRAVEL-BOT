@@ -35,6 +35,33 @@ export interface ColorTokens {
     info: string;
     neutral: string;
   };
+  chart: ChartColorTokens;
+}
+
+// §3.1a Chart color — four jobs, four ramps.
+//
+// These are NOT free-form. Every ramp below was checked with the dataviz
+// validator (lightness band, chroma floor, Machado-2009 CVD separation under
+// protanopia/deuteranopia, and contrast vs the chart surface) and passes all
+// six checks in BOTH modes. Dark is a selected set of steps, not a flip of
+// light. Do not hand-edit a hex here — re-run the validator and snap to a
+// passing step, or the palette silently stops being colorblind-safe.
+//
+//   categorical — identity (which series). Fixed order, assigned in sequence,
+//                 NEVER cycled. A 9th series folds into "Other".
+//   ordinal     — position in a sequence (pipeline stage, tier). One hue,
+//                 monotone lightness.
+//   status      — reserved meaning; never reused as "series 4".
+//   grid/axis   — recessive; must never compete with the marks.
+export interface ChartColorTokens {
+  categorical: readonly string[];
+  ordinal: readonly string[];
+  grid: string;
+  axis: string;
+  /** Fill under a single-series area/line. Pair with `accent` for the stroke. */
+  areaFill: string;
+  /** The de-emphasis gray for the "emphasis" form: one series colored, rest muted. */
+  muted: string;
 }
 
 export const lightColors: ColorTokens = {
@@ -64,6 +91,17 @@ export const lightColors: ColorTokens = {
     info: '#5E5CE6',
     neutral: '#8E8E93',
   },
+  chart: {
+    // Validated light: lightness band PASS · chroma floor PASS ·
+    // worst adjacent CVD ΔE 19.5 (protan) PASS · contrast vs surface PASS.
+    categorical: ['#007AFF', '#C86A00', '#AF52DE', '#0E9C90', '#FF2D55', '#5856D6', '#1B7F3B', '#0F7FB0'],
+    // Validated ordinal light: monotone L · adjacent ΔL ≥ 0.06 · light end 2.16:1.
+    ordinal: ['#79B0FF', '#4693FF', '#007AFF', '#0057CC', '#003B7A'],
+    grid: 'rgba(60,60,67,0.10)',
+    axis: 'rgba(60,60,67,0.45)',
+    areaFill: 'rgba(0,122,255,0.16)',
+    muted: 'rgba(60,60,67,0.20)',
+  },
 };
 
 export const darkColors: ColorTokens = {
@@ -92,6 +130,17 @@ export const darkColors: ColorTokens = {
     danger: '#FF453A',
     info: '#5E5CE6',
     neutral: '#8E8E93',
+  },
+  chart: {
+    // Validated dark against surface #1C1C1E: lightness band PASS · chroma floor
+    // PASS · worst adjacent CVD ΔE 20.7 (protan) PASS · contrast PASS.
+    categorical: ['#0A84FF', '#C97A00', '#BF5AF2', '#2AA79E', '#FF375F', '#5E5CE6', '#3FA65C', '#2F9FD0'],
+    // Validated ordinal dark: monotone L · adjacent ΔL ≥ 0.06 · light end 2.47:1.
+    ordinal: ['#0F5AA8', '#0A6ACC', '#0A84FF', '#4DA6FF', '#8CC6FF'],
+    grid: 'rgba(235,235,245,0.12)',
+    axis: 'rgba(235,235,245,0.45)',
+    areaFill: 'rgba(10,132,255,0.22)',
+    muted: 'rgba(235,235,245,0.22)',
   },
 };
 

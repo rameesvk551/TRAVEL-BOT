@@ -392,6 +392,47 @@ async function uploadDocumentPdf(fileBuffer, agencyId, kind, ref) {
   );
 }
 
+/**
+ * Upload one brochure photo. Callers upload a 10-30 image batch concurrently.
+ *
+ * We store the original and derive print/thumbnail sizes at render time via
+ * brochureDoc.cdnUrl (f_auto,q_auto,c_limit,w_N), rather than baking a size in here —
+ * the same upload then serves the editor tray (w_400) and the PDF (w_1600).
+ */
+async function uploadBrochureImage(fileBuffer, agencyId) {
+  assertCloudinaryConfigured();
+
+  const rootFolder = process.env.CLOUDINARY_FOLDER || 'travel-bot';
+  const folder = `${rootFolder}/brochures/${agencyId}`;
+
+  return new Promise((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(
+      {
+        folder,
+        resource_type: 'image',
+      },
+      (err, result) => {
+        if (err) {
+          reject(Object.assign(new Error(err.message || 'Cloudinary upload failed'), {
+            statusCode: 502,
+            code: 'CLOUDINARY_UPLOAD_FAILED',
+          }));
+          return;
+        }
+
+        resolve({
+          secureUrl: result.secure_url,
+          publicId: result.public_id,
+          width: result.width,
+          height: result.height,
+        });
+      }
+    );
+
+    stream.end(fileBuffer);
+  });
+}
+
 async function uploadCustomerDocument(fileBuffer, agencyId, customerId, originalName) {
   assertCloudinaryConfigured();
 
@@ -442,5 +483,6 @@ module.exports = {
   uploadPartnerAsset,
   uploadInvoicePdf,
   uploadDocumentPdf,
+  uploadBrochureImage,
   uploadCustomerDocument,
 };

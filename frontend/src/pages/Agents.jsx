@@ -13,6 +13,11 @@ import {
   PERMISSION_PRESETS,
   detectPreset,
 } from '../config/permissionCatalog';
+import {
+  STAFF_SIDEBAR_GROUPS,
+  canAgentAccessSidebarModule,
+  defaultSidebarPreferencesForAgent,
+} from '../config/staffSidebarCatalog';
 
 const ROUTING_INTENT_FALLBACK = [
   { key: 'properties', label: 'Properties' },
@@ -71,6 +76,21 @@ const agentErrorMessage = (error, fallback) => {
   return message || fallback;
 };
 
+const emptyForm = () => ({
+  name: '',
+  email: '',
+  phone: '',
+  role: 'AGENT',
+  permissions: [],
+  sidebarPreferences: [],
+});
+
+const permissionsSeedAgent = (permissions) => ({
+  role: 'AGENT',
+  permissions: Array.isArray(permissions) ? permissions : [],
+  sidebarPreferences: null,
+});
+
 export default function Agents() {
   const qc = useQueryClient();
   const agent = useAuthStore((state) => state.agent);
@@ -78,7 +98,7 @@ export default function Agents() {
   const submitLockedRef = useRef(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingAgent, setEditingAgent] = useState(null);
-  const [form, setForm] = useState({ name: '', email: '', phone: '', role: 'AGENT', permissions: [] });
+  const [form, setForm] = useState(emptyForm);
   const [createdCredentials, setCreatedCredentials] = useState(null);
   const [routingDraft, setRoutingDraft] = useState({});
   const [activeTab, setActiveTab] = useState('users');
@@ -100,7 +120,7 @@ export default function Agents() {
     onSuccess: (response) => {
       qc.invalidateQueries({ queryKey: ['agents'] });
       setShowCreateModal(false);
-      setForm({ name: '', email: '', phone: '', role: 'AGENT', permissions: [] });
+      setForm(emptyForm());
       setCreatedCredentials(response?.data || null);
       toast.success('Staff user created');
     },
@@ -114,7 +134,7 @@ export default function Agents() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['agents'] });
       setEditingAgent(null);
-      setForm({ name: '', email: '', phone: '', role: 'AGENT', permissions: [] });
+      setForm(emptyForm());
       toast.success('User updated');
     },
     onError: (error) => {
@@ -159,6 +179,21 @@ export default function Agents() {
     setRoutingDraft(nextDraft);
   }, [routingResponse]);
 
+  useEffect(() => {
+    if (form.role !== 'AGENT') return;
+    const allowed = new Set(defaultSidebarPreferencesForAgent(permissionsSeedAgent(form.permissions)));
+    setForm((current) => {
+      const nextSidebarPreferences = current.sidebarPreferences.filter((path) => allowed.has(path));
+      if (
+        nextSidebarPreferences.length === current.sidebarPreferences.length
+        && nextSidebarPreferences.every((path, index) => path === current.sidebarPreferences[index])
+      ) {
+        return current;
+      }
+      return { ...current, sidebarPreferences: nextSidebarPreferences };
+    });
+  }, [form.permissions, form.role]);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (submitLockedRef.current || isSavingUser) return;
@@ -171,6 +206,7 @@ export default function Agents() {
       // ADMINs implicitly get everything on the backend; only send the
       // explicit list for staff accounts.
       permissions: form.role === 'ADMIN' ? undefined : form.permissions,
+      sidebarPreferences: form.role === 'ADMIN' ? undefined : form.sidebarPreferences,
     };
 
     submitLockedRef.current = true;
@@ -199,6 +235,9 @@ export default function Agents() {
       phone: agent.phone || '',
       role: agent.role,
       permissions: Array.isArray(agent.permissions) ? agent.permissions : [],
+      sidebarPreferences: Array.isArray(agent.sidebarPreferences)
+        ? agent.sidebarPreferences
+        : defaultSidebarPreferencesForAgent(permissionsSeedAgent(agent.permissions)),
     });
   };
 
@@ -209,7 +248,12 @@ export default function Agents() {
     setEditingAgent(null);
     // New staff default to the "Sales Rep" preset so they can work immediately.
     const salesRep = PERMISSION_PRESETS.find((preset) => preset.key === 'sales_rep');
-    setForm({ name: '', email: '', phone: '', role: 'AGENT', permissions: salesRep ? [...salesRep.permissions] : [] });
+    const permissions = salesRep ? [...salesRep.permissions] : [];
+    setForm({
+      ...emptyForm(),
+      permissions,
+      sidebarPreferences: defaultSidebarPreferencesForAgent(permissionsSeedAgent(permissions)),
+    });
     setShowCreateModal(true);
   };
 
@@ -239,11 +283,28 @@ export default function Agents() {
     });
   };
 
+  const toggleSidebarPreference = (path) => {
+    setForm((current) => {
+      const has = current.sidebarPreferences.includes(path);
+      const sidebarPreferences = has
+        ? current.sidebarPreferences.filter((item) => item !== path)
+        : [...current.sidebarPreferences, path];
+      return { ...current, sidebarPreferences };
+    });
+  };
+
   const applyPreset = (presetKey) => {
     const preset = PERMISSION_PRESETS.find((item) => item.key === presetKey);
     if (!preset) return;
-    setForm((current) => ({ ...current, permissions: [...preset.permissions] }));
+    const permissions = [...preset.permissions];
+    setForm((current) => ({
+      ...current,
+      permissions,
+      sidebarPreferences: defaultSidebarPreferencesForAgent(permissionsSeedAgent(permissions)),
+    }));
   };
+
+  const sidebarPermissionProbe = permissionsSeedAgent(form.permissions);
 
   return (
     <div className="w-full space-y-4">
@@ -519,7 +580,7 @@ export default function Agents() {
 
       {(showCreateModal || editingAgent) ? (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/45 p-0 backdrop-blur-sm sm:items-center sm:p-4">
-          <div className="max-h-[92dvh] w-full overflow-y-auto rounded-t-[24px] border border-white/80 bg-white p-5 shadow-[0_34px_90px_-50px_rgba(15,23,42,0.55)] sm:max-w-md sm:rounded-[32px] sm:p-6">
+          <div className="max-h-[92dvh] w-full overflow-y-auto rounded-t-[24px] border border-white/80 bg-white p-5 shadow-[0_34px_90px_-50px_rgba(15,23,42,0.55)] sm:max-w-2xl sm:rounded-[32px] sm:p-6">
             <h3 className="text-xl font-extrabold text-slate-950">{editingAgent ? 'Edit User' : 'Add User'}</h3>
             <form onSubmit={handleSubmit} className="mt-6 space-y-4">
               <div>
@@ -555,7 +616,18 @@ export default function Agents() {
                 <label className="block text-sm font-medium text-slate-700">Role</label>
                 <select
                   value={form.role}
-                  onChange={(e) => setForm({ ...form, role: e.target.value })}
+                  onChange={(e) => {
+                    const nextRole = e.target.value;
+                    setForm((current) => {
+                      if (nextRole === 'ADMIN') {
+                        return { ...current, role: nextRole, sidebarPreferences: [] };
+                      }
+                      const sidebarPreferences = current.role === 'ADMIN'
+                        ? defaultSidebarPreferencesForAgent(permissionsSeedAgent(current.permissions))
+                        : current.sidebarPreferences;
+                      return { ...current, role: nextRole, sidebarPreferences };
+                    });
+                  }}
                   className="mt-1 w-full rounded-[20px] border border-slate-300 px-3 py-2"
                 >
                   <option value="AGENT">Staff</option>
@@ -608,6 +680,49 @@ export default function Agents() {
                       </div>
                     ))}
                   </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700">Sidebar menu</label>
+                    <p className="mt-1 text-xs text-slate-500">
+                      Choose which sidebar items this staff member sees. Permissions still control what they can actually open and edit.
+                    </p>
+                  </div>
+
+                  <div className="max-h-64 space-y-3 overflow-y-auto rounded-[16px] border border-slate-200 p-3">
+                    {STAFF_SIDEBAR_GROUPS.map((group) => (
+                      <div key={group.key}>
+                        <p className="text-xs font-bold uppercase tracking-wide text-slate-500">{group.title}</p>
+                        <div className="mt-1 grid gap-2 sm:grid-cols-2">
+                          {group.items.map((item) => {
+                            const allowedByPermission = canAgentAccessSidebarModule(
+                              sidebarPermissionProbe,
+                              item.path,
+                              { ignoreExplicitPreferences: true },
+                            );
+                            return (
+                              <label
+                                key={item.path}
+                                className={`flex items-center gap-2 rounded-[12px] border px-3 py-2 text-sm ${
+                                  allowedByPermission
+                                    ? 'border-slate-200 text-slate-700'
+                                    : 'border-slate-100 bg-slate-50 text-slate-400'
+                                }`}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={allowedByPermission && form.sidebarPreferences.includes(item.path)}
+                                  disabled={!allowedByPermission}
+                                  onChange={() => toggleSidebarPreference(item.path)}
+                                  className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-400"
+                                />
+                                <span>{item.label}</span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
 
@@ -625,7 +740,7 @@ export default function Agents() {
                   onClick={() => {
                     setShowCreateModal(false);
                     setEditingAgent(null);
-                    setForm({ name: '', email: '', phone: '', role: 'AGENT', permissions: [] });
+                    setForm(emptyForm());
                   }}
                   className="flex-1 rounded-[20px] border border-slate-300 px-4 py-2 disabled:cursor-not-allowed disabled:opacity-60"
                 >

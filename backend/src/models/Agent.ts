@@ -28,6 +28,12 @@ module.exports = (sequelize) => {
       allowNull: true,
       comment: 'Personal WhatsApp for notifications',
     },
+    primaryWhatsAppChannelId: {
+      type: DataTypes.UUID,
+      allowNull: true,
+      field: 'primary_whatsapp_channel_id',
+      comment: 'Mapped staff-owned WhatsApp channel used for first outreach',
+    },
     email: {
       type: DataTypes.STRING(255),
       allowNull: false,
@@ -44,6 +50,11 @@ module.exports = (sequelize) => {
       type: DataTypes.JSONB,
       allowNull: false,
       defaultValue: [],
+    },
+    sidebarPreferences: {
+      type: DataTypes.JSONB,
+      allowNull: true,
+      defaultValue: null,
     },
     isOnline: {
       type: DataTypes.BOOLEAN,
@@ -67,6 +78,7 @@ module.exports = (sequelize) => {
       { unique: true, fields: ['email'] },
       { fields: ['agency_id'] },
       { fields: ['agency_id', 'is_online'] },
+      { fields: ['primary_whatsapp_channel_id'] },
       { fields: ['reset_password_token_hash'] },
     ],
   });

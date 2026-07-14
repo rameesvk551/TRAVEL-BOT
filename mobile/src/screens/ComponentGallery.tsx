@@ -29,6 +29,8 @@ import {
   ProgressBar,
   Divider,
   Grabber,
+  AreaChart,
+  BarChart,
 } from '../ui';
 import {
   Package, Users, AlertCircle, TrendingUp, TrendingDown,
@@ -123,10 +125,68 @@ export default function ComponentGallery() {
               value="₹4.2L"
               delta={-3.2}
               deltaDirection="down"
+              trend={[12, 25, 18, 32, 15, 45, 38]}
               onPress={() => {}}
             />
           </View>
         </View>
+
+        <View style={{ height: s.s8 }} />
+
+        {/* Charts.
+            The palette is validated, not eyeballed: both the categorical slots
+            and the ordinal ramp pass the lightness-band, chroma-floor, CVD-
+            separation and contrast checks in BOTH modes. Flip this gallery to
+            dark to confirm — dark is its own selected set of steps, not a flip.
+            There is deliberately no pie/donut: part-to-whole goes in a bar. */}
+        <SectionHeader title="AREA CHART (TREND · DRAG TO SCRUB)" />
+        <Card>
+          <AreaChart
+            data={[
+              { label: 'Mon', value: 12000 },
+              { label: 'Tue', value: 25000 },
+              { label: 'Wed', value: 18000 },
+              { label: 'Thu', value: 32000 },
+              { label: 'Fri', value: 15000 },
+              { label: 'Sat', value: 45000 },
+              { label: 'Sun', value: 28000 },
+            ]}
+            formatValue={(v) => `₹${Math.round(v / 1000)}k`}
+          />
+        </Card>
+
+        <View style={{ height: s.s6 }} />
+
+        {/* Ordered stages → ordinal ramp, so the funnel order is visible in the color. */}
+        <SectionHeader title="BAR CHART · ORDINAL (PIPELINE STAGES)" />
+        <Card>
+          <BarChart
+            variant="ordinal"
+            data={[
+              { label: 'New', value: 42 },
+              { label: 'Contacted', value: 28 },
+              { label: 'Negotiation', value: 14 },
+              { label: 'Won', value: 6 },
+            ]}
+          />
+        </Card>
+
+        <View style={{ height: s.s6 }} />
+
+        {/* Unordered categories → every bar takes the SAME hue. Bar length already
+            encodes the value; coloring by value would just re-say it. */}
+        <SectionHeader title="BAR CHART · NOMINAL (LEAD SOURCES)" />
+        <Card>
+          <BarChart
+            variant="nominal"
+            data={[
+              { label: 'WhatsApp', value: 128 },
+              { label: 'Instagram', value: 94 },
+              { label: 'Website', value: 51 },
+              { label: 'Referral', value: 23 },
+            ]}
+          />
+        </Card>
 
         <View style={{ height: s.s8 }} />
 

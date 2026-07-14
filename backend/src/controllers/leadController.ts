@@ -135,6 +135,22 @@ async function bulkAssign(req, res, next) {
   }
 }
 
+async function sendStaffFirstOutreach(req, res, next) {
+  try {
+    const lead = await leadService.sendStaffFirstOutreach(req.params.id, req.agency.id, req.agent);
+    await logActivity(req, {
+      action: 'lead.staff_first_outreach_sent',
+      module: 'leads',
+      targetType: 'Lead',
+      targetId: lead?.id || req.params.id,
+      summary: `Sent first staff WhatsApp outreach for "${lead?.customer?.name || 'lead'}"`,
+    });
+    res.json({ success: true, data: lead, message: 'First staff WhatsApp outreach sent' });
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function exportPdf(req, res, next) {
   try {
     const leads = await leadReportService.fetchAllLeadsForReport(req.agency.id, req.query, req.agent);
@@ -172,6 +188,7 @@ module.exports = {
   update,
   remove,
   bulkAssign,
+  sendStaffFirstOutreach,
   listFollowUps,
   addFollowUp,
   updateFollowUp,

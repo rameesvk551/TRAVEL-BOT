@@ -24,9 +24,9 @@ module.exports = (sequelize) => {
       allowNull: false,
     },
     category: {
-      type: DataTypes.STRING(32),
+      type: DataTypes.STRING(100),
       allowNull: true,
-      comment: 'DOMESTIC or INTERNATIONAL for WhatsApp browsing',
+      comment: 'Agency-defined category. DOMESTIC/INTERNATIONAL keep legacy WhatsApp browsing behavior.',
     },
     tourType: {
       type: DataTypes.STRING(80),

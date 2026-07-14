@@ -1,15 +1,25 @@
 // FILE: mobile/src/ui/Card.tsx
 import React from 'react';
-import { View, StyleSheet, StyleProp, ViewStyle, Pressable } from 'react-native';
+import { View, StyleProp, ViewStyle, Pressable, AccessibilityRole } from 'react-native';
 import { useTheme } from '../theme/ThemeProvider';
 
 export interface CardProps {
   children: React.ReactNode;
   style?: StyleProp<ViewStyle>;
   onPress?: () => void;
+  accessibilityRole?: AccessibilityRole;
+  accessibilityLabel?: string;
+  accessibilityHint?: string;
 }
 
-export function Card({ children, style, onPress }: CardProps) {
+export function Card({
+  children,
+  style,
+  onPress,
+  accessibilityRole,
+  accessibilityLabel,
+  accessibilityHint,
+}: CardProps) {
   const { theme } = useTheme();
 
   const cardStyle = [
@@ -24,11 +34,23 @@ export function Card({ children, style, onPress }: CardProps) {
 
   if (onPress) {
     return (
-      <Pressable onPress={onPress} style={cardStyle}>
+      <Pressable
+        onPress={onPress}
+        // A tappable card is a button; without this it announces as plain text
+        // and VoiceOver users never learn it can be activated.
+        accessibilityRole={accessibilityRole ?? 'button'}
+        accessibilityLabel={accessibilityLabel}
+        accessibilityHint={accessibilityHint}
+        style={cardStyle}
+      >
         {children}
       </Pressable>
     );
   }
 
-  return <View style={cardStyle}>{children}</View>;
+  return (
+    <View style={cardStyle} accessibilityRole={accessibilityRole} accessibilityLabel={accessibilityLabel}>
+      {children}
+    </View>
+  );
 }

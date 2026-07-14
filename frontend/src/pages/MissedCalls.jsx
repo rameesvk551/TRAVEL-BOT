@@ -1,12 +1,16 @@
 import { useMemo, useState } from 'react';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuthStore } from '../store/authStore';
 import client from '../api/client';
 import { useMissedCalls } from '../hooks/useMissedCalls';
+import { missedCallsApi } from '../api/missedCallsApi';
 import {
   PhoneArrowDownLeftIcon,
   Cog6ToothIcon,
   ChatBubbleLeftRightIcon,
+  CheckCircleIcon,
+  ExclamationTriangleIcon,
+  InformationCircleIcon,
 } from '@heroicons/react/24/outline';
 
 const DEFAULT_AUTO_REPLY =
@@ -29,6 +33,113 @@ function formatWhen(value) {
     hour: '2-digit',
     minute: '2-digit',
   });
+}
+
+// Translate a raw Meta/API error into a plain-English explanation. Returns
+// { message, coexistence } — coexistence errors are permanent for this number,
+// so the caller hides the (useless) retry button.
+function interpretCallingError(raw) {
+  if (!raw) return null;
+  const s = String(raw);
+  if (/141000/.test(s) || /not a valid cloud api number/i.test(s)) {
+    return {
+      coexistence: true,
+      message:
+        'This number runs on the WhatsApp Business App (coexistence), so WhatsApp’s Calling API isn’t available for it. Calls to this number ring the WhatsApp Business App and can’t be logged here. To use in-CRM calling, connect a dedicated Cloud API number.',
+    };
+  }
+  if (/2000|messaging limit|messaging tier|not eligible/i.test(s)) {
+    return {
+      coexistence: false,
+      message: 'This number must reach the 2,000 conversations / 24h messaging tier before WhatsApp calling can be enabled.',
+    };
+  }
+  if (/call_hours|weekly_operating_hours|timezone_id|json schema/i.test(s)) {
+    return { coexistence: false, message: 'Calling could not be enabled due to a configuration error — please retry.' };
+  }
+  return { coexistence: false, message: s };
+}
+
+function CallingStatusCard() {
+  const qc = useQueryClient();
+  const { data, isLoading } = useQuery({
+    queryKey: ['callingStatus'],
+    queryFn: () => missedCallsApi.callingStatus(),
+  });
+  const [error, setError] = useState('');
+
+  const enableMutation = useMutation({
+    mutationFn: () => missedCallsApi.enableCalling(),
+    onSuccess: () => {
+      setError('');
+      qc.invalidateQueries({ queryKey: ['callingStatus'] });
+    },
+    onError: (err) => setError(err.response?.data?.error || 'Failed to enable calling'),
+  });
+
+  const status = data?.data || {};
+  const connected = status.connected !== false;
+  const callingStatus = status.calling?.status || null; // 'ENABLED' | 'DISABLED' | null
+  const isEnabled = callingStatus === 'ENABLED';
+
+  // A friendly reading of whichever error we have (enable-click wins over the
+  // status read).
+  const interpreted = interpretCallingError(error || status.error);
+  const isCoexistence = Boolean(interpreted?.coexistence);
+
+  let tone = 'amber';
+  let icon = ExclamationTriangleIcon;
+  let title = 'WhatsApp calling is not enabled';
+  let hint = 'Customers can only place a WhatsApp call once calling is switched on for your number.';
+
+  if (!connected) {
+    title = 'WhatsApp is not connected';
+    hint = 'Connect WhatsApp first, then enable calling to start receiving calls.';
+  } else if (isEnabled) {
+    tone = 'emerald';
+    icon = CheckCircleIcon;
+    title = 'WhatsApp calling is enabled';
+    hint = 'Inbound customer calls are received; missed ones appear below.';
+  } else if (isCoexistence) {
+    tone = 'slate';
+    icon = InformationCircleIcon;
+    title = 'Calling isn’t available on this number';
+    hint = 'This number is connected via the WhatsApp Business App.';
+  }
+
+  const Icon = icon;
+  const toneCls = tone === 'emerald'
+    ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+    : tone === 'slate'
+      ? 'border-slate-200 bg-slate-50 text-slate-700'
+      : 'border-amber-200 bg-amber-50 text-amber-800';
+
+  // Only offer the retry button when enabling could actually succeed.
+  const showEnable = connected && !isEnabled && !isLoading && !isCoexistence;
+
+  return (
+    <div className={`shell-panel flex flex-col gap-3 border p-5 sm:flex-row sm:items-center sm:justify-between ${toneCls}`}>
+      <div className="flex items-start gap-3">
+        <Icon className="mt-0.5 h-5 w-5 shrink-0" />
+        <div>
+          <p className="text-sm font-bold">{isLoading ? 'Checking calling status…' : title}</p>
+          {!isLoading ? <p className="mt-0.5 text-xs opacity-80">{hint}</p> : null}
+          {!isLoading && interpreted && !isEnabled ? (
+            <p className={`mt-1 text-xs font-medium ${isCoexistence ? 'text-slate-600' : 'text-rose-700'}`}>{interpreted.message}</p>
+          ) : null}
+        </div>
+      </div>
+      {showEnable ? (
+        <button
+          onClick={() => enableMutation.mutate()}
+          disabled={enableMutation.isPending}
+          className="shell-button shrink-0"
+        >
+          {enableMutation.isPending ? 'Enabling…' : 'Enable calling'}
+        </button>
+      ) : null}
+    </div>
+  );
 }
 
 function SettingsPanel() {
@@ -151,6 +262,8 @@ export default function MissedCalls() {
           <p className="text-sm text-slate-500">Inbound WhatsApp calls your team didn&apos;t answer.</p>
         </div>
       </div>
+
+      <CallingStatusCard />
 
       <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
         <div className="shell-panel p-0 overflow-hidden">

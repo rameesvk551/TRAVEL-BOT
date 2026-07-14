@@ -15,6 +15,7 @@ const {
   CampaignRecipient,
   WhatsAppFlow,
   Itinerary,
+  LeadForm,
 } = require(path.resolve(__dirname, '../../../backend/src/models/index.ts'));
 const whatsappService = require(path.resolve(__dirname, '../../../backend/src/services/whatsappService.ts'));
 const leadService = require(path.resolve(__dirname, '../../../backend/src/services/leadService.ts'));
@@ -2411,7 +2412,43 @@ function flowGraphOptionModuleDisabled(graph, agency, sourceNodeId, optionHandle
   return !isModuleEnabledForAgency(agency, modulePath);
 }
 
-function renderFlowGraphText(template = '', customer, agency, fields = {}, itemContext = null) {
+function getFlowGraphFieldValue(fields = {}, key = '') {
+  const normalizedKey = normalizeText(key);
+  if (!normalizedKey) return '';
+
+  const normalizedMap = new Map();
+  Object.entries(fields || {}).forEach(([fieldKey, value]) => {
+    normalizedMap.set(normalizeText(fieldKey), value);
+  });
+
+  if (normalizedMap.has(normalizedKey)) {
+    return normalizeText(normalizedMap.get(normalizedKey));
+  }
+
+  const compactKey = normalizedKey.toLowerCase().replace(/[^a-z0-9]+/g, '');
+  for (const [fieldKey, value] of normalizedMap.entries()) {
+    if (fieldKey.toLowerCase().replace(/[^a-z0-9]+/g, '') === compactKey) {
+      return normalizeText(value);
+    }
+  }
+
+  return '';
+}
+
+function cleanRenderedStaffMessage(message = '') {
+  let rendered = String(message || '');
+  if (/(Stay type:|Check-in:|Checkout:|Rooms:|Budget:)/i.test(rendered)) {
+    rendered = rendered.replace(/[ \t]*\|[ \t]*/g, '\n');
+  }
+
+  return rendered
+    .replace(/\{[^}]+\}/g, '')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+function renderFlowGraphText(template = '', customer, agency, fields = {}, itemContext = null, options = {}) {
   let result = normalizeText(template)
     .replace(/\{customerName\}/g, customer?.name || firstName(customer) || '')
     .replace(/\{customerPhone\}/g, customer?.phone || '')
@@ -2426,13 +2463,13 @@ function renderFlowGraphText(template = '', customer, agency, fields = {}, itemC
       .replace(/\{itemDescription\}/g, itemContext.description || itemContext.summary || '')
       .replace(/\{itemDuration\}/g, itemContext.duration || '');
   }
-  return result.replace(/\{([^}]+)\}/g, (match, key) => {
-    const normalizedKey = normalizeText(key);
-    if (Object.prototype.hasOwnProperty.call(fields, normalizedKey)) {
-      return normalizeText(fields[normalizedKey]);
-    }
-    return match;
+  result = result.replace(/\{([^}]+)\}/g, (match, key) => {
+    const value = getFlowGraphFieldValue(fields, key);
+    if (value) return value;
+    return options.stripUnknownPlaceholders ? '' : match;
   });
+
+  return options.cleanStaffMessage ? cleanRenderedStaffMessage(result) : result;
 }
 
 function getActiveFlowGraphState(session = {}) {
@@ -2538,15 +2575,25 @@ async function clearPendingMetaFlow(session) {
 const PENDING_FLOW_MAX_REMINDERS = 6;
 const PENDING_FLOW_REMINDER_COOLDOWN_MS = 2 * 60 * 1000; // 2 min
 
+// True when a pending-form reminder would actually be re-sent right now (not throttled
+// by burst-cooldown and not past the cap). willDropSilently uses this to decide whether
+// to send the read receipt / typing indicator — so a throttled (silent) message doesn't
+// get marked read with a typing bubble and then no reply.
+function pendingReminderWouldSend(session) {
+  const pending = getPendingMetaFlow(session);
+  if (!pending) return false;
+  const reminderCount = Number(pending.reminderCount || 0);
+  const lastActivityMs = Date.parse(pending.lastRemindedAt || pending.openedAt || '') || 0;
+  const withinCooldown = lastActivityMs > 0 && (Date.now() - lastActivityMs) < PENDING_FLOW_REMINDER_COOLDOWN_MS;
+  return !(reminderCount >= PENDING_FLOW_MAX_REMINDERS || withinCooldown);
+}
+
 async function remindPendingMetaFlow(session, customer, agency) {
   const pending = getPendingMetaFlow(session);
   if (!pending) return false;
 
   // Only suppress rapid bursts / runaway repetition — otherwise re-send the form.
-  const reminderCount = Number(pending.reminderCount || 0);
-  const lastActivityMs = Date.parse(pending.lastRemindedAt || pending.openedAt || '') || 0;
-  const withinCooldown = lastActivityMs > 0 && (Date.now() - lastActivityMs) < PENDING_FLOW_REMINDER_COOLDOWN_MS;
-  if (reminderCount >= PENDING_FLOW_MAX_REMINDERS || withinCooldown) {
+  if (!pendingReminderWouldSend(session)) {
     return true; // burst / cap reached — stay silent this time
   }
 
@@ -2648,20 +2695,96 @@ function buildWhatsappCardLink(agency, item, catalogType) {
   return `https://wa.me/${digits}?text=${encodeURIComponent(prefill)}`;
 }
 
-// Turn catalog/search items into Instagram generic-template cards (image + title + subtitle +
-// a customizable "get details on WhatsApp" button). Titles are numbered so a numeric reply
-// still selects the item inside the Instagram flow.
-function buildFlowCatalogCards(agency, items, catalogType, buttonLabel) {
-  const label = normalizeText(buttonLabel || 'Get details on WhatsApp').slice(0, 20) || 'Get details on WhatsApp';
-  return items.slice(0, 10).map((item, index) => {
+// Where the public lead form lives (same host that serves /lead/:agencyKey).
+const FLOW_PUBLIC_BASE_URL = String(process.env.PUBLIC_BASE_URL || process.env.BASE_URL || '').replace(/\/+$/, '');
+
+/**
+ * The public link for one of the agency's lead forms, carrying THIS card's catalog item.
+ * The default form answers the bare /lead/:agencyKey; a named form appends its slug. The
+ * `item` token is verified server-side and lands on the lead as propertyId/packageId.
+ */
+function buildFlowLeadFormUrl(agency, form, catalogType, item, channel) {
+  const agencyKey = agency.subdomain || agency.id;
+  const slugPart = form.isDefault ? '' : `/${encodeURIComponent(form.slug)}`;
+  const params = new URLSearchParams();
+  params.set('source', String(channel || '').toUpperCase() === 'INSTAGRAM' ? 'instagram' : 'whatsapp');
+  if (item?.id && catalogType) params.set('item', `${catalogType}:${item.id}`);
+  return `${FLOW_PUBLIC_BASE_URL}/lead/${encodeURIComponent(agencyKey)}${slugPart}?${params.toString()}`;
+}
+
+// Resolve a card button's bound lead form (or the agency default). Cached per send so N cards
+// don't trigger N identical lookups.
+async function resolveFlowLeadForm(agency, leadFormId, cache) {
+  const key = leadFormId || '__default__';
+  if (cache.has(key)) return cache.get(key);
+  const form = leadFormId
+    ? await LeadForm.findOne({ where: { id: leadFormId, agencyId: agency.id } })
+    : await LeadForm.findOne({ where: { agencyId: agency.id, isDefault: true } });
+  cache.set(key, form);
+  return form;
+}
+
+/**
+ * Builds the buttons for ONE card from the node's configured `cardButtons`. Everything is
+ * agency-configured — the label, the action, and (for LEAD_FORM) which form. Falls back to the
+ * legacy single "get details on WhatsApp" button when nothing is configured.
+ */
+async function buildFlowCardButtons(agency, node, item, catalogType, channel, formCache) {
+  const data = node?.data || {};
+  const configured = (Array.isArray(data.cardButtons) ? data.cardButtons : []).filter((b) => b && b.label);
+
+  if (!configured.length) {
     const url = buildWhatsappCardLink(agency, item, catalogType);
-    return {
+    const label = normalizeText(data.igCardButtonLabel || 'Get details on WhatsApp').slice(0, 20)
+      || 'Get details on WhatsApp';
+    return url ? [{ title: label, url }] : [];
+  }
+
+  const buttons = [];
+  for (const button of configured.slice(0, 3)) {
+    const title = normalizeText(button.label).slice(0, 20);
+    if (!title) continue;
+    const action = String(button.action || 'WHATSAPP').toUpperCase();
+
+    if (action === 'LEAD_FORM') {
+      const form = await resolveFlowLeadForm(agency, button.leadFormId, formCache);
+      // Skip rather than ship a dead button: a missing/disabled form would 404 the customer.
+      if (!form || !form.enabled) continue;
+      buttons.push({ title, url: buildFlowLeadFormUrl(agency, form, catalogType, item, channel) });
+      continue;
+    }
+
+    if (action === 'URL') {
+      const url = normalizeText(button.url);
+      if (/^https?:\/\//i.test(url)) buttons.push({ title, url });
+      continue;
+    }
+
+    const url = buildWhatsappCardLink(agency, item, catalogType);
+    if (url) buttons.push({ title, url });
+  }
+  return buttons;
+}
+
+// Turn catalog/search items into Instagram generic-template cards (image + title + subtitle +
+// up to 3 agency-configured buttons). Titles stay numbered so a numeric reply still selects the
+// item inside the Instagram flow, even when the customer ignores the buttons.
+async function buildFlowCatalogCards(agency, items, catalogType, node, channel) {
+  const formCache = new Map();
+  const cards = [];
+  const list = items.slice(0, 10);
+
+  for (let index = 0; index < list.length; index += 1) {
+    const item = list[index];
+    const buttons = await buildFlowCardButtons(agency, node, item, catalogType, channel, formCache);
+    cards.push({
       title: `${index + 1}. ${flowCatalogTitle(item, catalogType)}`.slice(0, 80),
       subtitle: (flowCatalogDescription(item, catalogType) || '').slice(0, 80),
       imageUrl: item.imageUrl || item.image_url || null,
-      ...(url ? { buttons: [{ title: label, url }] } : {}),
-    };
-  });
+      ...(buttons.length ? { buttons } : {}),
+    });
+  }
+  return cards;
 }
 
 // Send catalog cards on Instagram either as one swipeable carousel or one stacked card per item.
@@ -3101,6 +3224,12 @@ async function openGraphMetaFlow(session, customer, agency, node) {
   const activeState = getActiveFlowGraphState(session) || {};
   const channel = resolveFlowChannel(customer, session);
   const fields = activeState.fields || {};
+  // Agency-configurable copy for the re-sent form reminder (flow builder → Reminder message).
+  const flowConfig = channel === 'INSTAGRAM' ? agency?.instagramFlowConfig : agency?.whatsappFlowConfig;
+  const reminderCfg = (flowConfig && typeof flowConfig === 'object' && flowConfig.reminderMessage
+    && typeof flowConfig.reminderMessage === 'object' && !Array.isArray(flowConfig.reminderMessage))
+    ? flowConfig.reminderMessage
+    : {};
   const where = {
     agencyId: agency.id,
     status: 'PUBLISHED',
@@ -3153,7 +3282,13 @@ async function openGraphMetaFlow(session, customer, agency, node) {
       firstScreenId: flow.firstScreenId || null,
       flowCta,
       data: flowData,
-      reminderText: 'Please fill this form so we can check the best available options, pricing, dates, guest count, and location for you.',
+      // Message shown when the form is re-sent because the customer messaged without
+      // filling it. The copy is agency-configurable via the flow builder
+      // (whatsappFlowConfig.reminderMessage); we only fall back to a neutral generic
+      // string when nothing is configured. No agency-specific copy is baked in here.
+      headerText: normalizeText(reminderCfg.header) || undefined,
+      reminderText: normalizeText(reminderCfg.body) || normalizeText(node.data?.body) || undefined,
+      footerText: normalizeText(reminderCfg.footer) || undefined,
     });
   }
 
@@ -3330,7 +3465,7 @@ async function executeFlowGraphNode(session, customer, agency, nodeId, hopCount 
       if (intro) {
         await whatsappService.sendTextMessage(customer.phone, intro, getContext(customer, agency));
       }
-      const cards = buildFlowCatalogCards(agency, items.slice(0, FALLBACK_LIST_LIMIT), catalogType, data.igCardButtonLabel);
+      const cards = await buildFlowCatalogCards(agency, items.slice(0, FALLBACK_LIST_LIMIT), catalogType, node, channel);
       await sendFlowCatalogCards(session, customer, agency, cards, catalogCardMode);
       return whatsappService.sendTextMessage(
         customer.phone,
@@ -3402,8 +3537,8 @@ async function executeFlowGraphNode(session, customer, agency, nodeId, hopCount 
 
     const searchCardMode = normalizeText(data.igCardMode || 'LIST').toUpperCase();
     if (channel === 'INSTAGRAM' && (searchCardMode === 'CARDS' || searchCardMode === 'CAROUSEL')) {
-      // Instagram: image + title + subtitle + "get details on WhatsApp" combined in one card.
-      const cards = buildFlowCatalogCards(agency, items, catalogType, data.igCardButtonLabel);
+      // Instagram: image + title + subtitle + the node's configured card buttons.
+      const cards = await buildFlowCatalogCards(agency, items, catalogType, node, channel);
       await sendFlowCatalogCards(session, customer, agency, cards, searchCardMode);
     } else {
       // One numbered card per result. Only send it AS an image when the image lives on the
@@ -3594,7 +3729,10 @@ async function executeFlowGraphNode(session, customer, agency, nodeId, hopCount 
     });
     const assignedAgent = await resolveEnquiryNotificationAgent(lead, agency);
     const recipientPhone = assignedAgent?.phone || agency?.phone || agency?.whatsappNumber || '';
-    const staffMessage = renderFlowGraphText(data.staffMessage || '', customer, agency, fields, selectedItem);
+    const staffMessage = renderFlowGraphText(data.staffMessage || '', customer, agency, fields, selectedItem, {
+      stripUnknownPlaceholders: true,
+      cleanStaffMessage: true,
+    });
 
     if (recipientPhone && staffMessage) {
       await whatsappService.sendTextMessage(
@@ -5397,9 +5535,9 @@ async function handleFlowSubmission(session, incoming, customer, agency) {
     getOutHouseDetails.children6To12 !== null ? `Children 6-12: ${getOutHouseDetails.children6To12}` : null,
     getOutHouseDetails.childrenBelow5 !== null ? `Children below 5: ${getOutHouseDetails.childrenBelow5}` : null,
     getOutHouseDetails.rooms ? `Rooms: ${getOutHouseDetails.rooms}` : null,
-  ].filter(Boolean).join(' | ');
+  ].filter(Boolean).join('\n');
   if (getOutHouseNotes) {
-    enquiryPayload.notes = [enquiryPayload.notes, getOutHouseNotes].filter(Boolean).join(' | ');
+    enquiryPayload.notes = [enquiryPayload.notes, getOutHouseNotes].filter(Boolean).join('\n');
   }
 
   const isStayRequest = String(response.stayRequest || response.stay_request || stayRequestFormResponse.stayRequest || stayRequestFormResponse.stay_request || '').toLowerCase() === 'true'
@@ -6256,7 +6394,7 @@ async function finalizeStayRequestFlowEnquiry(session, customer, agency) {
     getOutHouseDetails.childrenBelow5 !== undefined && getOutHouseDetails.childrenBelow5 !== null ? `Children below 5: ${getOutHouseDetails.childrenBelow5}` : null,
     getOutHouseDetails.rooms ? `Rooms: ${getOutHouseDetails.rooms}` : null,
     enquiry.notes ? `Other details: ${enquiry.notes}` : null,
-  ].filter(Boolean).join(' | ');
+  ].filter(Boolean).join('\n');
 
   const lead = await ensureLead(session, customer, agency, {
     itemType: 'PROPERTY',
@@ -7114,6 +7252,7 @@ module.exports = {
   renderCurrentStep,
   buildProfileSummary,
   ensureLead,
+  pendingReminderWouldSend,
   createFreshGreetingLead,
   getFlowBase64Image,
   buildFlowPackageOptions,

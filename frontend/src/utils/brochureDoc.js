@@ -1,0 +1,162 @@
+// FILE: /frontend/src/utils/brochureDoc.js
+//
+// Front-end mirror of the pure parts of backend/src/services/brochureDoc.ts.
+//
+// These functions produce the style objects React renders each element with. The
+// backend produces the SAME styles as inline CSS when it renders the page for
+// Puppeteer, so the editor is a true WYSIWYG of the printed PDF. If you change a
+// style rule here, change it there — the two files are the contract.
+
+export const PAGE_SIZES = {
+  landscape: { w: 1122, h: 794, label: 'Landscape (A4)' },
+  portrait: { w: 794, h: 1122, label: 'Portrait (A4)' },
+  square: { w: 1000, h: 1000, label: 'Square' },
+};
+
+export const FONTS = [
+  { key: 'Anton', stack: "'Anton', Impact, sans-serif", label: 'Anton (display)' },
+  { key: 'Playfair Display', stack: "'Playfair Display', Georgia, serif", label: 'Playfair (serif)' },
+  { key: 'Yellowtail', stack: "'Yellowtail', cursive", label: 'Yellowtail (script)' },
+  { key: 'Bebas Neue', stack: "'Bebas Neue', Impact, sans-serif", label: 'Bebas Neue' },
+  { key: 'Inter', stack: "'Inter', Helvetica, Arial, sans-serif", label: 'Inter (body)' },
+  { key: 'Lora', stack: "'Lora', Georgia, serif", label: 'Lora (body serif)' },
+  { key: 'Montserrat', stack: "'Montserrat', Helvetica, sans-serif", label: 'Montserrat' },
+];
+
+export const GOOGLE_FONTS_HREF =
+  'https://fonts.googleapis.com/css2'
+  + '?family=Anton'
+  + '&family=Bebas+Neue'
+  + '&family=Inter:wght@300;400;600;700'
+  + '&family=Lora:wght@400;600'
+  + '&family=Montserrat:wght@300;400;600;700'
+  + '&family=Playfair+Display:wght@400;600;700'
+  + '&family=Yellowtail'
+  + '&display=swap';
+
+const ALIGNMENTS = ['left', 'center', 'right'];
+const FIT_MODES = ['cover', 'contain', 'fill'];
+const SHAPE_KINDS = ['rect', 'ellipse', 'line'];
+
+export const PRINT_IMAGE_WIDTH = 1600;
+export const THUMB_IMAGE_WIDTH = 400;
+
+function num(value, fallback) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+/**
+ * Cloudinary derivative URL. The tray and canvas render w_400/w_1600 versions rather
+ * than the 5 MB originals — without this, a 30-photo deck makes the editor crawl.
+ */
+export function cdnUrl(url, width) {
+  if (!url || typeof url !== 'string') return '';
+  const marker = '/upload/';
+  const at = url.indexOf(marker);
+  if (at === -1 || !url.includes('res.cloudinary.com')) return url;
+  const head = url.slice(0, at + marker.length);
+  const tail = url.slice(at + marker.length);
+  if (/^[a-z]{1,3}_[^/]+\//.test(tail)) return url;
+  return `${head}f_auto,q_auto,c_limit,w_${Math.round(width)}/${tail}`;
+}
+
+export function fontStack(key) {
+  const found = FONTS.find((f) => f.key === key);
+  return found ? found.stack : FONTS[FONTS.length - 3].stack;
+}
+
+export function elementStyle(el) {
+  const style = {
+    position: 'absolute',
+    left: `${num(el.x, 0)}px`,
+    top: `${num(el.y, 0)}px`,
+    width: `${num(el.w, 100)}px`,
+    height: `${num(el.h, 100)}px`,
+    zIndex: num(el.z, 1),
+  };
+  const rotate = num(el.rotate, 0);
+  if (rotate) style.transform = `rotate(${rotate}deg)`;
+  const opacity = num(el.opacity, 1);
+  if (opacity !== 1) style.opacity = String(opacity);
+  return style;
+}
+
+export function textStyle(el) {
+  return {
+    ...elementStyle(el),
+    fontFamily: fontStack(el.font),
+    fontSize: `${num(el.size, 24)}px`,
+    fontWeight: String(num(el.weight, 400)),
+    lineHeight: String(num(el.lineHeight, 1.2)),
+    letterSpacing: `${num(el.letterSpacing, 0)}px`,
+    color: el.color || '#111111',
+    textAlign: ALIGNMENTS.includes(el.align) ? el.align : 'left',
+    textTransform: el.uppercase ? 'uppercase' : 'none',
+    display: 'flex',
+    flexDirection: 'column',
+    justifyContent: el.valign === 'center' ? 'center' : (el.valign === 'bottom' ? 'flex-end' : 'flex-start'),
+    whiteSpace: 'pre-wrap',
+    wordBreak: 'break-word',
+    overflow: 'hidden',
+  };
+}
+
+export function imageStyle(el) {
+  return {
+    ...elementStyle(el),
+    objectFit: FIT_MODES.includes(el.fit) ? el.fit : 'cover',
+    borderRadius: `${num(el.radius, 0)}px`,
+    overflow: 'hidden',
+    backgroundColor: '#e5e7eb',
+  };
+}
+
+export function shapeStyle(el) {
+  const kind = SHAPE_KINDS.includes(el.shape) ? el.shape : 'rect';
+  return {
+    ...elementStyle(el),
+    backgroundColor: el.fill || 'rgba(0,0,0,0.35)',
+    borderRadius: kind === 'ellipse' ? '50%' : `${num(el.radius, 0)}px`,
+    border: el.strokeWidth ? `${num(el.strokeWidth, 0)}px solid ${el.stroke || '#000'}` : 'none',
+  };
+}
+
+// --- editor-only helpers ---------------------------------------------------
+
+let idCounter = 0;
+export function newId(prefix = 'e') {
+  idCounter += 1;
+  return `${prefix}${Date.now().toString(36)}${idCounter}`;
+}
+
+export function newTextElement(pageW, pageH) {
+  return {
+    id: newId('t'), type: 'text', text: 'Your text', field: '',
+    x: Math.round(pageW / 2 - 200), y: Math.round(pageH / 2 - 30), w: 400, h: 60,
+    rotate: 0, z: 10, opacity: 1,
+    font: 'Inter', size: 32, weight: 600, lineHeight: 1.25, letterSpacing: 0,
+    color: '#111827', align: 'left', valign: 'top', uppercase: false,
+  };
+}
+
+export function newImageElement(pageW, pageH, url = '') {
+  return {
+    id: newId('i'), type: 'image', url, slot: '',
+    x: Math.round(pageW / 2 - 200), y: Math.round(pageH / 2 - 140), w: 400, h: 280,
+    rotate: 0, z: 10, opacity: 1, fit: 'cover', radius: 8,
+  };
+}
+
+export function newShapeElement(pageW, pageH) {
+  return {
+    id: newId('s'), type: 'shape', shape: 'rect',
+    x: Math.round(pageW / 2 - 150), y: Math.round(pageH / 2 - 75), w: 300, h: 150,
+    rotate: 0, z: 10, opacity: 1,
+    fill: 'rgba(15,23,42,0.45)', stroke: '', strokeWidth: 0, radius: 8,
+  };
+}
+
+export function newPage() {
+  return { id: newId('p'), bg: { type: 'color', color: '#ffffff' }, elements: [] };
+}

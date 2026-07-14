@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { packagesApi } from '../api/packagesApi';
+import { useAuthStore } from '../store/authStore';
 import {
   ClockIcon, CurrencyRupeeIcon, MapPinIcon,
   PhotoIcon, CheckCircleIcon, XMarkIcon, DocumentArrowUpIcon,
@@ -23,12 +24,32 @@ const MAX_IMAGE_SIZE = 25 * 1024 * 1024;
 const MAX_PDF_SIZE = 50 * 1024 * 1024;
 const isImageFile = (file) => file.type.startsWith('image/') || IMAGE_EXTENSIONS.test(file.name || '');
 const isPdfFile = (file) => file.type === 'application/pdf' || /\.pdf$/i.test(file.name || '');
+const DEFAULT_PACKAGE_CATEGORIES = ['DOMESTIC', 'INTERNATIONAL'];
+
+const normalizeCategory = (value) => {
+  const text = String(value || '').trim();
+  const normalized = text.toUpperCase();
+  if (normalized === 'DOMESTIC' || normalized === 'INTERNATIONAL') return normalized;
+  return text;
+};
+
+const formatCategoryLabel = (value) => {
+  const text = String(value || '').trim();
+  const normalized = text.toUpperCase();
+  if (normalized === 'DOMESTIC') return 'Domestic';
+  if (normalized === 'INTERNATIONAL') return 'International';
+  return text || 'Domestic';
+};
 
 export default function PackageForm() {
   const { id } = useParams();
   const navigate = useNavigate();
   const qc = useQueryClient();
   const isEdit = !!id;
+  const agency = useAuthStore((s) => s.agency);
+  const normalizedAgencyName = String(agency?.name || '').trim().toUpperCase();
+  const normalizedIndustry = String(agency?.industry || '').trim().toUpperCase();
+  const hideAyurvedicTravelFields = normalizedAgencyName.includes('AYURVED') || normalizedIndustry === 'AYURVEDIC';
 
   const [step, setStep] = useState(1);
   const [form, setForm] = useState({
@@ -57,6 +78,21 @@ export default function PackageForm() {
       .filter(Boolean)
       .map((type) => type.toUpperCase())
   )).sort((a, b) => a.localeCompare(b));
+  const existingCategories = Array.from(new Set([
+    ...DEFAULT_PACKAGE_CATEGORIES,
+    ...(packagesQuery.data?.data || [])
+      .map((pkg) => normalizeCategory(pkg.category))
+      .filter(Boolean),
+  ])).sort((a, b) => {
+    const defaultA = DEFAULT_PACKAGE_CATEGORIES.indexOf(a);
+    const defaultB = DEFAULT_PACKAGE_CATEGORIES.indexOf(b);
+    if (defaultA !== -1 || defaultB !== -1) {
+      if (defaultA === -1) return 1;
+      if (defaultB === -1) return -1;
+      return defaultA - defaultB;
+    }
+    return a.localeCompare(b);
+  });
 
   useEffect(() => {
     if (!imageFile) { setImagePreview(form.imageUrl || ''); return undefined; }
@@ -127,7 +163,7 @@ export default function PackageForm() {
 
       await saveMutation.mutateAsync({
         name: form.name,
-        category: form.category,
+        category: normalizeCategory(form.category) || 'DOMESTIC',
         tourType: form.tourType.trim() ? form.tourType.trim().toUpperCase() : null,
         duration: form.duration,
         destinations: form.destinations.split(',').map((d) => d.trim()).filter(Boolean),
@@ -262,10 +298,22 @@ export default function PackageForm() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-5">
                   <div>
                     <label className="prop-label">Category <span className="text-red-400">*</span></label>
-                    <select value={form.category} onChange={(e) => set('category', e.target.value)} className="prop-input" required>
-                      <option value="DOMESTIC">Domestic</option>
-                      <option value="INTERNATIONAL">International</option>
-                    </select>
+                    <input
+                      value={form.category}
+                      onChange={(e) => set('category', e.target.value)}
+                      onBlur={(e) => set('category', normalizeCategory(e.target.value) || 'DOMESTIC')}
+                      className="prop-input"
+                      list="package-category-options"
+                      maxLength={100}
+                      placeholder="e.g. Domestic, Ayurveda, Therapy"
+                      required
+                    />
+                    <datalist id="package-category-options">
+                      {existingCategories.map((category) => (
+                        <option key={category} value={category} label={formatCategoryLabel(category)} />
+                      ))}
+                    </datalist>
+                    <p className="mt-2 text-[11px] font-medium text-neutral-400">Choose an existing category or type a new one.</p>
                   </div>
                   <div>
                     <label className="prop-label">Base Price (₹)</label>
@@ -276,59 +324,64 @@ export default function PackageForm() {
                   </div>
                 </div>
 
-                <div>
-                  <label className="prop-label">Tour Type</label>
-                  <input
-                    value={form.tourType}
-                    onChange={(e) => set('tourType', e.target.value)}
-                    onBlur={(e) => set('tourType', e.target.value.trim().toUpperCase())}
-                    className="prop-input"
-                    placeholder="e.g. COUPLE, FAMILY, COLLEGE, BUDGET"
-                    list="package-tour-type-options"
-                    maxLength={80}
-                  />
-                  <datalist id="package-tour-type-options">
-                    {existingTourTypes.map((type) => (
-                      <option key={type} value={type} />
-                    ))}
-                  </datalist>
-                  {existingTourTypes.length > 0 ? (
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      {existingTourTypes.slice(0, 8).map((type) => (
-                        <button
-                          key={type}
-                          type="button"
-                          onClick={() => set('tourType', type)}
-                          className={`rounded-full border px-4 py-1.5 text-xs font-bold transition ${
-                            form.tourType.toUpperCase() === type
-                              ? 'border-neutral-900 bg-neutral-900 text-white'
-                              : 'border-neutral-200 bg-white text-neutral-600 hover:border-neutral-400 hover:text-neutral-900'
-                          }`}
-                        >
-                          {type}
-                        </button>
-                      ))}
+                {!hideAyurvedicTravelFields ? (
+                  <>
+                    <div>
+                      <label className="prop-label">Tour Type</label>
+                      <input
+                        value={form.tourType}
+                        onChange={(e) => set('tourType', e.target.value)}
+                        onBlur={(e) => set('tourType', e.target.value.trim().toUpperCase())}
+                        className="prop-input"
+                        placeholder="e.g. COUPLE, FAMILY, COLLEGE, BUDGET"
+                        list="package-tour-type-options"
+                        maxLength={80}
+                      />
+                      <datalist id="package-tour-type-options">
+                        {existingTourTypes.map((type) => (
+                          <option key={type} value={type} />
+                        ))}
+                      </datalist>
+                      {existingTourTypes.length > 0 ? (
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {existingTourTypes.slice(0, 8).map((type) => (
+                            <button
+                              key={type}
+                              type="button"
+                              onClick={() => set('tourType', type)}
+                              className={`rounded-full border px-4 py-1.5 text-xs font-bold transition ${
+                                form.tourType.toUpperCase() === type
+                                  ? 'border-neutral-900 bg-neutral-900 text-white'
+                                  : 'border-neutral-200 bg-white text-neutral-600 hover:border-neutral-400 hover:text-neutral-900'
+                              }`}
+                            >
+                              {type}
+                            </button>
+                          ))}
+                        </div>
+                      ) : null}
+                      <p className="mt-2 text-[11px] font-medium text-neutral-400">Choose an existing type or type a new one.</p>
                     </div>
-                  ) : null}
-                  <p className="mt-2 text-[11px] font-medium text-neutral-400">Choose an existing type or type a new one.</p>
-                </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-5">
-                  <div>
-                    <label className="prop-label">Duration</label>
-                    <div className="relative">
-                      <input value={form.duration} onChange={(e) => set('duration', e.target.value)} className="prop-input pl-12" placeholder="e.g. 3 Nights 4 Days" />
-                      <ClockIcon className="prop-input-icon h-5 w-5" />
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-5">
+                      <div>
+                        <label className="prop-label">Duration</label>
+                        <div className="relative">
+                          <input value={form.duration} onChange={(e) => set('duration', e.target.value)} className="prop-input pl-12" placeholder="e.g. 3 Nights 4 Days" />
+                          <ClockIcon className="prop-input-icon h-5 w-5" />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="prop-label">Destinations</label>
+                        <div className="relative">
+                          <input value={form.destinations} onChange={(e) => set('destinations', e.target.value)} className="prop-input pl-12" placeholder="Male, Maafushi (comma separated)" />
+                          <MapPinIcon className="prop-input-icon h-5 w-5" />
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                  <div>
-                    <label className="prop-label">Destinations</label>
-                    <div className="relative">
-                      <input value={form.destinations} onChange={(e) => set('destinations', e.target.value)} className="prop-input pl-12" placeholder="Male, Maafushi (comma separated)" />
-                      <MapPinIcon className="prop-input-icon h-5 w-5" />
-                    </div>
-                  </div>
-                </div>
+
+                  </>
+                ) : null}
 
                 <div>
                   <label className="prop-label flex items-center justify-between">
@@ -479,7 +532,7 @@ export default function PackageForm() {
                     </div>
                     <div className="flex justify-between items-center border-b border-neutral-800 pb-4">
                       <span className="text-neutral-400">Category</span>
-                      <span className="font-bold">{form.category === 'INTERNATIONAL' ? 'International' : 'Domestic'}</span>
+                      <span className="font-bold">{formatCategoryLabel(form.category)}</span>
                     </div>
                     <div className="flex justify-between items-center border-b border-neutral-800 pb-4">
                       <span className="text-neutral-400">Tour Type</span>

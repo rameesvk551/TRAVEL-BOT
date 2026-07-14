@@ -1,16 +1,23 @@
 // FILE: mobile/src/navigation/registry.ts
 // Module registry (Doc 3 §3). Maps every module key the app can render to its
-// icon, default label, hub group, and stack component. The manifest decides
-// which are active. All stacks point to PlaceholderStack in Phase 0.
+// icon, default label, and hub group. The manifest decides which are active,
+// and AppNavigator maps each key to its stack.
+//
+// One engine, many schemas: a resort does NOT get a separate `reservations`
+// module — it gets `bookings` relabelled to "Reservations" by the vocabulary
+// layer (see appManifestService INDUSTRY_PROFILES.labels + useLabel). So the
+// keys here must be exactly the keys the manifest can emit. Adding a key the
+// backend never sends is worse than useless: it can only ever resolve to a
+// placeholder.
 
 import {
-  Home, MessageCircle, CalendarCheck, Users, Grid3X3,
+  Home, MessageCircle, CalendarCheck, Users,
   Package, Building2, Ship, FileCheck, Wrench,
   Map, Megaphone, FileText, Share2, BarChart3,
   Globe, Star, Workflow, Zap, Gift,
   DollarSign, Receipt, Calculator, Store,
   PieChart, LineChart, Phone,
-  UserCog, Building, Settings, BedDouble, ClipboardList,
+  UserCog, Building, Settings,
 } from 'lucide-react-native';
 import type { LucideIcon } from 'lucide-react-native';
 
@@ -37,9 +44,9 @@ export const MODULES: Record<string, ModuleDef> = {
   // Core (always or near-always present)
   home:          { key: 'home',          defaultLabel: 'Home',           icon: Home,           group: 'core',      engine: 'dashboard' },
   inbox:         { key: 'inbox',         defaultLabel: 'Inbox',          icon: MessageCircle,  group: 'core',      engine: 'chat' },
+  // Renders as "Reservations" (resort), "Jobs" (cleaning), "Orders" (laundry)
+  // via the manifest's label overrides — same engine, different vocabulary.
   bookings:      { key: 'bookings',      defaultLabel: 'Bookings',       icon: CalendarCheck,  group: 'core',      engine: 'list' },
-  reservations:  { key: 'reservations',  defaultLabel: 'Reservations',   icon: BedDouble,      group: 'core',      engine: 'list' },
-  jobs:          { key: 'jobs',          defaultLabel: 'Jobs',           icon: ClipboardList,  group: 'core',      engine: 'list' },
   leads:         { key: 'leads',         defaultLabel: 'Leads',          icon: Users,          group: 'core',      engine: 'list' },
   followUps:     { key: 'followUps',     defaultLabel: 'Follow-ups',     icon: CalendarCheck,  group: 'core',      engine: 'list' },
   customers:     { key: 'customers',     defaultLabel: 'Customers',      icon: Users,          group: 'core',      engine: 'list' },

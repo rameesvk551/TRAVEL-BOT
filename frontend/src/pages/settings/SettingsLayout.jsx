@@ -16,6 +16,7 @@ import {
   PaperAirplaneIcon,
   ClipboardDocumentListIcon,
   QueueListIcon,
+  DevicePhoneMobileIcon,
 } from '@heroicons/react/24/outline';
 
 const NAVIGATION = [
@@ -31,6 +32,7 @@ const NAVIGATION = [
   { name: 'Instagram Flow Builder', path: '/instagram-flow-builder', icon: CursorArrowRaysIcon },
   { name: 'Automations', path: '/settings/automations', icon: Cog6ToothIcon },
   { name: 'Integrations', path: '/settings/integrations', icon: LinkIcon },
+  { name: 'Staff WhatsApp Numbers', path: '/settings/staff-whatsapp', icon: DevicePhoneMobileIcon, featureFlag: 'staffWhatsAppEnabled' },
   { name: 'Website API', path: '/settings/api-keys', icon: KeyIcon },
   { name: 'Accounts', path: '/settings/accounts', icon: BanknotesIcon },
   { name: 'Vendor Types', path: '/settings/vendor-types', icon: TagIcon },
@@ -48,6 +50,7 @@ export default function SettingsLayout() {
   const hasPrefs = prefs.length > 0;
 
   const visibleNav = NAVIGATION.filter((item) => {
+    if (item.featureFlag && !agency?.[item.featureFlag]) return false;
     if (item.path === '/settings/vendor-types') {
       if (hasPrefs) return prefs.includes(item.path);
       return true;

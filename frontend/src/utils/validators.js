@@ -33,7 +33,7 @@ export const registerSchema = z.object({
 
 export const packageSchema = z.object({
   name: z.string().min(2, 'Package name is required'),
-  category: z.enum(['DOMESTIC', 'INTERNATIONAL']).optional(),
+  category: z.string().trim().min(1, 'Category is required').max(100).optional(),
   duration: z.string().optional(),
   destinations: z.string().optional(),
   basePrice: z.string().min(1, 'Price is required'),

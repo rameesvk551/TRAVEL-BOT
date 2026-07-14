@@ -47,8 +47,12 @@ const leadFormLimiter = rateLimit({
 });
 
 router.get('/:agencyKey/info', publicController.getInfo);
+// No slug = the agency's default form (keeps pre-existing /lead/:agencyKey links working).
 router.get('/:agencyKey/lead-form', publicController.getLeadForm);
 router.post('/:agencyKey/lead-form', leadFormLimiter, publicController.submitLeadForm);
+// A slug selects one of the agency's named forms.
+router.get('/:agencyKey/lead-form/:slug', publicController.getLeadForm);
+router.post('/:agencyKey/lead-form/:slug', leadFormLimiter, publicController.submitLeadForm);
 router.get('/:agencyKey/packages', publicController.listPackages);
 router.get('/:agencyKey/packages/:id', publicController.getPackage);
 router.get('/:agencyKey/properties', publicController.listProperties);

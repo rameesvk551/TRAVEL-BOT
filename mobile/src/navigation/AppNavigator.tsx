@@ -2,8 +2,9 @@
 import React, { useMemo } from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { View, StyleSheet, Platform } from 'react-native';
+import { StyleSheet, Platform } from 'react-native';
 import { BlurView } from 'expo-blur';
+import { Menu } from 'lucide-react-native';
 import { useTheme } from '../theme/ThemeProvider';
 import { useManifest } from '../hooks/useManifest';
 import { buildTabs } from './buildTabs';
@@ -374,7 +375,6 @@ export function AppNavigator() {
         let Component: any;
 
         if (isMore) {
-          const { Menu } = require('lucide-react-native');
           icon = Menu;
           label = 'More';
           Component = ModuleHub;
@@ -406,12 +406,15 @@ export function AppNavigator() {
         );
       })}
       
-      {/* Hidden tab for gallery - dev only but useful for Phase 0 */}
-      <Tab.Screen
-        name="Gallery"
-        component={ComponentGallery}
-        options={{ tabBarButton: () => null }}
-      />
+      {/* Component gallery — a design-system reference, not a product surface.
+          Kept out of release builds so it can't be reached by a real user. */}
+      {__DEV__ && (
+        <Tab.Screen
+          name="Gallery"
+          component={ComponentGallery}
+          options={{ tabBarButton: () => null }}
+        />
+      )}
     </Tab.Navigator>
   );
 }

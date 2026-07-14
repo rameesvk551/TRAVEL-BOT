@@ -36,6 +36,7 @@ import {
   useLead,
   useLeads,
   usePipelineStages,
+  useSendStaffFirstOutreach,
   useUpdateFollowUp,
   useUpdateLead,
 } from '../hooks/useLeads';
@@ -71,6 +72,7 @@ import { getInitials, getStatusTone, getStagePillStyle } from '../components/uiH
 import LeadPipeline from '../components/LeadPipeline';
 import NewLeadModal from '../components/NewLeadModal';
 import ActivityTimeline from '../components/ActivityTimeline';
+import toast from 'react-hot-toast';
 
 const BASE_TABS = [
   { key: 'Needs Attention', label: 'Needs Attention' },
@@ -624,8 +626,6 @@ export default function Leads() {
   const totalItems = Number(leadsResponse.total || 0);
   const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
   const safeCurrentPage = Math.min(currentPage, totalPages);
-  const pageStartIndex = (safeCurrentPage - 1) * pageSize;
-
   // Ad filter options come straight from the leads-by-ad report: every Click-to-WhatsApp
   // ad that has produced at least one lead, labelled with its resolved name (or headline).
   // Users never type an ad name — they pick from this auto-built list.
@@ -1173,7 +1173,6 @@ export default function Leads() {
               selectedLeadIds={selectedLeadIds}
               onToggleSelect={toggleSelectLead}
               onToggleSelectAll={toggleSelectAll}
-              rowOffset={pageStartIndex}
             />
           </div>
         </>
@@ -1540,11 +1539,11 @@ function MetricCard({ icon: Icon, tone, value, label, fullWidth }) {
   );
 }
 
-function LeadTable({ agents, clearFilters, isError, isLoading, leads, onLeadClick, onRetry, onScheduleFollowUp, onStatusChange, onUpdateLead, stages = [], selectedLeadIds, onToggleSelect, onToggleSelectAll, rowOffset = 0 }) {
+function LeadTable({ agents, clearFilters, isError, isLoading, leads, onLeadClick, onRetry, onScheduleFollowUp, onStatusChange, onUpdateLead, stages = [], selectedLeadIds, onToggleSelect, onToggleSelectAll }) {
   const selectedOnPage = leads.filter((lead) => selectedLeadIds.has(lead.id)).length;
   const allSelected = leads.length > 0 && selectedOnPage === leads.length;
   const someSelected = selectedOnPage > 0 && selectedOnPage < leads.length;
-  const colSpan = 11;
+  const colSpan = 10;
 
   return (
     <div className="data-table-wrapper">
@@ -1567,14 +1566,13 @@ function LeadTable({ agents, clearFilters, isError, isLoading, leads, onLeadClic
                   {someSelected && !allSelected && <span className="block h-0.5 w-2.5 rounded bg-neutral-900" />}
                 </button>
               </th>
-              <th className="data-table-th w-16">SL NO</th>
+              <th className="data-table-th">Created On</th>
               <th className="data-table-th">Lead</th>
               <th className="data-table-th">Attention</th>
               <th className="data-table-th">Contact</th>
               <th className="data-table-th">Trip</th>
               <th className="data-table-th">Source Ad</th>
               <th className="data-table-th">Next Action</th>
-              <th className="data-table-th">Last Activity</th>
               <th className="data-table-th">Assigned To</th>
               <th className="data-table-th">Status</th>
             </tr>
@@ -1624,10 +1622,9 @@ function LeadTable({ agents, clearFilters, isError, isLoading, leads, onLeadClic
 
             {!isLoading &&
               !isError &&
-              leads.map((lead, index) => (
+              leads.map((lead) => (
                 <LeadTableRow
                   agents={agents}
-                  index={rowOffset + index}
                   isSelected={selectedLeadIds.has(lead.id)}
                   key={lead.id}
                   lead={lead}
@@ -1658,7 +1655,7 @@ function LeadTableSkeleton({ colSpan = 10 }) {
   ));
 }
 
-function LeadTableRow({ agents, index, isSelected, lead, onLeadClick, onScheduleFollowUp, onStatusChange, onToggleSelect, onUpdateLead, stages = [] }) {
+function LeadTableRow({ agents, isSelected, lead, onLeadClick, onScheduleFollowUp, onStatusChange, onToggleSelect, onUpdateLead, stages = [] }) {
   const attentionBadges = getAttentionBadges(lead);
   const nextFollowUp = getNextFollowUp(lead);
   const agentOptions = mergeAssignedAgentOption(agents, lead);
@@ -1677,7 +1674,7 @@ function LeadTableRow({ agents, index, isSelected, lead, onLeadClick, onSchedule
           {isSelected && <CheckIcon className="h-3.5 w-3.5" />}
         </button>
       </td>
-      <td className="data-table-td font-medium text-neutral-400">#{index + 1}</td>
+      <td className="data-table-td text-xs font-medium text-neutral-500">{formatDate(lead.createdAt)}</td>
       <td className="data-table-td">
         <div className="flex items-center gap-3">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-neutral-100 text-xs font-bold text-neutral-600 ring-1 ring-neutral-200">
@@ -1751,7 +1748,6 @@ function LeadTableRow({ agents, index, isSelected, lead, onLeadClick, onSchedule
           </button>
         </div>
       </td>
-      <td className="data-table-td text-xs text-neutral-500">{getActivityLabel(lead)}</td>
       <td className="data-table-td" onClick={(event) => event.stopPropagation()}>
         <select
           className="cursor-pointer appearance-none rounded-md border-0 bg-transparent px-2 py-1 text-sm font-medium text-neutral-600 transition-colors hover:bg-neutral-50 focus:ring-0"
@@ -1786,6 +1782,8 @@ function LeadTableRow({ agents, index, isSelected, lead, onLeadClick, onSchedule
 }
 
 function LeadDrawer({ leadId, onClose, agents }) {
+  const currentAgent = useAuthStore((state) => state.agent);
+  const agency = useAuthStore((state) => state.agency);
   const { data, isLoading } = useLead(leadId);
   const callLogsQuery = useCallLogs({ leadId, limit: 20 });
   const lead = data?.data;
@@ -1844,6 +1842,7 @@ function LeadDrawer({ leadId, onClose, agents }) {
   const [editState, setEditState] = useState({});
 
   const updateLead = useUpdateLead();
+  const sendStaffFirstOutreach = useSendStaffFirstOutreach();
   const drawerStagesQuery = usePipelineStages();
   const drawerStages = (drawerStagesQuery.data?.data || []).filter((stage) => stage.isActive);
   const addNote = useAddNote();
@@ -1927,9 +1926,25 @@ function LeadDrawer({ leadId, onClose, agents }) {
     window.location.href = `tel:${sanitized}`;
   };
 
+  const handleSendStaffFirstOutreach = async () => {
+    try {
+      await sendStaffFirstOutreach.mutateAsync(leadId);
+      toast.success('First staff WhatsApp outreach sent');
+    } catch (err) {
+      toast.error(err.response?.data?.error || err.message || 'Failed to send first staff WhatsApp outreach');
+    }
+  };
+
   if (!leadId) return null;
 
   const agentOptions = mergeAssignedAgentOption(agents, lead);
+  const firstOutreach = lead?.customTripDetails?.firstOutreach || null;
+  const canSendStaffFirstOutreach = Boolean(
+    agency?.staffWhatsAppEnabled
+    && lead?.assignedAgentId
+    && currentAgent?.id === lead?.assignedAgentId
+    && String(firstOutreach?.status || '').toUpperCase() !== 'SENT'
+  );
 
   return (
     <div className="fixed inset-0 z-50 pointer-events-auto">
@@ -2034,6 +2049,14 @@ function LeadDrawer({ leadId, onClose, agents }) {
                 setNoteContent('');
                 setIsNoteModalOpen(true);
               }} />
+              {agency?.staffWhatsAppEnabled ? (
+                <QuickAction
+                  icon={ChatBubbleLeftRightIcon}
+                  label={String(firstOutreach?.status || '').toUpperCase() === 'SENT' ? 'First Sent' : '1st Outreach'}
+                  onClick={handleSendStaffFirstOutreach}
+                  disabled={!canSendStaffFirstOutreach || sendStaffFirstOutreach.isPending}
+                />
+              ) : null}
             </div>
           )}
 
@@ -2132,6 +2155,14 @@ function LeadDrawer({ leadId, onClose, agents }) {
               <LeadField label="Lead Score" value={`${leadScore}/100`} />
               <LeadField label="Last Activity" value={getActivityLabel(lead)} />
               <LeadField label="Next Contact" value={nextFollowUp ? formatDateTime(nextFollowUp.scheduledAt) : EMPTY} />
+              {agency?.staffWhatsAppEnabled ? (
+                <LeadField
+                  label="Staff First Outreach"
+                  value={String(firstOutreach?.status || '').toUpperCase() === 'SENT'
+                    ? `Sent ${firstOutreach?.sentAt ? formatDateTime(firstOutreach.sentAt) : ''}`.trim()
+                    : firstOutreach?.status || 'Not sent'}
+                />
+              ) : null}
               <LeadField
                 label="Assigned To"
                 value={lead.assignedAgent?.name || 'Unassigned'}

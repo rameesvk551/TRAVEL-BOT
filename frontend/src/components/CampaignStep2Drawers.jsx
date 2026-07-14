@@ -1,6 +1,7 @@
 import React from 'react';
 import { Check, Search, X, ChevronDown, ChevronRight, Package, Home, UserPlus, Image, Video, Plus, Send, Layers, Type, Workflow } from 'lucide-react';
 import CampaignFlowBinding from './CampaignFlowBinding';
+import LeadFormPicker from './LeadFormPicker';
 import { templatesApi } from '../api/templatesApi';
 
 // Per-card media upload — lets the agency replace a carousel card's catalog image
@@ -346,6 +347,12 @@ export function ConfigContent({
                               flowId: next.flowId || null,
                               keyword: next.keyword || null,
                             })}
+                          />
+                        )}
+                        {action === 'OPEN_LEAD_FORM' && (
+                          <LeadFormPicker
+                            value={current.leadFormId}
+                            onChange={(leadFormId) => updateButtonAction?.(button, index, { leadFormId })}
                           />
                         )}
                         {action === 'OPEN_URL' && (

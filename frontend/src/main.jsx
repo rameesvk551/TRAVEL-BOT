@@ -7,6 +7,8 @@ import { Toaster } from 'react-hot-toast';
 import App from './App';
 import './index.css';
 
+window.__TRAVELBOT_FRONTEND_BUILD__ = '2026-07-06-package-category-cache-bust';
+
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations()
     .then((registrations) => Promise.all(registrations.map((registration) => registration.unregister())))

@@ -19,9 +19,27 @@ export interface ButtonProps {
   loading?: boolean;
   fullWidth?: boolean;
   style?: any;
+  /**
+   * Required for icon-only buttons ('icon' and 'fab'): with no `label` there is
+   * no text for a screen reader to fall back on, so without this the control is
+   * announced as an unlabeled button.
+   */
+  accessibilityLabel?: string;
+  accessibilityHint?: string;
 }
 
-export function Button({ variant, label, icon: Icon, onPress, disabled, loading, fullWidth, style }: ButtonProps) {
+export function Button({
+  variant,
+  label,
+  icon: Icon,
+  onPress,
+  disabled,
+  loading,
+  fullWidth,
+  style,
+  accessibilityLabel,
+  accessibilityHint,
+}: ButtonProps) {
   const { theme } = useTheme();
   const scale = useSharedValue(1);
 
@@ -159,6 +177,12 @@ export function Button({ variant, label, icon: Icon, onPress, disabled, loading,
       onPressOut={handlePressOut}
       onPress={handlePress}
       disabled={disabled || loading}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel ?? label}
+      accessibilityHint={accessibilityHint}
+      // Announces "dimmed" when disabled and "busy" while a mutation is in
+      // flight, so the loading spinner isn't a purely visual signal.
+      accessibilityState={{ disabled: !!disabled, busy: !!loading }}
       style={[getStyle(), style, animatedStyle]}
     >
       {loading ? (

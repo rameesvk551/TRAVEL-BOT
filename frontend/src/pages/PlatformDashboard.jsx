@@ -213,9 +213,22 @@ function PlatformLayout({ children }) {
 function ModuleControl({ agency, modules, isSaving, onSave }) {
   const [selected, setSelected] = useState([]);
 
+  const allPaths = useMemo(() => (modules || []).map((item) => item.path), [modules]);
+
+  // An agency with no explicit sidebarPreferences has FULL access on the backend —
+  // constants/modules.ts treats an empty list as "unrestricted". Rendering that state
+  // as "nothing ticked" was a trap: ticking a single module and saving wrote a
+  // one-item list, which silently stripped leads/bookings/customers/WhatsApp and every
+  // other module from that agency. Show the effective state instead: everything on.
+  const effective = useMemo(() => (
+    Array.isArray(agency?.sidebarPreferences) && agency.sidebarPreferences.length
+      ? agency.sidebarPreferences
+      : allPaths
+  ), [agency?.sidebarPreferences, allPaths]);
+
   useEffect(() => {
-    setSelected(Array.isArray(agency?.sidebarPreferences) ? agency.sidebarPreferences : []);
-  }, [agency?.id, agency?.sidebarPreferences]);
+    setSelected(effective);
+  }, [agency?.id, effective]);
 
   const toggle = (path) => {
     setSelected((current) => (
@@ -232,7 +245,17 @@ function ModuleControl({ agency, modules, isSaving, onSave }) {
     });
   };
 
-  const isDirty = JSON.stringify(selected.slice().sort()) !== JSON.stringify((agency?.sidebarPreferences || []).slice().sort());
+  const isDirty = JSON.stringify(selected.slice().sort()) !== JSON.stringify(effective.slice().sort());
+
+  /**
+   * When every module is ticked, persist the empty "unrestricted" sentinel rather than
+   * an exhaustive list. Otherwise the agency would be pinned to today's catalogue and
+   * would silently miss any module added to MODULE_CATALOG later.
+   */
+  const handleSave = () => {
+    const allChecked = allPaths.length > 0 && allPaths.every((path) => selected.includes(path));
+    onSave(allChecked ? [] : selected);
+  };
 
   const groups = useMemo(() => {
     const map = {};
@@ -249,11 +272,11 @@ function ModuleControl({ agency, modules, isSaving, onSave }) {
       <div className="section-header">
         <div>
           <h3 className="text-sm font-black">Enabled Modules</h3>
-          <p className="text-xs text-neutral-400">Dashboard is always visible. Empty selection = legacy full access.</p>
+          <p className="text-xs text-neutral-400">Dashboard is always visible. Untick a module to take it away from this agency.</p>
         </div>
         <button
           type="button"
-          onClick={() => onSave(selected)}
+          onClick={handleSave}
           disabled={!isDirty || isSaving}
           className="shell-button-secondary px-3 py-2 text-xs"
         >
@@ -293,6 +316,85 @@ function ModuleControl({ agency, modules, isSaving, onSave }) {
   );
 }
 
+function FeatureControl({ agency, isSaving, onSave }) {
+  const enabled = Boolean(agency?.staffWhatsAppEnabled);
+  return (
+    <div className="shell-panel overflow-hidden">
+      <div className="section-header">
+        <div>
+          <h3 className="text-sm font-black">Agency Features</h3>
+          <p className="text-xs text-neutral-400">Separate from sidebar modules. Platform admin controls access per agency.</p>
+        </div>
+      </div>
+      <div className="p-4">
+        <div className="flex items-center justify-between gap-4 rounded-[var(--radius-sm)] border border-neutral-200 bg-white px-4 py-3">
+          <div>
+            <p className="text-sm font-semibold text-neutral-900">Staff WhatsApp Numbers</p>
+            <p className="mt-1 text-xs text-neutral-500">Lets the agency connect staff-owned WhatsApp numbers and manage first-outreach templates per number.</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => onSave(!enabled)}
+            disabled={isSaving}
+            className={`inline-flex min-w-[120px] items-center justify-center rounded-full px-4 py-2 text-xs font-bold transition ${
+              enabled ? 'bg-emerald-100 text-emerald-700' : 'bg-neutral-100 text-neutral-600'
+            }`}
+          >
+            {isSaving ? 'Saving...' : enabled ? 'Enabled' : 'Disabled'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Paid add-ons, sold per agency. These live in `agency.features` and are
+ * deny-by-default — an agency has nothing here until it is switched on.
+ *
+ * Deliberately NOT part of Enabled Modules above: sidebarPreferences treats an empty
+ * selection as legacy full access, so an add-on stored there would be free for every
+ * agency that has never had its modules configured. Keeping them apart also means
+ * flipping an add-on can't disturb an agency's module list.
+ */
+function AddOnControl({ agency, catalog, isSaving, onSave }) {
+  const features = agency?.features || {};
+
+  return (
+    <div className="shell-panel overflow-hidden">
+      <div className="section-header">
+        <div>
+          <h3 className="text-sm font-black">Paid Add-ons</h3>
+          <p className="text-xs text-neutral-400">Off by default. Switching one on does not affect the agency&apos;s modules.</p>
+        </div>
+      </div>
+      <div className="space-y-3 p-4">
+        {(catalog || []).map((item) => {
+          const enabled = features[item.key] === true;
+          return (
+            <div key={item.key} className="flex items-center justify-between gap-4 rounded-[var(--radius-sm)] border border-neutral-200 bg-white px-4 py-3">
+              <div>
+                <p className="text-sm font-semibold text-neutral-900">{item.label}</p>
+                <p className="mt-1 text-xs text-neutral-500">{item.description}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => onSave({ [item.key]: !enabled })}
+                disabled={isSaving}
+                className={`inline-flex min-w-[120px] items-center justify-center rounded-full px-4 py-2 text-xs font-bold transition ${
+                  enabled ? 'bg-emerald-100 text-emerald-700' : 'bg-neutral-100 text-neutral-600'
+                }`}
+              >
+                {isSaving ? 'Saving...' : enabled ? 'Enabled' : 'Disabled'}
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function AgencyDrawer({ agencyId, range, moduleCatalog, onClose, onStatusChange }) {
   const qc = useQueryClient();
   const [confirming, setConfirming] = useState(false);
@@ -303,6 +405,15 @@ function AgencyDrawer({ agencyId, range, moduleCatalog, onClose, onStatusChange 
     refetchInterval: 30000,
   });
 
+  const featuresMutation = useMutation({
+    mutationFn: (features) => platformApi.updateAgencyFeatures(agencyId, features),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['platform-agencies'] });
+      qc.invalidateQueries({ queryKey: ['platform-agency', agencyId] });
+      qc.invalidateQueries({ queryKey: ['platform-activity'] });
+    },
+  });
+
   const modulesMutation = useMutation({
     mutationFn: (modules) => platformApi.updateAgencyModules(agencyId, modules),
     onSuccess: () => {
@@ -310,6 +421,15 @@ function AgencyDrawer({ agencyId, range, moduleCatalog, onClose, onStatusChange 
       qc.invalidateQueries({ queryKey: ['platform-agencies'] });
       qc.invalidateQueries({ queryKey: ['platform-agency', agencyId] });
       qc.invalidateQueries({ queryKey: ['platform-activity'] });
+    },
+  });
+
+  const featureMutation = useMutation({
+    mutationFn: (enabled) => platformApi.updateAgencyStaffWhatsAppFeature(agencyId, enabled),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['platform-overview'] });
+      qc.invalidateQueries({ queryKey: ['platform-agencies'] });
+      qc.invalidateQueries({ queryKey: ['platform-agency', agencyId] });
     },
   });
 
@@ -454,6 +574,23 @@ function AgencyDrawer({ agencyId, range, moduleCatalog, onClose, onStatusChange 
                 modules={modules}
                 isSaving={modulesMutation.isPending}
                 onSave={(items) => modulesMutation.mutate(items)}
+              />
+            </section>
+
+            <section className="mt-5">
+              <AddOnControl
+                agency={agency}
+                catalog={detail?.featureCatalog}
+                isSaving={featuresMutation.isPending}
+                onSave={(features) => featuresMutation.mutate(features)}
+              />
+            </section>
+
+            <section className="mt-5">
+              <FeatureControl
+                agency={agency}
+                isSaving={featureMutation.isPending}
+                onSave={(enabled) => featureMutation.mutate(enabled)}
               />
             </section>
 

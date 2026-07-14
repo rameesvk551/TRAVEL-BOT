@@ -135,7 +135,9 @@ exports.uploadMedia = async (req, res, next) => {
 
 exports.sync = async (req, res, next) => {
   try {
-    const result = await templateService.syncTemplates(req.user.agencyId);
+    const result = await templateService.syncTemplatesForScope(req.user.agencyId, {
+      channelId: req.body?.channelId || req.query?.channelId || null,
+    });
     res.json({ success: true, data: result });
   } catch (err) {
     next(err);

@@ -1,9 +1,49 @@
 const { Op } = require('sequelize');
-const { Package, Property, Agency, Lead, Customer } = require('../models');
+const { Package, Property, Service, Visa, Cruise, Agency, Lead, Customer } = require('../models');
 const leadService = require('../services/leadService');
 const websiteBuilderService = require('../services/websiteBuilderService');
 const leadFormConfig = require('../services/leadFormConfig');
+const leadFormService = require('../services/leadFormService');
 const { normalizePhone } = require('../utils/phoneUtils');
+
+// Catalog models a lead-form submission may reference via its `item` token.
+const ITEM_MODEL = {
+  PACKAGE: Package,
+  PROPERTY: Property,
+  SERVICE: Service,
+  VISA: Visa,
+  CRUISE: Cruise,
+};
+
+/**
+ * Validates an incoming `item` token ("PROPERTY:<uuid>") and confirms the record
+ * actually belongs to THIS agency before we let it attach to the lead — otherwise a
+ * crafted link could pin another agency's property onto an enquiry. Returns the
+ * canonical token, or '' when absent/unknown/foreign.
+ */
+async function verifiedItemToken(agency, raw) {
+  const item = leadFormConfig.parseItemToken(raw);
+  if (!item) return '';
+  const Model = ITEM_MODEL[item.itemType];
+  if (!Model) return '';
+  const row = await Model.findOne({
+    where: { id: item.itemId, agencyId: agency.id },
+    attributes: ['id'],
+  });
+  if (!row) return '';
+  return `${item.itemType}:${item.itemId}`;
+}
+
+// Agency.id is a UUID column. Only match it when the key actually looks like a
+// UUID — otherwise Postgres throws "invalid input syntax for type uuid" (a 500)
+// before it can fall through to a subdomain / customDomain match.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function agencyKeyOr(key, normalizedHost) {
+  const or = [{ subdomain: key }, { customDomain: normalizedHost }];
+  if (UUID_RE.test(String(key))) or.push({ id: key });
+  return or;
+}
 
 async function resolveAgency(key) {
   const normalized = websiteBuilderService.normalizeHost(key);
@@ -11,11 +51,7 @@ async function resolveAgency(key) {
     where: {
       isActive: true,
       websiteEnabled: true,
-      [Op.or]: [
-        { id: key },
-        { subdomain: key },
-        { customDomain: normalized },
-      ],
+      [Op.or]: agencyKeyOr(key, normalized),
     },
   });
 
@@ -173,11 +209,7 @@ async function resolveAgencyForLeadForm(key) {
   const agency = await Agency.findOne({
     where: {
       isActive: true,
-      [Op.or]: [
-        { id: key },
-        { subdomain: key },
-        { customDomain: normalized },
-      ],
+      [Op.or]: agencyKeyOr(key, normalized),
     },
   });
 
@@ -191,10 +223,22 @@ async function resolveAgencyForLeadForm(key) {
   return agency;
 }
 
+// GET /public/:agencyKey/lead-form         → the agency's default form
+// GET /public/:agencyKey/lead-form/:slug   → that named form
 async function getLeadForm(req, res, next) {
   try {
     const agency = await resolveAgencyForLeadForm(req.params.agencyKey);
-    res.json({ success: true, data: leadFormConfig.publicLeadFormPayload(agency) });
+    const form = await leadFormService.resolvePublicForm(agency, req.params.slug);
+    if (!form) {
+      throw Object.assign(new Error('Lead form not found'), {
+        statusCode: 404,
+        code: 'LEAD_FORM_NOT_FOUND',
+      });
+    }
+    res.json({
+      success: true,
+      data: leadFormConfig.publicLeadFormPayload(agency, leadFormService.toConfig(form)),
+    });
   } catch (err) {
     next(err);
   }
@@ -223,6 +267,13 @@ async function findRecentDuplicateLead(agencyId, phone, source) {
 async function submitLeadForm(req, res, next) {
   try {
     const agency = await resolveAgencyForLeadForm(req.params.agencyKey);
+    const form = await leadFormService.resolvePublicForm(agency, req.params.slug);
+    if (!form) {
+      throw Object.assign(new Error('Lead form not found'), {
+        statusCode: 404,
+        code: 'LEAD_FORM_NOT_FOUND',
+      });
+    }
 
     // Honeypot — bots fill the hidden "company" field; humans never see it.
     if (String(req.body?.company || '').trim()) {
@@ -236,9 +287,17 @@ async function submitLeadForm(req, res, next) {
       utm_campaign: String(req.body?.utm_campaign || '').trim().slice(0, 200),
       utm_content: String(req.body?.utm_content || '').trim().slice(0, 200),
       utm_term: String(req.body?.utm_term || '').trim().slice(0, 200),
+      // The catalog item the customer came in on (e.g. the property card they
+      // tapped "Check availability" on). Verified against this agency.
+      item: await verifiedItemToken(agency, req.body?.item),
     };
 
-    const { leadInput } = leadFormConfig.mapSubmissionToLead(agency, req.body, meta);
+    const { leadInput } = leadFormConfig.mapSubmissionToLead(
+      agency,
+      req.body,
+      meta,
+      leadFormService.toConfig(form),
+    );
 
     const existing = await findRecentDuplicateLead(agency.id, leadInput.customerPhone, leadInput.source);
     if (existing) {

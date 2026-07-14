@@ -1,6 +1,7 @@
 const bcrypt = require('bcryptjs');
 const agentRepository = require('../repositories/agentRepository');
 const { DEFAULT_AGENT_PERMISSIONS, ALL_PERMISSIONS, normalizePermissions } = require('../constants/permissions');
+const { normalizeAgentSidebarPreferences } = require('../constants/agentSidebarModules');
 const { sendUserWelcomePasswordEmail } = require('./emailService');
 const { generateTemporaryPassword } = require('../utils/password');
 const brandingService = require('./brandingService');
@@ -16,6 +17,9 @@ async function createAgent(data, agencyId, requester, agency) {
   const permissions = role === 'ADMIN'
     ? [...ALL_PERMISSIONS]
     : normalizePermissions(data.permissions, DEFAULT_AGENT_PERMISSIONS);
+  const sidebarPreferences = role === 'ADMIN'
+    ? null
+    : normalizeAgentSidebarPreferences(data.sidebarPreferences, null);
 
   const agent = await agentRepository.create({
     agencyId,
@@ -25,6 +29,7 @@ async function createAgent(data, agencyId, requester, agency) {
     passwordHash,
     role,
     permissions,
+    sidebarPreferences,
   });
 
   const safe = agent.toJSON();
@@ -66,7 +71,7 @@ async function updateAgent(agentId, agencyId, requester, updates) {
   }
 
   const allowed = ['name', 'phone', 'isOnline'];
-  if (requester.role === 'ADMIN') allowed.push('role', 'permissions');
+  if (requester.role === 'ADMIN') allowed.push('role', 'permissions', 'sidebarPreferences');
 
   const filtered = {};
   for (const key of allowed) {
@@ -81,8 +86,13 @@ async function updateAgent(agentId, agencyId, requester, updates) {
     filtered.permissions = normalizePermissions(filtered.permissions, []);
   }
 
+  if (filtered.sidebarPreferences !== undefined) {
+    filtered.sidebarPreferences = normalizeAgentSidebarPreferences(filtered.sidebarPreferences, null);
+  }
+
   if (filtered.role === 'ADMIN') {
     filtered.permissions = [...ALL_PERMISSIONS];
+    filtered.sidebarPreferences = null;
   }
 
   const updated = await agentRepository.update(agent, filtered);

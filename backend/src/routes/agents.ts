@@ -8,6 +8,7 @@ const requirePermission = require('../middleware/requirePermission');
 const validateBody = require('../middleware/validateBody');
 const agentController = require('../controllers/agentController');
 const { ALL_PERMISSIONS, PERMISSIONS } = require('../constants/permissions');
+const { AGENT_SIDEBAR_PATHS } = require('../constants/agentSidebarModules');
 
 const router = Router();
 
@@ -18,6 +19,7 @@ const createAgentSchema = z.object({
   password: z.string().min(8).optional(),
   role: z.enum(['ADMIN', 'AGENT']).optional(),
   permissions: z.array(z.enum(ALL_PERMISSIONS)).optional(),
+  sidebarPreferences: z.array(z.enum(AGENT_SIDEBAR_PATHS)).optional(),
 });
 
 const updateAgentSchema = z.object({
@@ -26,6 +28,7 @@ const updateAgentSchema = z.object({
   isOnline: z.boolean().optional(),
   role: z.enum(['ADMIN', 'AGENT']).optional(),
   permissions: z.array(z.enum(ALL_PERMISSIONS)).optional(),
+  sidebarPreferences: z.array(z.enum(AGENT_SIDEBAR_PATHS)).optional(),
 });
 
 /**

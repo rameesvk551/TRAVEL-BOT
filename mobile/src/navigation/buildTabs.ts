@@ -4,9 +4,12 @@
 
 import type { AppManifest } from './types';
 
-// Backfill priority — used only when the manifest/profile doesn't yield 3 middle tabs
+// Backfill priority — used only when the manifest/profile doesn't yield 3 middle
+// tabs. Must stay in sync with TAB_BACKFILL_PRIORITY in the backend's
+// appManifestService. `reservations`/`jobs` are deliberately absent: they are
+// labels for `bookings`, not modules of their own.
 const TAB_BACKFILL_PRIORITY = [
-  'inbox', 'bookings', 'reservations', 'jobs', 'leads', 'campaigns',
+  'inbox', 'bookings', 'leads', 'campaigns',
   'customers', 'payments', 'packages', 'analytics', 'accounting',
 ];
 

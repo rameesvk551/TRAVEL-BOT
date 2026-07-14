@@ -6,6 +6,7 @@ import { useUiStore } from '../store/uiStore';
 import { useBrandingStore } from '../store/brandingStore';
 import { useLogout } from '../hooks/useAuth';
 import { useIndustry } from '../hooks/useIndustry';
+import { canAgentAccessSidebarModule } from '../config/staffSidebarCatalog';
 import {
   HomeIcon,
   CalendarDaysIcon,
@@ -33,6 +34,7 @@ import {
   LifebuoyIcon,
   IdentificationIcon,
   BriefcaseIcon,
+  PhotoIcon,
 } from '@heroicons/react/24/outline';
 import { getInitials } from './uiHelpers';
 
@@ -51,6 +53,8 @@ const navItems = [
 const utilityItems = [
   { to: '/properties', icon: HomeModernIcon, label: 'Properties' },
   { to: '/itineraries', icon: DocumentDuplicateIcon, label: 'Itineraries' },
+  // Paid add-on: hidden unless agency.features.brochureBuilder is true.
+  { to: '/brochures', icon: PhotoIcon, label: 'Brochures', feature: 'brochureBuilder' },
   { to: '/packages', icon: CubeIcon, label: 'Packages' },
   { to: '/cruises', icon: LifebuoyIcon, label: 'Cruises' },
   { to: '/visas', icon: IdentificationIcon, label: 'Visas' },
@@ -74,7 +78,7 @@ const marketingItems = [
 ];
 
 export default function Sidebar() {
-  const { agent, agency, updateAgent } = useAuthStore();
+  const { agent, agency } = useAuthStore();
   const branding = useBrandingStore((s) => s.branding);
   const {
     sidebarOpen,
@@ -94,17 +98,29 @@ export default function Sidebar() {
   const prefs = agency?.sidebarPreferences || [];
   const hasPrefs = prefs.length > 0;
 
-  // Visibility precedence: an explicit per-tenant preference wins; otherwise the
-  // industry profile decides which modules show. Dashboard is always visible.
-  const isVisible = (to) => {
+  // Visibility precedence: a paid add-on is gated solely on its entitlement; then an
+  // explicit per-tenant preference wins; otherwise the industry profile decides which
+  // modules show. Dashboard is always visible.
+  const isVisible = (item) => {
+    const to = item.to;
     if (to === '/') return true;
-    if (hasPrefs) return prefs.includes(to);
-    return moduleVisible(to);
+
+    // Add-ons are deny-by-default and are NOT listed in sidebarPreferences (whose
+    // empty state means "unrestricted"), so they get their own gate. See
+    // backend middleware/requireFeature.ts.
+    if (item.feature) {
+      if (agency?.features?.[item.feature] !== true) return false;
+      return canAgentAccessSidebarModule(agent, to);
+    }
+
+    const tenantVisible = hasPrefs ? prefs.includes(to) : moduleVisible(to);
+    if (!tenantVisible) return false;
+    return canAgentAccessSidebarModule(agent, to);
   };
 
-  const visibleNavItems = navItems.filter((item) => isVisible(item.to));
-  const visibleUtilityItems = utilityItems.filter((item) => isVisible(item.to));
-  const visibleMarketingItems = marketingItems.filter((item) => isVisible(item.to));
+  const visibleNavItems = navItems.filter(isVisible);
+  const visibleUtilityItems = utilityItems.filter(isVisible);
+  const visibleMarketingItems = marketingItems.filter(isVisible);
 
   const renderNavItem = ({ to, icon: Icon, label }, exactEnd = false) => {
     label = navLabel(to, label);

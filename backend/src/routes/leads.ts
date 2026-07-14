@@ -95,6 +95,8 @@ const bulkAssignSchema = z.object({
 });
 router.post('/bulk-assign', authenticate, requirePermission(PERMISSIONS.LEADS_MANAGE), validateBody(bulkAssignSchema), leadController.bulkAssign);
 
+router.post('/:id/staff-first-outreach', authenticate, requirePermission(PERMISSIONS.LEADS_MANAGE), leadController.sendStaffFirstOutreach);
+
 /**
  * GET /api/leads/followups - List follow-ups for the current user, or all for admins
  */

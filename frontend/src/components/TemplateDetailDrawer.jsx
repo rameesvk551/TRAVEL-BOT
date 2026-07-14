@@ -154,7 +154,8 @@ export default function TemplateDetailDrawer({
    isOpen,
    onClose,
    isPrebuilt: initialIsPrebuilt,
-   initialMode = 'view'
+   initialMode = 'view',
+   fixedChannelId = null,
 }) {
    const newCarouselCard = () => ({
       title: '',
@@ -255,7 +256,7 @@ export default function TemplateDetailDrawer({
          return;
       }
       try {
-         const payload = buildTemplatePayload(formData);
+         const payload = { ...buildTemplatePayload(formData), channelId: fixedChannelId };
          if (initialIsPrebuilt) {
             // "Use Template" flow: fork it
             await usePrebuiltMutation.mutateAsync({
@@ -302,7 +303,7 @@ export default function TemplateDetailDrawer({
          if (!initialIsPrebuilt && initialTemplate?.id && mode === 'edit') {
             await updateMutation.mutateAsync({
                id: initialTemplate.id,
-               data: buildTemplatePayload(formData)
+               data: { ...buildTemplatePayload(formData), channelId: fixedChannelId }
             });
          }
          await submitMutation.mutateAsync(initialTemplate.id);

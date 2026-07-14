@@ -297,18 +297,42 @@ async function getMessageMedia(messageId, agencyId, requester) {
  * @returns {Promise<object>} Sent message record
  */
 async function sendMessage(data, agencyId, agentId) {
-  const { customerId, content, type = 'TEXT' } = data;
+  const { customerId, content, type = 'TEXT', mediaUrl, filename } = data;
 
   const customer = await Customer.findOne({ where: { id: customerId, agencyId } });
   if (!customer) {
     throw Object.assign(new Error('Customer not found'), { statusCode: 404, code: 'CUSTOMER_NOT_FOUND' });
   }
 
-  return whatsappService.sendTextMessage(
-    customer.phone,
-    content,
-    { customerId, agencyId, agentId }
-  );
+  const context = { customerId, agencyId, agentId };
+
+  // Honor `type`. This used to fall through to sendTextMessage for every type,
+  // so an IMAGE send reported success and delivered no image. The route schema
+  // guarantees mediaUrl is present for IMAGE/DOCUMENT, but re-check here so a
+  // non-HTTP caller can't reintroduce the silent downgrade.
+  if (type === 'IMAGE' || type === 'DOCUMENT') {
+    if (!mediaUrl) {
+      throw Object.assign(new Error(`mediaUrl is required when type is ${type}`), {
+        statusCode: 400,
+        code: 'MEDIA_URL_REQUIRED',
+      });
+    }
+
+    // For media, `content` is the caption — optional by design.
+    if (type === 'IMAGE') {
+      return whatsappService.sendImageMessage(customer.phone, mediaUrl, content || '', context);
+    }
+
+    return whatsappService.sendDocumentMessage(
+      customer.phone,
+      mediaUrl,
+      filename || 'document.pdf',
+      content || '',
+      context
+    );
+  }
+
+  return whatsappService.sendTextMessage(customer.phone, content, context);
 }
 
 /**

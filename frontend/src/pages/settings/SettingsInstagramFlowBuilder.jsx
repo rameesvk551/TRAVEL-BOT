@@ -46,6 +46,7 @@ import { propertiesApi } from '../../api/propertiesApi';
 import { servicesApi } from '../../api/servicesApi';
 import { visasApi } from '../../api/visasApi';
 import { useAuthStore } from '../../store/authStore';
+import CardButtonsEditor from '../../components/CardButtonsEditor';
 
 const NODE_TYPES = [
   ['MESSAGE', 'Message', MessageSquare],
@@ -910,9 +911,15 @@ function Inspector({ selectedNode, updateNodeData, services, flows, propertyOpti
             </select>
           </Field>
           {['CARDS', 'CAROUSEL'].includes(data.igCardMode || 'LIST') ? (
-            <Field label="WhatsApp button on each card">
-              <TextInput value={data.igCardButtonLabel || ''} maxLength={20} placeholder="Get details on WhatsApp" onChange={(event) => update({ igCardButtonLabel: event.target.value.slice(0, 20) })} />
-            </Field>
+            <>
+              <Field label="WhatsApp button on each card">
+                <TextInput value={data.igCardButtonLabel || ''} maxLength={20} placeholder="Get details on WhatsApp" onChange={(event) => update({ igCardButtonLabel: event.target.value.slice(0, 20) })} />
+              </Field>
+              <CardButtonsEditor
+                buttons={data.cardButtons}
+                onChange={(cardButtons) => update({ cardButtons })}
+              />
+            </>
           ) : null}
           {['SERVICE', 'PACKAGE'].includes(catalogType) ? (
             <Field label="Category filter">
@@ -1078,9 +1085,15 @@ function Inspector({ selectedNode, updateNodeData, services, flows, propertyOpti
             </select>
           </Field>
           {['CARDS', 'CAROUSEL'].includes(data.igCardMode || 'LIST') ? (
-            <Field label="WhatsApp button on each card">
-              <TextInput value={data.igCardButtonLabel || ''} maxLength={20} placeholder="Get details on WhatsApp" onChange={(event) => update({ igCardButtonLabel: event.target.value.slice(0, 20) })} />
-            </Field>
+            <>
+              <Field label="WhatsApp button on each card">
+                <TextInput value={data.igCardButtonLabel || ''} maxLength={20} placeholder="Get details on WhatsApp" onChange={(event) => update({ igCardButtonLabel: event.target.value.slice(0, 20) })} />
+              </Field>
+              <CardButtonsEditor
+                buttons={data.cardButtons}
+                onChange={(cardButtons) => update({ cardButtons })}
+              />
+            </>
           ) : null}
           <Field label="No-match message">
             <TextArea value={data.emptyMessage || ''} onChange={(event) => update({ emptyMessage: event.target.value.slice(0, 300) })} />

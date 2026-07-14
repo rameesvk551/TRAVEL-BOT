@@ -372,6 +372,7 @@ const CTA_BUTTON_ACTIONS = [
   { value: 'CHECK_AVAILABILITY', label: 'Check availability', itemTypes: ['PACKAGE'] },
   { value: 'TALK_TO_AGENT', label: 'WhatsApp / talk to agent', itemTypes: ['PACKAGE'] },
   { value: 'OPEN_FLOW', label: 'Open a WhatsApp flow', itemTypes: [] },
+  { value: 'OPEN_LEAD_FORM', label: 'Open a lead form', itemTypes: [] },
   { value: 'OPEN_URL', label: 'Open a link / URL', itemTypes: [] },
 ];
 
@@ -955,6 +956,7 @@ export default function CreateCampaign() {
         nextAction.keyword = null;
       }
       if (nextAction.action !== 'OPEN_URL') nextAction.url = '';
+      if (nextAction.action !== 'OPEN_LEAD_FORM') nextAction.leadFormId = null;
 
       const sectionKey = getSectionKeyForButtonAction(nextAction.action, nextAction.itemType);
 

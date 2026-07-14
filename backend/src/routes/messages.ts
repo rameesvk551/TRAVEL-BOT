@@ -11,11 +11,41 @@ const { PERMISSIONS } = require('../constants/permissions');
 
 const router = Router();
 
-const sendMessageSchema = z.object({
-  customerId: z.string().uuid(),
-  content: z.string().min(1, 'Message content required'),
-  type: z.enum(['TEXT', 'IMAGE', 'DOCUMENT']).optional(),
-});
+// `type` used to be accepted and then ignored by the service, which always sent
+// text — so asking for an IMAGE returned 201 and silently delivered a caption
+// with no picture. The service now honors it, and this schema makes the media
+// contract explicit: TEXT needs content; IMAGE/DOCUMENT need a mediaUrl (content
+// is then the optional caption).
+const sendMessageSchema = z
+  .object({
+    customerId: z.string().uuid(),
+    content: z.string().optional(),
+    type: z.enum(['TEXT', 'IMAGE', 'DOCUMENT']).optional(),
+    mediaUrl: z.string().url().optional(),
+    filename: z.string().min(1).max(200).optional(),
+  })
+  .superRefine((val, ctx) => {
+    const type = val.type || 'TEXT';
+
+    if (type === 'TEXT') {
+      if (!val.content || !val.content.trim()) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['content'],
+          message: 'Message content required',
+        });
+      }
+      return;
+    }
+
+    if (!val.mediaUrl) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['mediaUrl'],
+        message: `mediaUrl is required when type is ${type}`,
+      });
+    }
+  });
 
 const assignSchema = z.object({
   agentId: z.string().uuid().nullable().optional(),

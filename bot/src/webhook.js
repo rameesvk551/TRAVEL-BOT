@@ -49,6 +49,10 @@ function agentHandoffDisabled(agency) {
   return Boolean(config && typeof config === 'object' && config.disableAgentHandoff === true);
 }
 
+function isStaffChannel(channel) {
+  return String(channel?.usageType || '').toUpperCase() === 'STAFF';
+}
+
 async function applyWhatsAppProfileName({ profileName, customer, agency, session }) {
   const name = String(profileName || '').trim();
   if (!name || !customer || !agency) return;
@@ -772,6 +776,17 @@ async function processMessage(msg, metadata, contacts = []) {
 
   if (!agency) {
     console.error(`[Webhook] No agency found for WhatsApp number: ${toPhone}`);
+    return;
+  }
+
+  if (isStaffChannel(channel)) {
+    console.log('[Webhook] Ignoring inbound message for staff-owned WhatsApp channel', {
+      agencyId: agency.id,
+      channelId: channel.id,
+      from: fromPhone,
+      to: toPhone,
+      usageType: channel.usageType,
+    });
     return;
   }
 

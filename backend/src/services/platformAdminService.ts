@@ -53,6 +53,17 @@ const MODULE_CATALOG = Object.freeze([
   { path: '/reviews', label: 'Reviews', group: 'Marketing' },
 ]);
 const MODULE_PATHS = new Set(MODULE_CATALOG.map((item) => item.path));
+
+// Paid add-ons, sold per agency and OFF until switched on here. Stored in
+// `agency.features`, not `sidebarPreferences` — see updateAgencyFeatures().
+const FEATURE_CATALOG = Object.freeze([
+  {
+    key: 'brochureBuilder',
+    label: 'Brochure PDF Builder',
+    description: 'Design multi-page resort/property brochures from bulk photos and send them on WhatsApp.',
+  },
+]);
+const FEATURE_KEYS = new Set(FEATURE_CATALOG.map((item) => item.key));
 const RANGE_DAYS = Object.freeze({
   today: 1,
   '7d': 7,
@@ -441,6 +452,7 @@ async function getOverview(range = '30d') {
   return {
     range: normalizeRange(range),
     moduleCatalog: MODULE_CATALOG,
+    featureCatalog: FEATURE_CATALOG,
     totals: {
       totalAgencies,
       activeAgencies,
@@ -617,6 +629,7 @@ async function getAgencyDetail(agencyId, platformAdminId, req, range = '30d') {
   return {
     range: normalizedRange,
     moduleCatalog: MODULE_CATALOG,
+    featureCatalog: FEATURE_CATALOG,
     agency: decorated,
     agents: agents.map((agent) => ({ ...agent, status: agentStatus(agent) })),
     customerActivity,
@@ -675,6 +688,61 @@ async function updateAgencyModules(agencyId, modules, platformAdminId, req) {
   return decorateAgency(agency);
 }
 
+/**
+ * Enable/disable paid add-ons for one agency.
+ *
+ * Writes to `agency.features`, which is deny-by-default (an absent key means off).
+ * Deliberately not `sidebarPreferences`: that field's empty state means "unrestricted",
+ * so an add-on stored there would be free for every agency without an explicit module
+ * list. Keeping them separate also means toggling an add-on can never strip an
+ * agency's other modules.
+ */
+async function updateAgencyFeatures(agencyId, features, platformAdminId, req) {
+  const agency = await Agency.findByPk(agencyId);
+  if (!agency) {
+    throw Object.assign(new Error('Agency not found'), { statusCode: 404, code: 'PLATFORM_AGENCY_NOT_FOUND' });
+  }
+
+  const unknown = Object.keys(features || {}).filter((key) => !FEATURE_KEYS.has(key));
+  if (unknown.length) {
+    throw Object.assign(new Error(`Unknown add-on: ${unknown.join(', ')}`), {
+      statusCode: 400,
+      code: 'INVALID_PLATFORM_FEATURE',
+      details: { allowedFeatures: FEATURE_CATALOG },
+    });
+  }
+
+  // Merge, so toggling one add-on leaves the others untouched.
+  const merged = { ...(agency.features || {}), ...features };
+
+  await agency.update({ features: merged });
+  await logPlatformAction(platformAdminId, 'PLATFORM_AGENCY_FEATURES_UPDATE', {
+    targetType: 'Agency',
+    targetId: agency.id,
+    metadata: { agencyName: agency.name, features: merged },
+    req,
+  });
+
+  return decorateAgency(agency);
+}
+
+async function updateAgencyStaffWhatsAppFeature(agencyId, enabled, platformAdminId, req) {
+  const agency = await Agency.findByPk(agencyId);
+  if (!agency) {
+    throw Object.assign(new Error('Agency not found'), { statusCode: 404, code: 'PLATFORM_AGENCY_NOT_FOUND' });
+  }
+
+  await agency.update({ staffWhatsAppEnabled: !!enabled });
+  await logPlatformAction(platformAdminId, 'PLATFORM_AGENCY_STAFF_WHATSAPP_FEATURE_UPDATE', {
+    targetType: 'Agency',
+    targetId: agency.id,
+    metadata: { agencyName: agency.name, staffWhatsAppEnabled: !!enabled },
+    req,
+  });
+
+  return decorateAgency(agency);
+}
+
 async function getHealth() {
   const agencies = await listAgencies({ limit: 250 });
   const urgent = agencies
@@ -704,7 +772,10 @@ module.exports = {
   getAgencyDetail,
   updateAgencyStatus,
   updateAgencyModules,
+  updateAgencyFeatures,
+  updateAgencyStaffWhatsAppFeature,
   getHealth,
   getActivity,
   MODULE_CATALOG,
+  FEATURE_CATALOG,
 };

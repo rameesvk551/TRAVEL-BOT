@@ -18,6 +18,10 @@ const CTA_BUTTON_ACTIONS = new Set([
   // `flowId` / `url` instead of a travel catalog item.
   'OPEN_FLOW',
   'OPEN_URL',
+  // Opens one of the agency's named public lead forms in the browser. The target is
+  // carried in `leadFormId`; at send time the tapped card's catalog item is appended
+  // to the link so the resulting lead is bound to that property/package.
+  'OPEN_LEAD_FORM',
 ]);
 
 // A campaign button that opens a flow can target either of the two flow engines:
@@ -49,6 +53,7 @@ function normalizeFlowButton(value: any = {}, index = 0): any {
     // flow: each template button enters the shared graph at its own starter node).
     entryNodeId: action === 'OPEN_FLOW' ? (value.entryNodeId || null) : null,
     url: action === 'OPEN_URL' ? String(value.url || '').trim() || null : null,
+    leadFormId: action === 'OPEN_LEAD_FORM' ? (value.leadFormId || null) : null,
     keyword,
   };
 }

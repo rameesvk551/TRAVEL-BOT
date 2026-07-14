@@ -1,7 +1,7 @@
 const { shouldHandoff, handoffToAgent, forwardToAgent } = require('./handlers/handoffHandler');
 const { handlePaymentMessage } = require('./handlers/paymentHandler');
 const { handleReview } = require('./handlers/reviewHandler');
-const { handleTravelFlow, createFreshGreetingLead } = require('./handlers/travelFlowHandler');
+const { handleTravelFlow, createFreshGreetingLead, pendingReminderWouldSend } = require('./handlers/travelFlowHandler');
 const { isCampaignAction, handleCampaignAction, tryHandleCampaignTextAction, getLatestCampaignRecipient } = require('./handlers/campaignActionHandler');
 const { updateSession } = require('./utils/sessionManager');
 const { canSendMenu, isManualPauseActive } = require('./utils/automationCooldowns');
@@ -286,7 +286,16 @@ async function willDropSilently(session, incoming, customer, agency, options = {
   // These paths all send a reply, so they are never a silent drop.
   if (isFirstInboundMessage || actionId) return false;
   if (extractPackageDeepLinkAction(messageText)) return false;
-  if (RESET_TO_MENU_KEYWORDS.has(normalizedText) || GREETING_KEYWORDS.has(normalizedText)) return false;
+  // A greeting/menu keyword only replies if we're actually allowed to (re)send the menu.
+  // Post-submission (recordMenuSent set the cooldown) a "hi"/"hello" is silently dropped —
+  // mirror that here so we don't mark it read + show typing with no reply.
+  if (RESET_TO_MENU_KEYWORDS.has(normalizedText) || GREETING_KEYWORDS.has(normalizedText)) {
+    const isForceRestart = normalizedText === 'restart';
+    if (isForceRestart || canSendMenu(session, { isFirstInboundMessage })) return false;
+    // Only a live human-handoff forward would still reply; disabled for handoff-off agencies.
+    const forwards = !agentHandoffDisabled(agency) && isManualPauseActive(session) && !!session.handedOffToId;
+    return !forwards;
+  }
   if (!['NEW', 'MENU', 'COMPLETE'].includes(session.currentStep)) return false;
 
   const menuContext = String(session.collectedData?.menuContext || '').trim();
@@ -325,7 +334,11 @@ async function willDropSilently(session, incoming, customer, agency, options = {
       ].includes(normalizedText)
     ));
 
-  if (isMenuFallbackReply || hasActiveFlowGraph || hasPendingMetaFlow || shouldRouteToRequiredMetaEntry) {
+  // A pending form only replies if a reminder would actually be re-sent now; when the
+  // reminder is throttled (burst cooldown / cap reached) the message is dropped silently,
+  // so it must NOT be marked read with a typing bubble.
+  const pendingWillReply = hasPendingMetaFlow && pendingReminderWouldSend(session);
+  if (isMenuFallbackReply || hasActiveFlowGraph || pendingWillReply || shouldRouteToRequiredMetaEntry) {
     return false;
   }
 

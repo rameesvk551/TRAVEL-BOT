@@ -215,6 +215,68 @@ async function findRecentDuplicate(agencyId, phone, itemFkField, itemId) {
   return Lead.findOne({ where, order: [['createdAt', 'DESC']], attributes: ['id'] });
 }
 
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function renderAssignmentActionPage(rawTitle, rawMessage) {
+  const title = escapeHtml(rawTitle);
+  const message = escapeHtml(rawMessage);
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>${title}</title>
+    <style>
+      body { font-family: Arial, sans-serif; background:#f5f5f5; color:#111827; margin:0; }
+      .wrap { min-height:100vh; display:flex; align-items:center; justify-content:center; padding:24px; }
+      .card { max-width:520px; width:100%; background:#fff; border:1px solid #e5e7eb; border-radius:20px; padding:28px; box-shadow:0 10px 30px rgba(0,0,0,.06); }
+      h1 { margin:0 0 12px; font-size:24px; }
+      p { margin:0; line-height:1.6; color:#4b5563; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="card">
+        <h1>${title}</h1>
+        <p>${message}</p>
+      </div>
+    </div>
+  </body>
+</html>`;
+}
+
+async function handleStaffWhatsAppAssignmentAction(req, res) {
+  const token = String(req.query.t || '').trim();
+  if (!token) {
+    return res
+      .status(400)
+      .type('html')
+      .send(renderAssignmentActionPage('Missing link', 'This chat action link is incomplete. Please ask your admin to resend the assignment message.'));
+  }
+
+  try {
+    const result = await leadService.triggerStaffAssignmentAction(token);
+    return res.redirect(302, result.redirectUrl);
+  } catch (err) {
+    // Only our own deliberate errors carry a statusCode; anything else is a downstream
+    // failure whose message may embed stored customer data, so it never reaches the page.
+    const safeMessage = err?.statusCode
+      ? err.message
+      : 'We could not send the first outreach for this customer.';
+    return res
+      .status(err?.statusCode || 500)
+      .type('html')
+      .send(renderAssignmentActionPage('Could not start chat', safeMessage));
+  }
+}
+
 /**
  * POST /api/public/v1/leads
  * Creates a website lead. Honeypot + dedup + (router-level) strict rate limits.
@@ -285,4 +347,5 @@ module.exports = {
   listResource,
   getResource,
   submitLead,
+  handleStaffWhatsAppAssignmentAction,
 };

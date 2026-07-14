@@ -12,4 +12,8 @@ const router = Router();
 // webhook; read here for the Missed Calls page.
 router.get('/', authenticate, requirePermission(PERMISSIONS.LEADS_VIEW), missedCallController.list);
 
+// Calling enablement (Meta /settings via marketing-os). Read status + turn it on.
+router.get('/calling-status', authenticate, requirePermission(PERMISSIONS.LEADS_VIEW), missedCallController.callingStatus);
+router.post('/enable-calling', authenticate, requirePermission(PERMISSIONS.AGENCY_MANAGE), missedCallController.enableCalling);
+
 module.exports = router;

@@ -45,6 +45,24 @@ async function updateAgencyModules(req, res, next) {
   }
 }
 
+async function updateAgencyFeatures(req, res, next) {
+  try {
+    const data = await platformAdminService.updateAgencyFeatures(req.params.id, req.body.features, req.platformAdmin.id, req);
+    res.json({ success: true, data, message: 'Agency add-ons updated' });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function updateAgencyStaffWhatsAppFeature(req, res, next) {
+  try {
+    const data = await platformAdminService.updateAgencyStaffWhatsAppFeature(req.params.id, req.body.enabled, req.platformAdmin.id, req);
+    res.json({ success: true, data, message: data.staffWhatsAppEnabled ? 'Staff WhatsApp feature enabled' : 'Staff WhatsApp feature disabled' });
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function health(_req, res, next) {
   try {
     const data = await platformAdminService.getHealth();
@@ -69,6 +87,8 @@ module.exports = {
   agencyDetail,
   updateAgencyStatus,
   updateAgencyModules,
+  updateAgencyFeatures,
+  updateAgencyStaffWhatsAppFeature,
   health,
   activity,
 };

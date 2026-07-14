@@ -1,7 +1,7 @@
 // FILE: /backend/src/services/templateService.ts
 
 const { Op } = require('sequelize');
-const { MessageTemplate } = require('../models');
+const { Agency, AgencyChannel, MessageTemplate } = require('../models');
 
 /**
  * Prebuilt travel template library — seeded on first access.
@@ -970,6 +970,39 @@ async function syncTemplateToMarketingOs(agencyId, template, options = {}) {
   return whatsappService.upsertTemplateWithMeta(agencyId, template, options);
 }
 
+async function resolveTemplateChannelScope(agencyId, channelId, { requireStaff = false } = {}) {
+  if (!channelId) return null;
+
+  const channel = await AgencyChannel.findOne({
+    where: { id: channelId, agencyId, isActive: true },
+  });
+  if (!channel) {
+    throw Object.assign(new Error('WhatsApp channel not found for this agency'), {
+      statusCode: 404,
+      code: 'WHATSAPP_CHANNEL_NOT_FOUND',
+    });
+  }
+
+  if (requireStaff && String(channel.usageType || '').toUpperCase() !== 'STAFF') {
+    throw Object.assign(new Error('Templates for this flow must belong to a staff WhatsApp number'), {
+      statusCode: 400,
+      code: 'INVALID_TEMPLATE_CHANNEL_SCOPE',
+    });
+  }
+
+  if (String(channel.usageType || '').toUpperCase() === 'STAFF') {
+    const agency = await Agency.findByPk(agencyId, { attributes: ['id', 'staffWhatsAppEnabled'] });
+    if (!agency?.staffWhatsAppEnabled) {
+      throw Object.assign(new Error('Staff WhatsApp feature is not enabled for this agency'), {
+        statusCode: 403,
+        code: 'STAFF_WHATSAPP_DISABLED',
+      });
+    }
+  }
+
+  return channel;
+}
+
 function extractProviderTemplateId(result) {
   return result?.data?.id || result?.data?.data?.id || result?.id || result?.template?.id || null;
 }
@@ -1012,8 +1045,9 @@ async function listPrebuiltTemplates({ category, tag, search } = {}) {
 /**
  * List agency-specific saved templates.
  */
-async function listAgencyTemplates(agencyId, { status, category, search } = {}) {
-  const where = { agencyId };
+async function listAgencyTemplates(agencyId, { status, category, search, channelId } = {}) {
+  const channel = await resolveTemplateChannelScope(agencyId, channelId, { requireStaff: true });
+  const where = { agencyId, channelId: channel ? channel.id : null };
   if (status) where.status = status;
   if (category) where.category = category;
   if (search) {
@@ -1040,10 +1074,12 @@ async function getTemplate(id) {
  * Create an agency template (optionally from a prebuilt template).
  */
 async function createTemplate(agencyId, data) {
+  const channel = await resolveTemplateChannelScope(agencyId, data.channelId, { requireStaff: true });
   const payload = buildTemplateData(data);
   if (!payload.displayName) throw new Error('Template display name is required');
   if (!payload.body) throw new Error('Template body is required');
   payload.name = await makeUniqueTemplateName(agencyId, payload.name || payload.displayName);
+  payload.channelId = channel ? channel.id : null;
 
   const template = await MessageTemplate.create({
     ...payload,
@@ -1085,6 +1121,8 @@ async function usePrebuiltTemplate(agencyId, prebuiltId, overrides = {}) {
 
   const payload = buildTemplateData({ ...data, ...overrides });
   payload.name = await makeUniqueTemplateName(agencyId, payload.name || payload.displayName || data.name);
+  const channel = await resolveTemplateChannelScope(agencyId, overrides.channelId, { requireStaff: true });
+  payload.channelId = channel ? channel.id : null;
 
   const template = await MessageTemplate.create({
     ...data,
@@ -1121,6 +1159,8 @@ async function updateTemplate(id, agencyId, data) {
   }
 
   const nextData = buildTemplateData(data, template);
+  const channel = await resolveTemplateChannelScope(agencyId, data.channelId ?? template.channelId, { requireStaff: true });
+  nextData.channelId = channel ? channel.id : null;
   if (data.name && data.name !== template.name) {
     nextData.name = await makeUniqueTemplateName(agencyId, data.name, id);
   }
@@ -1174,6 +1214,7 @@ async function duplicateTemplate(id, agencyId) {
 async function deleteTemplate(id, agencyId) {
   const template = await MessageTemplate.findOne({ where: { id, agencyId } });
   if (!template) throw new Error('Template not found');
+  await resolveTemplateChannelScope(agencyId, template.channelId, { requireStaff: true });
   if (template.status === 'PENDING') {
     throw new Error('Pending templates cannot be deleted until Meta finishes review');
   }
@@ -1193,8 +1234,13 @@ async function deleteTemplate(id, agencyId) {
  * Synchronize templates with Meta (via configured provider).
  */
 async function syncTemplates(agencyId) {
+  return syncTemplatesForScope(agencyId, {});
+}
+
+async function syncTemplatesForScope(agencyId, { channelId } = {}) {
+  const channel = await resolveTemplateChannelScope(agencyId, channelId, { requireStaff: true });
   const whatsappService = require('./whatsappService');
-  const metaResult = await whatsappService.syncTemplatesWithMeta(agencyId);
+  const metaResult = await whatsappService.syncTemplatesWithMeta(agencyId, channel ? { channelId: channel.id } : {});
 
   const rawTemplates = extractProviderTemplates(metaResult);
   const syncedIds = [];
@@ -1206,6 +1252,7 @@ async function syncTemplates(agencyId) {
     const [template, created] = await MessageTemplate.findOrCreate({
       where: { name: mt.name, agencyId },
       defaults: {
+        channelId: channel ? channel.id : null,
         displayName: mt.displayName,
         category: mt.category,
         language: mt.language,
@@ -1226,7 +1273,11 @@ async function syncTemplates(agencyId) {
     });
 
     if (!created) {
+      if ((template.channelId || null) !== (channel ? channel.id : null)) {
+        continue;
+      }
       await template.update({
+        channelId: channel ? channel.id : null,
         displayName: mt.displayName || template.displayName,
         category: mt.category,
         language: mt.language,
@@ -1256,6 +1307,7 @@ async function syncTemplates(agencyId) {
 async function submitForApproval(id, agencyId) {
   const template = await MessageTemplate.findOne({ where: { id, agencyId } });
   if (!template) throw new Error('Template not found');
+  await resolveTemplateChannelScope(agencyId, template.channelId, { requireStaff: true });
   if (template.status === 'PENDING') return template;
   if (!template.body || !template.name) throw new Error('Template is incomplete');
   const normalizedTemplate = {
@@ -1365,4 +1417,5 @@ module.exports = {
   deleteTemplate,
   submitForApproval,
   syncTemplates,
+  syncTemplatesForScope,
 };

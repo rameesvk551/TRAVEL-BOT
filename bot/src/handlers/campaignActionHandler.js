@@ -13,6 +13,7 @@ const {
   Property,
   Itinerary,
   WhatsAppFlow,
+  LeadForm,
 } = require(path.resolve(__dirname, '../../../backend/src/models/index.ts'));
 const whatsappService = require(path.resolve(__dirname, '../../../backend/src/services/whatsappService.ts'));
 const leadService = require(path.resolve(__dirname, '../../../backend/src/services/leadService.ts'));
@@ -1473,6 +1474,100 @@ async function openCampaignConfiguredUrl(session, campaign, actionEntry, custome
   return true;
 }
 
+// Where the public lead form lives (same host that serves /lead/:agencyKey).
+const PUBLIC_BASE_URL = String(process.env.PUBLIC_BASE_URL || process.env.BASE_URL || '').replace(/\/+$/, '');
+
+const LEAD_FORM_ITEM_TYPES = new Set(['PACKAGE', 'PROPERTY', 'SERVICE', 'VISA', 'CRUISE']);
+
+/**
+ * Builds the public link for one of the agency's named lead forms, carrying the
+ * catalog item the customer tapped. The default form answers the bare
+ * /lead/:agencyKey; a named form appends its slug.
+ */
+function buildLeadFormUrl(agency, form, { itemType, itemId, source, campaignName } = {}) {
+  const agencyKey = agency.subdomain || agency.id;
+  const slugPart = form.isDefault ? '' : `/${encodeURIComponent(form.slug)}`;
+  const base = `${PUBLIC_BASE_URL}/lead/${encodeURIComponent(agencyKey)}${slugPart}`;
+
+  const params = new URLSearchParams();
+  if (source) params.set('source', source);
+  if (campaignName) params.set('utm_campaign', String(campaignName).slice(0, 100));
+  // The tapped card's item — the backend verifies it belongs to this agency and
+  // links the resulting lead to it (lead.propertyId / selectedItems).
+  if (itemId && LEAD_FORM_ITEM_TYPES.has(itemType)) params.set('item', `${itemType}:${itemId}`);
+
+  const query = params.toString();
+  return query ? `${base}?${query}` : base;
+}
+
+/**
+ * OPEN_LEAD_FORM — the agency bound this button (in the campaign / flow builder) to
+ * one of its named lead forms. We send the form's link with the tapped property
+ * attached, so when the customer fills it in, the lead is created against that exact
+ * catalog item and auto-assigned like any other lead. Nothing here is hardcoded:
+ * which button, which form and which item all come from config + the tapped payload.
+ */
+async function openCampaignLeadForm(session, campaign, actionEntry, customer, agency) {
+  const ctx = { customerId: customer.id, agencyId: agency.id };
+  const buttonLabel = String(actionEntry.buttonText || 'Open form').trim();
+
+  const form = actionEntry.leadFormId
+    ? await LeadForm.findOne({ where: { id: actionEntry.leadFormId, agencyId: agency.id } })
+    : await LeadForm.findOne({ where: { agencyId: agency.id, isDefault: true } });
+
+  if (!form || !form.enabled) {
+    await whatsappService.sendTextMessage(
+      customer.phone,
+      'This form is being set up. Please try again shortly.',
+      ctx,
+    );
+    return true;
+  }
+
+  const itemId = actionEntry.selectedItemId || null;
+  const itemType = String(actionEntry.itemType || '').toUpperCase();
+  // Instagram customers are keyed as `ig_<account>:<sender>` (there is no session.channel
+  // field) — this is the same signal whatsappService uses to route a send to IG.
+  const isInstagram = String(customer?.phone || '').startsWith('ig_')
+    || String(customer?.source || '').toLowerCase() === 'instagram';
+
+  const url = buildLeadFormUrl(agency, form, {
+    itemType,
+    itemId,
+    source: isInstagram ? 'instagram' : 'whatsapp',
+    campaignName: campaign.name,
+  });
+
+  await ensureLead(session, customer, agency, {
+    source: isInstagram ? 'instagram_campaign' : 'whatsapp_campaign',
+    campaignId: campaign.id,
+    campaignName: campaign.name,
+    campaignAction: 'OPEN_LEAD_FORM',
+    // Attach the tapped item to the conversation lead too, so it is linked even if
+    // the customer never gets round to submitting the form.
+    ...(itemId && LEAD_FORM_ITEM_TYPES.has(itemType)
+      ? { selectedItems: [{ itemType, itemId }], itemType }
+      : {}),
+    interest: `Campaign: ${campaign.name}`,
+    preserveExistingStatus: true,
+    notes: `Opened lead form "${form.name}" from campaign: ${campaign.name} (button: ${buttonLabel})`,
+  });
+  await trackCampaignClick(campaign.id, customer, agency, {
+    clickedAction: 'OPEN_LEAD_FORM',
+    selectedItemType: LEAD_FORM_ITEM_TYPES.has(itemType) ? itemType : null,
+    selectedItemId: itemId,
+  });
+
+  await whatsappService.sendUrlButtonMessage(
+    customer.phone,
+    form.title || buttonLabel,
+    (buttonLabel.slice(0, 20) || 'Open'),
+    url,
+    ctx,
+  );
+  return true;
+}
+
 async function handleConfiguredCampaignButtonAction(session, campaign, actionEntry, customer, agency) {
   if (!actionEntry?.action) return false;
 
@@ -1487,6 +1582,10 @@ async function handleConfiguredCampaignButtonAction(session, campaign, actionEnt
 
   if (action === 'OPEN_URL') {
     return openCampaignConfiguredUrl(session, campaign, actionEntry, customer, agency);
+  }
+
+  if (action === 'OPEN_LEAD_FORM') {
+    return openCampaignLeadForm(session, campaign, actionEntry, customer, agency);
   }
 
   if (action === 'TALK_TO_AGENT') {

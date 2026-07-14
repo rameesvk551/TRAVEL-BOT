@@ -26,3 +26,4 @@ export * from './ChartWrapper';
 export * from './ProgressBar';
 export * from './Divider';
 export * from './Grabber';
+export * from './charts';

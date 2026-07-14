@@ -195,6 +195,23 @@ async function sendTenantWhatsAppTemplate(tenantToken, payload) {
   return response.data;
 }
 
+// Enable WhatsApp voice calling on the tenant's connected phone number (Meta
+// /<PHONE_NUMBER_ID>/settings). Required before inbound customer calls — and thus
+// missed-call events — can happen. Idempotent; Meta rejects it until the number
+// reaches the 2,000 business-initiated messaging tier.
+async function enableTenantWhatsAppCalling(tenantToken, payload = {}) {
+  const client = getTenantClient(tenantToken);
+  const response = await client.post('/whatsapp/calling/enable', payload);
+  return response.data;
+}
+
+// Read the tenant number's current call settings (calling status, icon, etc.).
+async function getTenantWhatsAppCallingSettings(tenantToken) {
+  const client = getTenantClient(tenantToken);
+  const response = await client.get('/whatsapp/calling/settings');
+  return response.data;
+}
+
 async function syncTenantWhatsAppBusinessAppData(tenantToken, payload) {
   const client = getTenantClient(tenantToken);
   const response = await client.post('/whatsapp/smb-app-data', payload);
@@ -433,6 +450,8 @@ module.exports = {
   sendTenantWhatsAppMedia,
   getTenantWhatsAppMedia,
   sendTenantWhatsAppTemplate,
+  enableTenantWhatsAppCalling,
+  getTenantWhatsAppCallingSettings,
   syncTenantWhatsAppBusinessAppData,
   disconnectTenantWhatsApp,
   sendTenantInstagramMessage,

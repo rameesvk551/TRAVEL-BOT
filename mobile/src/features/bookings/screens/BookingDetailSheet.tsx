@@ -3,20 +3,62 @@ import React, { useMemo } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import BottomSheet, { BottomSheetBackdrop, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { useTheme } from '../../../theme/ThemeProvider';
-import { useBooking } from '../api';
-import { Badge, Button, Grabber, SectionHeader, Card, Skeleton, ListRow } from '../../../ui';
-import { FileText, CreditCard, Edit3 } from 'lucide-react-native';
+import {
+  useBooking,
+  Booking,
+  bookingItemName,
+  bookingBalanceDue,
+  bookingBalanceAtProperty,
+  bookingAgencyRevenue,
+  bookingPaymentStatus,
+  isCommissionOnly,
+  apiErrorMessage,
+} from '../api';
+import { useRequestPaymentLink, apiErrorMessage as paymentsErrorMessage } from '../../payments/api';
+import { Badge, Button, Grabber, SectionHeader, Card, Skeleton, ErrorState, ListRow } from '../../../ui';
+import { showToast } from '../../../ui/Toast';
+import { formatCurrency, formatDate } from '../../../lib/formatters';
+import { CreditCard } from 'lucide-react-native';
 
 export interface BookingDetailSheetProps {
   bookingId: string | null;
+}
+
+function Fact({ label, value, emphasis }: { label: string; value: string; emphasis?: 'danger' | 'muted' }) {
+  const { theme } = useTheme();
+  return (
+    <View style={styles.factRow}>
+      <Text style={[theme.typography.subhead, { color: theme.colors.text.secondary, width: 130 }]}>
+        {label}
+      </Text>
+      <Text
+        style={[
+          theme.typography.body,
+          {
+            flex: 1,
+            color:
+              emphasis === 'danger'
+                ? theme.colors.status.danger
+                : emphasis === 'muted'
+                  ? theme.colors.text.secondary
+                  : theme.colors.text.primary,
+            fontWeight: emphasis === 'danger' ? '600' : '400',
+          },
+        ]}
+      >
+        {value}
+      </Text>
+    </View>
+  );
 }
 
 export const BookingDetailSheet = React.forwardRef<BottomSheet, BookingDetailSheetProps>(
   ({ bookingId }, ref) => {
     const { theme } = useTheme();
     const snapPoints = useMemo(() => ['60%', '95%'], []);
-    
-    const { data: booking, isLoading } = useBooking(bookingId || '');
+
+    const { data: booking, isLoading, isError, error, refetch } = useBooking(bookingId);
+    const { mutate: requestPaymentLink, isPending: isSendingLink } = useRequestPaymentLink();
 
     const s = theme.spacing;
 
@@ -24,8 +66,174 @@ export const BookingDetailSheet = React.forwardRef<BottomSheet, BookingDetailShe
       (props: any) => (
         <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.4} />
       ),
-      []
+      [],
     );
+
+    const handleRequestPayment = (b: Booking) => {
+      requestPaymentLink(
+        { bookingId: b.id },
+        {
+          onSuccess: () => showToast('Payment link sent on WhatsApp', 'success'),
+          onError: (err) =>
+            showToast(paymentsErrorMessage(err, 'Could not send the payment link'), 'error'),
+        },
+      );
+    };
+
+    const renderBody = () => {
+      if (!bookingId || isLoading) {
+        return (
+          <View style={{ gap: s.s4, marginTop: s.s4 }}>
+            <Skeleton height={100} />
+            <Skeleton height={200} />
+          </View>
+        );
+      }
+
+      if (isError || !booking) {
+        return (
+          <View style={{ marginTop: s.s4 }}>
+            <ErrorState
+              message={apiErrorMessage(error, 'Could not load this booking')}
+              onRetry={refetch}
+            />
+          </View>
+        );
+      }
+
+      const commissionOnly = isCommissionOnly(booking);
+      const balanceDue = bookingBalanceDue(booking);
+      const balanceAtProperty = bookingBalanceAtProperty(booking);
+      const agencyRevenue = bookingAgencyRevenue(booking);
+      const paymentStatus = bookingPaymentStatus(booking);
+      const payments = booking.payments ?? [];
+
+      const paymentBadgeVariant =
+        paymentStatus === 'PAID' ? 'success' : paymentStatus === 'DUE' ? 'danger' : 'warning';
+
+      return (
+        <>
+          {/* Header — the hero figure is what the AGENCY earns, which on a commission-only
+              booking is the commission, not the package's face value. */}
+          <View style={{ alignItems: 'center', marginBottom: s.s6, marginTop: s.s2 }}>
+            <Text style={[theme.typography.caption2, { color: theme.colors.text.tertiary, marginBottom: 4 }]}>
+              {booking.bookingRef}
+            </Text>
+            <Text style={[theme.typography.largeTitle, { color: theme.colors.text.primary, marginBottom: 4 }]}>
+              {formatCurrency(agencyRevenue)}
+            </Text>
+            <Text style={[theme.typography.caption2, { color: theme.colors.text.tertiary, marginBottom: 8 }]}>
+              {commissionOnly ? 'Your commission' : 'Booking total'}
+            </Text>
+            <View style={{ flexDirection: 'row', gap: s.s2 }}>
+              <Badge variant={paymentBadgeVariant} label={paymentStatus} />
+              <Badge
+                variant={commissionOnly ? 'info' : 'neutral'}
+                label={commissionOnly ? 'Commission only' : 'Agency collects'}
+              />
+            </View>
+          </View>
+
+          <SectionHeader title="DETAILS" />
+          <Card style={{ padding: s.s4, marginBottom: s.s6 }}>
+            <Fact label="Customer" value={booking.customer?.name ?? '—'} />
+            <Fact label="Item" value={bookingItemName(booking)} />
+            <Fact label="Travel date" value={booking.travelDate ? formatDate(booking.travelDate) : '—'} />
+            <Fact
+              label="Travellers"
+              value={booking.travellers ? String(booking.travellers) : '—'}
+            />
+            <Fact label="Status" value={booking.status} />
+          </Card>
+
+          <SectionHeader title="MONEY" />
+          <Card style={{ padding: s.s4, marginBottom: s.s6 }}>
+            <Fact label="Package value" value={formatCurrency(booking.totalAmount)} />
+            <Fact label="Collected" value={formatCurrency(booking.advancePaid)} />
+            {commissionOnly ? (
+              <>
+                <Fact label="Your commission" value={formatCurrency(booking.commissionAmount ?? booking.advancePaid)} />
+                {/* Off-ledger: the customer settles this directly at the property. It prints on
+                    the invoice but is never owed to — or collectable by — the agency. */}
+                <Fact
+                  label="Paid at property"
+                  value={`${formatCurrency(balanceAtProperty)} — by the customer`}
+                  emphasis="muted"
+                />
+              </>
+            ) : null}
+            <Fact
+              label="Balance due"
+              value={balanceDue > 0 ? formatCurrency(balanceDue) : 'Nothing outstanding'}
+              emphasis={balanceDue > 0 ? 'danger' : 'muted'}
+            />
+          </Card>
+
+          <SectionHeader title="PAYMENTS" />
+          <View
+            style={{
+              backgroundColor: theme.colors.bg.surface,
+              borderRadius: theme.radius.lg,
+              overflow: 'hidden',
+              ...theme.elevation.e1,
+              marginBottom: s.s6,
+            }}
+          >
+            {payments.length === 0 ? (
+              <View style={{ padding: s.s4, alignItems: 'center' }}>
+                <Text style={[theme.typography.body, { color: theme.colors.text.secondary }]}>
+                  No payments recorded yet
+                </Text>
+              </View>
+            ) : (
+              payments.map((p, i) => (
+                <React.Fragment key={p.id}>
+                  {i > 0 && (
+                    <View
+                      style={{
+                        height: StyleSheet.hairlineWidth,
+                        backgroundColor: theme.colors.border.hairline,
+                        marginLeft: 16,
+                      }}
+                    />
+                  )}
+                  <ListRow
+                    title={formatCurrency(p.amount)}
+                    subtitle={`${p.type} · ${formatDate(p.paidAt ?? p.createdAt)}`}
+                    trailing={
+                      <Badge
+                        variant={
+                          p.status === 'PAID'
+                            ? 'success'
+                            : p.status === 'PENDING'
+                              ? 'warning'
+                              : 'danger'
+                        }
+                        label={p.status}
+                      />
+                    }
+                    accessibilityLabel={`Payment of ${formatCurrency(p.amount)}, ${p.type}, ${p.status}`}
+                  />
+                </React.Fragment>
+              ))
+            )}
+          </View>
+
+          {/* A payment link can only be raised for money the agency is actually owed. */}
+          {balanceDue > 0 && (
+            <Button
+              variant="primary"
+              label="Send payment link"
+              icon={CreditCard}
+              fullWidth
+              loading={isSendingLink}
+              onPress={() => handleRequestPayment(booking)}
+              accessibilityLabel={`Send a payment link for ${formatCurrency(balanceDue)}`}
+            />
+          )}
+        </>
+      );
+    };
 
     return (
       <BottomSheet
@@ -37,90 +245,14 @@ export const BookingDetailSheet = React.forwardRef<BottomSheet, BookingDetailShe
         handleComponent={Grabber}
         backgroundStyle={{ backgroundColor: theme.colors.bg.surfaceRaised }}
       >
-        <BottomSheetScrollView contentContainerStyle={{ paddingHorizontal: s.s4, paddingBottom: s.s10 }}>
-          {isLoading || !bookingId ? (
-            <View style={{ gap: s.s4, marginTop: s.s4 }}>
-              <Skeleton height={100} />
-              <Skeleton height={200} />
-            </View>
-          ) : !booking ? (
-            <Text style={[theme.typography.body, { color: theme.colors.text.secondary, marginTop: s.s4 }]}>Booking not found</Text>
-          ) : (
-            <>
-              {/* Header */}
-              <View style={{ alignItems: 'center', marginBottom: s.s6, marginTop: s.s2 }}>
-                <Text style={[theme.typography.caption2, { color: theme.colors.text.tertiary, marginBottom: 4 }]}>
-                  {booking.ref}
-                </Text>
-                <Text style={[theme.typography.largeTitle, { color: theme.colors.text.primary, marginBottom: 8 }]}>
-                  ₹{booking.amount.toLocaleString('en-IN')}
-                </Text>
-                <Badge variant={booking.paymentStatus === 'paid' ? 'success' : booking.paymentStatus === 'due' ? 'danger' : 'warning'} label={booking.paymentStatus.toUpperCase()} />
-              </View>
-
-              {/* Facts Grid */}
-              <SectionHeader title="DETAILS" />
-              <Card style={{ padding: s.s4, marginBottom: s.s6 }}>
-                <View style={styles.factRow}>
-                  <Text style={[theme.typography.subhead, { color: theme.colors.text.secondary, width: 100 }]}>Customer</Text>
-                  <Text style={[theme.typography.body, { color: theme.colors.text.primary, flex: 1 }]}>{booking.customerName}</Text>
-                </View>
-                <View style={styles.factRow}>
-                  <Text style={[theme.typography.subhead, { color: theme.colors.text.secondary, width: 100 }]}>Item</Text>
-                  <Text style={[theme.typography.body, { color: theme.colors.text.primary, flex: 1 }]}>{booking.itemName}</Text>
-                </View>
-                <View style={styles.factRow}>
-                  <Text style={[theme.typography.subhead, { color: theme.colors.text.secondary, width: 100 }]}>Travel Date</Text>
-                  <Text style={[theme.typography.body, { color: theme.colors.text.primary, flex: 1 }]}>
-                    {new Date(booking.travelDate).toLocaleDateString()}
-                  </Text>
-                </View>
-                <View style={styles.factRow}>
-                  <Text style={[theme.typography.subhead, { color: theme.colors.text.secondary, width: 100 }]}>Travellers</Text>
-                  <Text style={[theme.typography.body, { color: theme.colors.text.primary, flex: 1 }]}>2 Adults</Text>
-                </View>
-              </Card>
-
-              {/* Payments */}
-              <SectionHeader title="PAYMENTS" />
-              <View style={{ backgroundColor: theme.colors.bg.surface, borderRadius: theme.radius.lg, overflow: 'hidden', ...theme.elevation.e1, marginBottom: s.s6 }}>
-                {booking.paymentStatus === 'paid' ? (
-                  <View style={{ padding: s.s4, alignItems: 'center' }}>
-                    <Text style={[theme.typography.body, { color: theme.colors.text.secondary }]}>Fully paid</Text>
-                  </View>
-                ) : (
-                  <>
-                    <ListRow
-                      title="Advance Paid"
-                      subtitle="UPI · 12 May 2026"
-                      trailing={<Text style={[theme.typography.body, { color: theme.colors.text.primary }]}>₹10,000</Text>}
-                    />
-                    <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: theme.colors.border.hairline, marginLeft: 16 }} />
-                    <ListRow
-                      title="Balance Due"
-                      subtitle="By 15 Jun 2026"
-                      trailing={<Text style={[theme.typography.body, { color: theme.colors.status.danger, fontWeight: '600' }]}>₹{(booking.amount - 10000).toLocaleString('en-IN')}</Text>}
-                    />
-                  </>
-                )}
-              </View>
-
-              {/* Actions */}
-              <Button variant="primary" label="Collect Payment" icon={CreditCard} fullWidth style={{ marginBottom: s.s3 }} />
-              <View style={{ flexDirection: 'row', gap: s.s3 }}>
-                <View style={{ flex: 1 }}>
-                  <Button variant="secondary" label="Invoice" icon={FileText} fullWidth />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Button variant="secondary" label="Edit" icon={Edit3} fullWidth />
-                </View>
-              </View>
-            </>
-          )}
+        <BottomSheetScrollView
+          contentContainerStyle={{ paddingHorizontal: s.s4, paddingBottom: s.s10 }}
+        >
+          {renderBody()}
         </BottomSheetScrollView>
       </BottomSheet>
     );
-  }
+  },
 );
 
 const styles = StyleSheet.create({

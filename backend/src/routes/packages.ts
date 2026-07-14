@@ -63,7 +63,7 @@ const brochureUpload = multer({
 
 const packageSchema = z.object({
   name: z.string().min(2),
-  category: z.enum(['DOMESTIC', 'INTERNATIONAL']).optional().nullable(),
+  category: z.string().trim().min(1).max(100).optional().nullable(),
   tourType: z.string().trim().max(80).optional().nullable(),
   duration: z.string().optional(),
   destinations: z.array(z.string()).optional(),

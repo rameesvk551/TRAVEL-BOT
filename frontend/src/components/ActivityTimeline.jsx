@@ -8,7 +8,7 @@ import {
   BanknotesIcon,
   BriefcaseIcon,
 } from '@heroicons/react/24/outline';
-import { formatDateTime, timeAgo } from '../utils/formatters';
+import { formatDateTime, formatTime, timeAgo } from '../utils/formatters';
 import { getInitials } from './uiHelpers';
 
 // Maps an event type to its dot icon + color. Kept in sync with the lead drawer
@@ -148,7 +148,9 @@ function TimelineRow({ event, meta, isLast, renderFooter }) {
       <div className={`min-w-0 flex-1 rounded-[var(--radius-md)] border border-neutral-200 bg-white p-3.5 shadow-sm ${isLast ? '' : ''}`}>
         <div className="flex items-start justify-between gap-3">
           <h4 className="min-w-0 flex-1 text-sm font-semibold text-neutral-800">{event.title}</h4>
-          <span className="shrink-0 text-[11px] text-neutral-400" title={formatDateTime(event.time)}>{timeAgo(event.time)}</span>
+          <span className="shrink-0 whitespace-nowrap text-[11px] text-neutral-400" title={formatDateTime(event.time)}>
+            {timeAgo(event.time)} · {formatTime(event.time)}
+          </span>
         </div>
 
         {event.actor && (

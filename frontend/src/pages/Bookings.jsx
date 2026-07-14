@@ -25,6 +25,22 @@ function getSinglePayload(response) {
   return response?.data?.data || response?.data || response || null;
 }
 
+function SettlementBadge({ type }) {
+  const isCommission = type === 'COMMISSION_ONLY';
+  return (
+    <span
+      className={`inline-block text-[11px] px-2 py-0.5 rounded-md font-semibold ${
+        isCommission
+          ? 'bg-amber-100 text-amber-700'
+          : 'bg-emerald-50 text-emerald-700'
+      }`}
+      title={isCommission ? 'Agency earns commission only; customer pays the balance directly' : 'Agency collects the full amount'}
+    >
+      {isCommission ? 'Commission only' : 'Agency owned'}
+    </span>
+  );
+}
+
 function DetailItem({ label, value, children }) {
   return (
     <div className="min-w-0 rounded-[12px] border border-slate-100 bg-slate-50/70 p-3">
@@ -197,6 +213,7 @@ export default function Bookings() {
             >
               <MobileField label="Item" value={getBookingItemName(booking)} />
               <MobileField label="Type" value={<span className="text-xs px-2 py-1 bg-slate-100 rounded-md font-medium text-slate-600">{booking.itemType}</span>} />
+              <MobileField label="Settlement" value={<SettlementBadge type={booking.settlementType} />} />
               <MobileField label="Travel" value={formatDate(booking.travelDate) || '-'} />
               <MobileField label="Total" value={formatCurrency(booking.totalAmount)} />
             </MobileRecordCard>
@@ -238,7 +255,12 @@ export default function Bookings() {
                   >
                     <td className="data-table-td font-semibold text-neutral-900">{booking.bookingRef}</td>
                     <td className="data-table-td text-neutral-700">{booking.customer?.name}</td>
-                    <td className="data-table-td"><span className="text-xs px-2 py-1 bg-slate-100 rounded-md font-medium text-slate-600">{booking.itemType}</span></td>
+                    <td className="data-table-td">
+                      <div className="flex flex-col items-start gap-1">
+                        <span className="text-xs px-2 py-1 bg-slate-100 rounded-md font-medium text-slate-600">{booking.itemType}</span>
+                        <SettlementBadge type={booking.settlementType} />
+                      </div>
+                    </td>
                     <td className="data-table-td text-neutral-500">{getBookingItemName(booking)}</td>
                     <td className="data-table-td text-neutral-600">{formatDate(booking.travelDate) || '-'}</td>
                     <td className="data-table-td text-neutral-900 font-medium">{formatCurrency(booking.totalAmount)}</td>
@@ -294,6 +316,7 @@ export default function Bookings() {
                 <div className="flex flex-wrap items-center gap-3">
                   <span className={`badge ${getStatusTone(selectedBooking.status)}`}>{selectedBooking.status}</span>
                   <span className="text-sm font-semibold px-2 py-1 bg-slate-100 rounded-md text-slate-600">{selectedBooking.itemType}</span>
+                  <SettlementBadge type={selectedBooking.settlementType} />
                   <span className="text-sm text-slate-600">{getBookingItemName(selectedBooking)}</span>
                 </div>
 

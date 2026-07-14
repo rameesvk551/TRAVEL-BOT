@@ -67,6 +67,18 @@ export function useUpdateLead() {
   });
 }
 
+export function useSendStaffFirstOutreach() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id) => leadsApi.sendStaffFirstOutreach(id),
+    onSuccess: (_, id) => {
+      qc.invalidateQueries({ queryKey: ['leads'] });
+      qc.invalidateQueries({ queryKey: ['lead', id] });
+      qc.invalidateQueries({ queryKey: ['customers'] });
+    },
+  });
+}
+
 export function useBulkAssignLeads() {
   const qc = useQueryClient();
   return useMutation({

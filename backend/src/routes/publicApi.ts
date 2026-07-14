@@ -45,6 +45,8 @@ const leadSchema = z.object({
 });
 
 // ---- Catalog (read) — requires the catalog:read scope ----
+router.get('/staff-whatsapp/assignment-action', publicReadLimiter, publicApiController.handleStaffWhatsAppAssignmentAction);
+
 const readGuard = authenticatePublicKey({ scope: 'catalog:read' });
 router.get('/catalog', publicReadLimiter, readGuard, publicApiController.listAll);
 router.get('/catalog/:resource', publicReadLimiter, readGuard, publicApiController.listResource);

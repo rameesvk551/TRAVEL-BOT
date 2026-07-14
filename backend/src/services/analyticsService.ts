@@ -5,7 +5,7 @@ const { Op, fn, col, literal, cast } = require('sequelize');
 const {
   Lead, Booking, Payment, Package, Customer, Agent,
   Message, Review, Campaign, CampaignRecipient,
-  FollowUp, CallLog, sequelize,
+  FollowUp, CallLog, ItemVendorCost, VendorBill, sequelize,
 } = require('../models');
 const pipelineService = require('./pipelineService');
 
@@ -23,6 +23,35 @@ function prevRange(start, end) {
   const diff = end.getTime() - start.getTime();
   return { start: new Date(start.getTime() - diff), end: new Date(start.getTime() - 1) };
 }
+
+/**
+ * The agency's own revenue on a booking, as SQL.
+ *
+ * `total_amount` is the gross trip value, which is NOT what the agency earns on a
+ * COMMISSION_ONLY booking: there the customer pays the property directly and the agency
+ * only ever books its commission (see Booking.settlementType). Summing `total_amount`
+ * would inflate every revenue, profit and ROAS figure for such an agency, and disagree
+ * with the ledgers, which only ever post the commission.
+ */
+function bookingRevenueSql(alias = 'b') {
+  return `(CASE WHEN ${alias}.settlement_type = 'COMMISSION_ONLY'
+    THEN COALESCE(${alias}.commission_amount, ${alias}.advance_paid, 0)
+    ELSE COALESCE(${alias}.total_amount, 0) END)`;
+}
+
+/** Same rule as bookingRevenueSql, for a loaded Booking instance or raw row. */
+function bookingRevenue(booking) {
+  const settlement = booking.settlementType ?? booking.settlement_type;
+  if (settlement === 'COMMISSION_ONLY') {
+    const commission = booking.commissionAmount ?? booking.commission_amount;
+    const advance = booking.advancePaid ?? booking.advance_paid;
+    return Number(commission ?? advance ?? 0) || 0;
+  }
+  return Number(booking.totalAmount ?? booking.total_amount ?? 0) || 0;
+}
+
+/** Aggregate expression usable inside Sequelize `attributes` on a Booking query. */
+const bookingRevenueCol = () => literal(bookingRevenueSql('"Booking"'));
 
 // ─── 1. SALES REPORT ────────────────────────────────────────────────────────
 
@@ -276,7 +305,7 @@ async function getPackageReport(agencyId, from, to) {
     attributes: [
       'packageId',
       [fn('COUNT', col('Booking.id')), 'bookingCount'],
-      [fn('SUM', col('Booking.total_amount')), 'totalRevenue'],
+      [fn('SUM', bookingRevenueCol()), 'totalRevenue'],
       [fn('AVG', col('Booking.travellers')), 'avgTravellers'],
     ],
     include: [{
@@ -562,7 +591,7 @@ async function getSeasonalReport(agencyId) {
     attributes: [
       [fn('DATE_TRUNC', 'month', col('created_at')), 'month'],
       [fn('COUNT', col('id')), 'bookings'],
-      [fn('SUM', col('total_amount')), 'revenue'],
+      [fn('SUM', bookingRevenueCol()), 'revenue'],
     ],
     group: [fn('DATE_TRUNC', 'month', col('created_at'))],
     order: [[fn('DATE_TRUNC', 'month', col('created_at')), 'ASC']],
@@ -975,9 +1004,16 @@ async function getBookingReport(agencyId, from, to) {
   const avgTravellers = parseFloat(parseFloat(avgTravellersResult?.avg || '0').toFixed(1));
 
   // Total revenue from bookings in range
-  const totalRevenue = (await Booking.sum('total_amount', {
-    where: { agencyId, createdAt: { [Op.between]: [start, end] } },
-  })) || 0;
+  const [revenueRow] = await sequelize.query(`
+    SELECT COALESCE(SUM(${bookingRevenueSql('b')}), 0) AS revenue
+    FROM bookings b
+    WHERE b.agency_id = :agencyId
+      AND b.created_at BETWEEN :start AND :end
+  `, {
+    replacements: { agencyId, start, end },
+    type: sequelize.QueryTypes.SELECT,
+  });
+  const totalRevenue = parseInt(revenueRow?.revenue || '0', 10);
 
   // Bookings over time (daily)
   const bookingsByDay = await Booking.findAll({
@@ -996,7 +1032,7 @@ async function getBookingReport(agencyId, from, to) {
     SELECT unnest(p.destinations) AS destination,
            COUNT(DISTINCT b.id) AS booking_count,
            SUM(b.travellers) AS total_travellers,
-           SUM(b.total_amount) AS revenue
+           SUM(${bookingRevenueSql('b')}) AS revenue
     FROM bookings b
     JOIN packages p ON p.id = b.package_id
     WHERE b.agency_id = :agencyId
@@ -1064,10 +1100,10 @@ async function getCustomerLtvReport(agencyId, from, to) {
       c.name,
       c.phone,
       COUNT(b.id) AS total_bookings,
-      SUM(b.total_amount) AS total_spent,
+      SUM(${bookingRevenueSql('b')}) AS total_spent,
       MIN(b.created_at) AS first_booking,
       MAX(b.created_at) AS last_booking,
-      AVG(b.total_amount) AS avg_booking_value
+      AVG(${bookingRevenueSql('b')}) AS avg_booking_value
     FROM customers c
     JOIN bookings b ON b.customer_id = c.id
     WHERE c.agency_id = :agencyId
@@ -1103,7 +1139,7 @@ async function getCustomerLtvReport(agencyId, from, to) {
       DATE_TRUNC('month', b.created_at) AS booking_month,
       COUNT(DISTINCT b.customer_id) AS customers,
       COUNT(b.id) AS bookings,
-      SUM(b.total_amount) AS revenue
+      SUM(${bookingRevenueSql('b')}) AS revenue
     FROM first_bookings fb
     JOIN bookings b ON b.customer_id = fb.customer_id
     WHERE b.agency_id = :agencyId
@@ -1397,7 +1433,7 @@ async function getCampaignRoiReport(agencyId, from, to) {
     SELECT
       l.campaign_id,
       COUNT(b.id) AS bookings,
-      SUM(b.total_amount) AS revenue
+      SUM(${bookingRevenueSql('b')}) AS revenue
     FROM bookings b
     JOIN leads l ON l.id = b.lead_id
     WHERE l.agency_id = :agencyId

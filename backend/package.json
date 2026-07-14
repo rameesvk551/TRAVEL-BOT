@@ -4,6 +4,7 @@
   "description": "TravelBot Backend API — WhatsApp automation for travel agencies",
   "main": "src/server.ts",
   "scripts": {
+    "test": "tsx tests/run.ts",
     "dev": "tsx watch src/server.ts",
     "start": "tsx src/server.ts",
     "db:sync": "tsx -e \"const { sequelize } = require('./src/models'); sequelize.sync().then(() => { console.log('DB synced'); process.exit(0); }).catch((err) => { console.error(err); process.exit(1); });\"",

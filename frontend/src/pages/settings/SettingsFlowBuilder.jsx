@@ -2038,6 +2038,8 @@ export default function SettingsFlowBuilder({ fullScreen = false, initialFlowId 
   // When on, the bot never hands the conversation to a human agent: no keyword handoff and
   // no forwarding of customer messages to a staff member's personal WhatsApp.
   const [disableAgentHandoff, setDisableAgentHandoff] = useState(agency?.whatsappFlowConfig?.disableAgentHandoff === true);
+  // Agency-authored copy for the reminder shown when a pending form is re-sent.
+  const [reminderMessage, setReminderMessage] = useState(agency?.whatsappFlowConfig?.reminderMessage || {});
   const [activeFlowId, setActiveFlowId] = useState(seedFlowId);
   const initialActiveFlow = initialLibrary.flows.find((flow) => flow.id === seedFlowId) || initialLibrary.flows[0] || graphToEditableFlow(DEFAULT_GRAPH, 'entry', 'Entry Menu');
   const [nodes, setNodes, onNodesChange] = useNodesState(asReactNodes(initialActiveFlow));
@@ -2115,6 +2117,7 @@ export default function SettingsFlowBuilder({ fullScreen = false, initialFlowId 
     setEntryFlowId(nextLibrary.entryFlowId);
     setAssignOnEnquiryOnly(agency?.whatsappFlowConfig?.assignOnEnquiryOnly === true);
     setDisableAgentHandoff(agency?.whatsappFlowConfig?.disableAgentHandoff === true);
+    setReminderMessage(agency?.whatsappFlowConfig?.reminderMessage || {});
     setActiveFlowId(nextActiveFlow.id);
     setNodes(asReactNodes(nextActiveFlow));
     setEdges(asReactEdges(nextActiveFlow));
@@ -2266,6 +2269,8 @@ export default function SettingsFlowBuilder({ fullScreen = false, initialFlowId 
         entryFlowId,
         assignOnEnquiryOnly,
         disableAgentHandoff,
+        assignmentAutoFirstOutreachButtonEnabled: agency?.whatsappFlowConfig?.assignmentAutoFirstOutreachButtonEnabled === true,
+        reminderMessage,
         flows: flowsToSave,
       },
     });
@@ -2317,6 +2322,34 @@ export default function SettingsFlowBuilder({ fullScreen = false, initialFlowId 
               <span className="block text-neutral-500">The bot never hands the chat to a human: no “talk to agent” handoff and customer messages are never forwarded to a staff member’s personal WhatsApp.</span>
             </span>
           </label>
+          <div className="mt-3 max-w-md rounded-lg border border-neutral-200 bg-neutral-50 p-3">
+            <p className="text-xs font-bold text-neutral-800">Reminder message (re-sent form)</p>
+            <p className="mt-0.5 text-[11px] text-neutral-500">Shown when a customer messages without filling the form. Leave blank to use the default.</p>
+            <input
+              type="text"
+              maxLength={60}
+              value={reminderMessage.header || ''}
+              onChange={(e) => setReminderMessage((m) => ({ ...m, header: e.target.value }))}
+              placeholder="Header (e.g. Complete the Enquiry Form)"
+              className="mt-2 w-full rounded-md border border-neutral-300 px-2 py-1.5 text-xs"
+            />
+            <textarea
+              rows={3}
+              maxLength={1024}
+              value={reminderMessage.body || ''}
+              onChange={(e) => setReminderMessage((m) => ({ ...m, body: e.target.value }))}
+              placeholder="Body (the main message)"
+              className="mt-2 w-full rounded-md border border-neutral-300 px-2 py-1.5 text-xs"
+            />
+            <input
+              type="text"
+              maxLength={60}
+              value={reminderMessage.footer || ''}
+              onChange={(e) => setReminderMessage((m) => ({ ...m, footer: e.target.value }))}
+              placeholder="Footer (small text at the bottom)"
+              className="mt-2 w-full rounded-md border border-neutral-300 px-2 py-1.5 text-xs"
+            />
+          </div>
         </div>
         <div className="flex flex-wrap gap-2">
           <button type="button" onClick={undo} disabled={!history.length} className="shell-button-secondary px-3 py-2 text-xs"><Undo2 className="h-4 w-4" /> Undo</button>

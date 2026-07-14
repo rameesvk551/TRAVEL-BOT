@@ -15,9 +15,18 @@ export interface ListRowProps {
   trailing?: React.ReactNode;
   onPress?: () => void;
   accessibilityLabel?: string;
+  accessibilityHint?: string;
 }
 
-export function ListRow({ leading, title, subtitle, trailing, onPress, accessibilityLabel }: ListRowProps) {
+export function ListRow({
+  leading,
+  title,
+  subtitle,
+  trailing,
+  onPress,
+  accessibilityLabel,
+  accessibilityHint,
+}: ListRowProps) {
   const { theme } = useTheme();
   const scale = useSharedValue(1);
 
@@ -52,7 +61,15 @@ export function ListRow({ leading, title, subtitle, trailing, onPress, accessibi
       onPress={handlePress}
       onPressIn={handlePressIn}
       onPressOut={handlePressOut}
-      accessibilityLabel={accessibilityLabel}
+      // Non-tappable rows stay plain text; tappable ones announce as buttons.
+      accessibilityRole={onPress ? 'button' : 'text'}
+      // Fall back to the visible content so a row is never announced as blank.
+      accessibilityLabel={
+        accessibilityLabel ??
+        [title, typeof subtitle === 'string' ? subtitle : undefined].filter(Boolean).join(', ')
+      }
+      accessibilityHint={accessibilityHint}
+      disabled={!onPress}
       style={[
         styles.container,
         { minHeight: 64, paddingVertical: theme.spacing.s3, paddingHorizontal: theme.spacing.s4 },

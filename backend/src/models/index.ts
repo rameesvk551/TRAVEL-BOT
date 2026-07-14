@@ -70,6 +70,9 @@ const InvoiceTemplate = require('./InvoiceTemplate')(sequelize);
 const QuotationTemplate = require('./QuotationTemplate')(sequelize);
 const ItineraryTemplate = require('./ItineraryTemplate')(sequelize);
 const ReceiptTemplate = require('./ReceiptTemplate')(sequelize);
+const Brochure = require('./Brochure')(sequelize);
+const BrochureTemplate = require('./BrochureTemplate')(sequelize);
+const BrochureAsset = require('./BrochureAsset')(sequelize);
 const Quotation = require('./Quotation')(sequelize);
 const AccountReminder = require('./AccountReminder')(sequelize);
 const CreditNote = require('./CreditNote')(sequelize);
@@ -80,6 +83,7 @@ const VendorBill = require('./VendorBill')(sequelize);
 const VendorPayment = require('./VendorPayment')(sequelize);
 const VendorType = require('./VendorType')(sequelize);
 const LeadSource = require('./LeadSource')(sequelize);
+const LeadForm = require('./LeadForm')(sequelize);
 const PackageVendorCost = require('./PackageVendorCost')(sequelize);
 const ItemVendorCost = require('./ItemVendorCost')(sequelize);
 
@@ -118,6 +122,8 @@ Agency.hasMany(Message, { foreignKey: 'agencyId', as: 'messages' });
 Agency.hasMany(BotSession, { foreignKey: 'agencyId', as: 'botSessions' });
 Agency.hasMany(ScheduledJob, { foreignKey: 'agencyId', as: 'scheduledJobs' });
 Agency.hasMany(MessageTemplate, { foreignKey: 'agencyId', as: 'messageTemplates' });
+AgencyChannel.hasMany(MessageTemplate, { foreignKey: 'channelId', as: 'messageTemplates' });
+MessageTemplate.belongsTo(AgencyChannel, { foreignKey: 'channelId', as: 'channel' });
 Agency.hasMany(Campaign, { foreignKey: 'agencyId', as: 'campaigns' });
 Agency.hasMany(DripSequence, { foreignKey: 'agencyId', as: 'dripSequences' });
 Agency.hasMany(DripEnrollment, { foreignKey: 'agencyId', as: 'dripEnrollments' });
@@ -147,6 +153,8 @@ Agency.hasMany(VendorPayment, { foreignKey: 'agencyId', as: 'vendorPayments' });
 Agency.hasMany(VendorType, { foreignKey: 'agencyId', as: 'vendorTypes' });
 Agency.hasMany(LeadSource, { foreignKey: 'agencyId', as: 'leadSources' });
 LeadSource.belongsTo(Agency, { foreignKey: 'agencyId', as: 'agency' });
+Agency.hasMany(LeadForm, { foreignKey: 'agencyId', as: 'leadForms' });
+LeadForm.belongsTo(Agency, { foreignKey: 'agencyId', as: 'agency' });
 Agency.hasMany(PackageVendorCost, { foreignKey: 'agencyId', as: 'packageVendorCosts' });
 Agency.hasMany(ItemVendorCost, { foreignKey: 'agencyId', as: 'itemVendorCosts' });
 VendorType.belongsTo(Agency, { foreignKey: 'agencyId', as: 'agency' });
@@ -171,6 +179,8 @@ Property.belongsTo(Agency, { foreignKey: 'agencyId', as: 'agency' });
 
 // Agent belongs to Agency
 Agent.belongsTo(Agency, { foreignKey: 'agencyId', as: 'agency' });
+Agent.belongsTo(AgencyChannel, { foreignKey: 'primaryWhatsAppChannelId', as: 'primaryWhatsAppChannel' });
+AgencyChannel.hasOne(Agent, { foreignKey: 'primaryWhatsAppChannelId', as: 'assignedStaffAgent' });
 Agent.hasMany(RefreshToken, { foreignKey: 'agentId', as: 'refreshTokens' });
 Agent.hasMany(Lead, { foreignKey: 'assignedAgentId', as: 'assignedLeads' });
 Agent.hasMany(Message, { foreignKey: 'agentId', as: 'sentMessages' });
@@ -271,6 +281,22 @@ Itinerary.belongsTo(ItineraryTemplate, { foreignKey: 'templateId', as: 'template
 // Itinerary templates
 Agency.hasMany(ItineraryTemplate, { foreignKey: 'agencyId', as: 'itineraryTemplates' });
 ItineraryTemplate.belongsTo(Agency, { foreignKey: 'agencyId', as: 'agency' });
+
+// Brochures (freeform PDF builder)
+Agency.hasMany(Brochure, { foreignKey: 'agencyId', as: 'brochures' });
+Brochure.belongsTo(Agency, { foreignKey: 'agencyId', as: 'agency' });
+Brochure.belongsTo(Property, { foreignKey: 'propertyId', as: 'property' });
+Brochure.belongsTo(Package, { foreignKey: 'packageId', as: 'package' });
+Brochure.hasMany(BrochureAsset, { foreignKey: 'brochureId', as: 'assets' });
+
+// BrochureTemplate.agencyId is nullable — a NULL row is a platform-shipped preset,
+// so this association is intentionally optional rather than a required belongsTo.
+Agency.hasMany(BrochureTemplate, { foreignKey: 'agencyId', as: 'brochureTemplates' });
+BrochureTemplate.belongsTo(Agency, { foreignKey: 'agencyId', as: 'agency' });
+
+Agency.hasMany(BrochureAsset, { foreignKey: 'agencyId', as: 'brochureAssets' });
+BrochureAsset.belongsTo(Agency, { foreignKey: 'agencyId', as: 'agency' });
+BrochureAsset.belongsTo(Brochure, { foreignKey: 'brochureId', as: 'brochure' });
 
 // Payment
 Payment.belongsTo(Booking, { foreignKey: 'bookingId', as: 'booking' });
@@ -383,6 +409,8 @@ ScheduledJob.belongsTo(Agency, { foreignKey: 'agencyId', as: 'agency' });
 
 // MessageTemplate
 MessageTemplate.belongsTo(Agency, { foreignKey: 'agencyId', as: 'agency' });
+AgencyChannel.belongsTo(MessageTemplate, { foreignKey: 'defaultFirstOutreachTemplateId', as: 'defaultFirstOutreachTemplate' });
+MessageTemplate.hasMany(AgencyChannel, { foreignKey: 'defaultFirstOutreachTemplateId', as: 'defaultForChannels' });
 WhatsAppFlow.belongsTo(Agency, { foreignKey: 'agencyId', as: 'agency' });
 ServiceRoutingRule.belongsTo(Agency, { foreignKey: 'agencyId', as: 'agency' });
 ServiceRoutingRule.belongsTo(Agent, { foreignKey: 'agentId', as: 'agent' });
@@ -570,6 +598,9 @@ module.exports = {
   PipelineStage,
   Itinerary,
   ItineraryTemplate,
+  Brochure,
+  BrochureTemplate,
+  BrochureAsset,
   FollowUp,
   LeadNote,
   Property,
@@ -608,6 +639,7 @@ module.exports = {
   VendorPayment,
   VendorType,
   LeadSource,
+  LeadForm,
   PackageVendorCost,
   ItemVendorCost,
   EmployeeProfile,

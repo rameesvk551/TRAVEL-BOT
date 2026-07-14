@@ -21,6 +21,11 @@ module.exports = (sequelize) => {
       allowNull: true,
       comment: 'NULL = prebuilt library template, set = agency-specific',
     },
+    channelId: {
+      type: DataTypes.UUID,
+      allowNull: true,
+      comment: 'Optional staff-owned WhatsApp channel this template belongs to',
+    },
     name: {
       type: DataTypes.STRING(255),
       allowNull: false,
@@ -129,10 +134,12 @@ module.exports = (sequelize) => {
     tableName: 'message_templates',
     indexes: [
       { fields: ['agency_id'] },
+      { fields: ['channel_id'] },
       { fields: ['agency_id', 'status'] },
+      { fields: ['agency_id', 'channel_id', 'status'] },
       { fields: ['is_prebuilt'] },
       { fields: ['category'] },
-      { fields: ['name', 'agency_id'], unique: true },
+      { fields: ['name', 'agency_id', 'channel_id'], unique: true },
     ],
   });
 

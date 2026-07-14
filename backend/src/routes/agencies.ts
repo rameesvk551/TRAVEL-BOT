@@ -209,6 +209,13 @@ const marketingOsCompleteSchema = z.object({
 
 const marketingOsConnectSchema = z.object({
   onboardingMode: z.enum(['standard', 'coexistence']).optional(),
+  label: z.string().max(100).optional(),
+});
+
+const staffWhatsAppChannelUpdateSchema = z.object({
+  label: z.string().max(100).optional(),
+  agentId: z.string().uuid().nullable().optional(),
+  defaultFirstOutreachTemplateId: z.string().uuid().nullable().optional(),
 });
 
 /**
@@ -226,6 +233,14 @@ router.get('/me/whatsapp-connection', authenticate, requirePermission(PERMISSION
  */
 router.get('/me/whatsapp-channels', authenticate, requirePermission(PERMISSIONS.AGENCY_VIEW), agencyController.getWhatsAppChannels);
 
+router.get(
+  '/me/staff-whatsapp/channels',
+  authenticate,
+  requireRole('ADMIN'),
+  requirePermission(PERMISSIONS.AGENCY_VIEW),
+  agencyController.getStaffWhatsAppChannels
+);
+
 /**
  * POST /api/agencies/me/whatsapp-channels
  */
@@ -242,6 +257,41 @@ router.delete(
   requireRole('ADMIN'),
   requirePermission(PERMISSIONS.AGENCY_MANAGE),
   agencyController.deleteWhatsAppChannel
+);
+
+router.post(
+  '/me/staff-whatsapp/connect',
+  authenticate,
+  requireRole('ADMIN'),
+  requirePermission(PERMISSIONS.AGENCY_MANAGE),
+  validateBody(marketingOsConnectSchema),
+  agencyController.createStaffWhatsAppConnectSession
+);
+
+router.post(
+  '/me/staff-whatsapp/complete',
+  authenticate,
+  requireRole('ADMIN'),
+  requirePermission(PERMISSIONS.AGENCY_MANAGE),
+  validateBody(marketingOsCompleteSchema),
+  agencyController.completeStaffWhatsAppConnectSession
+);
+
+router.patch(
+  '/me/staff-whatsapp/channels/:channelId',
+  authenticate,
+  requireRole('ADMIN'),
+  requirePermission(PERMISSIONS.AGENCY_MANAGE),
+  validateBody(staffWhatsAppChannelUpdateSchema),
+  agencyController.updateStaffWhatsAppChannel
+);
+
+router.delete(
+  '/me/staff-whatsapp/channels/:channelId',
+  authenticate,
+  requireRole('ADMIN'),
+  requirePermission(PERMISSIONS.AGENCY_MANAGE),
+  agencyController.deleteStaffWhatsAppChannel
 );
 
 router.get('/me/website', authenticate, requirePermission(PERMISSIONS.AGENCY_VIEW), agencyController.getWebsiteStatus);

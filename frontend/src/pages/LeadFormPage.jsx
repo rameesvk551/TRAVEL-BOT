@@ -68,7 +68,9 @@ function FieldInput({ field, value, onChange, accent }) {
 }
 
 export default function LeadFormPage() {
-  const { agencyKey } = useParams();
+  // /lead/:agencyKey        → the agency's default form
+  // /lead/:agencyKey/:slug  → one of its named forms
+  const { agencyKey, slug } = useParams();
   const [searchParams] = useSearchParams();
 
   const [config, setConfig] = useState(null);
@@ -89,14 +91,20 @@ export default function LeadFormPage() {
       utm_campaign: get('utm_campaign'),
       utm_content: get('utm_content'),
       utm_term: get('utm_term'),
+      // Set when the visitor arrived from a specific catalog card, e.g.
+      // ?item=PROPERTY:<uuid> — the backend verifies it and links the lead to it.
+      item: get('item'),
     };
   }, [searchParams]);
+
+  // The default form answers the bare path; a named form adds its slug.
+  const formPath = `/${encodeURIComponent(agencyKey)}/lead-form${slug ? `/${encodeURIComponent(slug)}` : ''}`;
 
   useEffect(() => {
     let active = true;
     setLoading(true);
     publicClient
-      .get(`/${encodeURIComponent(agencyKey)}/lead-form`)
+      .get(formPath)
       .then(({ data }) => {
         if (!active) return;
         setConfig(data.data);
@@ -109,7 +117,7 @@ export default function LeadFormPage() {
     return () => {
       active = false;
     };
-  }, [agencyKey]);
+  }, [formPath]);
 
   const accent = config?.branding?.primaryColor || '#00A884';
 
@@ -120,7 +128,7 @@ export default function LeadFormPage() {
     setSubmitError('');
     setSubmitting(true);
     try {
-      await publicClient.post(`/${encodeURIComponent(agencyKey)}/lead-form`, {
+      await publicClient.post(formPath, {
         answers,
         company,
         ...tracking,

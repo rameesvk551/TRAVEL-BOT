@@ -20,6 +20,8 @@ export const platformApi = {
   agency: (id, params) => platformClient.get(withParams(`/platform/agencies/${id}`, params)).then((r) => r.data),
   updateAgencyStatus: (id, isActive) => platformClient.patch(`/platform/agencies/${id}/status`, { isActive }).then((r) => r.data),
   updateAgencyModules: (id, modules) => platformClient.patch(`/platform/agencies/${id}/modules`, { modules }).then((r) => r.data),
+  updateAgencyFeatures: (id, features) => platformClient.patch(`/platform/agencies/${id}/features`, { features }).then((r) => r.data),
+  updateAgencyStaffWhatsAppFeature: (id, enabled) => platformClient.patch(`/platform/agencies/${id}/staff-whatsapp-feature`, { enabled }).then((r) => r.data),
   health: () => platformClient.get('/platform/health').then((r) => r.data),
   activity: () => platformClient.get('/platform/activity').then((r) => r.data),
 

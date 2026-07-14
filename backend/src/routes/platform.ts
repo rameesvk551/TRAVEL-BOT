@@ -34,6 +34,17 @@ const modulesSchema = z.object({
   modules: z.array(z.string()).max(50),
 });
 
+// Paid add-ons. Kept separate from `modules` on purpose: sidebarPreferences treats an
+// empty list as "unrestricted", so an add-on stored there would default to ON for every
+// agency without an explicit module list. See middleware/requireFeature.ts.
+const featuresSchema = z.object({
+  features: z.record(z.boolean()),
+});
+
+const staffWhatsAppFeatureSchema = z.object({
+  enabled: z.boolean(),
+});
+
 const hex = z.string().regex(/^#([0-9a-fA-F]{6})$/);
 const partnerBrandingSchema = z.object({
   name: z.string().trim().min(2).max(255).optional(),
@@ -78,6 +89,8 @@ router.get('/agencies', platformController.agencies);
 router.get('/agencies/:id', platformController.agencyDetail);
 router.patch('/agencies/:id/status', validateBody(statusSchema), platformController.updateAgencyStatus);
 router.patch('/agencies/:id/modules', validateBody(modulesSchema), platformController.updateAgencyModules);
+router.patch('/agencies/:id/features', validateBody(featuresSchema), platformController.updateAgencyFeatures);
+router.patch('/agencies/:id/staff-whatsapp-feature', validateBody(staffWhatsAppFeatureSchema), platformController.updateAgencyStaffWhatsAppFeature);
 router.get('/health', platformController.health);
 router.get('/activity', platformController.activity);
 

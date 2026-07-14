@@ -250,6 +250,13 @@ module.exports = (sequelize) => {
       allowNull: true,
       comment: 'Array of enabled sidebar module paths, e.g. ["/properties", "/packages"]',
     },
+    staffWhatsAppEnabled: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
+      field: 'staff_whatsapp_enabled',
+      comment: 'Whether this agency can manage staff-owned WhatsApp coexistence numbers and first-outreach templates',
+    },
     leadRoutingStrategy: {
       type: DataTypes.STRING(20),
       allowNull: false,
@@ -297,6 +304,14 @@ module.exports = (sequelize) => {
       allowNull: false,
       defaultValue: {},
       comment: "Document delivery config, e.g. { autoSend: { quotation, invoice, receipt }, captions: {...} }",
+    },
+    features: {
+      type: DataTypes.JSONB,
+      allowNull: false,
+      defaultValue: {},
+      comment: "Paid add-on entitlements, e.g. { brochureBuilder: true }. Deny-by-default: "
+        + 'an absent key means off. Distinct from sidebarPreferences, whose empty state means '
+        + 'unrestricted — see middleware/requireFeature.ts.',
     },
     isActive: {
       type: DataTypes.BOOLEAN,

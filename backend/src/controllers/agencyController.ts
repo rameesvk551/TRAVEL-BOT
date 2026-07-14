@@ -36,6 +36,15 @@ async function getWhatsAppChannels(req, res, next) {
   }
 }
 
+async function getStaffWhatsAppChannels(req, res, next) {
+  try {
+    const data = await agencyService.getStaffWhatsAppChannels(req.agency.id);
+    res.json({ success: true, data });
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function deleteWhatsAppChannel(req, res, next) {
   try {
     const data = await agencyService.deleteWhatsAppChannel(req.agency.id, req.params.channelId);
@@ -49,6 +58,15 @@ async function createWhatsAppConnectSession(req, res, next) {
   try {
     const data = await agencyService.createMarketingOsConnectSession(req.agency.id, req.body || {});
     res.json({ success: true, data, message: 'Marketing OS connect session created' });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function createStaffWhatsAppConnectSession(req, res, next) {
+  try {
+    const data = await agencyService.createMarketingOsConnectSession(req.agency.id, { ...(req.body || {}), usageType: 'staff' });
+    res.json({ success: true, data, message: 'Staff WhatsApp connect session created' });
   } catch (err) {
     next(err);
   }
@@ -94,6 +112,33 @@ async function completeWhatsAppConnectSession(req, res, next) {
   try {
     const data = await agencyService.completeMarketingOsConnectSession(req.agency.id, req.body);
     res.json({ success: true, data, message: 'Marketing OS signup completed' });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function completeStaffWhatsAppConnectSession(req, res, next) {
+  try {
+    const data = await agencyService.completeMarketingOsConnectSession(req.agency.id, req.body);
+    res.json({ success: true, data, message: 'Staff WhatsApp signup completed' });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function updateStaffWhatsAppChannel(req, res, next) {
+  try {
+    const data = await agencyService.updateStaffWhatsAppChannel(req.agency.id, req.params.channelId, req.body || {});
+    res.json({ success: true, data, message: 'Staff WhatsApp number updated' });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function deleteStaffWhatsAppChannel(req, res, next) {
+  try {
+    const data = await agencyService.deleteStaffWhatsAppChannel(req.agency.id, req.params.channelId);
+    res.json({ success: true, data, message: 'Staff WhatsApp number removed' });
   } catch (err) {
     next(err);
   }
@@ -194,9 +239,14 @@ module.exports = {
   unpublishWebsite,
   getWhatsAppConnection,
   getWhatsAppChannels,
+  getStaffWhatsAppChannels,
   deleteWhatsAppChannel,
   createWhatsAppConnectSession,
+  createStaffWhatsAppConnectSession,
   completeWhatsAppConnectSession,
+  completeStaffWhatsAppConnectSession,
+  updateStaffWhatsAppChannel,
+  deleteStaffWhatsAppChannel,
   handleMarketingOsCallback,
   getInstagramConnection,
   connectInstagram,

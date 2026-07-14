@@ -164,6 +164,11 @@ async function ensureAgenciesSchema() {
     type: Sequelize.JSONB,
     allowNull: true,
   });
+  await ensureColumn('agencies', 'staff_whatsapp_enabled', {
+    type: Sequelize.BOOLEAN,
+    allowNull: false,
+    defaultValue: false,
+  });
 
   await ensureColumn('agencies', 'lead_routing_strategy', {
     type: Sequelize.STRING(20),
@@ -203,6 +208,14 @@ async function ensureAgenciesSchema() {
     defaultValue: {},
   });
 
+  // Paid add-on entitlements, e.g. { brochureBuilder: true }. Defaults to {} so every
+  // existing agency starts with the add-on OFF — requireFeature denies an absent key.
+  await ensureColumn('agencies', 'features', {
+    type: Sequelize.JSONB,
+    allowNull: false,
+    defaultValue: {},
+  });
+
   await ensureColumn('agencies', 'company_logo_url', {
     type: Sequelize.STRING(1000),
     allowNull: true,
@@ -232,6 +245,10 @@ async function ensureAgenciesSchema() {
     type: Sequelize.JSONB,
     allowNull: false,
     defaultValue: [],
+  });
+  await ensureColumn('message_templates', 'channel_id', {
+    type: Sequelize.UUID,
+    allowNull: true,
   });
 
   await ensureColumn('agencies', 'website_enabled', {
@@ -577,6 +594,69 @@ async function ensureLeadSourcesSchema() {
   );
 }
 
+// Named public lead forms — an agency can have many (each with its own slug +
+// fields), served at /lead/:agencyKey/:slug. The isDefault row answers the bare
+// /lead/:agencyKey. See models/LeadForm.ts + services/leadFormService.ts.
+async function ensureLeadFormsSchema() {
+  const queryInterface = sequelize.getQueryInterface();
+
+  if (!(await tableExists('lead_forms'))) {
+    await queryInterface.createTable('lead_forms', {
+      id: {
+        type: Sequelize.UUID,
+        allowNull: false,
+        primaryKey: true,
+        defaultValue: Sequelize.literal('gen_random_uuid()'),
+      },
+      agency_id: {
+        type: Sequelize.UUID,
+        allowNull: false,
+        references: { model: 'agencies', key: 'id' },
+        onUpdate: 'CASCADE',
+        onDelete: 'CASCADE',
+      },
+      name: { type: Sequelize.STRING(120), allowNull: false },
+      slug: { type: Sequelize.STRING(80), allowNull: false },
+      enabled: { type: Sequelize.BOOLEAN, allowNull: false, defaultValue: false },
+      is_default: { type: Sequelize.BOOLEAN, allowNull: false, defaultValue: false },
+      title: { type: Sequelize.STRING(160), allowNull: true },
+      description: { type: Sequelize.STRING(600), allowNull: true },
+      success_message: { type: Sequelize.STRING(400), allowNull: true },
+      submit_label: { type: Sequelize.STRING(60), allowNull: true },
+      fields: {
+        type: Sequelize.JSONB,
+        allowNull: false,
+        defaultValue: [],
+      },
+      display_order: { type: Sequelize.INTEGER, allowNull: false, defaultValue: 0 },
+      created_at: {
+        type: Sequelize.DATE,
+        allowNull: false,
+        defaultValue: Sequelize.literal('CURRENT_TIMESTAMP'),
+      },
+      updated_at: {
+        type: Sequelize.DATE,
+        allowNull: false,
+        defaultValue: Sequelize.literal('CURRENT_TIMESTAMP'),
+      },
+    });
+    console.log('[SchemaBootstrap] Created lead_forms');
+  }
+
+  await ensureIndex(
+    'lead_forms_agency_id_idx',
+    'CREATE INDEX lead_forms_agency_id_idx ON lead_forms (agency_id)'
+  );
+  await ensureIndex(
+    'lead_forms_agency_id_slug_unique',
+    'CREATE UNIQUE INDEX lead_forms_agency_id_slug_unique ON lead_forms (agency_id, slug)'
+  );
+  await ensureIndex(
+    'lead_forms_agency_id_is_default_idx',
+    'CREATE INDEX lead_forms_agency_id_is_default_idx ON lead_forms (agency_id, is_default)'
+  );
+}
+
 async function ensureCustomersSchema() {
   await ensureColumn('customers', 'channel_id', {
     type: Sequelize.UUID,
@@ -640,6 +720,7 @@ async function ensureAgencyChannelsSchema() {
       label: { type: Sequelize.STRING(100), allowNull: true },
       is_default: { type: Sequelize.BOOLEAN, allowNull: false, defaultValue: false },
       is_active: { type: Sequelize.BOOLEAN, allowNull: false, defaultValue: true },
+      usage_type: { type: Sequelize.STRING(20), allowNull: false, defaultValue: 'AGENCY' },
       whatsapp_number: { type: Sequelize.STRING(30), allowNull: true, unique: true },
       whatsapp_provider: { type: Sequelize.STRING(30), allowNull: false, defaultValue: 'SELF_HOSTED' },
       whatsapp_phone_number_id: { type: Sequelize.STRING(255), allowNull: true },
@@ -656,6 +737,7 @@ async function ensureAgencyChannelsSchema() {
       whatsapp_connection_error: { type: Sequelize.TEXT, allowNull: true },
       whatsapp_last_synced_at: { type: Sequelize.DATE, allowNull: true },
       marketing_os_tenant_id: { type: Sequelize.STRING(255), allowNull: true },
+      default_first_outreach_template_id: { type: Sequelize.UUID, allowNull: true },
       created_at: { type: Sequelize.DATE, allowNull: false, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') },
       updated_at: { type: Sequelize.DATE, allowNull: false, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') },
     });
@@ -675,6 +757,11 @@ async function ensureAgencyChannelsSchema() {
     type: Sequelize.BOOLEAN,
     allowNull: false,
     defaultValue: true,
+  });
+  await ensureColumn('agency_channels', 'usage_type', {
+    type: Sequelize.STRING(20),
+    allowNull: false,
+    defaultValue: 'AGENCY',
   });
   await ensureColumn('agency_channels', 'whatsapp_number', {
     type: Sequelize.STRING(30),
@@ -746,6 +833,10 @@ async function ensureAgencyChannelsSchema() {
     type: Sequelize.STRING(255),
     allowNull: true,
   });
+  await ensureColumn('agency_channels', 'default_first_outreach_template_id', {
+    type: Sequelize.UUID,
+    allowNull: true,
+  });
 
   await ensureIndex(
     'agency_channels_agency_id_idx',
@@ -756,6 +847,10 @@ async function ensureAgencyChannelsSchema() {
     'CREATE INDEX agency_channels_agency_default_idx ON agency_channels (agency_id, is_default)'
   );
   await ensureIndex(
+    'agency_channels_agency_usage_idx',
+    'CREATE INDEX agency_channels_agency_usage_idx ON agency_channels (agency_id, usage_type)'
+  );
+  await ensureIndex(
     'agency_channels_phone_number_id_idx',
     'CREATE INDEX agency_channels_phone_number_id_idx ON agency_channels (whatsapp_phone_number_id) WHERE whatsapp_phone_number_id IS NOT NULL'
   );
@@ -763,6 +858,17 @@ async function ensureAgencyChannelsSchema() {
 }
 
 async function ensureAgentsSchema() {
+  await ensureColumn('agents', 'sidebar_preferences', {
+    type: Sequelize.JSONB,
+    allowNull: true,
+    defaultValue: null,
+  });
+
+  await ensureColumn('agents', 'primary_whatsapp_channel_id', {
+    type: Sequelize.UUID,
+    allowNull: true,
+  });
+
   await ensureColumn('agents', 'reset_password_token_hash', {
     type: Sequelize.STRING(64),
     allowNull: true,
@@ -772,6 +878,11 @@ async function ensureAgentsSchema() {
     type: Sequelize.DATE,
     allowNull: true,
   });
+
+  await ensureIndex(
+    'agents_primary_whatsapp_channel_id_idx',
+    'CREATE INDEX agents_primary_whatsapp_channel_id_idx ON agents (primary_whatsapp_channel_id) WHERE primary_whatsapp_channel_id IS NOT NULL'
+  );
 
   await ensureIndex(
     'agents_reset_password_token_hash_idx',
@@ -1124,6 +1235,14 @@ async function ensureCampaignsSchema() {
     allowNull: false,
     defaultValue: [],
   });
+  await ensureIndex(
+    'message_templates_channel_id_idx',
+    'CREATE INDEX message_templates_channel_id_idx ON message_templates (channel_id) WHERE channel_id IS NOT NULL'
+  );
+  await ensureIndex(
+    'message_templates_agency_channel_status_idx',
+    'CREATE INDEX message_templates_agency_channel_status_idx ON message_templates (agency_id, channel_id, status)'
+  );
 
   await ensureEnumValues('enum_campaign_recipients_selected_item_type', [
     'PACKAGE',
@@ -2828,9 +2947,70 @@ async function ensureActivityLogsTable() {
   }
 }
 
+/**
+ * Brochure PDF builder (paid add-on): the designs, the reusable templates, and the
+ * agency's image library. Access is gated on agencies.features.brochureBuilder.
+ */
+async function ensureBrochureTables() {
+  if (!(await tableExists('brochures'))) {
+    await queryInterface.createTable('brochures', {
+      id: { type: Sequelize.UUID, defaultValue: Sequelize.UUIDV4, primaryKey: true, allowNull: false },
+      agency_id: { type: Sequelize.UUID, allowNull: false },
+      title: { type: Sequelize.STRING(255), allowNull: false },
+      status: { type: Sequelize.ENUM('DRAFT', 'READY'), allowNull: false, defaultValue: 'DRAFT' },
+      property_id: { type: Sequelize.UUID, allowNull: true },
+      package_id: { type: Sequelize.UUID, allowNull: true },
+      doc: { type: Sequelize.JSONB, allowNull: false, defaultValue: {} },
+      fields: { type: Sequelize.JSONB, allowNull: true, defaultValue: {} },
+      pdf_url: { type: Sequelize.TEXT, allowNull: true },
+      rendered_at: { type: Sequelize.DATE, allowNull: true },
+      created_at: { type: Sequelize.DATE, allowNull: false, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') },
+      updated_at: { type: Sequelize.DATE, allowNull: false, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') },
+    });
+    await queryInterface.addIndex('brochures', ['agency_id']);
+    await queryInterface.addIndex('brochures', ['property_id']);
+    console.log('[SchemaBootstrap] Created brochures table');
+  }
+
+  if (!(await tableExists('brochure_templates'))) {
+    await queryInterface.createTable('brochure_templates', {
+      id: { type: Sequelize.UUID, defaultValue: Sequelize.UUIDV4, primaryKey: true, allowNull: false },
+      // Nullable on purpose: a NULL agency_id row is a platform-shipped preset,
+      // visible to every agency with the add-on enabled.
+      agency_id: { type: Sequelize.UUID, allowNull: true },
+      name: { type: Sequelize.STRING(255), allowNull: false },
+      thumbnail_url: { type: Sequelize.TEXT, allowNull: true },
+      doc: { type: Sequelize.JSONB, allowNull: false, defaultValue: {} },
+      slot_count: { type: Sequelize.INTEGER, allowNull: false, defaultValue: 0 },
+      created_at: { type: Sequelize.DATE, allowNull: false, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') },
+      updated_at: { type: Sequelize.DATE, allowNull: false, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') },
+    });
+    await queryInterface.addIndex('brochure_templates', ['agency_id']);
+    console.log('[SchemaBootstrap] Created brochure_templates table');
+  }
+
+  if (!(await tableExists('brochure_assets'))) {
+    await queryInterface.createTable('brochure_assets', {
+      id: { type: Sequelize.UUID, defaultValue: Sequelize.UUIDV4, primaryKey: true, allowNull: false },
+      agency_id: { type: Sequelize.UUID, allowNull: false },
+      brochure_id: { type: Sequelize.UUID, allowNull: true },
+      url: { type: Sequelize.TEXT, allowNull: false },
+      public_id: { type: Sequelize.STRING(500), allowNull: true },
+      filename: { type: Sequelize.STRING(255), allowNull: true },
+      sort_order: { type: Sequelize.INTEGER, allowNull: false, defaultValue: 0 },
+      created_at: { type: Sequelize.DATE, allowNull: false, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') },
+      updated_at: { type: Sequelize.DATE, allowNull: false, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') },
+    });
+    await queryInterface.addIndex('brochure_assets', ['agency_id']);
+    await queryInterface.addIndex('brochure_assets', ['brochure_id']);
+    console.log('[SchemaBootstrap] Created brochure_assets table');
+  }
+}
+
 async function ensureProductionSchema() {
   await ensureLeadsSchema();
   await ensureLeadSourcesSchema();
+  await ensureLeadFormsSchema();
   await ensureAgenciesSchema();
   await ensureAgencyChannelsSchema();
   await ensureAgentsSchema();
@@ -2854,6 +3034,7 @@ async function ensureProductionSchema() {
   await ensureServicesTable();
   await ensureInvoiceTemplatesTable();
   await ensureDocumentTemplatesSchema();
+  await ensureBrochureTables();
   await ensureCruisesTable();
   await ensureVisasTable();
   await ensureVendorTypesTable();

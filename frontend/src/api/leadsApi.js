@@ -7,6 +7,7 @@ export const leadsApi = {
   getById: (id) => client.get(`/leads/${id}`).then((r) => r.data),
   create: (data) => client.post('/leads', data).then((r) => r.data),
   update: (id, data) => client.patch(`/leads/${id}`, data).then((r) => r.data),
+  sendStaffFirstOutreach: (id) => client.post(`/leads/${id}/staff-first-outreach`).then((r) => r.data),
   delete: (id) => client.delete(`/leads/${id}`).then((r) => r.data),
   bulkAssign: (leadIds, agentId) => client.post('/leads/bulk-assign', { leadIds, agentId }).then((r) => r.data),
 

@@ -4,13 +4,24 @@ const { normalizePhone } = require('../utils/phoneUtils');
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const { z } = require('zod');
+const { Op } = require('sequelize');
 const marketingOsPartnerService = require('./marketingOsPartnerService');
 const missedCallService = require('./missedCallService');
 const flowService = require('./flowService');
 const templateService = require('./templateService');
 const websiteBuilderService = require('./websiteBuilderService');
 const { normalizeLeadFormConfig } = require('./leadFormConfig');
-const { AgencyChannel, Package, Property, Service, Visa, Cruise, WhatsAppFlow } = require('../models');
+const {
+  AgencyChannel,
+  Agent,
+  MessageTemplate,
+  Package,
+  Property,
+  Service,
+  Visa,
+  Cruise,
+  WhatsAppFlow,
+} = require('../models');
 
 const CALLBACK_SECRET = process.env.MARKETING_OS_WEBHOOK_SECRET || '';
 const WEBHOOK_APP_SECRET = process.env.WEBHOOK_APP_SECRET || '';
@@ -40,7 +51,31 @@ const marketingOsCallbackSchema = z.object({
 
 const connectSessionOptionsSchema = z.object({
   onboardingMode: z.enum(['standard', 'coexistence']).optional(),
+  usageType: z.enum(['agency', 'staff']).optional(),
+  label: z.string().max(100).optional(),
 });
+
+function normalizeChannelUsageType(value, fallback = 'AGENCY') {
+  return String(value || fallback).toUpperCase() === 'STAFF' ? 'STAFF' : 'AGENCY';
+}
+
+function isStaffWhatsAppEnabled(agency) {
+  return Boolean(agency?.staffWhatsAppEnabled);
+}
+
+async function assertStaffWhatsAppEnabledByAgencyId(agencyId) {
+  const agency = await agencyRepository.findById(agencyId);
+  if (!agency) {
+    throw Object.assign(new Error('Agency not found'), { statusCode: 404, code: 'NOT_FOUND' });
+  }
+  if (!isStaffWhatsAppEnabled(agency)) {
+    throw Object.assign(new Error('Staff WhatsApp feature is not enabled for this agency'), {
+      statusCode: 403,
+      code: 'STAFF_WHATSAPP_DISABLED',
+    });
+  }
+  return agency;
+}
 
 function signEmbeddedSession(payload) {
   return jwt.sign(payload, SESSION_SECRET, { expiresIn: '15m' });
@@ -287,6 +322,47 @@ function normalizeIgCardMode(value) {
   return ['CARDS', 'CAROUSEL'].includes(v) ? v : 'LIST';
 }
 
+// Per-card buttons on a catalog/search card (Instagram generic-template cards allow up to 3).
+// Each button is a link: LEAD_FORM opens one of the agency's public lead forms with THIS card's
+// catalog item attached (?item=PROPERTY:<id>) so the resulting lead is bound to it; WHATSAPP
+// opens a wa.me click-to-chat prefilled with the item; URL is any static link.
+const CARD_BUTTON_ACTIONS = ['LEAD_FORM', 'WHATSAPP', 'URL'];
+
+// Keys the builder legitimately sends that are not part of a node's persisted config
+// (editor-only state). Everything else that gets dropped is warned about loudly.
+const DROP_SILENTLY = new Set([
+  'buttons',        // only meaningful on BUTTONS nodes; harmless leftovers elsewhere
+  'rows',           // ditto for LIST
+  'options',        // legacy editor field
+  'selected',
+  'dragging',
+  'width',
+  'height',
+]);
+
+function normalizeCardButtons(raw, nodeId = '') {
+  return (Array.isArray(raw) ? raw : [])
+    .map((button, index) => {
+      if (!button || typeof button !== 'object') return null;
+      const label = normalizeFlowGraphText(button.label, 20);
+      if (!label) return null;
+
+      const rawAction = String(button.action || '').trim().toUpperCase();
+      const action = CARD_BUTTON_ACTIONS.includes(rawAction) ? rawAction : 'WHATSAPP';
+
+      const normalized = {
+        id: toMenuId(button.id || `card_btn_${index + 1}`, `card_btn_${index + 1}`).slice(0, 40),
+        label,
+        action,
+      };
+      if (action === 'LEAD_FORM') normalized.leadFormId = normalizeFlowGraphText(button.leadFormId, 80) || null;
+      if (action === 'URL') normalized.url = normalizeFlowGraphText(button.url, 500) || null;
+      return normalized;
+    })
+    .filter(Boolean)
+    .slice(0, 3);
+}
+
 function normalizeGraphData(type, data = {}, nodeId = '') {
   const source = data && typeof data === 'object' && !Array.isArray(data) ? data : {};
   const normalized = {};
@@ -326,12 +402,20 @@ function normalizeGraphData(type, data = {}, nodeId = '') {
   if (source.propertyType !== undefined) normalized.propertyType = normalizeFlowGraphText(source.propertyType, 80);
   if (source.propertyLocation !== undefined) normalized.propertyLocation = normalizeFlowGraphText(source.propertyLocation, 80);
   if (source.flowId !== undefined) normalized.flowId = normalizeFlowGraphText(source.flowId, 80);
+  // Legacy OPEN_META_FLOW graphs match on metaFlowId as a fallback — preserve it so re-saving an
+  // old flow in the builder doesn't quietly unbind it.
+  if (source.metaFlowId !== undefined) normalized.metaFlowId = normalizeFlowGraphText(source.metaFlowId, 80);
+  // Default interest recorded by a SAVE_ENQUIRY node when no catalog item was selected.
+  if (source.interest !== undefined) normalized.interest = normalizeFlowValue(source.interest, 80);
   if (source.flowType !== undefined) {
     const flowType = String(source.flowType || '').trim().toUpperCase();
     normalized.flowType = ['PACKAGE', 'PROPERTY', 'VISA', 'CRUISE', 'SERVICE', 'CUSTOM_TRIP', 'REVIEW', 'GENERIC'].includes(flowType) ? flowType : 'GENERIC';
   }
   if (source.cta !== undefined) normalized.cta = normalizeFlowGraphText(source.cta, 20);
   if (source.reason !== undefined) normalized.reason = normalizeFlowGraphText(source.reason, 180);
+  // Footer shown under list/catalog messages. The bot reads data.footerText on CATALOG_LIST /
+  // property-location lists — without this it was dropped on save and never took effect.
+  if (source.footerText !== undefined) normalized.footerText = normalizeFlowGraphText(source.footerText, 60);
 
   if (type === 'BUTTONS') {
     normalized.buttons = (Array.isArray(source.buttons) ? source.buttons : [])
@@ -360,6 +444,33 @@ function normalizeGraphData(type, data = {}, nodeId = '') {
       .slice(0, 100);
     normalized.igCardMode = normalizeIgCardMode(source.igCardMode);
     normalized.igCardButtonLabel = normalizeFlowGraphText(source.igCardButtonLabel || 'Get details on WhatsApp', 20);
+    normalized.cardButtons = normalizeCardButtons(source.cardButtons, nodeId);
+    // The bot prints data.pickPrompt after CATALOG_LIST cards too (not just SEARCH) — it was
+    // only whitelisted on SEARCH, so on a catalog node it silently reverted to the default.
+    normalized.pickPrompt = normalizeFlowGraphText(source.pickPrompt || 'Reply with the number of your choice.', 200);
+
+    // "Ask which location first" step for PROPERTY catalogs. The bot reads every one of these
+    // (askLocationFirst / locationPrompt / locationButtonLabel / locationListTitle / the field key)
+    // but none were persisted — so the checkbox in the builder could never actually take effect.
+    normalized.askLocationFirst = source.askLocationFirst === true;
+    normalized.locationPrompt = normalizeFlowGraphText(source.locationPrompt || 'Which location are you interested in?', FLOW_GRAPH_FIELD_LIMITS.prompt);
+    normalized.locationButtonLabel = normalizeFlowGraphText(source.locationButtonLabel || 'Choose Location', 20);
+    normalized.locationListTitle = normalizeFlowGraphText(source.locationListTitle || 'Locations', 24);
+    if (source.propertyLocationField !== undefined) {
+      normalized.propertyLocationField = toMenuId(source.propertyLocationField, 'propertyLocation').slice(0, FLOW_GRAPH_FIELD_LIMITS.fieldKey);
+    }
+    if (source.locationFieldKey !== undefined) {
+      normalized.locationFieldKey = toMenuId(source.locationFieldKey, 'propertyLocation').slice(0, FLOW_GRAPH_FIELD_LIMITS.fieldKey);
+    }
+
+    // Catalog filters the bot applies in findFlowCatalogItems — VISA (country / visaType) and
+    // CRUISE (destination / cruiseLine). Also previously dropped, so those filters never applied.
+    // Keep the agency's own casing: the bot matches these with Op.iLike, so upper-casing them
+    // would only mangle what they typed for no benefit.
+    if (source.country !== undefined) normalized.country = normalizeFlowGraphText(source.country, 80);
+    if (source.visaType !== undefined) normalized.visaType = normalizeFlowGraphText(source.visaType, 80);
+    if (source.destination !== undefined) normalized.destination = normalizeFlowGraphText(source.destination, 80);
+    if (source.cruiseLine !== undefined) normalized.cruiseLine = normalizeFlowGraphText(source.cruiseLine, 80);
   }
 
   if (type === 'SEARCH') {
@@ -369,6 +480,7 @@ function normalizeGraphData(type, data = {}, nodeId = '') {
     normalized.pickPrompt = normalizeFlowGraphText(source.pickPrompt || 'Reply with the number of your choice.', 200);
     normalized.igCardMode = normalizeIgCardMode(source.igCardMode);
     normalized.igCardButtonLabel = normalizeFlowGraphText(source.igCardButtonLabel || 'Get details on WhatsApp', 20);
+    normalized.cardButtons = normalizeCardButtons(source.cardButtons, nodeId);
     const maxResults = parseInt(source.maxResults, 10);
     normalized.maxResults = Number.isFinite(maxResults) ? Math.min(10, Math.max(1, maxResults)) : 6;
     // fieldKey normalized the same way as QUESTION fieldKeys so they always line up at runtime.
@@ -384,6 +496,30 @@ function normalizeGraphData(type, data = {}, nodeId = '') {
       .slice(0, 6);
   }
 
+  // Send PDF. The bot honours documentSource (resolveFlowGraphDocument) and, for UPLOAD, the PDF
+  // uploaded onto the node. None of it was persisted before — the builder showed the source
+  // selector and the upload button, the agency saved, and every setting was silently discarded,
+  // so every Send-PDF node quietly behaved as AUTO and uploaded PDFs could never be sent.
+  if (type === 'SEND_ITEM_DOCUMENT') {
+    const documentSource = String(source.documentSource || '').trim().toUpperCase();
+    normalized.documentSource = ['AUTO', 'BROCHURE', 'ITINERARY', 'PROPERTY_DOC', 'UPLOAD'].includes(documentSource)
+      ? documentSource
+      : 'AUTO';
+    normalized.documentCaption = normalizeFlowGraphText(source.documentCaption, 300);
+    if (normalized.documentSource === 'UPLOAD') {
+      const url = String(source.uploadedPdfUrl || '').trim().slice(0, 600);
+      normalized.uploadedPdfUrl = /^https?:\/\//i.test(url) ? url : '';
+      normalized.uploadedPdfName = normalizeFlowGraphText(source.uploadedPdfName, 160);
+    } else {
+      // Keep the upload around so switching source back and forth does not lose the file.
+      const url = String(source.uploadedPdfUrl || '').trim().slice(0, 600);
+      if (/^https?:\/\//i.test(url)) {
+        normalized.uploadedPdfUrl = url;
+        normalized.uploadedPdfName = normalizeFlowGraphText(source.uploadedPdfName, 160);
+      }
+    }
+  }
+
   if (type === 'WHATSAPP_BUTTON') {
     normalized.body = normalizeFlowGraphText(source.body || 'Tap below to chat with us on WhatsApp.', FLOW_GRAPH_FIELD_LIMITS.body);
     normalized.buttonLabel = normalizeFlowGraphText(source.buttonLabel || 'Chat on WhatsApp', 20);
@@ -392,6 +528,17 @@ function normalizeGraphData(type, data = {}, nodeId = '') {
     normalized.phone = normalized.target === 'CUSTOM'
       ? String(source.phone || '').replace(/[^0-9+]/g, '').slice(0, 20)
       : '';
+  }
+
+  // This whitelist SILENTLY DROPS any field it does not know about. That has bitten us before:
+  // the builder happily shows a setting, the agency hits Save, and it evaporates with no error.
+  // Shout about it instead — a dropped field is always either a bug here or dead UI state.
+  const dropped = Object.keys(source).filter((key) => !(key in normalized) && !DROP_SILENTLY.has(key));
+  if (dropped.length) {
+    console.warn(
+      `[FlowGraph] node ${nodeId || '?'} (${type}): dropped unsupported field(s) [${dropped.join(', ')}] — `
+      + 'add them to normalizeGraphData or remove them from the builder.',
+    );
   }
 
   return normalized;
@@ -441,6 +588,26 @@ async function assertGraphReferencesBelongToAgency(agencyId, nodes = []) {
       throw Object.assign(new Error('Selected WhatsApp flow is not available for this agency'), {
         statusCode: 400,
         code: 'INVALID_FLOW_REFERENCE',
+      });
+    }
+  }
+
+  // A card button bound to a lead form must reference one of THIS agency's forms —
+  // otherwise a crafted graph could point customers at another agency's form.
+  const leadFormIds = nodes
+    .flatMap((node) => (Array.isArray(node.data?.cardButtons) ? node.data.cardButtons : []))
+    .filter((button) => button?.action === 'LEAD_FORM' && button.leadFormId)
+    .map((button) => button.leadFormId);
+
+  if (leadFormIds.length) {
+    const { LeadForm } = require('../models');
+    const forms = await LeadForm.findAll({ where: { agencyId, id: leadFormIds }, attributes: ['id'] });
+    const found = new Set(forms.map((item) => String(item.id)));
+    const missing = leadFormIds.find((id) => !found.has(String(id)));
+    if (missing) {
+      throw Object.assign(new Error('Selected lead form is not available for this agency'), {
+        statusCode: 400,
+        code: 'INVALID_LEAD_FORM_REFERENCE',
       });
     }
   }
@@ -529,10 +696,24 @@ async function normalizeWhatsAppFlowGraphConfig(agencyId, config = {}) {
   return {
     schemaVersion: Number(config.schemaVersion) >= 3 ? 3 : 2,
     startNodeId: nodeIds.has(requestedStartNodeId) ? requestedStartNodeId : startNodes[0].id,
+    assignmentAutoFirstOutreachButtonEnabled: config.assignmentAutoFirstOutreachButtonEnabled === true,
     nodes,
     edges,
     updatedAt: new Date().toISOString(),
   };
+}
+
+// WhatsApp interactive-flow message parts: header ≤60, footer ≤60, body ≤1024.
+function normalizeReminderMessage(source) {
+  if (!source || typeof source !== 'object' || Array.isArray(source)) return {};
+  const out = {};
+  const header = normalizeFlowGraphText(source.header, 60);
+  const body = normalizeFlowGraphText(source.body, 1024);
+  const footer = normalizeFlowGraphText(source.footer, 60);
+  if (header) out.header = header;
+  if (body) out.body = body;
+  if (footer) out.footer = footer;
+  return out;
 }
 
 async function normalizeWhatsAppFlowLibraryConfig(agencyId, config = {}) {
@@ -585,6 +766,9 @@ async function normalizeWhatsAppFlowLibraryConfig(agencyId, config = {}) {
     // Turn off human agent handoff entirely: no keyword handoff, no forwarding of customer
     // messages to a staff member's personal WhatsApp, no bot-pause on business-app replies.
     disableAgentHandoff: config.disableAgentHandoff === true,
+    assignmentAutoFirstOutreachButtonEnabled: config.assignmentAutoFirstOutreachButtonEnabled === true,
+    // Agency-authored copy for the reminder shown when a pending form is re-sent.
+    reminderMessage: normalizeReminderMessage(config.reminderMessage),
     flows,
     updatedAt: new Date().toISOString(),
   };
@@ -607,6 +791,7 @@ async function normalizeWhatsAppFlowConfig(agencyId, config = {}) {
   const serviceMenu = normalizeFlowMenuItems(config.serviceMenu, 10);
 
   return {
+    assignmentAutoFirstOutreachButtonEnabled: config.assignmentAutoFirstOutreachButtonEnabled === true,
     ...(welcomeMenu.length ? { welcomeMenu } : {}),
     ...(packageCategories.length ? { packageCategories } : {}),
     ...(tourTypes.length ? { tourTypes } : {}),
@@ -623,6 +808,7 @@ function serializeWhatsAppChannel(channel) {
     label: row.label || null,
     isDefault: Boolean(row.isDefault),
     isActive: row.isActive !== false,
+    usageType: normalizeChannelUsageType(row.usageType),
     provider: row.whatsappProvider || 'SELF_HOSTED',
     status: row.whatsappConnectionStatus || 'NOT_CONNECTED',
     whatsappNumber: row.whatsappNumber || null,
@@ -630,6 +816,7 @@ function serializeWhatsAppChannel(channel) {
     phoneNumberId: row.whatsappPhoneNumberId || null,
     businessAccountId: row.whatsappBusinessAccountId || null,
     marketingOsTenantId: row.marketingOsTenantId || null,
+    defaultFirstOutreachTemplateId: row.defaultFirstOutreachTemplateId || null,
     onboardingMode: row.whatsappOnboardingMode || 'STANDARD',
     errorMessage: row.whatsappConnectionError || null,
     lastSyncedAt: row.whatsappLastSyncedAt || null,
@@ -643,9 +830,9 @@ function serializeWhatsAppChannel(channel) {
   };
 }
 
-async function listWhatsAppChannels(agencyId) {
+async function listWhatsAppChannels(agencyId, { usageType = 'AGENCY' } = {}) {
   const channels = await AgencyChannel.findAll({
-    where: { agencyId, isActive: true },
+    where: { agencyId, isActive: true, usageType: normalizeChannelUsageType(usageType) },
     order: [['isDefault', 'DESC'], ['createdAt', 'ASC']],
   });
   return channels.map(serializeWhatsAppChannel);
@@ -656,7 +843,8 @@ async function upsertWhatsAppChannel(agency, values = {}) {
   const whatsappNumber = values.whatsappNumber || (displayPhoneNumber ? normalizePhone(displayPhoneNumber) : null);
   const phoneNumberId = values.phoneNumberId || values.whatsappPhoneNumberId || null;
   const businessAccountId = values.businessAccountId || values.whatsappBusinessAccountId || null;
-  const existingDefaultCount = await AgencyChannel.count({ where: { agencyId: agency.id, isDefault: true } });
+  const usageType = normalizeChannelUsageType(values.usageType, 'AGENCY');
+  const existingDefaultCount = await AgencyChannel.count({ where: { agencyId: agency.id, isDefault: true, usageType: 'AGENCY' } });
   const where = phoneNumberId
     ? { agencyId: agency.id, whatsappPhoneNumberId: phoneNumberId }
     : { agencyId: agency.id, whatsappNumber };
@@ -666,8 +854,9 @@ async function upsertWhatsAppChannel(agency, values = {}) {
   const payload = {
     agencyId: agency.id,
     label: values.label || displayPhoneNumber || whatsappNumber || 'WhatsApp Channel',
-    isDefault: values.isDefault ?? existingDefaultCount === 0,
+    isDefault: values.isDefault ?? (usageType === 'AGENCY' ? existingDefaultCount === 0 : false),
     isActive: values.isActive ?? true,
+    usageType,
     whatsappProvider: values.provider || values.whatsappProvider || 'MARKETING_OS',
     whatsappConnectionStatus: values.status || values.whatsappConnectionStatus || 'CONNECTED',
     whatsappNumber: whatsappNumber || null,
@@ -683,6 +872,7 @@ async function upsertWhatsAppChannel(agency, values = {}) {
     whatsappConnectionError: values.errorMessage || values.whatsappConnectionError || null,
     whatsappLastSyncedAt: values.whatsappLastSyncedAt || new Date(),
     marketingOsTenantId: values.marketingOsTenantId || agency.marketingOsTenantId || null,
+    defaultFirstOutreachTemplateId: values.defaultFirstOutreachTemplateId || null,
   };
 
   const [channel] = await AgencyChannel.findOrCreate({
@@ -691,7 +881,7 @@ async function upsertWhatsAppChannel(agency, values = {}) {
   });
 
   if (!channel.isDefault && payload.isDefault) {
-    await AgencyChannel.update({ isDefault: false }, { where: { agencyId: agency.id } });
+    await AgencyChannel.update({ isDefault: false }, { where: { agencyId: agency.id, usageType: 'AGENCY' } });
   }
 
   await channel.update(payload);
@@ -937,10 +1127,39 @@ async function updateCurrentAgency(agencyId, updates) {
   }
 
   const agency = await agencyRepository.updateById(agencyId, payload);
+
+  // BACKWARD COMPAT: the public lead form now reads the `lead_forms` table, not this
+  // legacy single JSON blob. A client still running an older bundle saves through
+  // here — mirror it onto the agency's default form so the save isn't a silent no-op.
+  if (Object.prototype.hasOwnProperty.call(payload, 'leadFormConfig')) {
+    await syncLegacyLeadFormConfig(agency, payload.leadFormConfig);
+  }
+
   const data = agency.toJSON();
   delete data.razorpayKeySecret;
   data.whatsappConnection = serializeWhatsAppConnection(agency);
   return data;
+}
+
+async function syncLegacyLeadFormConfig(agency, config) {
+  if (!config || typeof config !== 'object' || !Array.isArray(config.fields) || !config.fields.length) {
+    return;
+  }
+  try {
+    const leadFormService = require('./leadFormService');
+    const form = await leadFormService.ensureDefaultForm(agency);
+    await form.update({
+      enabled: Boolean(config.enabled),
+      title: config.title || form.title,
+      description: config.description || '',
+      successMessage: config.successMessage || form.successMessage,
+      submitLabel: config.submitLabel || form.submitLabel,
+      fields: config.fields,
+    });
+  } catch (err) {
+    // Never fail the agency save because of the mirror.
+    console.error('[agencyService] legacy leadFormConfig -> lead_forms sync failed:', err.message);
+  }
 }
 
 async function getWebsiteStatus(agencyId) {
@@ -966,7 +1185,7 @@ async function getWhatsAppConnection(agencyId) {
   }
 
   const connection = serializeWhatsAppConnection(agency);
-  connection.channels = await listWhatsAppChannels(agencyId);
+  connection.channels = await listWhatsAppChannels(agencyId, { usageType: 'AGENCY' });
   return connection;
 }
 
@@ -976,11 +1195,157 @@ async function getWhatsAppChannels(agencyId) {
     throw Object.assign(new Error('Agency not found'), { statusCode: 404, code: 'NOT_FOUND' });
   }
 
-  return listWhatsAppChannels(agencyId);
+  return listWhatsAppChannels(agencyId, { usageType: 'AGENCY' });
+}
+
+async function getStaffWhatsAppChannels(agencyId) {
+  await assertStaffWhatsAppEnabledByAgencyId(agencyId);
+
+  const channels = await AgencyChannel.findAll({
+    where: { agencyId, isActive: true, usageType: 'STAFF' },
+    order: [['createdAt', 'ASC']],
+  });
+  const channelIds = channels.map((channel) => channel.id);
+
+  const [agents, templates] = await Promise.all([
+    Agent.findAll({
+      where: { agencyId, primaryWhatsAppChannelId: { [Op.in]: channelIds.length ? channelIds : [null] } },
+      attributes: ['id', 'name', 'primaryWhatsAppChannelId'],
+    }),
+    MessageTemplate.findAll({
+      where: { agencyId, channelId: { [Op.in]: channelIds.length ? channelIds : [null] } },
+      attributes: ['id', 'channelId', 'displayName', 'status'],
+      order: [['createdAt', 'DESC']],
+    }),
+  ]);
+
+  const agentByChannelId = new Map();
+  agents.forEach((agent) => {
+    if (agent.primaryWhatsAppChannelId) {
+      agentByChannelId.set(agent.primaryWhatsAppChannelId, {
+        id: agent.id,
+        name: agent.name,
+      });
+    }
+  });
+
+  const templatesByChannelId = new Map();
+  templates.forEach((template) => {
+    const list = templatesByChannelId.get(template.channelId) || [];
+    list.push(template);
+    templatesByChannelId.set(template.channelId, list);
+  });
+
+  return channels.map((channel) => {
+    const serialized = serializeWhatsAppChannel(channel);
+    const channelTemplates = templatesByChannelId.get(channel.id) || [];
+    const approvedTemplates = channelTemplates.filter((template) => String(template.status || '').toUpperCase() === 'APPROVED');
+    const defaultTemplate = channelTemplates.find((template) => template.id === channel.defaultFirstOutreachTemplateId) || null;
+    return {
+      ...serialized,
+      assignedAgent: agentByChannelId.get(channel.id) || null,
+      templateCount: channelTemplates.length,
+      approvedTemplateCount: approvedTemplates.length,
+      defaultFirstOutreachTemplate: defaultTemplate ? {
+        id: defaultTemplate.id,
+        displayName: defaultTemplate.displayName,
+        status: defaultTemplate.status,
+      } : null,
+    };
+  });
+}
+
+async function updateStaffWhatsAppChannel(agencyId, channelId, updates = {}) {
+  await assertStaffWhatsAppEnabledByAgencyId(agencyId);
+  const channel = await AgencyChannel.findOne({ where: { id: channelId, agencyId, usageType: 'STAFF', isActive: true } });
+  if (!channel) {
+    throw Object.assign(new Error('Staff WhatsApp channel not found'), { statusCode: 404, code: 'NOT_FOUND' });
+  }
+
+  const nextChannelUpdates = {};
+  if (updates.label !== undefined) nextChannelUpdates.label = String(updates.label || '').trim() || channel.label;
+
+  if (updates.defaultFirstOutreachTemplateId !== undefined) {
+    if (!updates.defaultFirstOutreachTemplateId) {
+      nextChannelUpdates.defaultFirstOutreachTemplateId = null;
+    } else {
+      const template = await MessageTemplate.findOne({
+        where: {
+          id: updates.defaultFirstOutreachTemplateId,
+          agencyId,
+          channelId,
+          status: 'APPROVED',
+        },
+      });
+      if (!template) {
+        throw Object.assign(new Error('Approved template not found for this staff number'), {
+          statusCode: 400,
+          code: 'INVALID_STAFF_WHATSAPP_TEMPLATE',
+        });
+      }
+      nextChannelUpdates.defaultFirstOutreachTemplateId = template.id;
+    }
+  }
+
+  if (Object.keys(nextChannelUpdates).length > 0) {
+    await channel.update(nextChannelUpdates);
+  }
+
+  if (updates.agentId !== undefined) {
+    const agentId = updates.agentId || null;
+    if (!agentId) {
+      await Agent.update(
+        { primaryWhatsAppChannelId: null },
+        { where: { agencyId, primaryWhatsAppChannelId: channelId } }
+      );
+    } else {
+      const agent = await Agent.findOne({ where: { id: agentId, agencyId } });
+      if (!agent) {
+        throw Object.assign(new Error('Agent not found'), { statusCode: 404, code: 'AGENT_NOT_FOUND' });
+      }
+
+      const orConditions = [
+        { id: agentId },
+        { primaryWhatsAppChannelId: channelId },
+      ];
+      if (agent.primaryWhatsAppChannelId) {
+        orConditions.push({ primaryWhatsAppChannelId: agent.primaryWhatsAppChannelId });
+      }
+
+      await Agent.update(
+        { primaryWhatsAppChannelId: null },
+        {
+          where: {
+            agencyId,
+            [Op.or]: orConditions,
+          },
+        }
+      );
+      await agent.update({ primaryWhatsAppChannelId: channelId });
+    }
+  }
+
+  return getStaffWhatsAppChannels(agencyId);
+}
+
+async function deleteStaffWhatsAppChannel(agencyId, channelId) {
+  await assertStaffWhatsAppEnabledByAgencyId(agencyId);
+  const channel = await AgencyChannel.findOne({ where: { id: channelId, agencyId, usageType: 'STAFF', isActive: true } });
+  if (!channel) {
+    throw Object.assign(new Error('Staff WhatsApp channel not found'), { statusCode: 404, code: 'NOT_FOUND' });
+  }
+
+  await Agent.update({ primaryWhatsAppChannelId: null }, { where: { agencyId, primaryWhatsAppChannelId: channelId } });
+  await channel.update({
+    isActive: false,
+    defaultFirstOutreachTemplateId: null,
+    isDefault: false,
+  });
+  return getStaffWhatsAppChannels(agencyId);
 }
 
 async function deleteWhatsAppChannel(agencyId, channelId) {
-  const channel = await AgencyChannel.findOne({ where: { id: channelId, agencyId } });
+  const channel = await AgencyChannel.findOne({ where: { id: channelId, agencyId, usageType: 'AGENCY' } });
   if (!channel) {
     throw Object.assign(new Error('Channel not found'), { statusCode: 404, code: 'NOT_FOUND' });
   }
@@ -990,7 +1355,7 @@ async function deleteWhatsAppChannel(agencyId, channelId) {
   // When removing the default channel, promote another active channel (most recent) so the
   // agency keeps a usable default for send-path credential resolution.
   const activeChannels = await AgencyChannel.findAll({
-    where: { agencyId, isActive: true },
+    where: { agencyId, isActive: true, usageType: 'AGENCY' },
     order: [['isDefault', 'DESC'], ['createdAt', 'DESC']],
   });
   const replacement = activeChannels.find((c) => c.id !== channelId) || null;
@@ -1019,7 +1384,7 @@ async function deleteWhatsAppChannel(agencyId, channelId) {
   await channel.update({ isActive: false, isDefault: false });
 
   if (wasDefault && replacement) {
-    await AgencyChannel.update({ isDefault: false }, { where: { agencyId } });
+    await AgencyChannel.update({ isDefault: false }, { where: { agencyId, usageType: 'AGENCY' } });
     await replacement.update({ isDefault: true, isActive: true });
   }
 
@@ -1061,8 +1426,16 @@ async function createMarketingOsConnectSession(agencyId, options = {}) {
   const parsedOptions = connectSessionOptionsSchema.parse(options || {});
   const onboardingMode = parsedOptions.onboardingMode === 'coexistence' ? 'COEXISTENCE' : 'STANDARD';
   const isCoexistence = onboardingMode === 'COEXISTENCE';
+  const usageType = normalizeChannelUsageType(parsedOptions.usageType, 'AGENCY');
 
-  if (agency.whatsappProvider !== 'MARKETING_OS') {
+  if (usageType === 'STAFF' && !isStaffWhatsAppEnabled(agency)) {
+    throw Object.assign(new Error('Staff WhatsApp feature is not enabled for this agency'), {
+      statusCode: 403,
+      code: 'STAFF_WHATSAPP_DISABLED',
+    });
+  }
+
+  if (usageType === 'AGENCY' && agency.whatsappProvider !== 'MARKETING_OS') {
     await agency.update({
       whatsappProvider: 'MARKETING_OS',
       whatsappConnectionStatus: 'PENDING',
@@ -1072,7 +1445,7 @@ async function createMarketingOsConnectSession(agencyId, options = {}) {
       whatsappContactSyncStatus: isCoexistence ? 'PENDING' : 'NOT_STARTED',
       whatsappHistorySyncStatus: isCoexistence ? 'PENDING' : 'NOT_STARTED',
     });
-  } else {
+  } else if (usageType === 'AGENCY') {
     await agency.update({
       whatsappConnectionStatus: 'PENDING',
       whatsappConnectionError: null,
@@ -1107,6 +1480,8 @@ async function createMarketingOsConnectSession(agencyId, options = {}) {
     appId: embeddedConfig.appId,
     configId: embeddedConfig.configId,
     onboardingMode,
+    usageType,
+    label: parsedOptions.label || null,
     featureType: isCoexistence ? 'whatsapp_business_app_onboarding' : null,
   });
 
@@ -1173,33 +1548,39 @@ async function completeMarketingOsConnectSession(agencyId, payload) {
   const normalizedWhatsappNumber = displayPhoneNumber ? normalizePhone(displayPhoneNumber) : agency.whatsappNumber;
   const onboardingMode = session.onboardingMode || 'STANDARD';
   const isCoexistence = onboardingMode === 'COEXISTENCE';
+  const usageType = normalizeChannelUsageType(session.usageType, 'AGENCY');
+  const mappedStatus = mapMarketingOsStatus(providerConnection?.status);
 
-  await agency.update({
-    whatsappProvider: 'MARKETING_OS',
-    whatsappConnectionStatus: mapMarketingOsStatus(providerConnection?.status),
-    whatsappOnboardingMode: onboardingMode,
-    whatsappCoexistenceStatus: isCoexistence
-      ? (mapMarketingOsStatus(providerConnection?.status) === 'CONNECTED' ? 'ACTIVE' : 'PENDING')
-      : 'NOT_ENABLED',
-    whatsappContactSyncStatus: isCoexistence ? 'PENDING' : 'NOT_STARTED',
-    whatsappHistorySyncStatus: isCoexistence ? 'PENDING' : 'NOT_STARTED',
-    marketingOsTenantId: session.tenantId,
-    whatsappBusinessAccountId: providerConnection?.whatsappBusinessAccountId || agency.whatsappBusinessAccountId,
-    whatsappPhoneNumberId: providerConnection?.phoneNumberId || agency.whatsappPhoneNumberId,
-    whatsappDisplayPhoneNumber: displayPhoneNumber || agency.whatsappDisplayPhoneNumber,
-    whatsappNumber: normalizedWhatsappNumber,
-    whatsappConnectionError: providerConnection?.errorMessage || null,
-    whatsappLastSyncedAt: new Date(),
-    whatsappCoexistenceLastSyncedAt: isCoexistence ? new Date() : agency.whatsappCoexistenceLastSyncedAt,
-  });
+  if (usageType === 'AGENCY') {
+    await agency.update({
+      whatsappProvider: 'MARKETING_OS',
+      whatsappConnectionStatus: mappedStatus,
+      whatsappOnboardingMode: onboardingMode,
+      whatsappCoexistenceStatus: isCoexistence
+        ? (mappedStatus === 'CONNECTED' ? 'ACTIVE' : 'PENDING')
+        : 'NOT_ENABLED',
+      whatsappContactSyncStatus: isCoexistence ? 'PENDING' : 'NOT_STARTED',
+      whatsappHistorySyncStatus: isCoexistence ? 'PENDING' : 'NOT_STARTED',
+      marketingOsTenantId: session.tenantId,
+      whatsappBusinessAccountId: providerConnection?.whatsappBusinessAccountId || agency.whatsappBusinessAccountId,
+      whatsappPhoneNumberId: providerConnection?.phoneNumberId || agency.whatsappPhoneNumberId,
+      whatsappDisplayPhoneNumber: displayPhoneNumber || agency.whatsappDisplayPhoneNumber,
+      whatsappNumber: normalizedWhatsappNumber,
+      whatsappConnectionError: providerConnection?.errorMessage || null,
+      whatsappLastSyncedAt: new Date(),
+      whatsappCoexistenceLastSyncedAt: isCoexistence ? new Date() : agency.whatsappCoexistenceLastSyncedAt,
+    });
+  } else if (!agency.marketingOsTenantId) {
+    await agency.update({ marketingOsTenantId: session.tenantId });
+  }
 
   const refreshedAgency = await agencyRepository.findById(agencyId);
-  await upsertWhatsAppChannel(refreshedAgency, {
+  const channel = await upsertWhatsAppChannel(refreshedAgency, {
     provider: 'MARKETING_OS',
-    status: mapMarketingOsStatus(providerConnection?.status),
+    status: mappedStatus,
     onboardingMode,
     whatsappCoexistenceStatus: isCoexistence
-      ? (mapMarketingOsStatus(providerConnection?.status) === 'CONNECTED' ? 'ACTIVE' : 'PENDING')
+      ? (mappedStatus === 'CONNECTED' ? 'ACTIVE' : 'PENDING')
       : 'NOT_ENABLED',
     whatsappContactSyncStatus: isCoexistence ? 'PENDING' : 'NOT_STARTED',
     whatsappHistorySyncStatus: isCoexistence ? 'PENDING' : 'NOT_STARTED',
@@ -1210,15 +1591,26 @@ async function completeMarketingOsConnectSession(agencyId, payload) {
     displayPhoneNumber,
     whatsappNumber: normalizedWhatsappNumber,
     errorMessage: providerConnection?.errorMessage || null,
+    usageType,
+    label: session.label || undefined,
+    isDefault: usageType === 'AGENCY',
   });
-  if (isCoexistence) {
+
+  if (usageType === 'AGENCY' && isCoexistence) {
     await initiateCoexistenceSync(refreshedAgency, session.tenantToken);
   }
-  await flowService.ensureDefaultFlowsForAgency(refreshedAgency);
-  templateService.ensureDefaultApprovalTemplatesForAgency(refreshedAgency).catch((err) => {
-    console.error('[AgencyService] Default WhatsApp template submission failed:', err.message);
-  });
-  return getWhatsAppConnection(agencyId);
+  if (usageType === 'AGENCY') {
+    await flowService.ensureDefaultFlowsForAgency(refreshedAgency);
+    templateService.ensureDefaultApprovalTemplatesForAgency(refreshedAgency).catch((err) => {
+      console.error('[AgencyService] Default WhatsApp template submission failed:', err.message);
+    });
+    return getWhatsAppConnection(agencyId);
+  }
+
+  return {
+    channel: serializeWhatsAppChannel(channel),
+    channels: await getStaffWhatsAppChannels(agencyId),
+  };
 }
 
 async function initiateCoexistenceSync(agency, tenantToken) {
@@ -1411,6 +1803,10 @@ async function disconnectInstagram(agencyId, accountId) {
 }
 
 module.exports = {
+  // Exported for unit tests — the flow-graph whitelist silently drops any field it does not
+  // know about, so it is worth being able to assert on it directly.
+  normalizeGraphData,
+  normalizeCardButtons,
   getCurrentAgency,
   updateCurrentAgency,
   getWebsiteStatus,
@@ -1419,7 +1815,10 @@ module.exports = {
   unpublishWebsite,
   getWhatsAppConnection,
   getWhatsAppChannels,
+  getStaffWhatsAppChannels,
+  updateStaffWhatsAppChannel,
   deleteWhatsAppChannel,
+  deleteStaffWhatsAppChannel,
   createMarketingOsConnectSession,
   completeMarketingOsConnectSession,
   handleMarketingOsCallback,

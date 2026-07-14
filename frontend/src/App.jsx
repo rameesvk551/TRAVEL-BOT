@@ -9,6 +9,7 @@ import { useBrandingStore } from './store/brandingStore';
 import { useBranding } from './hooks/useBranding';
 import { useAuthInit } from './hooks/useAuthInit';
 import { industryModuleVisible, TRAVEL_INDUSTRY } from './config/industryProfiles';
+import { canAgentAccessSidebarModule } from './config/staffSidebarCatalog';
 import Sidebar from './components/Sidebar';
 import AppTopbar from './components/AppTopbar';
 import PunchGate from './components/PunchGate';
@@ -48,6 +49,7 @@ const SettingsFlowBuilder = lazy(() => import('./pages/settings/SettingsFlowBuil
 const SettingsInstagramFlowBuilder = lazy(() => import('./pages/settings/SettingsInstagramFlowBuilder'));
 const SettingsAutomations = lazy(() => import('./pages/settings/SettingsAutomations'));
 const SettingsIntegrations = lazy(() => import('./pages/settings/SettingsIntegrations'));
+const SettingsStaffWhatsApp = lazy(() => import('./pages/settings/SettingsStaffWhatsApp'));
 const SettingsSidebarModules = lazy(() => import('./pages/settings/SettingsSidebarModules'));
 const SettingsApiKeys = lazy(() => import('./pages/settings/SettingsApiKeys'));
 const SettingsVendorTypes = lazy(() => import('./pages/settings/SettingsVendorTypes'));
@@ -61,6 +63,8 @@ const Templates = lazy(() => import('./pages/Templates'));
 const Flows = lazy(() => import('./pages/Flows'));
 const Itineraries = lazy(() => import('./pages/Itineraries'));
 const ItineraryBuilder = lazy(() => import('./pages/ItineraryBuilder'));
+const Brochures = lazy(() => import('./pages/Brochures'));
+const BrochureEditor = lazy(() => import('./pages/BrochureEditor'));
 const Campaigns = lazy(() => import('./pages/Campaigns'));
 const CampaignReports = lazy(() => import('./pages/CampaignReports'));
 const CampaignDetail = lazy(() => import('./pages/CampaignDetail'));
@@ -117,6 +121,19 @@ function ProtectedRoute({ children }) {
   return children;
 }
 
+function PublicAuthRoute({ children }) {
+  const accessToken = useAuthStore((s) => s.accessToken);
+  const bootstrapped = useAuthStore((s) => s.bootstrapped);
+
+  // If the browser/PWA reopens directly on /login, wait for the saved session
+  // restore before showing a credential form.
+  if (!bootstrapped) return <RouteLoading />;
+
+  if (accessToken) return <Navigate to="/" replace />;
+
+  return children;
+}
+
 function PlatformProtectedRoute({ children }) {
   const accessToken = usePlatformAuthStore((s) => s.accessToken);
   if (!accessToken) return <Navigate to="/platform/login" replace />;
@@ -133,7 +150,21 @@ function isModuleEnabled(agency, modulePath) {
 
 function ModuleRoute({ modulePath, children }) {
   const agency = useAuthStore((s) => s.agency);
+  const agent = useAuthStore((s) => s.agent);
   if (!isModuleEnabled(agency, modulePath)) return <Navigate to="/" replace />;
+  if (!canAgentAccessSidebarModule(agent, modulePath)) return <Navigate to="/" replace />;
+  return children;
+}
+
+/**
+ * Guards a paid add-on. Distinct from ModuleRoute: add-ons are deny-by-default and
+ * live in `agency.features`, whereas sidebarPreferences treats "no explicit list" as
+ * unrestricted. The backend enforces the same rule in middleware/requireFeature.ts —
+ * this only spares the user a 403.
+ */
+function FeatureRoute({ feature, children }) {
+  const agency = useAuthStore((s) => s.agency);
+  if (agency?.features?.[feature] !== true) return <Navigate to="/" replace />;
   return children;
 }
 
@@ -208,10 +239,12 @@ export default function App() {
             }
           />
           <Route path="/lead/:agencyKey" element={<LeadFormPage />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/forgot-password" element={<ForgotPassword />} />
-          <Route path="/reset-password" element={<ResetPassword />} />
-          <Route path="/signup" element={<Signup />} />
+          {/* A named lead form — /lead/:agencyKey/:slug */}
+          <Route path="/lead/:agencyKey/:slug" element={<LeadFormPage />} />
+          <Route path="/login" element={<PublicAuthRoute><Login /></PublicAuthRoute>} />
+          <Route path="/forgot-password" element={<PublicAuthRoute><ForgotPassword /></PublicAuthRoute>} />
+          <Route path="/reset-password" element={<PublicAuthRoute><ResetPassword /></PublicAuthRoute>} />
+          <Route path="/signup" element={<PublicAuthRoute><Signup /></PublicAuthRoute>} />
           <Route
             path="/*"
             element={
@@ -251,6 +284,8 @@ export default function App() {
                     <Route path="/itineraries" element={<ModuleRoute modulePath="/itineraries"><Itineraries /></ModuleRoute>} />
                     <Route path="/itineraries/new" element={<ModuleRoute modulePath="/itineraries"><ItineraryBuilder /></ModuleRoute>} />
                     <Route path="/itineraries/:id/edit" element={<ModuleRoute modulePath="/itineraries"><ItineraryBuilder /></ModuleRoute>} />
+                    <Route path="/brochures" element={<FeatureRoute feature="brochureBuilder"><Brochures /></FeatureRoute>} />
+                    <Route path="/brochures/:id" element={<FeatureRoute feature="brochureBuilder"><BrochureEditor /></FeatureRoute>} />
                     <Route path="/templates" element={<ModuleRoute modulePath="/templates"><Templates /></ModuleRoute>} />
                     <Route path="/flows" element={<ModuleRoute modulePath="/flows"><Flows /></ModuleRoute>} />
                     <Route path="/flow-builder" element={<ModuleRoute modulePath="/flows"><SettingsFlowBuilder fullScreen /></ModuleRoute>} />
@@ -285,6 +320,7 @@ export default function App() {
                       <Route path="flow-builder" element={<Navigate to="/flow-builder" replace />} />
                       <Route path="automations" element={<SettingsAutomations />} />
                       <Route path="integrations" element={<SettingsIntegrations />} />
+                      <Route path="staff-whatsapp" element={<SettingsStaffWhatsApp />} />
                       <Route path="api-keys" element={<SettingsApiKeys />} />
                       <Route path="sidebar-modules" element={<SettingsSidebarModules />} />
                       <Route path="vendor-types" element={<SettingsVendorTypes />} />

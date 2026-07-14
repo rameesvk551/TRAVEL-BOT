@@ -31,6 +31,7 @@ const leadSourceRoutes = require('./leadSources');
 const hrmRoutes = require('./hrm');
 const itemFinanceRoutes = require('./itemFinance');
 const requireModule = require('../middleware/requireModule');
+const requireFeature = require('../middleware/requireFeature');
 
 // Marketing routes
 const templateRoutes = require('./templates');
@@ -67,9 +68,18 @@ function registerApiRoutes(app) {
   app.use('/api/itinerary-templates', require('./itineraryTemplates'));
   app.post('/api/whatsapp/flow', whatsappFlowController.handleFlowRequest);
 
+  // Paid add-on. Gated by agency.features, NOT sidebarPreferences — an empty
+  // sidebarPreferences list means "unrestricted" (constants/modules.ts), so a
+  // module-gated add-on would be free for every agency without an explicit list.
+  // requireFeature denies by default instead. See middleware/requireFeature.ts.
+  app.use('/api/brochures', requireFeature('brochureBuilder'), require('./brochures'));
+
   // Module-gated routes — blocked when the agency has an explicit
   // sidebarPreferences list that omits the granting module (see modules.ts).
   app.use('/api/leads', requireModule('/api/leads'), leadRoutes);
+  // Named public lead forms (settings surface for lead capture — authenticated,
+  // not module-gated so it stays reachable wherever lead capture is used).
+  app.use('/api/lead-forms', require('./leadForms'));
   app.use('/api/customers', requireModule('/api/customers'), customerRoutes);
   app.use('/api/crm', requireModule('/api/crm'), crmRoutes);
   app.use('/api/bookings', requireModule('/api/bookings'), bookingRoutes);

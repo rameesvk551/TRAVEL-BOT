@@ -41,6 +41,34 @@ const DEFAULT_FIELDS = [
 ];
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// Maps a catalog item type to the Lead foreign-key column it populates. Lets a
+// lead-form submission carry a specific catalog item (e.g. the property a customer
+// tapped "Check availability" on) via an `item` token like "PROPERTY:<uuid>".
+const ITEM_FK = {
+  PACKAGE: 'packageId',
+  PROPERTY: 'propertyId',
+  SERVICE: 'serviceId',
+  VISA: 'visaId',
+  CRUISE: 'cruiseId',
+};
+
+/**
+ * Parses an `item` token of the form "TYPE:<uuid>" (e.g. "PROPERTY:8f3c…") into
+ * { itemType, itemId }. Returns null unless the type is a known catalog type and
+ * the id is a valid UUID (guards the Lead UUID FK columns from a cast error).
+ */
+function parseItemToken(raw) {
+  const value = String(raw || '').trim();
+  if (!value) return null;
+  const sep = value.indexOf(':');
+  if (sep < 0) return null;
+  const itemType = value.slice(0, sep).trim().toUpperCase();
+  const itemId = value.slice(sep + 1).trim();
+  if (!ITEM_FK[itemType] || !UUID_RE.test(itemId)) return null;
+  return { itemType, itemId };
+}
 
 function slugify(value, fallback) {
   const slug = String(value || '')
@@ -145,7 +173,12 @@ function normalizeLeadFormConfig(input) {
   };
 }
 
-function resolveConfig(agency) {
+// `formConfig` (a LeadForm record's config) wins when supplied; otherwise fall back
+// to the agency's legacy single leadFormConfig, then the built-in default.
+function resolveConfig(agency, formConfig) {
+  if (formConfig && typeof formConfig === 'object' && Array.isArray(formConfig.fields) && formConfig.fields.length) {
+    return formConfig;
+  }
   const stored = agency && agency.leadFormConfig;
   if (stored && typeof stored === 'object' && Array.isArray(stored.fields) && stored.fields.length) {
     return stored;
@@ -157,10 +190,12 @@ function resolveConfig(agency) {
  * Sanitised, branding-rich payload safe to expose on the public form page. Field
  * `mapsTo` is intentionally omitted — the client only needs render metadata.
  */
-function publicLeadFormPayload(agency) {
-  const config = resolveConfig(agency);
+function publicLeadFormPayload(agency, formConfig) {
+  const config = resolveConfig(agency, formConfig);
   return {
     agencyName: agency.websiteTitle || agency.name,
+    slug: formConfig?.slug || null,
+    formName: formConfig?.name || null,
     enabled: Boolean(config.enabled),
     title: config.title || defaultLeadFormConfig().title,
     description: config.description || '',
@@ -197,8 +232,8 @@ function validationError(message) {
  * answers onto a createLead() input. Throws a 400 on any required/format violation.
  * Returns { leadInput, hadContent }.
  */
-function mapSubmissionToLead(agency, body, meta = {}) {
-  const config = resolveConfig(agency);
+function mapSubmissionToLead(agency, body, meta = {}, formConfig) {
+  const config = resolveConfig(agency, formConfig);
   if (!config.enabled) {
     throw Object.assign(new Error('Lead form is not enabled'), { statusCode: 404, code: 'LEAD_FORM_DISABLED' });
   }
@@ -334,6 +369,19 @@ function mapSubmissionToLead(agency, body, meta = {}) {
     customTripDetails,
   };
 
+  // The customer arrived from a specific catalog item (e.g. tapped "Check
+  // availability" on one property card) — carry it onto the lead so the FK, the
+  // selected-items list and the item type all point at that record instead of a
+  // generic custom trip. `item` is validated: unknown type / non-UUID id is ignored.
+  const item = parseItemToken(meta.item !== undefined ? meta.item : body?.item);
+  if (item) {
+    leadInput[ITEM_FK[item.itemType]] = item.itemId;
+    leadInput.itemType = item.itemType;
+    leadInput.selectedItems = [{ itemType: item.itemType, itemId: item.itemId }];
+    customTripDetails.selectedItemType = item.itemType;
+    customTripDetails.selectedItemId = item.itemId;
+  }
+
   return { leadInput, hadContent };
 }
 
@@ -342,9 +390,11 @@ module.exports = {
   MAP_TARGETS,
   PAX_FIELDS,
   DEFAULT_FIELDS,
+  ITEM_FK,
   defaultLeadFormConfig,
   normalizeLeadFormConfig,
   publicLeadFormPayload,
   mapSubmissionToLead,
+  parseItemToken,
   resolveConfig,
 };
