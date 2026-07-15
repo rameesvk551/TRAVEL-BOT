@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import {
   ArrowDownTrayIcon, ArrowLeftIcon, ArrowUturnLeftIcon, ArrowUturnRightIcon,
-  DocumentDuplicateIcon, PaperAirplaneIcon, PhotoIcon, PlusIcon,
+  DocumentDuplicateIcon, PaperAirplaneIcon, PhotoIcon, PlusIcon, SparklesIcon,
   Square2StackIcon, SquaresPlusIcon, TrashIcon,
 } from '@heroicons/react/24/outline';
 
@@ -12,7 +12,7 @@ import BrochureCanvas from '../components/brochure/BrochureCanvas';
 import BrochureInspector from '../components/brochure/BrochureInspector';
 import BrochurePagePreview from '../components/brochure/BrochurePagePreview';
 import {
-  cdnUrl, newImageElement, newPage, newShapeElement, newTextElement, THUMB_IMAGE_WIDTH,
+  cdnUrl, newIconElement, newImageElement, newPage, newShapeElement, newTextElement, THUMB_IMAGE_WIDTH,
 } from '../utils/brochureDoc';
 
 const AUTOSAVE_MS = 1500;
@@ -382,6 +382,9 @@ export default function BrochureEditor() {
           </button>
           <button onClick={() => addElement(newShapeElement)} className="rounded-md p-2 hover:bg-slate-100" title="Add shape">
             <SquaresPlusIcon className="h-5 w-5" />
+          </button>
+          <button onClick={() => addElement(newIconElement)} className="rounded-md p-2 hover:bg-slate-100" title="Add icon">
+            <SparklesIcon className="h-5 w-5" />
           </button>
         </div>
 
