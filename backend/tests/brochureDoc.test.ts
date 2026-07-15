@@ -232,6 +232,9 @@ describe('brochureDoc.renderDocHtml', () => {
     pages: [{ elements: [{ type: 'icon', icon: 'pool', color: '#0e9aa7' }] }],
   }));
   ok('renders an icon as inline svg', svgOut.includes('<svg') && svgOut.includes('stroke="#0e9aa7"'));
+  // The registry body is TRUSTED markup and must be injected raw. If someone esc()'d it,
+  // the `<` and `'` would become entities and every icon would silently break.
+  ok('injects the icon body markup raw (unescaped)', svgOut.includes("<path d='M2 16.5"));
 });
 
 describe('brochureThemes presets', () => {
