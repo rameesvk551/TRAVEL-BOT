@@ -257,6 +257,32 @@ module.exports = (sequelize) => {
       field: 'staff_whatsapp_enabled',
       comment: 'Whether this agency can manage staff-owned WhatsApp coexistence numbers and first-outreach templates',
     },
+    instagramCommentAutomationEnabled: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
+      field: 'instagram_comment_automation_enabled',
+      comment: 'Whether comment-to-DM rules actually run. Defaults OFF: these rules never fired '
+        + '(Marketing OS sent the raw Meta comment shape, which the service could not read), so '
+        + 'every saved rule is dormant. Turning the pipe on without a per-agency opt-in would fire '
+        + 'years of stale rules at real commenters at once.',
+    },
+    instagramReelDefaultAction: {
+      type: DataTypes.ENUM('LEAD_FORM', 'WHATSAPP', 'DM_PDF'),
+      allowNull: false,
+      defaultValue: 'WHATSAPP',
+      field: 'instagram_reel_default_action',
+      comment: 'What a comment on a MAPPED reel does by default: send a lead-form link, a '
+        + 'click-to-WhatsApp handoff link, or the item PDF straight in the DM. A per-reel '
+        + 'CatalogMediaLink.actionOverride wins over this.',
+    },
+    instagramReelWhatsappTemplate: {
+      type: DataTypes.STRING(500),
+      allowNull: true,
+      field: 'instagram_reel_whatsapp_template',
+      comment: 'Prefilled wa.me text for a reel WhatsApp handoff. Supports {{item}} and {{code}}; '
+        + 'the code is appended if omitted. Null uses a sensible default (see reelRefCode).',
+    },
     leadRoutingStrategy: {
       type: DataTypes.STRING(20),
       allowNull: false,

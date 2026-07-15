@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { propertiesApi } from '../api/propertiesApi';
+import ReelLinkSection from '../components/ReelLinkSection';
 import {
   HomeModernIcon, MapPinIcon, CurrencyRupeeIcon,
   PhotoIcon, CheckCircleIcon, XMarkIcon, PlusIcon,
@@ -413,6 +414,11 @@ export default function PropertyForm() {
                   >
                     <div className={`absolute top-1 h-6 w-6 rounded-full bg-white shadow-sm transition-transform duration-200 ${form.isActive ? 'translate-x-[26px]' : 'translate-x-1'}`} />
                   </div>
+                </div>
+
+                {/* Link Instagram reels that advertise this property */}
+                <div className="mt-6">
+                  <ReelLinkSection itemType="PROPERTY" itemId={id} />
                 </div>
               </div>
             </div>

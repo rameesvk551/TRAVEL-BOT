@@ -16,6 +16,7 @@ const propertyRoutes = require('./properties');
 const cruiseRoutes = require('./cruises');
 const visaRoutes = require('./visas');
 const instagramRoutes = require('./instagram');
+const catalogMediaLinkRoutes = require('./catalogMediaLinks');
 const serviceRoutingRoutes = require('./serviceRouting');
 const platformRoutes = require('./platform');
 const brandingRoutes = require('./branding');
@@ -93,6 +94,9 @@ function registerApiRoutes(app) {
   app.use('/api/cruises', requireModule('/api/cruises'), cruiseRoutes);
   app.use('/api/visas', requireModule('/api/visas'), visaRoutes);
   app.use('/api/instagram', requireModule('/api/instagram'), instagramRoutes);
+  // Not module-gated: reel links are managed from the property/package forms (which carry their
+  // own permission guards), so gating them separately would need a redundant module entry.
+  app.use('/api/catalog-media-links', catalogMediaLinkRoutes);
   app.use('/api/accounts', requireModule('/api/accounts'), accountsRoutes);
   app.use('/api/vendors', requireModule('/api/vendors'), vendorsRoutes);
   app.use('/api/hrm', requireModule('/api/hrm'), hrmRoutes);

@@ -5,6 +5,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { packagesApi } from '../api/packagesApi';
 import { useAuthStore } from '../store/authStore';
+import ReelLinkSection from '../components/ReelLinkSection';
 import {
   ClockIcon, CurrencyRupeeIcon, MapPinIcon,
   PhotoIcon, CheckCircleIcon, XMarkIcon, DocumentArrowUpIcon,
@@ -521,6 +522,9 @@ export default function PackageForm() {
                     </a>
                   ) : null}
                 </div>
+
+                {/* Link Instagram reels that advertise this package */}
+                <ReelLinkSection itemType="PACKAGE" itemId={id} />
 
                 {/* Summary */}
                 <div className="rounded-3xl bg-neutral-900 p-8 text-white shadow-xl">

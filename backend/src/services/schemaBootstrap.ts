@@ -107,6 +107,25 @@ async function ensureAgenciesSchema() {
     defaultValue: 'TRAVEL',
   });
 
+  // Defaults FALSE on purpose — see the column comment on Agency.instagramCommentAutomationEnabled.
+  // Existing agencies must opt in after reviewing rules that have never actually run.
+  await ensureColumn('agencies', 'instagram_comment_automation_enabled', {
+    type: Sequelize.BOOLEAN,
+    allowNull: false,
+    defaultValue: false,
+  });
+
+  await ensureColumn('agencies', 'instagram_reel_default_action', {
+    type: Sequelize.ENUM('LEAD_FORM', 'WHATSAPP', 'DM_PDF'),
+    allowNull: false,
+    defaultValue: 'WHATSAPP',
+  });
+
+  await ensureColumn('agencies', 'instagram_reel_whatsapp_template', {
+    type: Sequelize.STRING(500),
+    allowNull: true,
+  });
+
   await ensureColumn('agencies', 'auto_review_collection_enabled', {
     type: Sequelize.BOOLEAN,
     allowNull: false,
@@ -1787,6 +1806,28 @@ async function ensureInstagramAutomationTables() {
     await queryInterface.addIndex('instagram_automation_logs', ['comment_id']);
     await queryInterface.addIndex('instagram_automation_logs', ['status']);
     console.log('[SchemaBootstrap] Created instagram_automation_logs table');
+  }
+
+  if (!(await tableExists('catalog_media_links'))) {
+    await queryInterface.createTable('catalog_media_links', {
+      id: { type: Sequelize.UUID, defaultValue: Sequelize.UUIDV4, primaryKey: true, allowNull: false },
+      agency_id: { type: Sequelize.UUID, allowNull: false },
+      media_id: { type: Sequelize.STRING(255), allowNull: false },
+      item_type: { type: Sequelize.ENUM('PACKAGE', 'PROPERTY', 'SERVICE', 'VISA', 'CRUISE'), allowNull: false },
+      item_id: { type: Sequelize.UUID, allowNull: false },
+      code: { type: Sequelize.STRING(16), allowNull: false },
+      action_override: { type: Sequelize.ENUM('LEAD_FORM', 'WHATSAPP', 'DM_PDF'), allowNull: true },
+      form_slug: { type: Sequelize.STRING(255), allowNull: true },
+      permalink: { type: Sequelize.TEXT, allowNull: true },
+      thumbnail_url: { type: Sequelize.TEXT, allowNull: true },
+      is_active: { type: Sequelize.BOOLEAN, allowNull: false, defaultValue: true },
+      created_at: { type: Sequelize.DATE, allowNull: false, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') },
+      updated_at: { type: Sequelize.DATE, allowNull: false, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') },
+    });
+    await queryInterface.addIndex('catalog_media_links', ['agency_id', 'media_id'], { unique: true, name: 'catalog_media_links_agency_media_uq' });
+    await queryInterface.addIndex('catalog_media_links', ['agency_id', 'code'], { unique: true, name: 'catalog_media_links_agency_code_uq' });
+    await queryInterface.addIndex('catalog_media_links', ['agency_id', 'item_type', 'item_id']);
+    console.log('[SchemaBootstrap] Created catalog_media_links table');
   }
 }
 

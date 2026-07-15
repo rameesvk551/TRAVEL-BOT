@@ -9,6 +9,7 @@ const { Agency, AgencyChannel, Agent, BotSession, Customer, Lead, Message, Packa
 const whatsappService = require(path.resolve(__dirname, '../../backend/src/services/whatsappService.ts'));
 const schedulerService = require(path.resolve(__dirname, '../../backend/src/services/schedulerService.ts'));
 const { loadOrCreateSession, updateSession } = require('./utils/sessionManager');
+const { normalizeCommentEvent, commentEventSkipReason } = require('./utils/instagramCommentEvent');
 const { routeMessage, willDropSilently } = require('./botRouter');
 const { handleAgentLeadAction } = require('./handlers/agentLeadHandler');
 const { ensureLead, hasInstagramFlowGraph } = require('./handlers/travelFlowHandler');
@@ -1340,6 +1341,17 @@ async function saveInstagramLead({ agency, customer, session, accountId, senderI
     ...propertyIds.map((id) => ({ itemType: 'PROPERTY', itemId: id })),
   ];
 
+  // A comment on a mapped reel stamps this in prepareAutomationSession. It tells us the reel
+  // that brought the customer AND the catalog item that reel advertises. Fold the item in when
+  // nothing else was selected, and record the reel for the CRM.
+  const reelAttribution = data.igLead?.reelAttribution || null;
+  if (reelAttribution?.itemType && reelAttribution.itemId
+    && !selectedItems.some((it) => it.itemId === reelAttribution.itemId)) {
+    selectedItems.push({ itemType: reelAttribution.itemType, itemId: reelAttribution.itemId });
+  }
+  const reelPackageId = reelAttribution?.itemType === 'PACKAGE' ? reelAttribution.itemId : null;
+  const reelPropertyId = reelAttribution?.itemType === 'PROPERTY' ? reelAttribution.itemId : null;
+
   if (draft.name && draft.name !== customer.name) {
     await customer.update({ name: draft.name, source: 'instagram' });
   } else if (customer.source !== 'instagram') {
@@ -1369,9 +1381,9 @@ async function saveInstagramLead({ agency, customer, session, accountId, senderI
       customerId: customer.id,
       agencyId: agency.id,
       status: 'ENQUIRY',
-      source: 'instagram_dm',
-      packageId: itemType === 'PACKAGE' ? primaryPackageId : null,
-      propertyId: itemType === 'PROPERTY' ? primaryPropertyId : null,
+      source: reelAttribution ? 'instagram_reel' : 'instagram_dm',
+      packageId: (itemType === 'PACKAGE' ? primaryPackageId : null) || reelPackageId,
+      propertyId: (itemType === 'PROPERTY' ? primaryPropertyId : null) || reelPropertyId,
       itemType,
       interest,
       travelDates: draft.travelDates || null,
@@ -1388,6 +1400,7 @@ async function saveInstagramLead({ agency, customer, session, accountId, senderI
         interest,
         instagramSenderId: senderId,
         instagramAccountId: accountId,
+        ...(reelAttribution ? { reelAttribution } : {}),
       },
       selectedItems,
     });
@@ -1396,9 +1409,9 @@ async function saveInstagramLead({ agency, customer, session, accountId, senderI
   if (lead) {
     await lead.update({
       status: 'ENQUIRY',
-      source: 'instagram_dm',
-      packageId: lead.packageId || (itemType === 'PACKAGE' ? primaryPackageId : null),
-      propertyId: lead.propertyId || (itemType === 'PROPERTY' ? primaryPropertyId : null),
+      source: lead.source || (reelAttribution ? 'instagram_reel' : 'instagram_dm'),
+      packageId: lead.packageId || (itemType === 'PACKAGE' ? primaryPackageId : null) || reelPackageId,
+      propertyId: lead.propertyId || (itemType === 'PROPERTY' ? primaryPropertyId : null) || reelPropertyId,
       itemType: lead.itemType || itemType,
       interest: interest || lead.interest,
       travelDates: draft.travelDates || lead.travelDates,
@@ -1416,6 +1429,7 @@ async function saveInstagramLead({ agency, customer, session, accountId, senderI
         interest,
         instagramSenderId: senderId,
         instagramAccountId: accountId,
+        ...(reelAttribution ? { reelAttribution: { ...(lead.customTripDetails?.reelAttribution || {}), ...reelAttribution } } : {}),
       },
       selectedItems,
     });
@@ -1804,8 +1818,23 @@ async function processInstagramComment(data) {
     return;
   }
 
+  // Comment automation is opt-in per agency. These rules have never fired (the payload
+  // shapes never matched), so every rule an agency has ever saved is dormant. Flipping the
+  // pipe on without a gate would fire all of them at once, at real commenters.
+  if (!agency.instagramCommentAutomationEnabled) {
+    console.log(`[IG Webhook] Comment automation is off for ${agency.name || agency.id} — skipping`);
+    return;
+  }
+
+  const event = normalizeCommentEvent(data);
+  const skip = commentEventSkipReason(event);
+  if (skip) {
+    console.warn(`[IG Webhook] Skipping comment ${event.commentId || '(no id)'}: ${skip}`);
+    return;
+  }
+
   const instagramAutomationService = require(path.resolve(__dirname, '../../backend/src/services/instagramAutomationService.ts'));
-  await instagramAutomationService.processCommentEvent(agency.id, data);
+  await instagramAutomationService.processCommentEvent(agency.id, event);
 }
 
 function extractIncoming(msg) {

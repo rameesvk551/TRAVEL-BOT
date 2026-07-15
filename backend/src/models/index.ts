@@ -48,6 +48,7 @@ const Cruise = require('./Cruise')(sequelize);
 const Visa = require('./Visa')(sequelize);
 const InstagramAutomation = require('./InstagramAutomation')(sequelize);
 const InstagramAutomationLog = require('./InstagramAutomationLog')(sequelize);
+const CatalogMediaLink = require('./CatalogMediaLink')(sequelize);
 const MetaAdCampaign = require('./MetaAdCampaign')(sequelize);
 const MetaLeadForm = require('./MetaLeadForm')(sequelize);
 const MetaLeadSyncEvent = require('./MetaLeadSyncEvent')(sequelize);
@@ -132,6 +133,8 @@ Agency.hasMany(Review, { foreignKey: 'agencyId', as: 'reviews' });
 Agency.hasMany(Property, { foreignKey: 'agencyId', as: 'properties' });
 Agency.hasMany(InstagramAutomation, { foreignKey: 'agencyId', as: 'instagramAutomations' });
 Agency.hasMany(InstagramAutomationLog, { foreignKey: 'agencyId', as: 'instagramAutomationLogs' });
+Agency.hasMany(CatalogMediaLink, { foreignKey: 'agencyId', as: 'catalogMediaLinks' });
+CatalogMediaLink.belongsTo(Agency, { foreignKey: 'agencyId', as: 'agency' });
 Agency.hasMany(MetaAdCampaign, { foreignKey: 'agencyId', as: 'metaAdCampaigns' });
 Agency.hasMany(MetaLeadForm, { foreignKey: 'agencyId', as: 'metaLeadForms' });
 Agency.hasMany(MetaLeadSyncEvent, { foreignKey: 'agencyId', as: 'metaLeadSyncEvents' });
@@ -608,6 +611,7 @@ module.exports = {
   Visa,
   InstagramAutomation,
   InstagramAutomationLog,
+  CatalogMediaLink,
   MetaAdCampaign,
   MetaLeadForm,
   MetaLeadSyncEvent,

@@ -4,7 +4,7 @@ const { handleReview } = require('./handlers/reviewHandler');
 const { handleTravelFlow, createFreshGreetingLead, pendingReminderWouldSend } = require('./handlers/travelFlowHandler');
 const { isCampaignAction, handleCampaignAction, tryHandleCampaignTextAction, getLatestCampaignRecipient } = require('./handlers/campaignActionHandler');
 const { updateSession } = require('./utils/sessionManager');
-const { canSendMenu, isManualPauseActive } = require('./utils/automationCooldowns');
+const { canRestartFromGreeting, isManualPauseActive } = require('./utils/automationCooldowns');
 const GREETING_KEYWORDS = new Set([
   'hi',
   'gi',
@@ -27,6 +27,57 @@ function extractPackageDeepLinkAction(messageText = '') {
   const text = String(messageText || '').trim();
   const match = text.match(/\b(?:VIEW_PACKAGE|PACKAGE_ID|PKG|PACKAGE)\s*[:#-]?\s*([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\b/i);
   return match ? `pkg_pick:${match[1]}` : '';
+}
+
+// The existing per-catalog "open this item" actions, keyed by the reel link's itemType.
+const REEL_PICK_ACTION = {
+  PACKAGE: 'pkg_pick',
+  PROPERTY: 'property_pick',
+  SERVICE: 'service_pick',
+  VISA: 'visa_pick',
+  CRUISE: 'cruise_pick',
+};
+
+// A wa.me link from an Instagram reel comment carries a readable #CODE inside the prefilled
+// text (see reelRefCode). When the customer sends it, resolve the code to the mapped catalog
+// item: seed the reel onto the session + lead for attribution, and return the item's normal
+// "pick" action so the chat opens exactly as if they had tapped that item in a list. Returns ''
+// (and changes nothing) when there is no code or no mapping — never throws into routing.
+async function resolveReelHandoffAction(agency, session, customer, messageText) {
+  try {
+    const path = require('path');
+    const reelRefCode = require(path.resolve(__dirname, '../../backend/src/utils/reelRefCode.ts'));
+    const code = reelRefCode.extractRefCode(messageText);
+    if (!code || !agency?.id) return '';
+
+    const reelResolutionService = require(path.resolve(__dirname, '../../backend/src/services/reelResolutionService.ts'));
+    const link = await reelResolutionService.findLinkByCode(agency.id, code);
+    if (!link) return '';
+
+    const prefix = REEL_PICK_ACTION[link.itemType];
+    if (!prefix) return '';
+
+    const item = await reelResolutionService.loadLinkedItem(link);
+    const attribution = reelResolutionService.buildLeadAttribution(link, { permalink: link.permalink });
+    const selectedItem = reelResolutionService.buildSelectedItem(link, item);
+
+    const data = session.collectedData || {};
+    await updateSession(session, {
+      collectedData: {
+        ...data,
+        reelSelectedItem: selectedItem || data.reelSelectedItem || null,
+        igLead: { ...(data.igLead || {}), reelAttribution: attribution },
+      },
+    });
+    if (customer?.id) {
+      await reelResolutionService.stampReelOnLead(agency.id, customer.id, attribution);
+    }
+
+    return `${prefix}:${link.itemId}`;
+  } catch (err) {
+    console.warn('[Router] reel handoff resolution failed:', err.message);
+    return '';
+  }
 }
 
 function getMessageText(incoming) {
@@ -65,12 +116,18 @@ async function routeMessage(session, incoming, customer, agency, options = {}) {
   const isFirstInboundMessage = options.isFirstInboundMessage === true;
   const handoffDisabled = agentHandoffDisabled(agency);
   const packageDeepLinkAction = !actionId ? extractPackageDeepLinkAction(messageText) : '';
+  // Reel handoff codes only appear in free text, so skip the DB lookup when an explicit action,
+  // a package deep-link, or a bare greeting already explains the message.
+  const reelHandoffAction = (!actionId && !packageDeepLinkAction && !GREETING_KEYWORDS.has(normalizedText))
+    ? await resolveReelHandoffAction(agency, session, customer, messageText)
+    : '';
+  const deepLinkAction = packageDeepLinkAction || reelHandoffAction;
   const isForceRestartCommand = normalizedText === 'restart';
 
-  if (packageDeepLinkAction) {
+  if (deepLinkAction) {
     await handleTravelFlow(
       session,
-      { ...(typeof incoming === 'object' && incoming ? incoming : {}), text: messageText, actionId: packageDeepLinkAction },
+      { ...(typeof incoming === 'object' && incoming ? incoming : {}), text: messageText, actionId: deepLinkAction },
       customer,
       agency,
       {
@@ -81,9 +138,11 @@ async function routeMessage(session, incoming, customer, agency, options = {}) {
     return;
   }
 
-  // Explicit menu commands and greetings reset the flow to the welcome menu.
+  // Explicit menu commands and greetings reset the flow to the welcome menu. A greeting is only
+  // held back for a few minutes (anti-burst) — never the 48h menu cooldown, which used to leave a
+  // returning customer, or anyone stalled mid-flow, talking to a bot that never answered.
   if (RESET_TO_MENU_KEYWORDS.has(normalizedText) || GREETING_KEYWORDS.has(normalizedText)) {
-    if (!isForceRestartCommand && !canSendMenu(session, { isFirstInboundMessage })) {
+    if (!isForceRestartCommand && !canRestartFromGreeting(session, { isFirstInboundMessage })) {
       if (!handoffDisabled && isManualPauseActive(session) && session.handedOffToId) {
         await forwardToAgent(session, messageText, customer, agency);
       }
@@ -291,7 +350,7 @@ async function willDropSilently(session, incoming, customer, agency, options = {
   // mirror that here so we don't mark it read + show typing with no reply.
   if (RESET_TO_MENU_KEYWORDS.has(normalizedText) || GREETING_KEYWORDS.has(normalizedText)) {
     const isForceRestart = normalizedText === 'restart';
-    if (isForceRestart || canSendMenu(session, { isFirstInboundMessage })) return false;
+    if (isForceRestart || canRestartFromGreeting(session, { isFirstInboundMessage })) return false;
     // Only a live human-handoff forward would still reply; disabled for handoff-off agencies.
     const forwards = !agentHandoffDisabled(agency) && isManualPauseActive(session) && !!session.handedOffToId;
     return !forwards;

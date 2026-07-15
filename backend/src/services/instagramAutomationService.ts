@@ -10,6 +10,7 @@ const {
   InstagramAutomationLog,
 } = require('../models');
 const marketingOsPartnerService = require('./marketingOsPartnerService');
+const reelResolutionService = require('./reelResolutionService');
 
 const ALLOWED_FIELDS = [
   'accountId',
@@ -64,8 +65,8 @@ function getCommentText(event = {}) {
 function getCommenter(event = {}) {
   const commenter = event.commenter || event.from || event.user || {};
   return {
-    id: String(commenter.id || event.commenterId || ''),
-    username: String(commenter.username || commenter.name || event.commenterUsername || ''),
+    id: String(commenter.id || event.commenterId || event.fromId || ''),
+    username: String(commenter.username || commenter.name || event.commenterUsername || event.fromUsername || ''),
   };
 }
 
@@ -274,8 +275,10 @@ async function incrementStats(automation, patch) {
   await automation.update({ stats: next, lastTriggeredAt: new Date() });
 }
 
-async function sendPrivateReplyForComment(agencyId, payload) {
-  const agency = await Agency.findByPk(agencyId);
+// `preloadedAgency` lets the comment hot path (which already loaded the agency to resolve reels)
+// skip a redundant Agency.findByPk; the manual-reply route passes nothing and it loads as before.
+async function sendPrivateReplyForComment(agencyId, payload, preloadedAgency = null) {
+  const agency = preloadedAgency || await Agency.findByPk(agencyId);
   if (!agency?.marketingOsTenantId) {
     throw Object.assign(new Error('No Instagram provider connected. Go to Settings first.'), {
       statusCode: 400,
@@ -287,8 +290,8 @@ async function sendPrivateReplyForComment(agencyId, payload) {
   return marketingOsPartnerService.sendTenantInstagramPrivateReply(tenantToken, payload);
 }
 
-async function sendPublicReplyForComment(agencyId, payload) {
-  const agency = await Agency.findByPk(agencyId);
+async function sendPublicReplyForComment(agencyId, payload, preloadedAgency = null) {
+  const agency = preloadedAgency || await Agency.findByPk(agencyId);
   if (!agency?.marketingOsTenantId) {
     throw Object.assign(new Error('No Instagram provider connected. Go to Settings first.'), {
       statusCode: 400,
@@ -300,7 +303,7 @@ async function sendPublicReplyForComment(agencyId, payload) {
   return marketingOsPartnerService.sendTenantInstagramCommentReply(tenantToken, payload);
 }
 
-async function prepareAutomationSession(agencyId, automation, event = {}) {
+async function prepareAutomationSession(agencyId, automation, event = {}, reel = null) {
   const accountId = String(event.accountId || event.igAccountId || '');
   const commenter = getCommenter(event);
   if (!accountId || !commenter.id) return null;
@@ -352,8 +355,19 @@ async function prepareAutomationSession(agencyId, automation, event = {}) {
     igLead: {
       ...(session.collectedData?.igLead || {}),
       interest: defaults.leadInterest,
+      // Reel attribution rides on the lead this session eventually creates, so the CRM shows
+      // which reel and which item brought the customer in. Only set when the reel is mapped.
+      ...(reel?.attribution ? { reelAttribution: reel.attribution } : {}),
     },
   };
+
+  // Pre-select the mapped item so the agency's own flow (SEND_ITEM_DOCUMENT etc.) can send the
+  // right PDF without the customer having to pick it. Stored as its own field — NOT inside the
+  // flow engine's activeFlow state — so a half-set selection can never make the engine think a
+  // flow is mid-traversal. getSelectedFlowCatalogItem reads this as a fallback.
+  if (reel?.selectedItem) {
+    collectedData.reelSelectedItem = reel.selectedItem;
+  }
 
   await session.update({
     currentStep: defaults.step,
@@ -417,13 +431,24 @@ async function processCommentEvent(agencyId, event = {}) {
     });
   }
 
+  // Does this comment's reel map to a catalog item? If so we may append a handoff link to the
+  // DM and seed the item so the agency's flow can send its PDF. Null (unmapped reel or any
+  // failure) leaves the plain rule reply untouched.
+  const agencyForReel = await Agency.findByPk(agencyId);
+  const reel = await reelResolutionService.resolveReelForComment(agencyForReel, { ...event, mediaId }, {
+    whatsappTemplate: agencyForReel?.instagramReelWhatsappTemplate,
+  });
+
   const actionQuickReplies = buildActionQuickReplies(automation);
   const replyAutomation = {
     ...(typeof automation.get === 'function' ? automation.get({ plain: true }) : automation),
     quickReplies: actionQuickReplies,
   };
   const eventWithMatch = { ...event, matchedKeyword: match.keyword };
-  const privateReplyText = buildPrivateReply(replyAutomation, eventWithMatch);
+  let privateReplyText = buildPrivateReply(replyAutomation, eventWithMatch);
+  if (reel?.dmLink) {
+    privateReplyText = `${privateReplyText}\n\n${reel.dmLink}`;
+  }
   const log = await InstagramAutomationLog.create({
     automationId: automation.id,
     agencyId,
@@ -448,12 +473,12 @@ async function processCommentEvent(agencyId, event = {}) {
       commentId,
       text: privateReplyText,
       quickReplies: actionQuickReplies,
-    });
+    }, agencyForReel);
 
     let preparedSession = null;
     let sessionError = null;
     try {
-      preparedSession = await prepareAutomationSession(agencyId, automation, eventWithMatch);
+      preparedSession = await prepareAutomationSession(agencyId, automation, eventWithMatch, reel);
     } catch (sessionErr) {
       sessionError = sessionErr.message || 'Automation session preparation failed';
     }
@@ -467,7 +492,7 @@ async function processCommentEvent(agencyId, event = {}) {
           accountId,
           commentId,
           text: buildPublicReply(automation, eventWithMatch),
-        });
+        }, agencyForReel);
         publicReplySent = true;
         publicReplyMessageId = publicResponse?.data?.messageId
           || publicResponse?.data?.id

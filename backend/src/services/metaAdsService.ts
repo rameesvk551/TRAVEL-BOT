@@ -819,6 +819,10 @@ async function resolveAdReference(agencyId, adId) {
     metaCampaignName: compact(campaign.name || item.campaign_name || item.campaignName),
     metaAdAccountId: compact(item.account_id || item.adAccountId || item.metaAdAccountId),
     metaPlatform: normalizePlatform(item.platform || item.publisher_platform),
+    // The Instagram reel/post this ad was boosted from — lets the caller map a CTWA click to a
+    // mapped catalog item. Absent for ads not built from IG media.
+    instagramMediaId: compact(item.instagramMediaId || item.instagram_media_id),
+    instagramPermalink: compact(item.instagramPermalinkUrl || item.instagram_permalink_url),
   };
 
   if (reference.metaCampaignId) {
@@ -863,12 +867,50 @@ async function backfillForm(agencyId, formId, payload = {}) {
   };
 }
 
+/**
+ * Ad spend per campaign over an explicit window, for the CAC / ROAS report.
+ *
+ * Returns null instead of throwing when the agency has no Meta connection: an agency that
+ * runs no ads must still get its organic numbers, not a broken report.
+ *
+ * Two things worth knowing about the numbers:
+ *  - Meta reports spend in major currency units; the rest of this system stores money in
+ *    paise, so spend is converted here. Skipping this would make ROAS wrong by 100x.
+ *  - `window` echoes the range Meta actually reported on (date_start/date_stop). If it
+ *    doesn't match what was asked for, the caller is talking to a marketing-os build that
+ *    predates explicit-window support and is silently answering with its `last_30d` default.
+ */
+async function getCampaignSpend(agencyId, { since, until } = {}) {
+  let campaigns;
+  try {
+    campaigns = await listCampaigns(agencyId, since && until ? { since, until } : {});
+  } catch (err) {
+    return null;
+  }
+
+  return campaigns.map((campaign) => {
+    const insights = campaign.insights || {};
+    const raw = insights.raw || {};
+    return {
+      campaignId: campaign.metaCampaignId,
+      name: campaign.name,
+      status: campaign.status || null,
+      spend: Math.round(normalizeMetricNumber(insights.spend) * 100),
+      impressions: normalizeMetricNumber(insights.impressions),
+      clicks: normalizeMetricNumber(insights.clicks),
+      metaLeads: normalizeMetricNumber(insights.leads),
+      window: { start: raw.date_start || null, end: raw.date_stop || null },
+    };
+  });
+}
+
 module.exports = {
   createConnectSession,
   listAdAccounts,
   listCampaigns,
   getCampaign,
   getCampaignInsights,
+  getCampaignSpend,
   listForms,
   backfillForm,
   handleLeadgenWebhook,

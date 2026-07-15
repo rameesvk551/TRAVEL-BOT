@@ -10,6 +10,7 @@
 
 const { Lead, Customer } = require('../models');
 const metaAdsService = require('./metaAdsService');
+const reelResolutionService = require('./reelResolutionService');
 
 function clean(value) {
   if (value === undefined || value === null) return null;
@@ -140,6 +141,24 @@ async function enrichAdReference(agencyId, leadId, adId) {
   if (reference.metaPlatform) patch.metaPlatform = reference.metaPlatform;
 
   if (Object.keys(patch).length) await lead.update(patch);
+
+  // If this ad was boosted from an Instagram reel that maps to a catalog item, attribute the
+  // lead to that reel/item — the paid-ad twin of the organic comment path, but the reel id is
+  // hidden metadata the customer never sees. Best-effort: never blocks name enrichment.
+  if (reference.instagramMediaId) {
+    try {
+      const link = await reelResolutionService.findLinkByMediaId(agencyId, reference.instagramMediaId);
+      if (link) {
+        const attribution = reelResolutionService.buildLeadAttribution(link, {
+          permalink: link.permalink || reference.instagramPermalink,
+        });
+        await reelResolutionService.stampReelOnLead(agencyId, lead.customerId, attribution);
+      }
+    } catch (err) {
+      console.warn('[adReferral] reel attribution failed:', err?.message || err);
+    }
+  }
+
   return lead;
 }
 

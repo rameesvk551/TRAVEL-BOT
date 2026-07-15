@@ -2535,7 +2535,9 @@ async function clearFlowGraphState(session, nextStep = STEPS.COMPLETE, extraColl
       ...extraCollectedData,
       menuContext: null,
       activeFlow: null,
-      ...(clearsHumanHandoff ? { manualHandoff: null } : {}),
+      // A reel pre-selection is meant for the one conversation the reel triggered. Drop it when
+      // that conversation ends, so it can never leak into a later, unrelated flow.
+      ...(clearsHumanHandoff ? { manualHandoff: null, reelSelectedItem: null } : {}),
     },
   });
 }
@@ -3003,7 +3005,12 @@ function buildSearchCardCaption(item, catalogType, index) {
 }
 
 function getSelectedFlowCatalogItem(session = {}) {
-  const selected = getActiveFlowGraphState(session)?.selectedItem;
+  // An in-flow selection (the customer picked a card) wins. When there is none, fall back to a
+  // reel pre-selection: a comment on a mapped reel seeds collectedData.reelSelectedItem so the
+  // agency's SEND_ITEM_DOCUMENT node can send that item's PDF without the customer re-picking.
+  // Kept as a separate field so it never corrupts the flow engine's own activeFlow state.
+  const selected = getActiveFlowGraphState(session)?.selectedItem
+    || session.collectedData?.reelSelectedItem;
   if (!selected || typeof selected !== 'object' || Array.isArray(selected)) return null;
   const itemType = normalizeFlowCatalogType(selected.itemType || selected.catalogType);
   const itemId = normalizeText(selected.itemId || selected.id);
@@ -3077,6 +3084,13 @@ async function saveSelectedFlowCatalogItem(session, itemType, item) {
       selectedItemName: flowCatalogTitle(item, itemType),
     },
   });
+  // An explicit in-flow pick supersedes any reel pre-selection, so clear the fallback to avoid
+  // it overriding a later node that expects the just-picked item.
+  if (session.collectedData?.reelSelectedItem) {
+    await updateSession(session, {
+      collectedData: { ...(session.collectedData || {}), reelSelectedItem: null },
+    });
+  }
 }
 
 function buildGraphItemCaption(item, itemType) {
