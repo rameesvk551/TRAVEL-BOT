@@ -139,7 +139,7 @@ const THEMES = Object.freeze({
     coverVeil: 'linear-gradient(180deg, rgba(8,40,44,0.42) 0%, rgba(8,40,44,0.08) 45%, rgba(8,40,44,0.66) 100%)',
     contactVeil: 'linear-gradient(120deg, rgba(8,58,64,0.90) 0%, rgba(8,58,64,0.55) 60%, rgba(8,58,64,0.32) 100%)',
     italicNumerals: false,
-    style: { numeral: 'badge-filled', headingUpper: false, tag: 'pill', coverMeta: true, iconAmenities: true },
+    style: { numeral: 'badge-filled', headingUpper: false, tag: 'pill', iconAmenities: true },
   },
   noir: {
     key: 'noir', name: 'Noir Editorial',
@@ -149,7 +149,7 @@ const THEMES = Object.freeze({
     coverVeil: 'linear-gradient(180deg, rgba(10,12,12,0.55) 0%, rgba(10,12,12,0.12) 42%, rgba(10,12,12,0.72) 100%)',
     contactVeil: 'linear-gradient(120deg, rgba(10,12,12,0.90) 0%, rgba(10,12,12,0.55) 60%, rgba(10,12,12,0.32) 100%)',
     italicNumerals: false,
-    style: { numeral: 'outline', headingUpper: true, tag: 'square', coverMeta: true, iconAmenities: true },
+    style: { numeral: 'outline', headingUpper: true, tag: 'square', iconAmenities: true },
   },
   deco: {
     key: 'deco', name: 'Deco Midnight',
@@ -159,7 +159,7 @@ const THEMES = Object.freeze({
     coverVeil: 'linear-gradient(180deg, rgba(6,12,28,0.55) 0%, rgba(6,12,28,0.15) 42%, rgba(6,12,28,0.75) 100%)',
     contactVeil: 'linear-gradient(120deg, rgba(6,12,28,0.90) 0%, rgba(6,12,28,0.55) 60%, rgba(6,12,28,0.35) 100%)',
     italicNumerals: false,
-    style: { numeral: 'framed-circle', headingUpper: true, tag: 'square', coverMeta: true, iconAmenities: true },
+    style: { numeral: 'framed-circle', headingUpper: true, tag: 'square', iconAmenities: true },
   },
 });
 
@@ -294,7 +294,9 @@ function chrome(t, W, H, pageNo, tail) {
  *
  * The numeral treatment is themed by `S.numeral`; absent (every existing deck) it is the
  * plain right-aligned accent numeral it has always been, allocated in the same order, so
- * the five style-less themes render identically. The eyebrow + title are never touched.
+ * the five style-less themes render identically. The title honours `S.headingUpper` — with
+ * the knob off/absent it keeps its exact current casing and -0.5 tracking, so style-less
+ * decks are unchanged; only noir/deco (headingUpper:true) set caps + positive tracking.
  */
 function sectionHead(t, W, eyebrow, title, numeral) {
   const S = t.style || {};
@@ -305,7 +307,8 @@ function sectionHead(t, W, eyebrow, title, numeral) {
       letterSpacing: 5, uppercase: true, z: 5,
     }),
     txt(title, b.x, mm(33), b.w * 0.7, mm(20), {
-      font: t.display, size: pt(34), lineHeight: 1, color: t.ink, letterSpacing: -0.5, z: 5,
+      font: t.display, size: pt(34), lineHeight: 1, color: t.ink,
+      letterSpacing: S.headingUpper ? 0.5 : -0.5, uppercase: !!S.headingUpper, z: 5,
     }),
   ];
 
@@ -501,21 +504,28 @@ function galleryPage(t, W, H, slot, pageNo, cols, rows, eyebrow, title, numeral)
 /**
  * The two feature chips that replace a room's caption line when a theme opts into tags
  * via `S.tag`. Chips are shape + text only — they never take a photo slot, so tags can
- * never leave an empty photo box. Labels are editable placeholders, not real data.
+ * never leave an empty photo box. Labels are SHORT neutral descriptors (mirroring the
+ * original "Sleeps · Ensuite · View" caption); they assert no counts, so an unedited chip
+ * never prints a fabricated specific. Both fit chipW at uppercase pt(7.5).
+ *
+ * The chip fill uses the palette accent (with element opacity for the tint) rather than a
+ * baked rgba literal, so a one-tap `retheme` recolours the pill along with everything else.
  */
 function roomTags(t, x, y) {
   const S = t.style || {};
-  const labels = ['2 villas', 'Up to 5 guests'];
+  const labels = ['Ensuite', 'View'];
   const chipW = mm(22);
   const chipH = mm(6);
   const gap = mm(3);
   const out = [];
   labels.forEach((label, i) => {
     const cx = x + i * (chipW + gap);
+    // Pill: accent fill at 0.12 element opacity (recolor-safe). Square: accent stroke.
     const skin = S.tag === 'pill'
-      ? { fill: 'rgba(14,154,167,0.10)', radius: mm(4), stroke: '', strokeWidth: 0 }
+      ? { fill: t.accent, opacity: 0.12, radius: mm(4) }
       : { fill: 'transparent', stroke: t.accent, strokeWidth: 1, radius: 0 };
     out.push(shape(cx, y, chipW, chipH, { ...skin, z: 4 }));
+    // Separate, full-opacity label so the text stays legible over the tinted fill.
     out.push(txt(label, cx, y, chipW, chipH, {
       font: t.body, size: pt(7.5), color: t.accent,
       letterSpacing: 2, uppercase: true, align: 'center', valign: 'center', z: 5,
@@ -623,6 +633,8 @@ function amenitiesPage(t, W, H, slot, pageNo) {
   // original two-column layout did — the default branch stays byte-for-byte identical.
   const listBlock = () => {
     if (S.iconAmenities) {
+      // A curated icon+label grid, deliberately in place of the free-text `amenities`
+      // merge field (which still renders on the cover). Fixed wording, not user data.
       const iconSize = mm(6);
       const rowH = mm(12);
       const listY = mm(62);
@@ -853,7 +865,7 @@ function galleryDeck(t, sizeKey, photoCount, perPage) {
 // --- the catalogue ---------------------------------------------------------
 
 /**
- * The ten shipped designs. `build(photoCount)` returns an unfilled template doc; the
+ * The thirteen shipped designs. `build(photoCount)` returns an unfilled template doc; the
  * caller runs it through brochureDoc.fillDoc() with the photo list and merge fields.
  */
 // `kind` + `theme` + `perPage` are declared as data rather than baked into a closure, so
