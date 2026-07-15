@@ -2,7 +2,6 @@
 // DEPS: express, cors, helmet, morgan
 
 const express = require('express');
-const expressStatic = require('express').static;
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
@@ -10,7 +9,6 @@ const { apiLimiter } = require('./middleware/rateLimiter');
 const errorHandler = require('./middleware/errorHandler');
 const { registerApiRoutes } = require('./routes');
 const resolveAgencyDomain = require('./middleware/resolveAgencyDomain');
-const { SITES_ROOT } = require('./services/websiteBuilderService');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -61,17 +59,9 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// Static previews for generated agency websites.
-app.use('/sites', (req, res, next) => {
-  res.setHeader(
-    'Content-Security-Policy',
-    "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self';"
-  );
-  next();
-}, expressStatic(SITES_ROOT));
-
-// Custom-domain website serving. Runs before API route registration so agency
-// domains can serve generated static files from their own host.
+// Custom-domain catalog serving. Runs before API route registration so an agency's
+// own domain (or platform subdomain) boots the React app, which renders that
+// agency's public catalog mini-site. Live data — no generated files.
 app.use(resolveAgencyDomain);
 
 // API routes

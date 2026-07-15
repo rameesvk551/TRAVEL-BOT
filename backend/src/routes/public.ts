@@ -57,6 +57,9 @@ router.get('/:agencyKey/packages', publicController.listPackages);
 router.get('/:agencyKey/packages/:id', publicController.getPackage);
 router.get('/:agencyKey/properties', publicController.listProperties);
 router.get('/:agencyKey/properties/:id', publicController.getProperty);
+// Public catalog mini-site (/s/:agencyKey). Gated on the catalogSite add-on.
+router.get('/:agencyKey/catalog', publicController.getCatalog);
+router.get('/:agencyKey/catalog/:type/:slug', publicController.getCatalogItem);
 router.post('/:agencyKey/enquiry', enquiryLimiter, validateBody(enquirySchema), publicController.submitEnquiry);
 router.get('/domain/allowed', publicController.allowDomain);
 

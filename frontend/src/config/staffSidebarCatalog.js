@@ -26,7 +26,7 @@ const STAFF_SIDEBAR_GROUPS = [
       { path: '/vendors', label: 'Vendors', permissionsAny: ['accounts.view', 'accounts.manage', 'accounts.reports', 'accounts.reconcile'] },
       { path: '/vendor-payments', label: 'Vendor Payments', permissionsAny: ['accounts.view', 'accounts.manage', 'accounts.reports', 'accounts.reconcile'] },
       { path: '/accounts', label: 'Accounts', permissionsAny: ['accounts.view', 'accounts.manage', 'accounts.reports', 'accounts.reconcile'] },
-      { path: '/website-builder', label: 'Website', permissionsAny: ['agency.view', 'agency.manage'] },
+      { path: '/website-builder', label: 'Catalog Site', permissionsAny: ['agency.view', 'agency.manage'] },
       { path: '/hrm', label: 'HR & Payroll', permissionsAny: ['hrm.view', 'hrm.manage'] },
       { path: '/analytics', label: 'Reports', permissionsAny: ['analytics.view'] },
       { path: '/activity', label: 'Activity Log' },

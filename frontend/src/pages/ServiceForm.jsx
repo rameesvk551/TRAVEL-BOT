@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { ChevronRightIcon, ChevronLeftIcon, XMarkIcon, PlusIcon, CheckCircleIcon } from '@heroicons/react/24/outline';
+import { ChevronRightIcon, ChevronLeftIcon, XMarkIcon, PlusIcon, CheckCircleIcon, PhotoIcon } from '@heroicons/react/24/outline';
 import { servicesApi } from '../api/servicesApi';
 
 /* ── Icon options for the picker ── */
@@ -37,6 +37,7 @@ const INITIAL_FORM = {
   category: 'TICKETING',
   description: '',
   icon: 'default',
+  imageUrl: '',
   pricingType: 'FIXED',
   price: '',
   features: [],
@@ -53,6 +54,7 @@ export default function ServiceForm() {
   const [newFeature, setNewFeature] = useState('');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [uploadingImage, setUploadingImage] = useState(false);
 
   /* ── Fetch existing service in edit mode ── */
   const serviceQuery = useQuery({
@@ -76,6 +78,7 @@ export default function ServiceForm() {
       category: serviceData.category || 'TICKETING',
       description: serviceData.description || '',
       icon: serviceData.icon || 'default',
+      imageUrl: serviceData.imageUrl || '',
       pricingType: serviceData.pricingType || 'FIXED',
       price: serviceData.basePrice ? String(serviceData.basePrice / 100) : '',
       features: serviceData.features || [],
@@ -98,6 +101,24 @@ export default function ServiceForm() {
 
   /* ── Helpers ── */
   const set = (field, value) => setForm((f) => ({ ...f, [field]: value }));
+
+  const handleImageChange = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setError('');
+    setUploadingImage(true);
+    try {
+      const res = await servicesApi.uploadImage(file);
+      const url = res?.data?.url || res?.data?.imageUrl;
+      if (!url) throw new Error('Image upload failed');
+      set('imageUrl', url);
+    } catch (err) {
+      setError(err.response?.data?.error || 'Could not upload the image. Please try again.');
+    } finally {
+      setUploadingImage(false);
+    }
+  };
 
   const addFeature = () => {
     const trimmed = newFeature.trim();
@@ -125,6 +146,7 @@ export default function ServiceForm() {
       category: form.category,
       description: form.description.trim() || null,
       icon: form.icon,
+      imageUrl: form.imageUrl || null,
       pricingType: form.pricingType,
       basePrice: (form.pricingType === 'FIXED' || form.pricingType === 'STARTING_FROM') && form.price
         ? Math.round(Number(form.price) * 100)
@@ -248,6 +270,34 @@ export default function ServiceForm() {
                   rows={2}
                   className="prop-input resize-none py-4"
                 />
+              </div>
+
+              <div>
+                <label className="prop-label">Photo</label>
+                <p className="mb-3 -mt-1 text-xs font-medium text-neutral-400">Shown on your public catalog. A wide, well-lit photo works best.</p>
+                <div className="flex items-center gap-4">
+                  <div className="relative h-24 w-32 flex-shrink-0 overflow-hidden rounded-2xl border-2 border-dashed border-neutral-200 bg-neutral-50">
+                    {form.imageUrl ? (
+                      <img src={form.imageUrl} alt="Service" className="h-full w-full object-cover" />
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center text-neutral-300">
+                        <PhotoIcon className="h-8 w-8" />
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <label className={`inline-flex w-fit cursor-pointer items-center gap-2 rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm font-bold text-neutral-700 shadow-sm transition hover:border-neutral-400 hover:bg-neutral-50 ${uploadingImage ? 'pointer-events-none opacity-60' : ''}`}>
+                      <PhotoIcon className="h-4 w-4" />
+                      {uploadingImage ? 'Uploading…' : form.imageUrl ? 'Replace photo' : 'Upload photo'}
+                      <input type="file" accept="image/*" className="hidden" onChange={handleImageChange} disabled={uploadingImage} />
+                    </label>
+                    {form.imageUrl && (
+                      <button type="button" onClick={() => set('imageUrl', '')} className="w-fit text-xs font-bold text-red-500 hover:text-red-600">
+                        Remove photo
+                      </button>
+                    )}
+                  </div>
+                </div>
               </div>
 
               <div>

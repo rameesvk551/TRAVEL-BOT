@@ -39,7 +39,7 @@ const MODULE_CATALOG = Object.freeze([
   { path: '/vendors', label: 'Vendors', group: 'Workspace' },
   { path: '/vendor-payments', label: 'Vendor Payments', group: 'Workspace' },
   { path: '/accounts', label: 'Accounts', group: 'Workspace' },
-  { path: '/website-builder', label: 'Website', group: 'Workspace' },
+  { path: '/website-builder', label: 'Catalog Site', group: 'Workspace' },
   { path: '/hrm', label: 'HR & Payroll', group: 'Workspace' },
   { path: '/analytics', label: 'Reports', group: 'Workspace' },
   { path: '/activity', label: 'Activity Log', group: 'Workspace' },
@@ -61,6 +61,11 @@ const FEATURE_CATALOG = Object.freeze([
     key: 'brochureBuilder',
     label: 'Brochure PDF Builder',
     description: 'Design multi-page resort/property brochures from bulk photos and send them on WhatsApp.',
+  },
+  {
+    key: 'catalogSite',
+    label: 'Catalog Mini-Site',
+    description: 'A public, branded mini-website showcasing the agency’s services, packages, stays, visas and cruises with per-item pages, WhatsApp enquiries and a shareable digital card.',
   },
 ]);
 const FEATURE_KEYS = new Set(FEATURE_CATALOG.map((item) => item.key));

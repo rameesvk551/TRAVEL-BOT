@@ -62,7 +62,7 @@ const utilityItems = [
   { to: '/vendors', icon: UsersIcon, label: 'Vendors' },
   { to: '/vendor-payments', icon: CurrencyRupeeIcon, label: 'Vendor Payments' },
   { to: '/accounts', icon: CurrencyRupeeIcon, label: 'Accounts' },
-  { to: '/website-builder', icon: GlobeAltIcon, label: 'Website' },
+  { to: '/website-builder', icon: GlobeAltIcon, label: 'Catalog Site' },
   { to: '/hrm', icon: BriefcaseIcon, label: 'HR & Payroll' },
   { to: '/analytics', icon: ChartBarIcon, label: 'Reports' },
   { to: '/activity', icon: ClipboardDocumentListIcon, label: 'Activity Log' },

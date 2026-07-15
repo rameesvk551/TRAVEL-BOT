@@ -2,6 +2,7 @@ const { Op } = require('sequelize');
 const { Package, Property, Service, Visa, Cruise, Agency, Lead, Customer } = require('../models');
 const leadService = require('../services/leadService');
 const websiteBuilderService = require('../services/websiteBuilderService');
+const catalogService = require('../services/catalogService');
 const leadFormConfig = require('../services/leadFormConfig');
 const leadFormService = require('../services/leadFormService');
 const { normalizePhone } = require('../utils/phoneUtils');
@@ -32,6 +33,79 @@ async function verifiedItemToken(agency, raw) {
   });
   if (!row) return '';
   return `${item.itemType}:${item.itemId}`;
+}
+
+/**
+ * Display info for the catalog item the visitor arrived on (e.g. the villa whose "Check
+ * availability" button they tapped). Showing it back to them — photo, name, price — is what turns
+ * a generic form into "you are enquiring about THIS one", which is the single biggest lift in
+ * completion. Agency-scoped: an item from another agency is simply not returned.
+ */
+async function publicItemPreview(agency, raw) {
+  const item = leadFormConfig.parseItemToken(raw);
+  if (!item) return null;
+  const Model = ITEM_MODEL[item.itemType];
+  if (!Model) return null;
+
+  const row = await Model.findOne({ where: { id: item.itemId, agencyId: agency.id } });
+  if (!row) return null;
+
+  // `destination` is what a field flagged hideWhenItemKnown gets prefilled with, so the lead still
+  // carries a place even though we never asked for it.
+  const byType = {
+    PROPERTY: () => ({
+      name: row.name,
+      subtitle: [row.location, row.propertyType].filter(Boolean).join(' · '),
+      destination: row.location || row.name || '',
+      imageUrl: row.imageUrl || (Array.isArray(row.images) ? row.images[0] : null) || null,
+      price: row.pricePerNight,
+      priceSuffix: 'per night',
+    }),
+    PACKAGE: () => ({
+      name: row.name,
+      subtitle: [row.duration, (row.destinations || [])[0]].filter(Boolean).join(' · '),
+      destination: (row.destinations || [])[0] || row.name || '',
+      imageUrl: row.imageUrl || null,
+      price: row.basePrice,
+      priceSuffix: 'per person',
+    }),
+    CRUISE: () => ({
+      name: row.name,
+      subtitle: [row.cruiseLine, row.duration].filter(Boolean).join(' · '),
+      destination: (row.destinations || [])[0] || row.departurePort || row.name || '',
+      imageUrl: row.imageUrl || null,
+      price: row.basePrice,
+      priceSuffix: 'per person',
+    }),
+    VISA: () => ({
+      name: [row.country, row.visaType].filter(Boolean).join(' — '),
+      subtitle: row.processingTime || '',
+      destination: row.country || '',
+      imageUrl: row.imageUrl || null,
+      price: row.price,
+      priceSuffix: '',
+    }),
+    SERVICE: () => ({
+      name: row.name,
+      subtitle: row.category || '',
+      destination: '',
+      imageUrl: row.imageUrl || null,
+      price: row.basePrice,
+      priceSuffix: '',
+    }),
+  };
+
+  const shaped = byType[item.itemType]();
+  return {
+    itemType: item.itemType,
+    itemId: item.itemId,
+    token: `${item.itemType}:${item.itemId}`,
+    ...shaped,
+    // Prices are stored in paise. Send rupees so the client never has to know that.
+    price: Number.isFinite(Number(shaped.price)) && Number(shaped.price) > 0
+      ? Math.round(Number(shaped.price) / 100)
+      : null,
+  };
 }
 
 // Agency.id is a UUID column. Only match it when the key actually looks like a
@@ -237,7 +311,11 @@ async function getLeadForm(req, res, next) {
     }
     res.json({
       success: true,
-      data: leadFormConfig.publicLeadFormPayload(agency, leadFormService.toConfig(form)),
+      data: {
+        ...leadFormConfig.publicLeadFormPayload(agency, leadFormService.toConfig(form)),
+        // The catalog item the visitor tapped (?item=PROPERTY:<id>), so the form can show it back.
+        item: await publicItemPreview(agency, req.query.item),
+      },
     });
   } catch (err) {
     next(err);
@@ -338,6 +416,62 @@ async function allowDomain(req, res, next) {
   }
 }
 
+// The catalog mini-site is a paid, deny-by-default add-on (agency.features.catalogSite,
+// toggled by platform admin — same entitlement model as the brochure builder). Unlike
+// the lead form it must also be published (websiteEnabled). A visitor who fails any gate
+// gets a plain 404, never a hint that the agency exists.
+async function resolveAgencyForCatalog(key) {
+  const normalized = websiteBuilderService.normalizeHost(key);
+  const agency = await Agency.findOne({
+    where: {
+      isActive: true,
+      websiteEnabled: true,
+      [Op.or]: agencyKeyOr(key, normalized),
+    },
+  });
+
+  const entitled = agency
+    && agency.features
+    && typeof agency.features === 'object'
+    && agency.features.catalogSite === true;
+
+  if (!agency || !entitled) {
+    throw Object.assign(new Error('Catalog not found'), {
+      statusCode: 404,
+      code: 'CATALOG_NOT_FOUND',
+    });
+  }
+
+  return agency;
+}
+
+// GET /public/:agencyKey/catalog → branding + every catalog section with items.
+async function getCatalog(req, res, next) {
+  try {
+    const agency = await resolveAgencyForCatalog(req.params.agencyKey);
+    res.json({ success: true, data: await catalogService.getCatalog(agency) });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// GET /public/:agencyKey/catalog/:type/:slug → one item's detail page payload.
+async function getCatalogItem(req, res, next) {
+  try {
+    const agency = await resolveAgencyForCatalog(req.params.agencyKey);
+    const item = await catalogService.getCatalogItem(agency, req.params.type, req.params.slug);
+    if (!item) {
+      throw Object.assign(new Error('Item not found'), { statusCode: 404, code: 'NOT_FOUND' });
+    }
+    res.json({
+      success: true,
+      data: { branding: catalogService.brandingPayload(agency), item },
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   getInfo,
   listPackages,
@@ -348,4 +482,6 @@ module.exports = {
   getLeadForm,
   submitLeadForm,
   allowDomain,
+  getCatalog,
+  getCatalogItem,
 };

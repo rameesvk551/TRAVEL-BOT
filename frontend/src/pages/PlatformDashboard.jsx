@@ -70,7 +70,7 @@ const FALLBACK_MODULES = [
   { path: '/vendors', label: 'Vendors', group: 'Workspace' },
   { path: '/vendor-payments', label: 'Vendor Payments', group: 'Workspace' },
   { path: '/accounts', label: 'Accounts', group: 'Workspace' },
-  { path: '/website-builder', label: 'Website', group: 'Workspace' },
+  { path: '/website-builder', label: 'Catalog Site', group: 'Workspace' },
   { path: '/hrm', label: 'HR & Payroll', group: 'Workspace' },
   { path: '/analytics', label: 'Reports', group: 'Workspace' },
   { path: '/activity', label: 'Activity Log', group: 'Workspace' },

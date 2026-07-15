@@ -10,17 +10,13 @@ import {
 import { getWebsiteStatus, publishWebsite, unpublishWebsite, updateWebsiteSettings } from '../api/websiteApi';
 import { useAuthStore } from '../store/authStore';
 
+// Curated catalog themes. Your brand color tints the accent, so every theme
+// still feels like yours. Ids match the backend catalog theme presets.
 const WEBSITE_TEMPLATES = [
-  { id: 'MODERN', name: 'Modern Agency', description: 'Clean hero, balanced catalog cards, works for most agencies.', swatch: '#00A884' },
-  { id: 'CLASSIC', name: 'Classic Tours', description: 'Editorial and timeless for established tour operators.', swatch: '#7C5E3C' },
-  { id: 'MINIMAL', name: 'Minimal Studio', description: 'Quiet, spacious layout for premium curated itineraries.', swatch: '#111827' },
-  { id: 'VIBRANT', name: 'Vibrant Deals', description: 'High-energy style for offers, departures, and promotions.', swatch: '#C026D3' },
-  { id: 'LUXURY_ESCAPE', name: 'Luxury Escape', description: 'Dark premium look for high-value vacations and resorts.', swatch: '#D6B46D' },
-  { id: 'ADVENTURE_TREK', name: 'Adventure Trek', description: 'Outdoorsy style for trekking, camping, and active trips.', swatch: '#65A30D' },
-  { id: 'FAMILY_HOLIDAY', name: 'Family Holiday', description: 'Warm, friendly feel for family packages and stays.', swatch: '#0284C7' },
-  { id: 'HONEYMOON', name: 'Honeymoon', description: 'Soft romantic layout for couples and special escapes.', swatch: '#E11D48' },
-  { id: 'CORPORATE_TRAVEL', name: 'Corporate Travel', description: 'Sharp, restrained design for business and MICE travel.', swatch: '#334155' },
-  { id: 'PILGRIMAGE', name: 'Pilgrimage', description: 'Calm, devotional tone for religious and group tours.', swatch: '#EA580C' },
+  { id: 'aurora', name: 'Aurora', description: 'Airy ivory and soft light. Friendly and premium — a safe default for most agencies.', swatch: '#EFEBE3' },
+  { id: 'midnight', name: 'Midnight', description: 'Cinematic dark with glass panels. Ideal for luxury stays and resorts.', swatch: '#14181D' },
+  { id: 'coast', name: 'Coast', description: 'Warm sand and calm greens. Relaxed and coastal for beach and leisure travel.', swatch: '#E7DFCF' },
+  { id: 'terra', name: 'Terra', description: 'Editorial, warm paper, sharp edges. Modern and bold for adventure and active trips.', swatch: '#E3D8C8' },
 ];
 
 function templateById(id) {
@@ -41,7 +37,7 @@ function cleanForm(data) {
   return {
     subdomain: data?.subdomain || '',
     customDomain: data?.customDomain || '',
-    websiteTheme: data?.websiteTheme || 'MODERN',
+    websiteTheme: data?.websiteTheme || 'aurora',
     websiteTitle: data?.websiteTitle || '',
     websiteDescription: data?.websiteDescription || '',
     websiteLogoUrl: data?.websiteLogoUrl || '',
@@ -157,15 +153,15 @@ export default function WebsiteBuilder() {
     <div className="mx-auto max-w-6xl space-y-6">
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
-          <p className="eyebrow">Website Builder</p>
-          <h1 className="page-heading mt-2">Static website for your agency</h1>
-          <p className="page-subtext mt-2">Generate a separate static website that still reads live CRM packages, properties, and enquiry forms from the backend.</p>
+          <p className="eyebrow">Catalog Mini-Site</p>
+          <h1 className="page-heading mt-2">Your public catalog site</h1>
+          <p className="page-subtext mt-2">A branded, always-live mini-website showing your services, packages, stays, visas and cruises — with per-item pages, WhatsApp enquiries and a shareable digital card. No rebuild step; it updates as your catalog changes.</p>
         </div>
         <div className="flex flex-wrap gap-2">
           {publicUrl ? (
             <a href={publicUrl} target="_blank" rel="noreferrer" className="shell-button-secondary">
               <ArrowTopRightOnSquareIcon className="h-4 w-4" />
-              Open
+              View site
             </a>
           ) : null}
           <button
@@ -286,20 +282,33 @@ export default function WebsiteBuilder() {
             </div>
             <div className="mt-5 grid gap-3">
               <div className="rounded-[var(--radius-md)] border border-neutral-200 bg-neutral-50 p-4">
-                <p className="eyebrow">Website</p>
+                <p className="eyebrow">Catalog site</p>
                 <p className="mt-2 flex items-center gap-2 text-sm font-bold text-neutral-900">
                   <CheckCircleIcon className={`h-4 w-4 ${status.websiteEnabled ? 'text-emerald-600' : 'text-neutral-400'}`} />
                   {status.websiteEnabled ? 'Published' : 'Draft'}
                 </p>
               </div>
               <div className="rounded-[var(--radius-md)] border border-neutral-200 bg-neutral-50 p-4">
-                <p className="eyebrow">Generated files</p>
-                <p className="mt-2 text-sm font-bold text-neutral-900">{status.hasGeneratedFiles ? 'Ready' : 'Not generated yet'}</p>
-                <p className="mt-1 break-all text-xs text-neutral-500">{status.staticPath}</p>
+                <p className="eyebrow">Add-on</p>
+                <p className="mt-2 flex items-center gap-2 text-sm font-bold text-neutral-900">
+                  <CheckCircleIcon className={`h-4 w-4 ${status.catalogEnabled ? 'text-emerald-600' : 'text-neutral-400'}`} />
+                  {status.catalogEnabled ? 'Enabled' : 'Not enabled'}
+                </p>
+                <p className="mt-1 text-xs text-neutral-500">
+                  {status.catalogEnabled
+                    ? 'The Catalog Mini-Site add-on is active on your account.'
+                    : 'Your public site won’t load until this add-on is enabled. Contact your provider to switch it on.'}
+                </p>
               </div>
+              {publicUrl ? (
+                <div className="rounded-[var(--radius-md)] border border-neutral-200 bg-neutral-50 p-4">
+                  <p className="eyebrow">Public link</p>
+                  <p className="mt-2 break-all text-sm font-bold text-neutral-900">{publicUrl}</p>
+                </div>
+              ) : null}
               <div className="rounded-[var(--radius-md)] border border-neutral-200 bg-neutral-50 p-4">
-                <p className="eyebrow">DNS setup</p>
-                <p className="mt-2 text-sm text-neutral-600">Ask the customer to add an A record pointing their domain to your VPS IP. Keep the domain saved here, then publish.</p>
+                <p className="eyebrow">Custom domain</p>
+                <p className="mt-2 text-sm text-neutral-600">To use your own domain, add an A record pointing it to your server IP, save it above, then publish. Your subdomain link works right away.</p>
               </div>
             </div>
           </section>

@@ -1,4 +1,18 @@
 const serviceService = require('../services/serviceService');
+const mediaService = require('../services/mediaService');
+
+async function uploadImage(req, res, next) {
+  try {
+    if (!req.file) {
+      throw Object.assign(new Error('Image file is required'), { statusCode: 400, code: 'MISSING_FILE' });
+    }
+    const uploaded = await mediaService.uploadServiceImage(req.file.buffer, req.agency.id);
+    // `url` matches the mobile upload hooks' convention; `imageUrl` matches the web form.
+    res.json({ success: true, data: { url: uploaded.secureUrl, imageUrl: uploaded.secureUrl, publicId: uploaded.publicId } });
+  } catch (err) {
+    next(err);
+  }
+}
 
 async function list(req, res, next) {
   try {
@@ -56,6 +70,7 @@ async function reorder(req, res, next) {
 }
 
 module.exports = {
+  uploadImage,
   list,
   getById,
   create,

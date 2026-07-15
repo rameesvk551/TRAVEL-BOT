@@ -14,6 +14,22 @@ import Sidebar from './components/Sidebar';
 import AppTopbar from './components/AppTopbar';
 import PunchGate from './components/PunchGate';
 
+// Custom-domain catalog mode. When VITE_APP_HOSTS lists the app/admin hosts, any
+// OTHER host reaching the SPA is treated as an agency's own domain and renders
+// that agency's public catalog at the root. Off (no extra routes) when unset, so
+// the app behaves exactly as before on its normal hosts. Host can't change mid-
+// session, so this is computed once.
+const APP_HOSTS = String(import.meta.env.VITE_APP_HOSTS || '')
+  .split(',')
+  .map((h) => h.trim().toLowerCase())
+  .filter(Boolean);
+const CURRENT_HOST = typeof window !== 'undefined' ? window.location.hostname.toLowerCase() : '';
+const IS_AGENCY_HOST = APP_HOSTS.length > 0
+  && CURRENT_HOST
+  && CURRENT_HOST !== 'localhost'
+  && CURRENT_HOST !== '127.0.0.1'
+  && !APP_HOSTS.includes(CURRENT_HOST);
+
 const Login = lazy(() => import('./pages/Login'));
 const ForgotPassword = lazy(() => import('./pages/ForgotPassword'));
 const ResetPassword = lazy(() => import('./pages/ResetPassword'));
@@ -58,6 +74,8 @@ const SettingsPipelineStatuses = lazy(() => import('./pages/settings/SettingsPip
 const SettingsAccounts = lazy(() => import('./pages/settings/SettingsAccounts'));
 const SettingsLeadForm = lazy(() => import('./pages/settings/SettingsLeadForm'));
 const LeadFormPage = lazy(() => import('./pages/LeadFormPage'));
+const CatalogPage = lazy(() => import('./pages/CatalogPage'));
+const CatalogItemPage = lazy(() => import('./pages/CatalogItemPage'));
 const WebsiteBuilder = lazy(() => import('./pages/WebsiteBuilder'));
 const Templates = lazy(() => import('./pages/Templates'));
 const Flows = lazy(() => import('./pages/Flows'));
@@ -241,6 +259,17 @@ export default function App() {
           <Route path="/lead/:agencyKey" element={<LeadFormPage />} />
           {/* A named lead form — /lead/:agencyKey/:slug */}
           <Route path="/lead/:agencyKey/:slug" element={<LeadFormPage />} />
+          {/* Public catalog mini-site (path mode). */}
+          <Route path="/s/:agencyKey" element={<CatalogPage />} />
+          <Route path="/s/:agencyKey/:type/:slug" element={<CatalogItemPage />} />
+          {/* Custom-domain catalog mode: the agency's own host renders its catalog
+              at the root. Only added when this host is not an app host. */}
+          {IS_AGENCY_HOST && (
+            <Route path="/" element={<CatalogPage agencyKey={CURRENT_HOST} basePath="" />} />
+          )}
+          {IS_AGENCY_HOST && (
+            <Route path="/:type/:slug" element={<CatalogItemPage agencyKey={CURRENT_HOST} basePath="" />} />
+          )}
           <Route path="/login" element={<PublicAuthRoute><Login /></PublicAuthRoute>} />
           <Route path="/forgot-password" element={<PublicAuthRoute><ForgotPassword /></PublicAuthRoute>} />
           <Route path="/reset-password" element={<PublicAuthRoute><ResetPassword /></PublicAuthRoute>} />

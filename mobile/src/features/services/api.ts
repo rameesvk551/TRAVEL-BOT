@@ -5,8 +5,8 @@
 // NOTE: `icon` is an icon IDENTIFIER (e.g. 'plane', 'shield'), not an emoji —
 // see the web's ICON_MAP in frontend/src/pages/Services.jsx. The mobile list maps
 // the identifier to a lucide icon, matching the design system.
-// NOTE: there is NO /services/upload-image route on the backend. The model has an
-// `imageUrl` column and the zod schema accepts a URL, but nothing uploads to it.
+// NOTE: `imageUrl` is uploaded via POST /services/upload-image (multipart, field
+// name `image`) — see useUploadServiceImage below, mirroring packages/properties.
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { AxiosError } from 'axios';
@@ -104,6 +104,7 @@ export interface ServiceInput {
   icon?: string | null;
   /** paise */
   basePrice?: number | null;
+  imageUrl?: string | null;
   pricingType?: PricingType;
   features?: string[];
   isActive?: boolean;
@@ -176,5 +177,21 @@ export function useDeactivateService() {
       await api.delete(`/services/${id}`);
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['services'] }),
+  });
+}
+
+/** POST /services/upload-image (multipart, field name `image`) -> { url, publicId }. */
+export function useUploadServiceImage() {
+  return useMutation({
+    mutationFn: async (asset: { uri: string; fileName?: string | null; mimeType?: string | null }) => {
+      const form = new FormData();
+      form.append('image', {
+        uri: asset.uri,
+        name: asset.fileName || 'service.jpg',
+        type: asset.mimeType || 'image/jpeg',
+      } as unknown as Blob);
+      const res = await api.post('/services/upload-image', form);
+      return res.data.data as { url: string; publicId: string };
+    },
   });
 }

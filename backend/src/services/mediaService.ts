@@ -166,6 +166,31 @@ async function uploadPackageImage(fileBuffer, agencyId) {
   });
 }
 
+async function uploadServiceImage(fileBuffer, agencyId) {
+  assertCloudinaryConfigured();
+
+  const rootFolder = process.env.CLOUDINARY_FOLDER || 'travel-bot';
+  const base = rootFolder.endsWith('/packages') ? rootFolder.replace(/\/packages$/, '') : rootFolder;
+  const folder = `${base}/services/${agencyId}`;
+
+  return new Promise((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(
+      { folder, resource_type: 'image' },
+      (err, result) => {
+        if (err) {
+          reject(Object.assign(new Error(err.message || 'Cloudinary upload failed'), {
+            statusCode: 502,
+            code: 'CLOUDINARY_UPLOAD_FAILED',
+          }));
+          return;
+        }
+        resolve({ secureUrl: result.secure_url, publicId: result.public_id });
+      }
+    );
+    stream.end(fileBuffer);
+  });
+}
+
 async function uploadPackageBrochure(fileBuffer, agencyId, originalName = 'brochure.pdf') {
   const uploadId = Date.now();
 
@@ -475,6 +500,7 @@ async function uploadCustomerDocument(fileBuffer, agencyId, customerId, original
 module.exports = {
   uploadPackageImage,
   uploadPropertyImage,
+  uploadServiceImage,
   uploadPackageBrochure,
   uploadItineraryPdf,
   uploadTemplateMedia,
