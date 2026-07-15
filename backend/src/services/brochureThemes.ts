@@ -126,6 +126,41 @@ const THEMES = Object.freeze({
     contactVeil: 'linear-gradient(120deg, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.55) 60%, rgba(0,0,0,0.35) 100%)',
     italicNumerals: false,
   },
+
+  // --- editorial decks ported faithfully from the reference layouts ---------
+  // These three carry a `style` block. Every new visual behaviour in the page
+  // factories is gated on `t.style`, so the five themes above (which have none)
+  // keep their exact current output.
+  coastalTeal: {
+    key: 'coastalTeal', name: 'Coastal Teal',
+    bg: '#f1faf9', panel: '#ffffff', ink: '#123a3a', inkSoft: '#3e6360', inkMute: '#7fa19d',
+    accent: '#0e9aa7', accent2: '#f0784b', display: 'Sora', body: 'Sora',
+    radius: 18, tileBorder: 0, tileBorderColor: 'transparent', logoRing: 0, onImage: '#ffffff',
+    coverVeil: 'linear-gradient(180deg, rgba(8,40,44,0.42) 0%, rgba(8,40,44,0.08) 45%, rgba(8,40,44,0.66) 100%)',
+    contactVeil: 'linear-gradient(120deg, rgba(8,58,64,0.90) 0%, rgba(8,58,64,0.55) 60%, rgba(8,58,64,0.32) 100%)',
+    italicNumerals: false,
+    style: { numeral: 'badge-filled', headingUpper: false, tag: 'pill', coverMeta: true, iconAmenities: true },
+  },
+  noir: {
+    key: 'noir', name: 'Noir Editorial',
+    bg: '#f4f2ec', panel: '#ffffff', ink: '#151515', inkSoft: '#4a4a46', inkMute: '#8a887f',
+    accent: '#127069', accent2: '#199085', display: 'Bricolage Grotesque', body: 'Archivo',
+    radius: 2, tileBorder: 0, tileBorderColor: 'transparent', logoRing: 0, onImage: '#ffffff',
+    coverVeil: 'linear-gradient(180deg, rgba(10,12,12,0.55) 0%, rgba(10,12,12,0.12) 42%, rgba(10,12,12,0.72) 100%)',
+    contactVeil: 'linear-gradient(120deg, rgba(10,12,12,0.90) 0%, rgba(10,12,12,0.55) 60%, rgba(10,12,12,0.32) 100%)',
+    italicNumerals: false,
+    style: { numeral: 'outline', headingUpper: true, tag: 'square', coverMeta: true, iconAmenities: true },
+  },
+  deco: {
+    key: 'deco', name: 'Deco Midnight',
+    bg: '#0e1a3a', panel: '#132248', ink: '#f2ecdd', inkSoft: '#c6c0ac', inkMute: '#8f8a76',
+    accent: '#c9a24b', accent2: '#e2c47e', display: 'Cinzel', body: 'Jost',
+    radius: 4, tileBorder: 1, tileBorderColor: 'rgba(201,162,75,0.30)', logoRing: 1, onImage: '#f2ecdd',
+    coverVeil: 'linear-gradient(180deg, rgba(6,12,28,0.55) 0%, rgba(6,12,28,0.15) 42%, rgba(6,12,28,0.75) 100%)',
+    contactVeil: 'linear-gradient(120deg, rgba(6,12,28,0.90) 0%, rgba(6,12,28,0.55) 60%, rgba(6,12,28,0.35) 100%)',
+    italicNumerals: false,
+    style: { numeral: 'framed-circle', headingUpper: true, tag: 'square', coverMeta: true, iconAmenities: true },
+  },
 });
 
 /**
@@ -186,6 +221,18 @@ function shape(x, y, w, h, extra = {}) {
   };
 }
 
+/**
+ * An amenity/feature icon. `name` is a key in brochureIcons; its `color` (accent by
+ * default) participates in retheme automatically. Never carries a slot, so an icon can
+ * never consume a photo — the "no empty photo boxes" invariant is safe by construction.
+ */
+function iconEl(t, name, x, y, size, color) {
+  return {
+    id: uid('ic'), type: 'icon', icon: name, x, y, w: size, h: size,
+    rotate: 0, z: 5, opacity: 1, locked: false, color: color || t.accent, strokeWidth: 1.5,
+  };
+}
+
 /** The logo badge: a field-bound image, circular and ringed in the Dark Luxury deck. */
 function logo(t, x, y, size) {
   return img('', x, y, size, size, {
@@ -242,10 +289,17 @@ function chrome(t, W, H, pageNo, tail) {
   ];
 }
 
-/** Eyebrow + big section title + roman numeral, the interior-page masthead. */
+/**
+ * Eyebrow + big section title + section numeral, the interior-page masthead.
+ *
+ * The numeral treatment is themed by `S.numeral`; absent (every existing deck) it is the
+ * plain right-aligned accent numeral it has always been, allocated in the same order, so
+ * the five style-less themes render identically. The eyebrow + title are never touched.
+ */
 function sectionHead(t, W, eyebrow, title, numeral) {
+  const S = t.style || {};
   const b = box(W, 0);
-  return [
+  const out = [
     txt(eyebrow, b.x, mm(26), b.w * 0.7, mm(6), {
       font: t.body, size: pt(8.5), weight: 500, color: t.accent,
       letterSpacing: 5, uppercase: true, z: 5,
@@ -253,11 +307,46 @@ function sectionHead(t, W, eyebrow, title, numeral) {
     txt(title, b.x, mm(33), b.w * 0.7, mm(20), {
       font: t.display, size: pt(34), lineHeight: 1, color: t.ink, letterSpacing: -0.5, z: 5,
     }),
-    txt(numeral, b.x + b.w * 0.7, mm(33), b.w * 0.3, mm(12), {
+  ];
+
+  if (S.numeral === 'badge-filled') {
+    // Filled accent disc with a centred white numeral, top-right.
+    const d = mm(13);
+    const nx = b.right - d;
+    const ny = mm(31);
+    out.push(shape(nx, ny, d, d, { fill: t.accent, radius: 9999, z: 4 }));
+    out.push(txt(numeral, nx, ny, d, d, {
+      font: t.display, size: pt(14), weight: 600, color: t.onImage || '#ffffff',
+      align: 'center', valign: 'center', z: 5,
+    }));
+  } else if (S.numeral === 'outline') {
+    // Compromise: the reference uses a hollow stroke-outline glyph. The element model
+    // has no text-stroke, so a heavy accent numeral at large size approximates it.
+    out.push(txt(numeral, b.x + b.w * 0.6, mm(27), b.w * 0.4, mm(22), {
+      font: t.display, size: pt(46), weight: 800, lineHeight: 1, color: t.accent,
+      align: 'right', z: 5,
+    }));
+  } else if (S.numeral === 'framed-circle') {
+    // Ringed circle with a centred accent numeral, top-right.
+    const d = mm(13);
+    const nx = b.right - d;
+    const ny = mm(31);
+    out.push(shape(nx, ny, d, d, {
+      fill: 'transparent', stroke: t.accent, strokeWidth: 1, radius: 9999, z: 4,
+    }));
+    out.push(txt(numeral, nx, ny, d, d, {
+      font: t.display, size: pt(14), color: t.accent,
+      align: 'center', valign: 'center', z: 5,
+    }));
+  } else {
+    // Default / 'text': the original numeral element, unchanged.
+    out.push(txt(numeral, b.x + b.w * 0.7, mm(33), b.w * 0.3, mm(12), {
       font: t.display, size: pt(15), color: t.accent, align: 'right',
       italic: !!t.italicNumerals, z: 5,
-    }),
-  ];
+    }));
+  }
+
+  return out;
 }
 
 function tile(t, slot, x, y, w, h) {
@@ -410,11 +499,38 @@ function galleryPage(t, W, H, slot, pageNo, cols, rows, eyebrow, title, numeral)
 }
 
 /**
+ * The two feature chips that replace a room's caption line when a theme opts into tags
+ * via `S.tag`. Chips are shape + text only — they never take a photo slot, so tags can
+ * never leave an empty photo box. Labels are editable placeholders, not real data.
+ */
+function roomTags(t, x, y) {
+  const S = t.style || {};
+  const labels = ['2 villas', 'Up to 5 guests'];
+  const chipW = mm(22);
+  const chipH = mm(6);
+  const gap = mm(3);
+  const out = [];
+  labels.forEach((label, i) => {
+    const cx = x + i * (chipW + gap);
+    const skin = S.tag === 'pill'
+      ? { fill: 'rgba(14,154,167,0.10)', radius: mm(4), stroke: '', strokeWidth: 0 }
+      : { fill: 'transparent', stroke: t.accent, strokeWidth: 1, radius: 0 };
+    out.push(shape(cx, y, chipW, chipH, { ...skin, z: 4 }));
+    out.push(txt(label, cx, y, chipW, chipH, {
+      font: t.body, size: pt(7.5), color: t.accent,
+      letterSpacing: 2, uppercase: true, align: 'center', valign: 'center', z: 5,
+    }));
+  });
+  return out;
+}
+
+/**
  * Rooms. Stacked photo-left / name-right rows on a tall page, as in "Stays & Suites";
  * on a wide page the same rows become columns, because three stacked 52mm rows simply
  * do not fit inside a landscape A4 and would run off the bottom.
  */
 function roomsPage(t, W, H, slot, pageNo, count, withHead) {
+  const S = t.style || {};
   const b = box(W, H);
   const top = withHead ? mm(62) : mm(30);
   const avail = b.bottom - top - mm(6);
@@ -436,9 +552,13 @@ function roomsPage(t, W, H, slot, pageNo, count, withHead) {
       rows.push(txt('Room type', x, top + ph + mm(10), colW, mm(10), {
         font: t.display, size: pt(19), lineHeight: 1.05, color: t.ink, z: 5,
       }));
-      rows.push(txt('Sleeps · Ensuite · View', x, top + ph + mm(20), colW, mm(7), {
-        font: t.body, size: pt(7.5), color: t.inkMute, letterSpacing: 2, uppercase: true, z: 5,
-      }));
+      if (S.tag) {
+        rows.push(...roomTags(t, x, top + ph + mm(20)));
+      } else {
+        rows.push(txt('Sleeps · Ensuite · View', x, top + ph + mm(20), colW, mm(7), {
+          font: t.body, size: pt(7.5), color: t.inkMute, letterSpacing: 2, uppercase: true, z: 5,
+        }));
+      }
     }
   } else {
     const rowGap = mm(10);
@@ -454,9 +574,13 @@ function roomsPage(t, W, H, slot, pageNo, count, withHead) {
       rows.push(txt('Room type', tx, y + mm(16), b.right - tx, mm(12), {
         font: t.display, size: pt(25), lineHeight: 1.02, color: t.ink, z: 5,
       }));
-      rows.push(txt('Sleeps · Ensuite · View', tx, y + mm(30), b.right - tx, mm(8), {
-        font: t.body, size: pt(8), color: t.inkMute, letterSpacing: 2, uppercase: true, z: 5,
-      }));
+      if (S.tag) {
+        rows.push(...roomTags(t, tx, y + mm(30)));
+      } else {
+        rows.push(txt('Sleeps · Ensuite · View', tx, y + mm(30), b.right - tx, mm(8), {
+          font: t.body, size: pt(8), color: t.inkMute, letterSpacing: 2, uppercase: true, z: 5,
+        }));
+      }
     }
   }
 
@@ -471,8 +595,18 @@ function roomsPage(t, W, H, slot, pageNo, count, withHead) {
   };
 }
 
+// The icon-list amenities, in registry order down two columns of five. Keys are all
+// valid brochureIcons entries; the labels are the shipped wording.
+const AMENITY_ICONS = [
+  ['pool', 'Infinity pool'], ['kids', 'Kids park'], ['games', 'Indoor games'],
+  ['dining', 'Dining area'], ['parking', 'Parking'], ['grill', 'Grilling'],
+  ['outdoor', 'Outdoor games'], ['party', 'Party hall'], ['ac', 'AC rooms'],
+  ['wifi', 'Free Wi-Fi'],
+];
+
 /** Amenities: a two-column list, then a three-tile strip along the bottom. */
 function amenitiesPage(t, W, H, slot, pageNo) {
+  const S = t.style || {};
   const b = box(W, H);
   const colW = Math.round((b.w - mm(12)) / 2);
   const stripH = mm(46);
@@ -485,12 +619,27 @@ function amenitiesPage(t, W, H, slot, pageNo) {
     tile(t, slot(), b.x + (tw + mm(5)) * 2, stripY, tw, stripH),
   ];
 
-  return {
-    id: uid('p'),
-    bg: { type: 'color', color: t.bg },
-    elements: [
-      ...chrome(t, W, H, pageNo, 'Amenities'),
-      ...sectionHead(t, W, 'Everything you need', 'Amenities', 'IV'),
+  // Built inline (as a thunk) so element ids allocate after sectionHead exactly as the
+  // original two-column layout did — the default branch stays byte-for-byte identical.
+  const listBlock = () => {
+    if (S.iconAmenities) {
+      const iconSize = mm(6);
+      const rowH = mm(12);
+      const listY = mm(62);
+      const out = [];
+      AMENITY_ICONS.forEach(([key, label], i) => {
+        const col = Math.floor(i / 5);
+        const row = i % 5;
+        const x = b.x + col * (colW + mm(12));
+        const y = listY + row * rowH;
+        out.push(iconEl(t, key, x, y, iconSize));
+        out.push(txt(label, x + iconSize + mm(4), y, colW - iconSize - mm(4), mm(6), {
+          font: t.body, size: pt(11), color: t.inkSoft, valign: 'center', z: 5,
+        }));
+      });
+      return out;
+    }
+    return [
       txt('Infinity pool\nKids park\nIndoor games\nDining area\nParking',
         b.x, mm(62), colW, stripY - mm(70), {
           field: 'amenities', font: t.body, size: pt(11), lineHeight: 2.1, color: t.inkSoft, z: 5,
@@ -499,6 +648,16 @@ function amenitiesPage(t, W, H, slot, pageNo) {
         b.x + colW + mm(12), mm(62), colW, stripY - mm(70), {
           font: t.body, size: pt(11), lineHeight: 2.1, color: t.inkSoft, z: 5,
         }),
+    ];
+  };
+
+  return {
+    id: uid('p'),
+    bg: { type: 'color', color: t.bg },
+    elements: [
+      ...chrome(t, W, H, pageNo, 'Amenities'),
+      ...sectionHead(t, W, 'Everything you need', 'Amenities', 'IV'),
+      ...listBlock(),
       ...strip,
     ],
   };
@@ -730,6 +889,24 @@ const PRESETS = Object.freeze([
     name: 'Minimal Mono',
     description: 'Black on white, Bebas display, no ornament. Lets the photographs carry it.',
     kind: 'editorial', theme: 'mono', size: 'portrait',
+  },
+  {
+    key: 'coastal-teal-editorial',
+    name: 'Coastal Teal',
+    description: 'Teal & coral on near-white, Sora. Beach and resort stays.',
+    kind: 'editorial', theme: 'coastalTeal', size: 'portrait',
+  },
+  {
+    key: 'noir-editorial',
+    name: 'Noir Editorial',
+    description: 'Ink on warm paper, Bricolage + Archivo, outline numerals.',
+    kind: 'editorial', theme: 'noir', size: 'portrait',
+  },
+  {
+    key: 'deco-midnight-editorial',
+    name: 'Deco Midnight',
+    description: 'Navy & brass, Cinzel, framed numerals. Formal and rich.',
+    kind: 'editorial', theme: 'deco', size: 'portrait',
   },
   {
     key: 'coastal-landscape',

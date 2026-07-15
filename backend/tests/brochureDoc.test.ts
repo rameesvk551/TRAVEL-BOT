@@ -241,7 +241,7 @@ describe('brochureDoc.renderDocHtml', () => {
 
 describe('brochureThemes presets', () => {
   const KEYS = brochureThemes.listPresets().map((p) => p.key);
-  ok('ships ten designs', KEYS.length === 10);
+  ok('ships thirteen designs', KEYS.length === 13);
 
   // Count empty image slots left after filling a deck with `count` photos. The real
   // invariant is not "slots <= count" — galleries deliberately reuse a photo on the
