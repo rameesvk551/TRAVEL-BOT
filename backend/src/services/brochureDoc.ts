@@ -11,6 +11,11 @@
 // this file (PAGE_SIZES, FONTS, cdnUrl, elementStyle, textStyle, imageStyle).
 // Keep them in step; `npm test` guards the doc normalizer against silent drops.
 
+// Shared amenity icon registry (Task 1). `ICONS[key].body` is TRUSTED, developer-authored
+// inner SVG markup — never user input — so the renderer injects it raw.
+const { ICON_KEYS, DEFAULT_ICON, ICONS } = require('./brochureIcons');
+const ICON_KEY_SET = new Set(ICON_KEYS);
+
 // Millimetres to CSS px at 96dpi. The hand-built reference brochures are authored in
 // mm (A4 = 210x297mm, 18mm gutters), so the layout kit and the page-size UI both need
 // to speak mm even though the document itself stores px.
@@ -65,7 +70,7 @@ const GOOGLE_FONTS_HREF =
   + '&family=Yellowtail'
   + '&display=swap';
 
-const ELEMENT_TYPES = Object.freeze(['image', 'text', 'shape']);
+const ELEMENT_TYPES = Object.freeze(['image', 'text', 'shape', 'icon']);
 const FIT_MODES = Object.freeze(['cover', 'contain', 'fill']);
 const ALIGNMENTS = Object.freeze(['left', 'center', 'right']);
 const SHAPE_KINDS = Object.freeze(['rect', 'ellipse', 'line']);
@@ -471,6 +476,16 @@ function normalizeElement(el) {
     };
   }
 
+  if (raw.type === 'icon') {
+    return {
+      ...base,
+      // Unknown keys fall back to DEFAULT_ICON rather than vanishing.
+      icon: ICON_KEY_SET.has(raw.icon) ? raw.icon : DEFAULT_ICON,
+      color: str(raw.color, '#111111'),
+      strokeWidth: clamp(num(raw.strokeWidth, 1.5), 0.2, 8),
+    };
+  }
+
   return {
     ...base,
     shape: SHAPE_KINDS.includes(raw.shape) ? raw.shape : 'rect',
@@ -621,6 +636,14 @@ function renderElement(el, imageWidth) {
   }
   if (el.type === 'text') {
     return `<div style="${styleToCss(textStyle(el))}">${esc(el.text)}</div>`;
+  }
+  if (el.type === 'icon') {
+    // `body` is trusted registry markup — inject it raw. Only the colour is esc'd.
+    const body = (ICONS[el.icon] || ICONS[DEFAULT_ICON]).body;
+    const box = styleToCss({ ...elementStyle(el), overflow: 'visible' });
+    return `<svg viewBox="0 0 24 24" fill="none" stroke="${esc(el.color || '#111')}" `
+      + `stroke-width="${num(el.strokeWidth, 1.5)}" stroke-linecap="round" stroke-linejoin="round" `
+      + `style="${box}">${body}</svg>`;
   }
   return `<div style="${styleToCss(shapeStyle(el))}"></div>`;
 }

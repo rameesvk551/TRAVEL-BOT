@@ -74,15 +74,24 @@ describe('brochureDoc.normalizeDoc', () => {
     x: 0, y: 0, w: 50, h: 50, rotate: 0, z: 2, opacity: 1, locked: false,
     fill: '#000000', stroke: '#fff', strokeWidth: 3, radius: 0,
   };
+  const icon = {
+    id: 'ic1', type: 'icon', icon: 'pool',
+    x: 5, y: 6, w: 40, h: 40, rotate: 0, z: 5, opacity: 1, locked: false,
+    color: '#0e9aa7', strokeWidth: 1.5,
+  };
 
   const roundTrip = brochureDoc.normalizeDoc({
-    pages: [{ id: 'p1', bg: { type: 'color', color: '#fff' }, elements: [text, image, logo, shape] }],
+    pages: [{ id: 'p1', bg: { type: 'color', color: '#fff' }, elements: [text, image, logo, shape, icon] }],
   });
 
   equalDeep('text element survives a round-trip', roundTrip.pages[0].elements[0], text);
   equalDeep('image element survives a round-trip', roundTrip.pages[0].elements[1], image);
   equalDeep('logo (field-bound image) survives a round-trip', roundTrip.pages[0].elements[2], logo);
   equalDeep('shape element survives a round-trip', roundTrip.pages[0].elements[3], shape);
+  equalDeep('icon element survives a round-trip', roundTrip.pages[0].elements[4], icon);
+
+  const badIcon = brochureDoc.normalizeDoc({ pages: [{ elements: [{ type: 'icon', icon: 'nope' }] }] });
+  ok('unknown icon key falls back', badIcon.pages[0].elements[0].icon === require('../src/services/brochureIcons').DEFAULT_ICON);
 
   const rejField = brochureDoc.normalizeDoc({ pages: [{ elements: [{ type: 'image', field: 'nope' }] }] });
   ok('rejects an unknown image field', rejField.pages[0].elements[0].field === '');
@@ -218,6 +227,11 @@ describe('brochureDoc.renderDocHtml', () => {
   }));
   ok('escapes text content', !nasty.includes('<script>alert(1)</script>'));
   ok('and encodes it instead', nasty.includes('&lt;script&gt;'));
+
+  const svgOut = brochureDoc.renderDocHtml(brochureDoc.normalizeDoc({
+    pages: [{ elements: [{ type: 'icon', icon: 'pool', color: '#0e9aa7' }] }],
+  }));
+  ok('renders an icon as inline svg', svgOut.includes('<svg') && svgOut.includes('stroke="#0e9aa7"'));
 });
 
 describe('brochureThemes presets', () => {
@@ -268,4 +282,21 @@ describe('brochureThemes presets', () => {
   // listPresets must be serialisable — no functions leak to the client.
   const serialisable = brochureThemes.listPresets().every((p) => typeof p.build === 'undefined');
   ok('listPresets carries no build fn', serialisable);
+});
+
+describe('brochureIcons mirror', () => {
+  // The backend registry (brochureIcons.ts) and its frontend ESM twin
+  // (brochureIcons.js) must stay content-identical. Evaluate the frontend module
+  // as CommonJS-free source and compare the ICONS/DEFAULT they expose.
+  const fs = require('fs');
+  const path = require('path');
+  const backendIcons = require('../src/services/brochureIcons');
+  const frontendSrc = fs.readFileSync(
+    path.join(__dirname, '../../frontend/src/utils/brochureIcons.js'), 'utf8'
+  ).replace(/export const /g, 'const ');
+  // eslint-disable-next-line no-new-func
+  const frontendIcons = new Function(`${frontendSrc}; return { ICONS, ICON_KEYS, DEFAULT_ICON };`)();
+  ok('icon registries are a content-identical mirror',
+    JSON.stringify(backendIcons.ICONS) === JSON.stringify(frontendIcons.ICONS));
+  ok('icon DEFAULT matches across the mirror', backendIcons.DEFAULT_ICON === frontendIcons.DEFAULT_ICON);
 });
