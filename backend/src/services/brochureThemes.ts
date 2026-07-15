@@ -827,6 +827,9 @@ function editorialDeck(t, sizeKey, photoCount) {
     pageH: H,
     margin: { top: mm(19), right: mm(18), bottom: mm(19), left: mm(18) },
     theme: paletteOf(t),
+    // The preset style this deck was built from, so a manually-added page can recover the
+    // `style` knobs (numeral treatment, tag skin, …) that the palette alone does not carry.
+    styleKey: t.key,
     pages,
   };
 }
@@ -858,6 +861,7 @@ function galleryDeck(t, sizeKey, photoCount, perPage) {
     pageH: H,
     margin: { top: mm(19), right: mm(16), bottom: mm(19), left: mm(16) },
     theme: paletteOf(t),
+    styleKey: t.key,
     pages,
   };
 }
@@ -980,8 +984,61 @@ function blankDeck(sizeKey = 'portrait') {
     pageH: size.h,
     margin: { top: mm(19), right: mm(18), bottom: mm(19), left: mm(18) },
     theme: paletteOf(THEMES.luxury),
+    styleKey: THEMES.luxury.key,
     pages: [{ id: uid('p'), bg: { type: 'color', color: '#ffffff' }, elements: [] }],
   };
+}
+
+/**
+ * Build ONE themed page for the "+ Page → pick a layout" menu.
+ *
+ * The deck's `styleKey` selects the style knobs (numeral treatment, tag skin, icon
+ * amenities …) so the inserted page matches the deck it joins; the deck's CURRENT palette
+ * (a possibly re-themed doc.theme) overrides the preset's original colours and fonts, so
+ * the page also matches whatever the designer has already recoloured to. The page comes
+ * back with empty photo slots — the user fills them after inserting it.
+ *
+ * @param {string} styleKey - the deck's THEMES key (from doc.styleKey)
+ * @param {string} layoutKey - which page anatomy to emit
+ * @param {string} sizeKey - the deck's page size (doc.size)
+ * @param {object} [palette] - the deck's current palette (doc.theme), to recolour the page
+ */
+function buildPage(styleKey, layoutKey, sizeKey, palette) {
+  const base = THEMES[styleKey] || THEMES.luxury;
+  // Use the deck's CURRENT colours/fonts (a recoloured deck) but keep the theme's style
+  // knobs. The page factories read fonts off `t.display`/`t.body`, so map the stored
+  // fontHeading/fontBody onto those keys.
+  const t = palette ? {
+    ...base,
+    bg: palette.bg ?? base.bg,
+    panel: palette.panel ?? base.panel,
+    ink: palette.ink ?? base.ink,
+    inkSoft: palette.inkSoft ?? base.inkSoft,
+    inkMute: palette.inkMute ?? base.inkMute,
+    accent: palette.accent ?? base.accent,
+    accent2: palette.accent2 ?? base.accent2,
+    display: palette.fontHeading ?? base.display,
+    body: palette.fontBody ?? base.body,
+  } : base;
+
+  const size = PAGE_SIZES[sizeKey] || PAGE_SIZES.portrait;
+  const { w: W, h: H } = size;
+
+  let n = 0;
+  const slot = () => `photo_${(n += 1)}`;
+
+  switch (layoutKey) {
+    case 'cover':     return coverPage(t, W, H, slot);
+    case 'intro':     return introPage(t, W, H, slot, 2);
+    case 'pool':      return galleryPage(t, W, H, slot, 2, 2, 2, 'The centrepiece', 'The Pool', 'I');
+    case 'rooms':     return roomsPage(t, W, H, slot, 2, 3, true);
+    case 'interiors': return galleryPage(t, W, H, slot, 2, 3, 2, 'Interiors', 'Inside', 'III');
+    case 'amenities': return amenitiesPage(t, W, H, slot, 2);
+    case 'grounds':   return galleryPage(t, W, H, slot, 2, 3, 2, 'Out in the open', 'The Grounds', 'V');
+    case 'gallery':   return galleryPage(t, W, H, slot, 2, 3, 3, 'A closer look', 'Gallery', 'VI');
+    case 'contact':   return contactPage(t, W, H, slot);
+    default:          return galleryPage(t, W, H, slot, 2, 3, 3, 'Gallery', 'Gallery', 'VI');
+  }
 }
 
 /** Catalogue for the "new brochure" picker, with the palette needed to render a swatch. */
@@ -1000,4 +1057,4 @@ function listPresets() {
   });
 }
 
-module.exports = { THEMES, PRESETS, buildDeck, blankDeck, listPresets };
+module.exports = { THEMES, PRESETS, buildDeck, buildPage, blankDeck, listPresets };

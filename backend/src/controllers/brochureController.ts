@@ -54,6 +54,19 @@ async function retheme(req, res, next) {
   }
 }
 
+// POST /pages/build — one fresh themed page for the "+ Page → pick a layout" menu.
+// Pure/no-DB: given the deck's style, size and current palette, return a single page with
+// empty photo slots for the user to fill after inserting it.
+function buildBrochurePage(req, res, next) {
+  try {
+    const { styleKey, layout, size, theme } = req.body || {};
+    const page = brochureThemes.buildPage(styleKey, layout, size, theme);
+    res.json({ success: true, data: page });
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function list(req, res, next) {
   try {
     const brochures = await brochureService.list(req.agency.id);
@@ -220,6 +233,7 @@ module.exports = {
   getMeta,
   previewPresets,
   retheme,
+  buildBrochurePage,
   list,
   getById,
   create,

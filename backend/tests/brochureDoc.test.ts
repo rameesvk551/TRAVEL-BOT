@@ -289,6 +289,25 @@ describe('brochureThemes presets', () => {
   ok('listPresets carries no build fn', serialisable);
 });
 
+describe('brochureThemes.buildPage', () => {
+  // The "+ Page → pick a layout" menu inserts ONE fresh themed page into an existing
+  // deck. buildPage returns that page: themed by styleKey, empty photo slots to fill.
+  const page = brochureThemes.buildPage('coastalTeal', 'rooms', 'portrait');
+  ok('buildPage returns one themed page with elements',
+    !!page && Array.isArray(page.elements) && page.elements.length > 0);
+
+  // The deck builders record which preset style they came from, so an added page can
+  // recover the style knobs even though normalizeDoc only stores the palette.
+  const deckSK = brochureThemes.buildDeck('coastal-teal-editorial', 24);
+  ok('a built deck records its styleKey', deckSK.styleKey === 'coastalTeal');
+
+  // An added page honours the deck's CURRENT (possibly recoloured) palette, not just the
+  // preset's original colours — so it matches a deck the designer has already re-themed.
+  const recolored = brochureThemes.buildPage('coastalTeal', 'amenities', 'portrait', { accent: '#7c3aed' });
+  const usesNew = JSON.stringify(recolored).includes('#7c3aed');
+  ok('buildPage applies the passed palette', usesNew);
+});
+
 describe('brochureIcons mirror', () => {
   // The backend registry (brochureIcons.ts) and its frontend ESM twin
   // (brochureIcons.js) must stay content-identical. Evaluate the frontend module

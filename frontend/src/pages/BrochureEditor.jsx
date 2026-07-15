@@ -17,6 +17,21 @@ import {
 
 const AUTOSAVE_MS = 1500;
 
+// The "+ Page → pick a layout" menu. Each key (except 'blank') maps to a buildPage layout
+// on the server, which returns a fresh page themed to the deck's style + current palette.
+const LAYOUT_OPTIONS = [
+  { key: 'cover', label: 'Cover' },
+  { key: 'intro', label: 'Intro' },
+  { key: 'pool', label: 'Pool' },
+  { key: 'rooms', label: 'Rooms' },
+  { key: 'interiors', label: 'Interiors' },
+  { key: 'amenities', label: 'Amenities' },
+  { key: 'grounds', label: 'Grounds' },
+  { key: 'gallery', label: 'Gallery' },
+  { key: 'contact', label: 'Contact' },
+  { key: 'blank', label: 'Blank' },
+];
+
 export default function BrochureEditor() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -237,6 +252,33 @@ export default function BrochureEditor() {
     setSelectedId(null);
   };
 
+  /**
+   * Insert a fresh THEMED page after the current one, built on the server to match the
+   * deck's style (doc.styleKey) and current colours (doc.theme). 'blank' is the old
+   * behaviour. The page arrives with empty photo slots for the user to fill afterwards.
+   */
+  const addLayoutPage = async (layout) => {
+    if (layout === 'blank') { addPage(); return; }
+    try {
+      const res = await brochuresApi.buildPage({
+        styleKey: doc.styleKey || '', layout, size: doc.size, theme: doc.theme,
+      });
+      const built = res.data || res;
+      // Assign a fresh page id so the pages-rail React key can never collide with an
+      // existing page, exactly as duplicatePage does.
+      const nextPage = { ...built, id: `p${Date.now().toString(36)}` };
+      commit((current) => {
+        const pages = [...current.pages];
+        pages.splice(pageIndex + 1, 0, nextPage);
+        return { ...current, pages };
+      });
+      setPageIndex(pageIndex + 1);
+      setSelectedId(null);
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Could not add page');
+    }
+  };
+
   const duplicatePage = (index) => {
     commit((current) => {
       const copy = JSON.parse(JSON.stringify(current.pages[index]));
@@ -448,12 +490,29 @@ export default function BrochureEditor() {
             </div>
           ))}
 
-          <button
-            onClick={addPage}
-            className="flex w-full items-center justify-center gap-1 rounded-lg border-2 border-dashed border-slate-300 py-3 text-sm text-slate-500 hover:border-slate-400 hover:text-slate-700"
-          >
-            <PlusIcon className="h-4 w-4" /> Page
-          </button>
+          {/* "+ Page → pick a layout". The dashed affordance is unchanged; a transparent
+              native <select> sits over it so the click opens a layout menu. It resets to
+              the placeholder after each pick so the same layout can be added again. */}
+          <div className="relative">
+            <div className="pointer-events-none flex w-full items-center justify-center gap-1 rounded-lg border-2 border-dashed border-slate-300 py-3 text-sm text-slate-500">
+              <PlusIcon className="h-4 w-4" /> Page
+            </div>
+            <select
+              aria-label="Add a page"
+              className="absolute inset-0 h-full w-full cursor-pointer rounded-lg opacity-0"
+              value=""
+              onChange={(e) => {
+                const layout = e.target.value;
+                e.target.value = '';
+                if (layout) addLayoutPage(layout);
+              }}
+            >
+              <option value="" disabled>Add a page…</option>
+              {LAYOUT_OPTIONS.map((o) => (
+                <option key={o.key} value={o.key}>{o.label}</option>
+              ))}
+            </select>
+          </div>
         </aside>
 
         {/* Canvas + photo tray */}

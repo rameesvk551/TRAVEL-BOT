@@ -17,6 +17,13 @@ export const brochuresApi = {
   retheme: (id, theme) => client.put(`/brochures/${id}/theme`, { theme }).then((r) => r.data),
 
   /**
+   * Build ONE fresh themed page for the "+ Page → pick a layout" menu. Pure/no-DB: the
+   * server returns a single page (empty photo slots) themed to the deck's style + current
+   * palette, which the editor splices into the deck locally.
+   */
+  buildPage: (payload) => client.post('/brochures/pages/build', payload).then((r) => r.data),
+
+  /**
    * The logo. Reuses the existing company-asset endpoint rather than adding another
    * upload path — it already stores to Cloudinary and returns a public URL.
    */

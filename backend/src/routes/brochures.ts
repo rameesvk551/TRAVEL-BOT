@@ -52,6 +52,10 @@ router.get('/meta', canView, controller.getMeta);
 // All ten shipped designs, built live against this agency's own photos.
 router.get('/presets/preview', canView, controller.previewPresets);
 
+// One fresh themed page for the "+ Page → pick a layout" menu. Pure/no-DB, but gated with
+// the same manage permission as editing a brochure, since the page is inserted into one.
+router.post('/pages/build', canManage, controller.buildBrochurePage);
+
 // Image library
 router.get('/assets', canView, controller.listAssets);
 router.post('/assets', canManage, upload.array('images', MAX_IMAGES_PER_UPLOAD), controller.uploadAssets);

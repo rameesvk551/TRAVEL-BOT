@@ -304,6 +304,10 @@ function normalizeDoc(input) {
 
   return {
     size: sizeKey,
+    // The preset style the deck was built from (e.g. 'coastalTeal'). NOT derivable from the
+    // palette alone, so it is stored so the "+ Page → layout" menu can emit a page with the
+    // deck's exact style knobs. Whitelisted here or it would silently drop on save/reload.
+    styleKey: str(raw.styleKey, ''),
     // Clamped rather than fixed to the preset, so a user can dial in any page box.
     pageW: clamp(num(raw.pageW, size.w), 200, 5000),
     pageH: clamp(num(raw.pageH, size.h), 200, 5000),
