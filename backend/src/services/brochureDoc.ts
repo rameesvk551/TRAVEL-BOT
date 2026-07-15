@@ -274,7 +274,7 @@ function normalizeBox(value, fallback = 0) {
 
 function fontStack(key) {
   const found = FONTS.find((f) => f.key === key);
-  return found ? found.stack : FONTS[FONTS.length - 3].stack;
+  return found ? found.stack : "'Inter', Helvetica, Arial, sans-serif";
 }
 
 function num(value, fallback) {

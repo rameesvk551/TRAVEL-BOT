@@ -207,6 +207,8 @@ describe('brochureDoc.renderDocHtml', () => {
   ok('sets the page box to the doc size', html.includes(`@page { size: ${doc.pageW}px ${doc.pageH}px; margin: 0; }`));
   ok('positions elements absolutely', html.includes('left:5px') && html.includes('top:6px'));
   ok('loads the brochure fonts', html.includes('fonts.googleapis.com'));
+  ok('font fallback for an unknown key is Inter (matches the frontend)',
+    brochureDoc.fontStack('__no_such_font__') === "'Inter', Helvetica, Arial, sans-serif");
 
   // A padded image must be wrapped, or CSS padding grows the box instead of insetting
   // the picture — the editor and the PDF have to agree on this.
