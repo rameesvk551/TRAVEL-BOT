@@ -49,6 +49,10 @@ const FONTS = Object.freeze([
   { key: 'Karla', stack: "'Karla', Helvetica, sans-serif", label: 'Karla' },
   { key: 'Inter', stack: "'Inter', Helvetica, Arial, sans-serif", label: 'Inter' },
   { key: 'Montserrat', stack: "'Montserrat', Helvetica, sans-serif", label: 'Montserrat' },
+  { key: 'Sora', stack: "'Sora', Helvetica, sans-serif", label: 'Sora' },
+  { key: 'Archivo', stack: "'Archivo', Helvetica, sans-serif", label: 'Archivo' },
+  { key: 'Bricolage Grotesque', stack: "'Bricolage Grotesque', Impact, sans-serif", label: 'Bricolage Grotesque' },
+  { key: 'Cinzel', stack: "'Cinzel', Georgia, serif", label: 'Cinzel' },
   // Script
   { key: 'Yellowtail', stack: "'Yellowtail', cursive", label: 'Yellowtail (script)' },
 ]);
@@ -68,6 +72,10 @@ const GOOGLE_FONTS_HREF =
   + '&family=Mulish:wght@300;400;600;700'
   + '&family=Playfair+Display:wght@400;600;700'
   + '&family=Yellowtail'
+  + '&family=Sora:wght@300;400;500;600;700'
+  + '&family=Archivo:wght@400;500;600;700'
+  + '&family=Bricolage+Grotesque:wght@400;700;800'
+  + '&family=Cinzel:wght@400;500;600'
   + '&display=swap';
 
 const ELEMENT_TYPES = Object.freeze(['image', 'text', 'shape', 'icon']);

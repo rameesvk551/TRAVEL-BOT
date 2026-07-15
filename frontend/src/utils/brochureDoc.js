@@ -33,6 +33,10 @@ export const FONTS = [
   { key: 'Karla', stack: "'Karla', Helvetica, sans-serif", label: 'Karla' },
   { key: 'Inter', stack: "'Inter', Helvetica, Arial, sans-serif", label: 'Inter' },
   { key: 'Montserrat', stack: "'Montserrat', Helvetica, sans-serif", label: 'Montserrat' },
+  { key: 'Sora', stack: "'Sora', Helvetica, sans-serif", label: 'Sora' },
+  { key: 'Archivo', stack: "'Archivo', Helvetica, sans-serif", label: 'Archivo' },
+  { key: 'Bricolage Grotesque', stack: "'Bricolage Grotesque', Impact, sans-serif", label: 'Bricolage Grotesque' },
+  { key: 'Cinzel', stack: "'Cinzel', Georgia, serif", label: 'Cinzel' },
   { key: 'Yellowtail', stack: "'Yellowtail', cursive", label: 'Yellowtail (script)' },
 ];
 
