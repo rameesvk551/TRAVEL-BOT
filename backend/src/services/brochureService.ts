@@ -134,25 +134,17 @@ async function getById(agencyId, id) {
  */
 async function create(agencyId, payload = {}) {
   const {
-    title, templateId, theme = 'beach', size = 'landscape',
+    title, templateId, preset = 'luxury-editorial', size = null,
     propertyId = null, packageId = null, assetIds = null, blank = false,
   } = payload;
 
   if (!title || !String(title).trim()) throw fail('Title is required', 400, 'TITLE_REQUIRED');
 
-  const assets = await listAssets(agencyId, null);
-  const selected = Array.isArray(assetIds) && assetIds.length
-    ? assetIds.map((id) => assets.find((a) => a.id === id)).filter(Boolean)
-    : assets;
-
-  const sourceImages = await imagesFromSource(agencyId, { propertyId });
-  const images = [...selected.map((a) => ({ url: a.url })), ...sourceImages];
-
-  const fields = await fieldsFromSource(agencyId, { propertyId, packageId });
+  const { images, fields } = await gatherSources(agencyId, { propertyId, packageId, assetIds });
 
   let baseDoc;
   if (blank) {
-    baseDoc = brochureThemes.blankDeck(size);
+    baseDoc = brochureThemes.blankDeck(size || 'portrait');
   } else if (templateId) {
     const template = await BrochureTemplate.findOne({
       where: { id: templateId, agencyId: [agencyId, null] },
@@ -160,7 +152,7 @@ async function create(agencyId, payload = {}) {
     if (!template) throw fail('Template not found', 404, 'TEMPLATE_NOT_FOUND');
     baseDoc = template.doc;
   } else {
-    baseDoc = brochureThemes.buildDeck(theme, images.length || 1, size);
+    baseDoc = brochureThemes.buildDeck(preset, images.length || 1, size);
   }
 
   const doc = brochureDoc.fillDoc(baseDoc, images, fields);
@@ -173,6 +165,45 @@ async function create(agencyId, payload = {}) {
     packageId,
     doc,
     fields,
+  });
+}
+
+/** The photo pool (tray + any linked property's images) and the seeded merge fields. */
+async function gatherSources(agencyId, { propertyId, packageId, assetIds } = {}) {
+  const assets = await listAssets(agencyId, null);
+  const selected = Array.isArray(assetIds) && assetIds.length
+    ? assetIds.map((id) => assets.find((a) => a.id === id)).filter(Boolean)
+    : assets;
+
+  const sourceImages = await imagesFromSource(agencyId, { propertyId });
+  const images = [...selected.map((a) => ({ url: a.url })), ...sourceImages];
+  const fields = await fieldsFromSource(agencyId, { propertyId, packageId });
+
+  return { images, fields };
+}
+
+/**
+ * Build every shipped design against the agency's OWN photos, so the picker can show
+ * ten live previews of this resort rather than ten generic swatches. Only the opening
+ * pages are returned — a full ten-deck payload would be megabytes, and the picker only
+ * ever renders the first spread.
+ */
+const PREVIEW_PAGES = 3;
+
+async function previewPresets(agencyId, { propertyId = null, packageId = null } = {}) {
+  const { images, fields } = await gatherSources(agencyId, { propertyId, packageId });
+  const count = images.length || 6;
+
+  return brochureThemes.listPresets().map((preset) => {
+    const deck = brochureThemes.buildDeck(preset.key, count);
+    const filled = brochureDoc.fillDoc(deck, images, fields);
+
+    return {
+      ...preset,
+      pages: filled.pages.length,
+      slots: brochureDoc.countSlots(deck),
+      doc: { ...filled, pages: filled.pages.slice(0, PREVIEW_PAGES) },
+    };
   });
 }
 
@@ -196,6 +227,14 @@ async function update(agencyId, id, payload = {}) {
   }
 
   await brochure.update(patch);
+  return brochure;
+}
+
+/** Recolour / re-typeset the whole deck from a palette change. */
+async function retheme(agencyId, id, palette = {}) {
+  const brochure = await getById(agencyId, id);
+  const doc = brochureDoc.retheme(brochure.doc, palette);
+  await brochure.update({ doc });
   return brochure;
 }
 
@@ -305,10 +344,12 @@ module.exports = {
   addAssets,
   reorderAssets,
   deleteAsset,
+  previewPresets,
   list,
   getById,
   create,
   update,
+  retheme,
   remove,
   applyTemplate,
   render,

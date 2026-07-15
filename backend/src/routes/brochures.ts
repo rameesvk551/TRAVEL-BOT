@@ -49,6 +49,9 @@ const canManage = requirePermission(PERMISSIONS.AGENCY_MANAGE);
 // Editor bootstrap
 router.get('/meta', canView, controller.getMeta);
 
+// All ten shipped designs, built live against this agency's own photos.
+router.get('/presets/preview', canView, controller.previewPresets);
+
 // Image library
 router.get('/assets', canView, controller.listAssets);
 router.post('/assets', canManage, upload.array('images', MAX_IMAGES_PER_UPLOAD), controller.uploadAssets);
@@ -66,6 +69,7 @@ router.get('/:id', canView, controller.getById);
 router.put('/:id', canManage, controller.update);
 router.delete('/:id', canManage, controller.remove);
 
+router.put('/:id/theme', canManage, controller.retheme);
 router.post('/:id/template', canManage, controller.applyTemplate);
 router.post('/:id/save-as-template', canManage, controller.saveAsTemplate);
 router.get('/:id/pdf', canView, controller.downloadPdf);

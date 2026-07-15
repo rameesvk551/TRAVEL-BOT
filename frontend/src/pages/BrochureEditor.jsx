@@ -10,50 +10,12 @@ import {
 import { brochuresApi, downloadBrochurePdf } from '../api/brochuresApi';
 import BrochureCanvas from '../components/brochure/BrochureCanvas';
 import BrochureInspector from '../components/brochure/BrochureInspector';
+import BrochurePagePreview from '../components/brochure/BrochurePagePreview';
 import {
-  cdnUrl, imageStyle, newImageElement, newPage, newShapeElement, newTextElement,
-  shapeStyle, textStyle, THUMB_IMAGE_WIDTH,
+  cdnUrl, newImageElement, newPage, newShapeElement, newTextElement, THUMB_IMAGE_WIDTH,
 } from '../utils/brochureDoc';
 
 const AUTOSAVE_MS = 1500;
-
-/** Non-interactive miniature of a page, for the left-hand rail. */
-function PageThumb({ doc, page, scale }) {
-  const bg = page.bg || { type: 'color', color: '#fff' };
-  return (
-    <div
-      className="relative overflow-hidden bg-white"
-      style={{ width: doc.pageW * scale, height: doc.pageH * scale }}
-    >
-      <div
-        className="absolute left-0 top-0 origin-top-left"
-        style={{
-          width: doc.pageW,
-          height: doc.pageH,
-          transform: `scale(${scale})`,
-          backgroundColor: bg.type === 'color' ? bg.color : '#fff',
-        }}
-      >
-        {bg.type === 'image' && bg.url && (
-          <img
-            src={cdnUrl(bg.url, THUMB_IMAGE_WIDTH)}
-            alt=""
-            style={{ position: 'absolute', inset: 0, width: doc.pageW, height: doc.pageH, objectFit: 'cover' }}
-          />
-        )}
-        {[...(page.elements || [])].sort((a, b) => (a.z || 1) - (b.z || 1)).map((el) => {
-          if (el.type === 'image') {
-            return el.url
-              ? <img key={el.id} src={cdnUrl(el.url, THUMB_IMAGE_WIDTH)} alt="" style={imageStyle(el)} />
-              : <div key={el.id} style={{ ...imageStyle(el), background: '#e2e8f0' }} />;
-          }
-          if (el.type === 'text') return <div key={el.id} style={textStyle(el)}>{el.text}</div>;
-          return <div key={el.id} style={shapeStyle(el)} />;
-        })}
-      </div>
-    </div>
-  );
-}
 
 export default function BrochureEditor() {
   const { id } = useParams();
@@ -73,6 +35,7 @@ export default function BrochureEditor() {
   const [scale, setScale] = useState(0.5);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(0);
+  const [logoUploading, setLogoUploading] = useState(false);
 
   // Undo/redo. The doc is small (JSON, no bitmaps), so snapshotting whole documents
   // is cheaper and far less bug-prone than diffing element patches.
@@ -200,20 +163,56 @@ export default function BrochureEditor() {
   const patchFields = (patch) => {
     const next = { ...fields, ...patch };
     setFields(next);
-    // Text bound to a merge field mirrors the form immediately, so the canvas is
-    // never showing stale copy that the server would later overwrite on save.
+    // Field-bound elements mirror the form immediately, so the canvas is never showing
+    // stale content that the server would overwrite on the next save. Text takes the
+    // value as copy; an image (the logo) takes it as its src.
     commit((current) => ({
       ...current,
       pages: current.pages.map((p) => ({
         ...p,
-        elements: p.elements.map((el) => (
-          el.type === 'text' && el.field && next[el.field] != null
-            ? { ...el, text: next[el.field] }
-            : el
-        )),
+        elements: p.elements.map((el) => {
+          if (!el.field || next[el.field] == null) return el;
+          if (el.type === 'text') return { ...el, text: next[el.field] };
+          if (el.type === 'image') return { ...el, url: next[el.field] };
+          return el;
+        }),
       })),
     }), { snapshot: false });
     dirty.current = true;
+  };
+
+  /** Page-level geometry: size, margins. */
+  const patchDoc = (patch) => commit((current) => ({ ...current, ...patch }));
+
+  /**
+   * Recolour the whole deck. Done on the server so one implementation of the swap
+   * logic exists (brochureDoc.retheme) rather than a second copy drifting on the client.
+   */
+  const retheme = async (patch) => {
+    clearTimeout(saveTimer.current);
+    if (dirty.current) await save(doc, fields);
+    try {
+      const res = await brochuresApi.retheme(id, patch);
+      history.current.past.push(doc);
+      history.current.future = [];
+      setDoc(res.data.doc);
+      dirty.current = false;
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Could not apply the theme');
+    }
+  };
+
+  const uploadLogo = async (file) => {
+    setLogoUploading(true);
+    try {
+      const res = await brochuresApi.uploadLogo(file);
+      patchFields({ logo: res.data.url });
+      toast.success('Logo added');
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Logo upload failed');
+    } finally {
+      setLogoUploading(false);
+    }
   };
 
   const addElement = (factory) => {
@@ -428,7 +427,7 @@ export default function BrochureEditor() {
                   i === pageIndex ? 'ring-blue-500' : 'ring-slate-200 hover:ring-slate-300'
                 }`}
               >
-                <PageThumb doc={doc} page={p} scale={thumbScale} />
+                <BrochurePagePreview doc={doc} page={p} scale={thumbScale} />
               </button>
               <div className="mt-1 flex items-center justify-between px-1">
                 <span className="text-xs text-slate-500">{i + 1}</span>
@@ -523,12 +522,17 @@ export default function BrochureEditor() {
           <BrochureInspector
             element={selected}
             page={page}
+            doc={doc}
             fields={fields}
             mergeFields={meta.mergeFields}
             assets={assets}
+            logoUploading={logoUploading}
             onPatchElement={patchElement}
             onPatchPage={patchPage}
+            onPatchDoc={patchDoc}
             onPatchFields={patchFields}
+            onRetheme={retheme}
+            onUploadLogo={uploadLogo}
             onDeleteElement={() => {
               setElements(page.elements.filter((el) => el.id !== selected.id));
               setSelectedId(null);

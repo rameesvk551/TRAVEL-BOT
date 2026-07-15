@@ -2,37 +2,39 @@
 //
 // Front-end mirror of the pure parts of backend/src/services/brochureDoc.ts.
 //
-// These functions produce the style objects React renders each element with. The
-// backend produces the SAME styles as inline CSS when it renders the page for
-// Puppeteer, so the editor is a true WYSIWYG of the printed PDF. If you change a
-// style rule here, change it there — the two files are the contract.
+// These functions produce the style objects React renders each element with. The backend
+// produces the SAME styles as inline CSS when it renders the page for Puppeteer, so the
+// editor is a true WYSIWYG of the printed PDF. If you change a style rule here, change
+// it there — the two files are the contract, and a divergence shows up as "the preview
+// looked right but the PDF is wrong", which is the worst class of bug in this feature.
+
+// Millimetres to CSS px at 96dpi. The designs are authored in mm on A4.
+export const MM = 96 / 25.4;
+export const mm = (n) => Math.round(n * MM);
+export const pxToMm = (n) => Math.round((n / MM) * 10) / 10;
 
 export const PAGE_SIZES = {
-  landscape: { w: 1122, h: 794, label: 'Landscape (A4)' },
-  portrait: { w: 794, h: 1122, label: 'Portrait (A4)' },
-  square: { w: 1000, h: 1000, label: 'Square' },
+  portrait: { w: mm(210), h: mm(297), label: 'A4 Portrait (210×297mm)' },
+  landscape: { w: mm(297), h: mm(210), label: 'A4 Landscape (297×210mm)' },
+  square: { w: 1000, h: 1000, label: 'Square (1000×1000)' },
+  custom: { w: mm(210), h: mm(297), label: 'Custom…' },
 };
 
 export const FONTS = [
-  { key: 'Anton', stack: "'Anton', Impact, sans-serif", label: 'Anton (display)' },
-  { key: 'Playfair Display', stack: "'Playfair Display', Georgia, serif", label: 'Playfair (serif)' },
-  { key: 'Yellowtail', stack: "'Yellowtail', cursive", label: 'Yellowtail (script)' },
+  { key: 'Cormorant Garamond', stack: "'Cormorant Garamond', Garamond, serif", label: 'Cormorant Garamond' },
+  { key: 'Fraunces', stack: "'Fraunces', Georgia, serif", label: 'Fraunces' },
+  { key: 'Marcellus', stack: "'Marcellus', Georgia, serif", label: 'Marcellus' },
+  { key: 'Playfair Display', stack: "'Playfair Display', Georgia, serif", label: 'Playfair Display' },
+  { key: 'Lora', stack: "'Lora', Georgia, serif", label: 'Lora' },
+  { key: 'Anton', stack: "'Anton', Impact, sans-serif", label: 'Anton' },
   { key: 'Bebas Neue', stack: "'Bebas Neue', Impact, sans-serif", label: 'Bebas Neue' },
-  { key: 'Inter', stack: "'Inter', Helvetica, Arial, sans-serif", label: 'Inter (body)' },
-  { key: 'Lora', stack: "'Lora', Georgia, serif", label: 'Lora (body serif)' },
+  { key: 'Jost', stack: "'Jost', Helvetica, sans-serif", label: 'Jost' },
+  { key: 'Mulish', stack: "'Mulish', Helvetica, sans-serif", label: 'Mulish' },
+  { key: 'Karla', stack: "'Karla', Helvetica, sans-serif", label: 'Karla' },
+  { key: 'Inter', stack: "'Inter', Helvetica, Arial, sans-serif", label: 'Inter' },
   { key: 'Montserrat', stack: "'Montserrat', Helvetica, sans-serif", label: 'Montserrat' },
+  { key: 'Yellowtail', stack: "'Yellowtail', cursive", label: 'Yellowtail (script)' },
 ];
-
-export const GOOGLE_FONTS_HREF =
-  'https://fonts.googleapis.com/css2'
-  + '?family=Anton'
-  + '&family=Bebas+Neue'
-  + '&family=Inter:wght@300;400;600;700'
-  + '&family=Lora:wght@400;600'
-  + '&family=Montserrat:wght@300;400;600;700'
-  + '&family=Playfair+Display:wght@400;600;700'
-  + '&family=Yellowtail'
-  + '&display=swap';
 
 const ALIGNMENTS = ['left', 'center', 'right'];
 const FIT_MODES = ['cover', 'contain', 'fill'];
@@ -44,6 +46,20 @@ export const THUMB_IMAGE_WIDTH = 400;
 function num(value, fallback) {
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
+}
+
+/** Coerce a padding box, accepting a bare number as "all four sides". */
+export function normalizeBox(value, fallback = 0) {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return { top: value, right: value, bottom: value, left: value };
+  }
+  const raw = (value && typeof value === 'object') ? value : {};
+  return {
+    top: Math.max(0, num(raw.top, fallback)),
+    right: Math.max(0, num(raw.right, fallback)),
+    bottom: Math.max(0, num(raw.bottom, fallback)),
+    left: Math.max(0, num(raw.left, fallback)),
+  };
 }
 
 /**
@@ -63,7 +79,18 @@ export function cdnUrl(url, width) {
 
 export function fontStack(key) {
   const found = FONTS.find((f) => f.key === key);
-  return found ? found.stack : FONTS[FONTS.length - 3].stack;
+  return found ? found.stack : "'Inter', Helvetica, Arial, sans-serif";
+}
+
+function paddingCss(box) {
+  const p = normalizeBox(box);
+  return `${p.top}px ${p.right}px ${p.bottom}px ${p.left}px`;
+}
+
+function borderCss(el) {
+  const width = num(el.borderWidth, 0);
+  if (!width) return 'none';
+  return `${width}px solid ${el.borderColor || '#000000'}`;
 }
 
 export function elementStyle(el) {
@@ -93,6 +120,11 @@ export function textStyle(el) {
     color: el.color || '#111111',
     textAlign: ALIGNMENTS.includes(el.align) ? el.align : 'left',
     textTransform: el.uppercase ? 'uppercase' : 'none',
+    fontStyle: el.italic ? 'italic' : 'normal',
+    backgroundColor: el.background || 'transparent',
+    padding: paddingCss(el.padding),
+    border: borderCss(el),
+    borderRadius: `${num(el.radius, 0)}px`,
     display: 'flex',
     flexDirection: 'column',
     justifyContent: el.valign === 'center' ? 'center' : (el.valign === 'bottom' ? 'flex-end' : 'flex-start'),
@@ -107,8 +139,39 @@ export function imageStyle(el) {
     ...elementStyle(el),
     objectFit: FIT_MODES.includes(el.fit) ? el.fit : 'cover',
     borderRadius: `${num(el.radius, 0)}px`,
+    border: borderCss(el),
     overflow: 'hidden',
-    backgroundColor: '#e5e7eb',
+    backgroundColor: el.background || '#e5e7eb',
+  };
+}
+
+/**
+ * Padding on an <img> grows the box instead of insetting the pixels, so a padded image
+ * has to be wrapped. The backend renderer does the same — keep the two in step.
+ */
+export function imageNeedsWrapper(el) {
+  const p = normalizeBox(el.padding);
+  return !!(p.top || p.right || p.bottom || p.left);
+}
+
+export function imageWrapperStyle(el) {
+  return {
+    ...elementStyle(el),
+    padding: paddingCss(el.padding),
+    backgroundColor: el.background || 'transparent',
+    border: borderCss(el),
+    borderRadius: `${num(el.radius, 0)}px`,
+    overflow: 'hidden',
+  };
+}
+
+export function imageInnerStyle(el) {
+  return {
+    width: '100%',
+    height: '100%',
+    objectFit: FIT_MODES.includes(el.fit) ? el.fit : 'cover',
+    borderRadius: `${Math.max(0, num(el.radius, 0) - num(el.borderWidth, 0))}px`,
+    display: 'block',
   };
 }
 
@@ -116,13 +179,16 @@ export function shapeStyle(el) {
   const kind = SHAPE_KINDS.includes(el.shape) ? el.shape : 'rect';
   return {
     ...elementStyle(el),
-    backgroundColor: el.fill || 'rgba(0,0,0,0.35)',
+    // `background`, not `backgroundColor` — the caption plates and veils are gradients.
+    background: el.fill || 'rgba(0,0,0,0.35)',
     borderRadius: kind === 'ellipse' ? '50%' : `${num(el.radius, 0)}px`,
     border: el.strokeWidth ? `${num(el.strokeWidth, 0)}px solid ${el.stroke || '#000'}` : 'none',
   };
 }
 
 // --- editor-only helpers ---------------------------------------------------
+
+const EMPTY_BOX = { top: 0, right: 0, bottom: 0, left: 0 };
 
 let idCounter = 0;
 export function newId(prefix = 'e') {
@@ -135,16 +201,18 @@ export function newTextElement(pageW, pageH) {
     id: newId('t'), type: 'text', text: 'Your text', field: '',
     x: Math.round(pageW / 2 - 200), y: Math.round(pageH / 2 - 30), w: 400, h: 60,
     rotate: 0, z: 10, opacity: 1,
-    font: 'Inter', size: 32, weight: 600, lineHeight: 1.25, letterSpacing: 0,
-    color: '#111827', align: 'left', valign: 'top', uppercase: false,
+    font: 'Jost', size: 32, weight: 600, lineHeight: 1.25, letterSpacing: 0,
+    color: '#111827', align: 'left', valign: 'top', uppercase: false, italic: false,
+    padding: { ...EMPTY_BOX }, borderWidth: 0, borderColor: '#000000', background: '', radius: 0,
   };
 }
 
 export function newImageElement(pageW, pageH, url = '') {
   return {
-    id: newId('i'), type: 'image', url, slot: '',
+    id: newId('i'), type: 'image', url, slot: '', field: '',
     x: Math.round(pageW / 2 - 200), y: Math.round(pageH / 2 - 140), w: 400, h: 280,
     rotate: 0, z: 10, opacity: 1, fit: 'cover', radius: 8,
+    padding: { ...EMPTY_BOX }, borderWidth: 0, borderColor: '#000000', background: '',
   };
 }
 
@@ -157,6 +225,6 @@ export function newShapeElement(pageW, pageH) {
   };
 }
 
-export function newPage() {
-  return { id: newId('p'), bg: { type: 'color', color: '#ffffff' }, elements: [] };
+export function newPage(bgColor = '#ffffff') {
+  return { id: newId('p'), bg: { type: 'color', color: bgColor }, elements: [] };
 }

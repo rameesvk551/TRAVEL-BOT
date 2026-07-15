@@ -11,30 +11,56 @@
 // this file (PAGE_SIZES, FONTS, cdnUrl, elementStyle, textStyle, imageStyle).
 // Keep them in step; `npm test` guards the doc normalizer against silent drops.
 
+// Millimetres to CSS px at 96dpi. The hand-built reference brochures are authored in
+// mm (A4 = 210x297mm, 18mm gutters), so the layout kit and the page-size UI both need
+// to speak mm even though the document itself stores px.
+const MM = 96 / 25.4;
+const mm = (n) => Math.round(n * MM);
+const pxToMm = (n) => Math.round((n / MM) * 10) / 10;
+
+// Points to px, for type sizes lifted from the reference CSS (9.6pt body, 66pt cover).
+const pt = (n) => Math.round((n * 96) / 72);
+
 const PAGE_SIZES = Object.freeze({
-  // A4 at 96dpi. Landscape matches the reference Canva decks agencies use today.
-  landscape: { w: 1122, h: 794, label: 'Landscape (A4)' },
-  portrait: { w: 794, h: 1122, label: 'Portrait (A4)' },
-  square: { w: 1000, h: 1000, label: 'Square' },
+  portrait: { w: mm(210), h: mm(297), label: 'A4 Portrait (210×297mm)' },
+  landscape: { w: mm(297), h: mm(210), label: 'A4 Landscape (297×210mm)' },
+  square: { w: 1000, h: 1000, label: 'Square (1000×1000)' },
+  custom: { w: mm(210), h: mm(297), label: 'Custom…' },
 });
 
 const FONTS = Object.freeze([
-  { key: 'Anton', stack: "'Anton', Impact, sans-serif", label: 'Anton (display)' },
-  { key: 'Playfair Display', stack: "'Playfair Display', Georgia, serif", label: 'Playfair (serif)' },
-  { key: 'Yellowtail', stack: "'Yellowtail', cursive", label: 'Yellowtail (script)' },
+  // Display / serif
+  { key: 'Cormorant Garamond', stack: "'Cormorant Garamond', Garamond, serif", label: 'Cormorant Garamond' },
+  { key: 'Fraunces', stack: "'Fraunces', Georgia, serif", label: 'Fraunces' },
+  { key: 'Marcellus', stack: "'Marcellus', Georgia, serif", label: 'Marcellus' },
+  { key: 'Playfair Display', stack: "'Playfair Display', Georgia, serif", label: 'Playfair Display' },
+  { key: 'Lora', stack: "'Lora', Georgia, serif", label: 'Lora' },
+  // Display / sans
+  { key: 'Anton', stack: "'Anton', Impact, sans-serif", label: 'Anton' },
   { key: 'Bebas Neue', stack: "'Bebas Neue', Impact, sans-serif", label: 'Bebas Neue' },
-  { key: 'Inter', stack: "'Inter', Helvetica, Arial, sans-serif", label: 'Inter (body)' },
-  { key: 'Lora', stack: "'Lora', Georgia, serif", label: 'Lora (body serif)' },
+  // Body / sans
+  { key: 'Jost', stack: "'Jost', Helvetica, sans-serif", label: 'Jost' },
+  { key: 'Mulish', stack: "'Mulish', Helvetica, sans-serif", label: 'Mulish' },
+  { key: 'Karla', stack: "'Karla', Helvetica, sans-serif", label: 'Karla' },
+  { key: 'Inter', stack: "'Inter', Helvetica, Arial, sans-serif", label: 'Inter' },
   { key: 'Montserrat', stack: "'Montserrat', Helvetica, sans-serif", label: 'Montserrat' },
+  // Script
+  { key: 'Yellowtail', stack: "'Yellowtail', cursive", label: 'Yellowtail (script)' },
 ]);
 
 const GOOGLE_FONTS_HREF =
   'https://fonts.googleapis.com/css2'
   + '?family=Anton'
   + '&family=Bebas+Neue'
+  + '&family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;1,400'
+  + '&family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,600;9..144,700'
   + '&family=Inter:wght@300;400;600;700'
+  + '&family=Jost:wght@300;400;500;600'
+  + '&family=Karla:wght@300;400;600;700'
   + '&family=Lora:wght@400;600'
+  + '&family=Marcellus'
   + '&family=Montserrat:wght@300;400;600;700'
+  + '&family=Mulish:wght@300;400;600;700'
   + '&family=Playfair+Display:wght@400;600;700'
   + '&family=Yellowtail'
   + '&display=swap';
@@ -44,7 +70,7 @@ const FIT_MODES = Object.freeze(['cover', 'contain', 'fill']);
 const ALIGNMENTS = Object.freeze(['left', 'center', 'right']);
 const SHAPE_KINDS = Object.freeze(['rect', 'ellipse', 'line']);
 
-/** Merge fields a text element can bind to. Refilled from the linked Property/form. */
+/** Merge fields a TEXT element can bind to. Refilled from the linked Property/form. */
 const MERGE_FIELDS = Object.freeze([
   { key: 'property_name', label: 'Property name' },
   { key: 'tagline', label: 'Tagline' },
@@ -58,7 +84,18 @@ const MERGE_FIELDS = Object.freeze([
   { key: 'agency_name', label: 'Agency name' },
 ]);
 
+/**
+ * Merge fields an IMAGE element can bind to. The logo is uploaded once per brochure and
+ * every logo-bound image on every page picks it up, so re-branding a whole deck is one
+ * upload rather than an edit per page. Unlike a photo `slot`, a field is not consumed
+ * from the photo pool — the same URL fills every element bound to it.
+ */
+const IMAGE_FIELDS = Object.freeze([
+  { key: 'logo', label: 'Logo' },
+]);
+
 const MERGE_FIELD_KEYS = new Set(MERGE_FIELDS.map((f) => f.key));
+const IMAGE_FIELD_KEYS = new Set(IMAGE_FIELDS.map((f) => f.key));
 
 const MAX_PAGES = 60;
 const MAX_ELEMENTS_PER_PAGE = 80;
@@ -115,6 +152,18 @@ function elementStyle(el) {
   return style;
 }
 
+/** CSS padding shorthand from a {top,right,bottom,left} box. */
+function paddingCss(box) {
+  const p = normalizeBox(box);
+  return `${p.top}px ${p.right}px ${p.bottom}px ${p.left}px`;
+}
+
+function borderCss(el) {
+  const width = num(el.borderWidth, 0);
+  if (!width) return 'none';
+  return `${width}px solid ${el.borderColor || '#000000'}`;
+}
+
 function textStyle(el) {
   return {
     ...elementStyle(el),
@@ -126,6 +175,11 @@ function textStyle(el) {
     color: el.color || '#111111',
     textAlign: ALIGNMENTS.includes(el.align) ? el.align : 'left',
     textTransform: el.uppercase ? 'uppercase' : 'none',
+    fontStyle: el.italic ? 'italic' : 'normal',
+    backgroundColor: el.background || 'transparent',
+    padding: paddingCss(el.padding),
+    border: borderCss(el),
+    borderRadius: `${num(el.radius, 0)}px`,
     display: 'flex',
     flexDirection: 'column',
     justifyContent: el.valign === 'center' ? 'center' : (el.valign === 'bottom' ? 'flex-end' : 'flex-start'),
@@ -135,13 +189,47 @@ function textStyle(el) {
   };
 }
 
+/**
+ * Images carry their padding on a wrapper, not on the <img> itself: padding on a
+ * replaced element does not inset the pixels, it just grows the box. renderElement and
+ * the React canvas both wrap a padded image accordingly — see `imageNeedsWrapper`.
+ */
 function imageStyle(el) {
   return {
     ...elementStyle(el),
     objectFit: FIT_MODES.includes(el.fit) ? el.fit : 'cover',
     borderRadius: `${num(el.radius, 0)}px`,
+    border: borderCss(el),
     overflow: 'hidden',
-    backgroundColor: '#e5e7eb',
+    backgroundColor: el.background || '#e5e7eb',
+  };
+}
+
+function imageNeedsWrapper(el) {
+  const p = normalizeBox(el.padding);
+  return !!(p.top || p.right || p.bottom || p.left);
+}
+
+/** Outer box for a padded image; the <img> then fills the padded area. */
+function imageWrapperStyle(el) {
+  return {
+    ...elementStyle(el),
+    padding: paddingCss(el.padding),
+    backgroundColor: el.background || 'transparent',
+    border: borderCss(el),
+    borderRadius: `${num(el.radius, 0)}px`,
+    overflow: 'hidden',
+  };
+}
+
+/** The <img> inside a padded wrapper: fills it, no absolute positioning of its own. */
+function imageInnerStyle(el) {
+  return {
+    width: '100%',
+    height: '100%',
+    objectFit: FIT_MODES.includes(el.fit) ? el.fit : 'cover',
+    borderRadius: `${Math.max(0, num(el.radius, 0) - num(el.borderWidth, 0))}px`,
+    display: 'block',
   };
 }
 
@@ -149,9 +237,25 @@ function shapeStyle(el) {
   const kind = SHAPE_KINDS.includes(el.shape) ? el.shape : 'rect';
   return {
     ...elementStyle(el),
-    backgroundColor: el.fill || 'rgba(0,0,0,0.35)',
+    // `background`, not `backgroundColor`: the caption plates and veils are gradients,
+    // and backgroundColor silently rejects a linear-gradient() — the plate just vanishes.
+    background: el.fill || 'rgba(0,0,0,0.35)',
     borderRadius: kind === 'ellipse' ? '50%' : `${num(el.radius, 0)}px`,
     border: el.strokeWidth ? `${num(el.strokeWidth, 0)}px solid ${el.stroke || '#000'}` : 'none',
+  };
+}
+
+/** Coerce a padding/margin box, accepting a bare number as "all four sides". */
+function normalizeBox(value, fallback = 0) {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return { top: value, right: value, bottom: value, left: value };
+  }
+  const raw = (value && typeof value === 'object') ? value : {};
+  return {
+    top: Math.max(0, num(raw.top, fallback)),
+    right: Math.max(0, num(raw.right, fallback)),
+    bottom: Math.max(0, num(raw.bottom, fallback)),
+    left: Math.max(0, num(raw.left, fallback)),
   };
 }
 
@@ -180,22 +284,105 @@ function num(value, fallback) {
  */
 function normalizeDoc(input) {
   const raw = coerceObject(input);
-  const sizeKey = PAGE_SIZES[raw.size] ? raw.size : 'landscape';
+  const sizeKey = PAGE_SIZES[raw.size] ? raw.size : 'portrait';
   const size = PAGE_SIZES[sizeKey];
 
   const pages = asArray(raw.pages).slice(0, MAX_PAGES).map((page, i) => normalizePage(page, i));
 
   return {
     size: sizeKey,
-    pageW: num(raw.pageW, size.w),
-    pageH: num(raw.pageH, size.h),
+    // Clamped rather than fixed to the preset, so a user can dial in any page box.
+    pageW: clamp(num(raw.pageW, size.w), 200, 5000),
+    pageH: clamp(num(raw.pageH, size.h), 200, 5000),
+    // The page gutter. Drawn as a guide in the editor and used by the layout kit to
+    // place content; it does not clip, so an element may deliberately bleed past it.
+    margin: normalizeBox(raw.margin, 0),
+    // The palette the deck was built from. Kept whole (not just an accent) so `retheme`
+    // can recolour every page by swapping old values for new — see below.
     theme: {
-      primary: str(raw.theme?.primary, '#0e7490'),
-      fontHeading: str(raw.theme?.fontHeading, 'Anton'),
-      fontBody: str(raw.theme?.fontBody, 'Inter'),
+      bg: str(raw.theme?.bg, '#ffffff'),
+      panel: str(raw.theme?.panel, '#f5f5f5'),
+      ink: str(raw.theme?.ink, '#111111'),
+      inkSoft: str(raw.theme?.inkSoft, '#404040'),
+      inkMute: str(raw.theme?.inkMute, '#8a8a8a'),
+      accent: str(raw.theme?.accent, '#c9a86a'),
+      accent2: str(raw.theme?.accent2, '#e2cf9f'),
+      fontHeading: str(raw.theme?.fontHeading, 'Cormorant Garamond'),
+      fontBody: str(raw.theme?.fontBody, 'Jost'),
     },
     pages: pages.length ? pages : [normalizePage({}, 0)],
   };
+}
+
+const THEME_COLOR_KEYS = ['bg', 'panel', 'ink', 'inkSoft', 'inkMute', 'accent', 'accent2'];
+
+/** How many times an exact colour string appears across a deck (backgrounds + elements). */
+function countColor(doc, color) {
+  if (!color) return 0;
+  const target = color.toLowerCase();
+  const normalized = normalizeDoc(doc);
+  let count = 0;
+  const hit = (v) => { if (typeof v === 'string' && v.toLowerCase() === target) count += 1; };
+  normalized.pages.forEach((page) => {
+    if (page.bg.type === 'color') hit(page.bg.color);
+    page.elements.forEach((el) => {
+      ['color', 'background', 'borderColor', 'fill', 'stroke'].forEach((k) => hit(el[k]));
+    });
+  });
+  return count;
+}
+
+/**
+ * Recolour / re-typeset an entire deck from a palette change.
+ *
+ * Presets emit their colours straight from the palette, so every gold rule, numeral and
+ * eyebrow on every page literally holds the same accent string. Swapping old values for
+ * new therefore restyles the whole document in one pass — while anything the designer
+ * hand-picked (a colour that matches no palette entry) is left alone, which is exactly
+ * the behaviour you want: global theming that does not stomp on manual overrides.
+ *
+ * @param {object} doc
+ * @param {object} patch - partial palette, e.g. { accent: '#b0592f', fontHeading: 'Lora' }
+ */
+function retheme(doc, patch = {}) {
+  const current = normalizeDoc(doc);
+  const next = { ...current.theme, ...patch };
+
+  const colorMap = new Map();
+  THEME_COLOR_KEYS.forEach((key) => {
+    const from = current.theme[key];
+    const to = next[key];
+    if (from && to && from !== to) colorMap.set(from.toLowerCase(), to);
+  });
+
+  const fontMap = new Map();
+  if (patch.fontHeading && patch.fontHeading !== current.theme.fontHeading) {
+    fontMap.set(current.theme.fontHeading, patch.fontHeading);
+  }
+  if (patch.fontBody && patch.fontBody !== current.theme.fontBody) {
+    fontMap.set(current.theme.fontBody, patch.fontBody);
+  }
+
+  const swapColor = (value) => {
+    if (typeof value !== 'string' || !value) return value;
+    return colorMap.get(value.toLowerCase()) || value;
+  };
+  const swapFont = (value) => fontMap.get(value) || value;
+
+  const pages = current.pages.map((page) => ({
+    ...page,
+    bg: page.bg.type === 'color' ? { ...page.bg, color: swapColor(page.bg.color) } : page.bg,
+    elements: page.elements.map((el) => {
+      const patched = { ...el };
+      ['color', 'background', 'borderColor', 'fill', 'stroke'].forEach((key) => {
+        if (patched[key]) patched[key] = swapColor(patched[key]);
+      });
+      if (patched.font) patched.font = swapFont(patched.font);
+      return patched;
+    }),
+  }));
+
+  return { ...current, theme: next, pages };
 }
 
 function normalizePage(page, index) {
@@ -244,12 +431,19 @@ function normalizeElement(el) {
   };
 
   if (raw.type === 'image') {
+    const field = str(raw.field, '');
     return {
       ...base,
       url: str(raw.url, ''),
       slot: str(raw.slot, ''),
+      // e.g. 'logo' — bound to an uploaded asset rather than consumed from the photo pool.
+      field: IMAGE_FIELD_KEYS.has(field) ? field : '',
       fit: FIT_MODES.includes(raw.fit) ? raw.fit : 'cover',
       radius: Math.max(0, num(raw.radius, 0)),
+      padding: normalizeBox(raw.padding, 0),
+      borderWidth: clamp(num(raw.borderWidth, 0), 0, 40),
+      borderColor: str(raw.borderColor, '#000000'),
+      background: str(raw.background, ''),
     };
   }
 
@@ -259,7 +453,7 @@ function normalizeElement(el) {
       ...base,
       text: str(raw.text, ''),
       field: MERGE_FIELD_KEYS.has(field) ? field : '',
-      font: str(raw.font, 'Inter'),
+      font: str(raw.font, 'Jost'),
       size: clamp(num(raw.size, 24), 6, 400),
       weight: clamp(num(raw.weight, 400), 100, 900),
       lineHeight: clamp(num(raw.lineHeight, 1.2), 0.6, 4),
@@ -268,6 +462,12 @@ function normalizeElement(el) {
       align: ALIGNMENTS.includes(raw.align) ? raw.align : 'left',
       valign: ['top', 'center', 'bottom'].includes(raw.valign) ? raw.valign : 'top',
       uppercase: !!raw.uppercase,
+      italic: !!raw.italic,
+      padding: normalizeBox(raw.padding, 0),
+      borderWidth: clamp(num(raw.borderWidth, 0), 0, 40),
+      borderColor: str(raw.borderColor, '#000000'),
+      background: str(raw.background, ''),
+      radius: Math.max(0, num(raw.radius, 0)),
     };
   }
 
@@ -335,6 +535,12 @@ function fillDoc(doc, images = [], fields = {}) {
       : page.bg;
 
     const elements = page.elements.map((el) => {
+      if (el.type === 'image' && el.field) {
+        // A field-bound image (the logo) is NOT drawn from the photo pool: the same
+        // upload fills every element bound to it, on every page.
+        const value = fields[el.field];
+        return typeof value === 'string' && value.trim() ? { ...el, url: value } : el;
+      }
       if (el.type === 'image' && el.slot && !el.url) {
         return { ...el, url: next() };
       }
@@ -367,7 +573,9 @@ function toTemplateDoc(doc) {
     ...page,
     bg: page.bg.type === 'image' && page.bg.slot ? { ...page.bg, url: '' } : page.bg,
     elements: page.elements.map((el) => {
-      if (el.type === 'image' && el.slot) return { ...el, url: '' };
+      // Release both slotted photos and field-bound images (the logo), so reusing the
+      // design for another property re-brands it instead of carrying the old logo over.
+      if (el.type === 'image' && (el.slot || el.field)) return { ...el, url: '' };
       return el;
     }),
   }));
@@ -395,10 +603,21 @@ function esc(s) {
 
 function renderElement(el, imageWidth) {
   if (el.type === 'image') {
+    // A logo is usually a transparent PNG that must sit whole inside its badge, so it
+    // is served un-cropped at its natural aspect; photos get the size-capped derivative.
+    const width = el.field === 'logo' ? 600 : imageWidth;
+
     if (!el.url) {
-      return `<div style="${styleToCss({ ...imageStyle(el), backgroundColor: '#e5e7eb' })}"></div>`;
+      return `<div style="${styleToCss({ ...imageStyle(el), backgroundColor: el.background || '#e5e7eb' })}"></div>`;
     }
-    return `<img src="${esc(cdnUrl(el.url, imageWidth))}" style="${styleToCss(imageStyle(el))}" />`;
+
+    if (imageNeedsWrapper(el)) {
+      return `<div style="${styleToCss(imageWrapperStyle(el))}">`
+        + `<img src="${esc(cdnUrl(el.url, width))}" style="${styleToCss(imageInnerStyle(el))}" />`
+        + '</div>';
+    }
+
+    return `<img src="${esc(cdnUrl(el.url, width))}" style="${styleToCss(imageStyle(el))}" />`;
   }
   if (el.type === 'text') {
     return `<div style="${styleToCss(textStyle(el))}">${esc(el.text)}</div>`;
@@ -471,20 +690,31 @@ module.exports = {
   PAGE_SIZES,
   FONTS,
   MERGE_FIELDS,
+  IMAGE_FIELDS,
   ELEMENT_TYPES,
   MAX_PAGES,
   MAX_ELEMENTS_PER_PAGE,
   PRINT_IMAGE_WIDTH,
   THUMB_IMAGE_WIDTH,
+  MM,
+  mm,
+  pxToMm,
+  pt,
   cdnUrl,
   elementStyle,
   textStyle,
   imageStyle,
+  imageNeedsWrapper,
+  imageWrapperStyle,
+  imageInnerStyle,
   shapeStyle,
   fontStack,
+  normalizeBox,
   normalizeDoc,
   fillDoc,
   countSlots,
+  countColor,
+  retheme,
   toTemplateDoc,
   renderDocHtml,
 };

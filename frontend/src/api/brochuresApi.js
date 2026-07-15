@@ -9,6 +9,25 @@ export const brochuresApi = {
   update: (id, data) => client.put(`/brochures/${id}`, data).then((r) => r.data),
   delete: (id) => client.delete(`/brochures/${id}`).then((r) => r.data),
 
+  /** All ten shipped designs, built live against this agency's own photos. */
+  previewPresets: (params) =>
+    client.get('/brochures/presets/preview', { params }).then((r) => r.data),
+
+  /** Recolour / re-typeset the whole deck in one call. */
+  retheme: (id, theme) => client.put(`/brochures/${id}/theme`, { theme }).then((r) => r.data),
+
+  /**
+   * The logo. Reuses the existing company-asset endpoint rather than adding another
+   * upload path — it already stores to Cloudinary and returns a public URL.
+   */
+  uploadLogo: (file) => {
+    const form = new FormData();
+    form.append('image', file);
+    return client
+      .post('/agencies/me/upload-asset', form, { headers: { 'Content-Type': 'multipart/form-data' } })
+      .then((r) => r.data);
+  },
+
   applyTemplate: (id, templateId) =>
     client.post(`/brochures/${id}/template`, { templateId }).then((r) => r.data),
   saveAsTemplate: (id, name) =>

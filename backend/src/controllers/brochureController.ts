@@ -4,7 +4,7 @@ const brochureService = require('../services/brochureService');
 const brochureThemes = require('../services/brochureThemes');
 const brochureDoc = require('../services/brochureDoc');
 
-/** Everything the editor needs to boot: page sizes, fonts, merge fields, themes. */
+/** Everything the editor needs to boot: page sizes, fonts, merge fields, presets. */
 async function getMeta(req, res, next) {
   try {
     res.json({
@@ -13,13 +13,42 @@ async function getMeta(req, res, next) {
         pageSizes: brochureDoc.PAGE_SIZES,
         fonts: brochureDoc.FONTS,
         mergeFields: brochureDoc.MERGE_FIELDS,
-        themes: brochureThemes.listThemes(),
+        imageFields: brochureDoc.IMAGE_FIELDS,
+        presets: brochureThemes.listPresets(),
         limits: {
           maxPages: brochureDoc.MAX_PAGES,
           maxElementsPerPage: brochureDoc.MAX_ELEMENTS_PER_PAGE,
         },
       },
     });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * Every shipped design, built against THIS agency's photos.
+ *
+ * The picker renders these live, so the customer sees their own resort in all ten looks
+ * before committing to one — which is the whole "oh, I want that" moment.
+ */
+async function previewPresets(req, res, next) {
+  try {
+    const previews = await brochureService.previewPresets(req.agency.id, {
+      propertyId: req.query.propertyId || null,
+      packageId: req.query.packageId || null,
+    });
+    res.json({ success: true, data: previews });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// PUT /:id/theme — recolour / re-typeset the whole deck.
+async function retheme(req, res, next) {
+  try {
+    const brochure = await brochureService.retheme(req.agency.id, req.params.id, req.body.theme || {});
+    res.json({ success: true, data: brochure, message: 'Theme applied' });
   } catch (err) {
     next(err);
   }
@@ -189,6 +218,8 @@ async function deleteTemplate(req, res, next) {
 
 module.exports = {
   getMeta,
+  previewPresets,
+  retheme,
   list,
   getById,
   create,

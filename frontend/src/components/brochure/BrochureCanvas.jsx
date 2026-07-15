@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  cdnUrl, elementStyle, imageStyle, shapeStyle, textStyle, PRINT_IMAGE_WIDTH,
+  cdnUrl, elementStyle, imageStyle, imageInnerStyle, imageNeedsWrapper, imageWrapperStyle,
+  normalizeBox, shapeStyle, textStyle, PRINT_IMAGE_WIDTH,
 } from '../../utils/brochureDoc';
 
 // Nudge/snap step. Holding Shift while dragging or resizing disables snapping.
@@ -183,22 +184,34 @@ export default function BrochureCanvas({
 
     if (el.type === 'image') {
       if (!el.url) {
+        const label = el.field === 'logo' ? 'Upload a logo' : (el.slot ? 'Drop a photo' : 'Empty');
         return (
           <div
             {...common}
-            style={{ ...imageStyle(el), cursor: 'move' }}
-            className="flex items-center justify-center border-2 border-dashed border-slate-300"
+            style={{ ...imageStyle(el), cursor: 'move', backgroundColor: el.background || '#e5e7eb' }}
+            className="flex items-center justify-center border-2 border-dashed border-slate-400/60"
           >
-            <span className="text-xs font-medium text-slate-500">
-              {el.slot ? 'Drop a photo' : 'Empty'}
-            </span>
+            <span className="px-1 text-center text-[10px] font-medium text-slate-500">{label}</span>
           </div>
         );
       }
+
+      const src = cdnUrl(el.url, el.field === 'logo' ? 600 : PRINT_IMAGE_WIDTH);
+
+      // A padded image is wrapped, exactly as the PDF renderer does it — padding on a
+      // bare <img> grows the box instead of insetting the picture.
+      if (imageNeedsWrapper(el)) {
+        return (
+          <div {...common} style={{ ...imageWrapperStyle(el), cursor: 'move' }}>
+            <img src={src} alt="" draggable={false} style={imageInnerStyle(el)} />
+          </div>
+        );
+      }
+
       return (
         <img
           {...common}
-          src={cdnUrl(el.url, PRINT_IMAGE_WIDTH)}
+          src={src}
           alt=""
           draggable={false}
           style={{ ...imageStyle(el), cursor: 'move' }}
@@ -270,6 +283,27 @@ export default function BrochureCanvas({
             }}
           />
         )}
+
+        {/* Margin guide. Screen-only — it is not an element, so it never prints. */}
+        {(() => {
+          const m = normalizeBox(doc.margin);
+          if (!(m.top || m.right || m.bottom || m.left)) return null;
+          return (
+            <div
+              aria-hidden
+              style={{
+                position: 'absolute',
+                left: m.left,
+                top: m.top,
+                width: doc.pageW - m.left - m.right,
+                height: doc.pageH - m.top - m.bottom,
+                border: `${1 / scale}px dashed rgba(37,99,235,0.35)`,
+                pointerEvents: 'none',
+                zIndex: 997,
+              }}
+            />
+          );
+        })()}
 
         {[...elements].sort((a, b) => (a.z || 1) - (b.z || 1)).map(renderElement)}
 
