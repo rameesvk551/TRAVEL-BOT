@@ -1,7 +1,8 @@
 import {
-  cdnUrl, imageStyle, imageInnerStyle, imageNeedsWrapper, imageWrapperStyle,
+  cdnUrl, elementStyle, imageStyle, imageInnerStyle, imageNeedsWrapper, imageWrapperStyle,
   shapeStyle, textStyle, THUMB_IMAGE_WIDTH,
 } from '../../utils/brochureDoc';
+import { ICONS, DEFAULT_ICON } from '../../utils/brochureIcons';
 
 /**
  * A non-interactive, scaled thumbnail of one page — the same style helpers the editor
@@ -52,6 +53,22 @@ export default function BrochurePagePreview({ doc, page, scale, imageWidth = THU
             return <img key={el.id} src={src} alt="" style={imageStyle(el)} />;
           }
           if (el.type === 'text') return <div key={el.id} style={textStyle(el)}>{el.text}</div>;
+          if (el.type === 'icon') {
+            const def = ICONS[el.icon] || ICONS[DEFAULT_ICON];
+            return (
+              <svg
+                key={el.id}
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke={el.color || '#111'}
+                strokeWidth={el.strokeWidth || 1.5}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                style={{ ...elementStyle(el), overflow: 'visible' }}
+                dangerouslySetInnerHTML={{ __html: def.body }}
+              />
+            );
+          }
           return <div key={el.id} style={shapeStyle(el)} />;
         })}
       </div>

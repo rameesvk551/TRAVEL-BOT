@@ -3,6 +3,7 @@ import {
   cdnUrl, elementStyle, imageStyle, imageInnerStyle, imageNeedsWrapper, imageWrapperStyle,
   normalizeBox, shapeStyle, textStyle, PRINT_IMAGE_WIDTH,
 } from '../../utils/brochureDoc';
+import { ICONS, DEFAULT_ICON } from '../../utils/brochureIcons';
 
 // Nudge/snap step. Holding Shift while dragging or resizing disables snapping.
 const GRID = 8;
@@ -236,6 +237,23 @@ export default function BrochureCanvas({
         <div {...common} style={{ ...textStyle(el), cursor: 'move' }}>
           {el.text}
         </div>
+      );
+    }
+
+    if (el.type === 'icon') {
+      const def = ICONS[el.icon] || ICONS[DEFAULT_ICON];
+      return (
+        <svg
+          {...common}
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke={el.color || '#111'}
+          strokeWidth={el.strokeWidth || 1.5}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          style={{ ...elementStyle(el), overflow: 'visible', cursor: 'move' }}
+          dangerouslySetInnerHTML={{ __html: def.body }}
+        />
       );
     }
 

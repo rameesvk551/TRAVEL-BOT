@@ -229,6 +229,14 @@ export function newShapeElement(pageW, pageH) {
   };
 }
 
+export function newIconElement(pageW, pageH) {
+  return {
+    id: newId('ic'), type: 'icon', icon: 'star',
+    x: Math.round(pageW / 2 - 24), y: Math.round(pageH / 2 - 24), w: 48, h: 48,
+    rotate: 0, z: 10, opacity: 1, color: '#111827', strokeWidth: 1.5,
+  };
+}
+
 export function newPage(bgColor = '#ffffff') {
   return { id: newId('p'), bg: { type: 'color', color: bgColor }, elements: [] };
 }

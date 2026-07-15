@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { FONTS, PAGE_SIZES, pxToMm, mm as toPx } from '../../utils/brochureDoc';
+import { ICONS, ICON_KEYS } from '../../utils/brochureIcons';
 
 const input = 'w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm text-slate-900 '
   + 'transition focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/5';
@@ -227,7 +228,7 @@ export default function BrochureInspector({
             </div>
           </Section>
 
-          {element.type !== 'shape' && (
+          {(element.type === 'text' || element.type === 'image') && (
             <Section title="Spacing & border">
               <BoxField label="Padding" value={element.padding} onChange={(padding) => onPatchElement({ padding })} />
               <div className="grid grid-cols-2 gap-x-3">
@@ -347,6 +348,18 @@ export default function BrochureInspector({
               <Color label="Border colour" value={element.stroke} allowEmpty onChange={(stroke) => onPatchElement({ stroke })} />
             </Section>
           )}
+
+          {element.type === 'icon' && (
+            <Section title="Icon">
+              <Field label="Icon">
+                <select className={input} value={element.icon} onChange={(e) => onPatchElement({ icon: e.target.value })}>
+                  {ICON_KEYS.map((k) => <option key={k} value={k}>{ICONS[k].label}</option>)}
+                </select>
+              </Field>
+              <Color label="Colour" value={element.color} onChange={(color) => onPatchElement({ color })} />
+              <Num label="Line weight" value={element.strokeWidth} min={0.2} max={8} step={0.1} onChange={(strokeWidth) => onPatchElement({ strokeWidth })} />
+            </Section>
+          )}
         </>
       )}
 
@@ -385,6 +398,8 @@ export default function BrochureInspector({
                     <option value="linear-gradient(0deg, rgba(0,0,0,0.65) 0%, rgba(0,0,0,0.10) 100%)">Fade to dark (top)</option>
                     <option value="rgba(0,0,0,0.35)">Even 35%</option>
                     <option value="rgba(0,0,0,0.55)">Even 55%</option>
+                    <option value="linear-gradient(180deg, rgba(8,40,44,0.42) 0%, rgba(8,40,44,0.08) 45%, rgba(8,40,44,0.66) 100%)">Coastal teal veil</option>
+                    <option value="linear-gradient(180deg, rgba(6,12,28,0.55) 0%, rgba(6,12,28,0.15) 42%, rgba(6,12,28,0.75) 100%)">Deco midnight veil</option>
                   </select>
                 </Field>
               </>
