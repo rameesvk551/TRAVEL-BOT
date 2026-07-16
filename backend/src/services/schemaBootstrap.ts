@@ -2993,6 +2993,8 @@ async function ensureActivityLogsTable() {
  * agency's image library. Access is gated on agencies.features.brochureBuilder.
  */
 async function ensureBrochureTables() {
+  const queryInterface = sequelize.getQueryInterface();
+
   if (!(await tableExists('brochures'))) {
     await queryInterface.createTable('brochures', {
       id: { type: Sequelize.UUID, defaultValue: Sequelize.UUIDV4, primaryKey: true, allowNull: false },
