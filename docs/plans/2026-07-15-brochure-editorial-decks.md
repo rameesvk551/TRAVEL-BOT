@@ -22,23 +22,21 @@
 - Create: `backend/src/services/brochureIcons.ts`
 - Create: `frontend/src/utils/brochureIcons.js`
 
-**Step 1: Author the registry.** Each entry is `{ label, paths: string[] }`, drawn on a 24×24 grid, stroke-based (no fill). Lift the 9 amenity paths **verbatim** from `Dunecastle-Brochure-06-Coastal-Teal.html` line 370 (`pool, kids, games, dining, parking, grill, outdoor, party, ac`), then add: `wifi, bed, bath, spa, gym, view, pet, coffee, star`. Structure:
+**Step 1: Author the registry.** Each entry is `{ label, body }` where `body` is the **raw inner SVG markup** (a string of `<path>`/`<rect>`/`<circle>` elements) drawn on a 24×24 grid, stroke-based (no fill), with NO `stroke`/`stroke-width` attributes on the inner elements — those are inherited from the parent `<svg>` so the icon recolors from `el.color`. A `body` string (not a `paths` array) is required because the reference icons use `<rect>` and `<circle>`, not only `<path>` (e.g. "Indoor Games" is a rect + five circles). Lift the 9 amenity bodies **verbatim** from `Dunecastle-Brochure-06-Coastal-Teal.html` line 370 (`pool, kids, games, dining, parking, grill, outdoor, party, ac`), then add: `wifi, bed, bath, spa, gym, view, pet, coffee, star`. Structure:
 
 ```js
 // backend/src/services/brochureIcons.ts  (CommonJS to match this repo's services)
 const ICONS = Object.freeze({
-  pool:    { label: 'Pool',        paths: ['M2 16.5c1.6 0 1.6 1.2 3.2 1.2s1.6-1.2 3.2-1.2 1.6 1.2 3.2 1.2 1.6-1.2 3.2-1.2 1.6 1.2 3.2 1.2', 'M2 12.5c1.6 0 1.6 1.2 3.2 1.2s1.6-1.2 3.2-1.2 1.6 1.2 3.2 1.2 1.6-1.2 3.2-1.2 1.6 1.2 3.2 1.2', 'M8 12V6.2A2.2 2.2 0 0 1 12.4 6M15.6 12V6.2A2.2 2.2 0 0 1 20 6'] },
-  kids:    { label: 'Kids park',   paths: ['M12 3.5 18 9l-6 5.5L6 9z', 'M12 9.2v0', 'M12 14.5v3l-2.2 3M12 17.5l2.2 3'] },
-  // …games, dining, parking, grill, outdoor, party, ac lifted from the reference file…
-  wifi:    { label: 'Wi-Fi',       paths: ['M5 12.5a10 10 0 0 1 14 0', 'M8 15.5a6 6 0 0 1 8 0', 'M12 18.5h.01'] },
-  // …bed, bath, spa, gym, view, pet, coffee, star…
+  pool: { label: 'Pool', body: "<path d='M2 16.5c1.6 0 1.6 1.2 3.2 1.2s1.6-1.2 3.2-1.2 1.6 1.2 3.2 1.2 1.6-1.2 3.2-1.2 1.6 1.2 3.2 1.2'/><path d='M2 12.5c1.6 0 1.6 1.2 3.2 1.2s1.6-1.2 3.2-1.2 1.6 1.2 3.2 1.2 1.6-1.2 3.2-1.2 1.6 1.2 3.2 1.2'/><path d='M8 12V6.2A2.2 2.2 0 0 1 12.4 6M15.6 12V6.2A2.2 2.2 0 0 1 20 6'/>" },
+  games: { label: 'Indoor games', body: "<rect x='4' y='4' width='16' height='16' rx='3.4'/><circle cx='8.5' cy='8.5' r='1.1'/><circle cx='15.5' cy='8.5' r='1.1'/><circle cx='12' cy='12' r='1.1'/><circle cx='8.5' cy='15.5' r='1.1'/><circle cx='15.5' cy='15.5' r='1.1'/>" },
+  // …kids, dining, parking, grill, outdoor, party, ac lifted from the reference file; wifi/bed/bath/spa/gym/view/pet/coffee/star authored to match…
 });
 const ICON_KEYS = Object.freeze(Object.keys(ICONS));
 const DEFAULT_ICON = 'star';
 module.exports = { ICONS, ICON_KEYS, DEFAULT_ICON };
 ```
 
-The frontend file is byte-identical except `export const ICONS = …; export const ICON_KEYS = …; export const DEFAULT_ICON = …;`.
+The frontend file is byte-identical except `export const ICONS = …; export const ICON_KEYS = …; export const DEFAULT_ICON = …;`. The inner markup is developer-authored (never user input), so injecting it raw is safe (`dangerouslySetInnerHTML` on the frontend `<svg>`, raw string on the backend).
 
 **Step 2: Verify both parse.** Run: `node -e "console.log(require('./backend/src/services/brochureIcons').ICON_KEYS.length)"` — Expected: `17` (or your final count). Frontend is checked by the Vite build in Task 7.
 
@@ -93,19 +91,34 @@ if (raw.type === 'icon') {
   };
 }
 ```
-- In `renderElement`, before the shape fallback:
+- In `renderElement`, before the shape fallback (`body` is trusted registry markup, injected raw — not `esc`'d):
 ```js
 if (el.type === 'icon') {
-  const paths = (ICONS[el.icon] || ICONS[DEFAULT_ICON]).paths
-    .map((d) => `<path d="${esc(d)}" />`).join('');
+  const body = (ICONS[el.icon] || ICONS[DEFAULT_ICON]).body;
   const box = styleToCss({ ...elementStyle(el), overflow: 'visible' });
   return `<svg viewBox="0 0 24 24" fill="none" stroke="${esc(el.color || '#111')}" `
     + `stroke-width="${num(el.strokeWidth, 1.5)}" stroke-linecap="round" stroke-linejoin="round" `
-    + `style="${box}">${paths}</svg>`;
+    + `style="${box}">${body}</svg>`;
 }
 ```
 
 **Step 4: Run to verify it passes.** Run: `cd backend && npm test` — Expected: PASS (icon round-trip + svg render green).
+
+**Step 4b: Add a mirror-drift guard.** The backend and frontend icon registries must stay content-identical; nothing enforces it yet. Add a small test (new `describe('brochureIcons mirror', …)` in `brochureDoc.test.ts`) that reads the frontend file from disk, strips the `export ` prefixes so it can be evaluated as CommonJS, and asserts the two `ICONS` objects are `JSON.stringify`-equal and `DEFAULT_ICON` matches:
+```js
+const fs = require('fs');
+const path = require('path');
+const backendIcons = require('../src/services/brochureIcons');
+const frontendSrc = fs.readFileSync(
+  path.join(__dirname, '../../frontend/src/utils/brochureIcons.js'), 'utf8'
+).replace(/export const /g, 'const ');
+// eslint-disable-next-line no-new-func
+const frontendIcons = new Function(`${frontendSrc}; return { ICONS, ICON_KEYS, DEFAULT_ICON };`)();
+ok('icon registries are a content-identical mirror',
+  JSON.stringify(backendIcons.ICONS) === JSON.stringify(frontendIcons.ICONS));
+ok('icon DEFAULT matches across the mirror', backendIcons.DEFAULT_ICON === frontendIcons.DEFAULT_ICON);
+```
+Run: `cd backend && npm test` — Expected: PASS. (If it can't resolve the relative path from the compiled/run location, adjust the path but keep the assertion.)
 
 **Step 5: Commit.**
 ```bash
@@ -290,12 +303,11 @@ return (
   <svg {...common} key={el.id} viewBox="0 0 24 24" fill="none"
     stroke={el.color || '#111'} strokeWidth={el.strokeWidth || 1.5}
     strokeLinecap="round" strokeLinejoin="round"
-    style={{ ...elementStyle(el), overflow: 'visible', cursor: 'move' }}>
-    {def.paths.map((d, i) => <path key={i} d={d} />)}
-  </svg>
+    style={{ ...elementStyle(el), overflow: 'visible', cursor: 'move' }}
+    dangerouslySetInnerHTML={{ __html: def.body }} />
 );
 ```
-In `BrochurePagePreview.jsx` use the same JSX without `{...common}`/`cursor`.
+In `BrochurePagePreview.jsx` use the same JSX without `{...common}`/`cursor`. (`def.body` is trusted registry markup, never user input.)
 
 **Step 3: Inspector — icon panel.** In `BrochureInspector.jsx`:
 - Import `{ ICONS, ICON_KEYS }` from `../../utils/brochureIcons`.
