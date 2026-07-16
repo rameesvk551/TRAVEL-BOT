@@ -970,9 +970,31 @@ function buildDeck(presetKey, photoCount, sizeKey) {
   const size = (sizeKey && PAGE_SIZES[sizeKey]) ? sizeKey : preset.size;
   const count = Math.max(1, Number(photoCount) || 1);
 
-  return preset.kind === 'gallery'
+  const deck = preset.kind === 'gallery'
     ? galleryDeck(theme, size, count, preset.perPage || 2)
     : editorialDeck(theme, size, count);
+
+  // Record WHICH design built this deck, not just its palette. Changing the page size
+  // later has to REBUILD the same preset at the new shape (the layout kit is responsive;
+  // resizing the page box alone would strand elements off the edge), and `styleKey` alone
+  // cannot say whether this was the editorial or one of the galleries sharing that theme.
+  deck.presetKey = preset.key;
+  return deck;
+}
+
+/**
+ * The preset key to rebuild a doc with, or '' when it cannot be known safely.
+ *
+ * Decks built from now on carry `presetKey`. Older ones predate it, so fall back to the
+ * preset whose theme AND page shape match — unambiguous for the editorials. When several
+ * presets share a theme+size (luxury portrait is the editorial plus three galleries) we
+ * deliberately return '' rather than guess, because guessing would silently rebuild a
+ * customer's photo book as an editorial and destroy the design.
+ */
+function resolvePresetKey(doc = {}) {
+  if (doc.presetKey && PRESET_MAP.has(doc.presetKey)) return doc.presetKey;
+  const matches = PRESETS.filter((p) => p.theme === doc.styleKey && p.size === doc.size);
+  return matches.length === 1 ? matches[0].key : '';
 }
 
 /** A single blank page, for "start from scratch". */
@@ -1057,4 +1079,4 @@ function listPresets() {
   });
 }
 
-module.exports = { THEMES, PRESETS, buildDeck, buildPage, blankDeck, listPresets };
+module.exports = { THEMES, PRESETS, buildDeck, buildPage, blankDeck, listPresets, resolvePresetKey };

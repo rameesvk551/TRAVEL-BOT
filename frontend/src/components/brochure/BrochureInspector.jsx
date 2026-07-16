@@ -163,7 +163,7 @@ const THEME_SWATCHES = [
  */
 export default function BrochureInspector({
   element, page, doc, fields, mergeFields, assets, logoUploading,
-  onPatchElement, onPatchPage, onPatchDoc, onPatchFields, onRetheme,
+  onPatchElement, onPatchPage, onPatchDoc, onPatchFields, onRetheme, onResize,
   onDeleteElement, onReorder, onUploadLogo,
 }) {
   const [tab, setTab] = useState('element');
@@ -407,16 +407,19 @@ export default function BrochureInspector({
           </Section>
 
           <Section title="Page size">
-            <Field label="Preset">
+            {/* Changing a preset size REBUILDS the deck server-side: the layout kit derives
+                tile and row sizes from the content box, so portrait and landscape are
+                different coordinates, not the same design in a different box. Writing
+                pageW/pageH alone would strand every element off the edge. Custom w/h stays
+                a raw patch — it is a nudge, not a shape change. */}
+            <Field label="Preset" hint="Changing this rebuilds the design at the new shape.">
               <select
                 className={input}
                 value={doc?.size || 'portrait'}
                 onChange={(e) => {
                   const key = e.target.value;
-                  const preset = PAGE_SIZES[key];
-                  onPatchDoc(key === 'custom'
-                    ? { size: 'custom' }
-                    : { size: key, pageW: preset.w, pageH: preset.h });
+                  if (key === 'custom') { onPatchDoc({ size: 'custom' }); return; }
+                  onResize(key);
                 }}
               >
                 {Object.entries(PAGE_SIZES).map(([key, v]) => (

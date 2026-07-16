@@ -54,6 +54,17 @@ async function retheme(req, res, next) {
   }
 }
 
+// PUT /:id/size — change the page shape by rebuilding the deck at the new size. This
+// regenerates the elements (the layout kit is responsive), so the UI confirms first.
+async function resize(req, res, next) {
+  try {
+    const brochure = await brochureService.resize(req.agency.id, req.params.id, req.body.size);
+    res.json({ success: true, data: brochure, message: 'Page size changed' });
+  } catch (err) {
+    next(err);
+  }
+}
+
 // POST /pages/build — one fresh themed page for the "+ Page → pick a layout" menu.
 // Pure/no-DB: given the deck's style, size and current palette, return a single page with
 // empty photo slots for the user to fill after inserting it.
@@ -233,6 +244,7 @@ module.exports = {
   getMeta,
   previewPresets,
   retheme,
+  resize,
   buildBrochurePage,
   list,
   getById,

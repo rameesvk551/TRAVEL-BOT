@@ -284,6 +284,29 @@ describe('brochureThemes presets', () => {
   const blank = brochureThemes.blankDeck();
   ok('blankDeck is a single empty page', blank.pages.length === 1 && blank.pages[0].elements.length === 0);
 
+  // A deck must record WHICH preset built it, or a later "change the page size" cannot
+  // rebuild the same design at the new shape.
+  ok('a deck records its presetKey', brochureThemes.buildDeck('coastal-landscape', 12).presetKey === 'coastal-landscape');
+  ok('presetKey survives normalizeDoc', brochureDoc.normalizeDoc({ presetKey: 'noir-editorial' }).presetKey === 'noir-editorial');
+
+  // resolvePresetKey: newer decks carry presetKey; older ones predate it and fall back to
+  // a theme+size match, but must REFUSE when that match is ambiguous rather than rebuild a
+  // photo book as an editorial.
+  ok('resolvePresetKey prefers the recorded key',
+    brochureThemes.resolvePresetKey({ presetKey: 'deco-midnight-editorial', styleKey: 'coastal', size: 'portrait' }) === 'deco-midnight-editorial');
+  ok('resolvePresetKey falls back to an unambiguous theme+size match',
+    brochureThemes.resolvePresetKey({ presetKey: '', styleKey: 'coastal', size: 'landscape' }) === 'coastal-landscape');
+  ok('resolvePresetKey refuses an ambiguous fallback (luxury portrait = editorial + 3 galleries)',
+    brochureThemes.resolvePresetKey({ presetKey: '', styleKey: 'luxury', size: 'portrait' }) === '');
+  ok('resolvePresetKey refuses an unknown theme',
+    brochureThemes.resolvePresetKey({ presetKey: '', styleKey: 'nope', size: 'portrait' }) === '');
+
+  // Rebuilding at a new size must produce the new page shape while keeping the design.
+  const wideDeck = brochureThemes.buildDeck('coastal-landscape', 12);
+  const rebuilt = brochureThemes.buildDeck(brochureThemes.resolvePresetKey(wideDeck), 12, 'portrait');
+  ok('rebuild at portrait yields a taller-than-wide page', rebuilt.pageH > rebuilt.pageW);
+  ok('rebuild keeps the same theme', rebuilt.styleKey === wideDeck.styleKey);
+
   // listPresets must be serialisable — no functions leak to the client.
   const serialisable = brochureThemes.listPresets().every((p) => typeof p.build === 'undefined');
   ok('listPresets carries no build fn', serialisable);

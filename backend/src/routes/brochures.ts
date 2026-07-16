@@ -74,6 +74,9 @@ router.put('/:id', canManage, controller.update);
 router.delete('/:id', canManage, controller.remove);
 
 router.put('/:id/theme', canManage, controller.retheme);
+// Rebuilds the deck at a new page shape. The layout kit is responsive, so this
+// regenerates the elements rather than just resizing the page box — the UI confirms first.
+router.put('/:id/size', canManage, controller.resize);
 router.post('/:id/template', canManage, controller.applyTemplate);
 router.post('/:id/save-as-template', canManage, controller.saveAsTemplate);
 router.get('/:id/pdf', canView, controller.downloadPdf);

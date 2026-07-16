@@ -17,6 +17,12 @@ export const brochuresApi = {
   retheme: (id, theme) => client.put(`/brochures/${id}/theme`, { theme }).then((r) => r.data),
 
   /**
+   * Change the page shape. The server REBUILDS the deck at the new size (the layout kit
+   * is responsive), so the elements are regenerated — confirm with the user before calling.
+   */
+  resize: (id, size) => client.put(`/brochures/${id}/size`, { size }).then((r) => r.data),
+
+  /**
    * Build ONE fresh themed page for the "+ Page → pick a layout" menu. Pure/no-DB: the
    * server returns a single page (empty photo slots) themed to the deck's style + current
    * palette, which the editor splices into the deck locally.

@@ -238,6 +238,54 @@ async function retheme(agencyId, id, palette = {}) {
   return brochure;
 }
 
+/**
+ * Change the page shape by REBUILDING the deck at the new size.
+ *
+ * The layout kit is responsive: `buildDeck` derives tile and row sizes from the content
+ * box, so a preset laid out for A4 landscape is a different set of coordinates from the
+ * same preset on portrait. Simply writing new pageW/pageH would strand every element at
+ * its old coordinates — off the right edge of a narrower page — which is why this rebuilds
+ * rather than patching the page box.
+ *
+ * The palette and the merge fields survive (they are re-applied to the fresh deck); the
+ * per-element edits do not, because the elements themselves are regenerated. The caller
+ * is expected to have confirmed that with the user first.
+ */
+async function resize(agencyId, id, size) {
+  if (!brochureDoc.PAGE_SIZES[size] || size === 'custom') {
+    throw fail('Pick A4 portrait, A4 landscape or square', 400, 'INVALID_SIZE');
+  }
+
+  const brochure = await getById(agencyId, id);
+  const current = brochureDoc.normalizeDoc(brochure.doc);
+
+  const presetKey = brochureThemes.resolvePresetKey(current);
+  if (!presetKey) {
+    // Deliberately refuse rather than guess: rebuilding with the wrong preset would
+    // silently turn a photo book into an editorial and destroy the design.
+    throw fail(
+      'This brochure predates size-rebuild, so its design cannot be identified. Create a new brochure at the size you want.',
+      400,
+      'PRESET_UNKNOWN',
+    );
+  }
+
+  const { images } = await gatherSources(agencyId, {
+    propertyId: brochure.propertyId,
+    packageId: brochure.packageId,
+  });
+  const fields = brochure.fields || {};
+
+  const rebuilt = brochureThemes.buildDeck(presetKey, images.length || 1, size);
+  // Carry the deck's CURRENT palette onto the fresh one, so a recoloured brochure does
+  // not snap back to the preset's stock colours just because it was resized.
+  const themed = brochureDoc.retheme(rebuilt, current.theme || {});
+  const doc = brochureDoc.fillDoc(themed, images, fields);
+
+  await brochure.update({ doc });
+  return brochure;
+}
+
 async function remove(agencyId, id) {
   const deleted = await Brochure.destroy({ where: { id, agencyId } });
   if (!deleted) throw fail('Brochure not found', 404, 'BROCHURE_NOT_FOUND');
@@ -350,6 +398,7 @@ module.exports = {
   create,
   update,
   retheme,
+  resize,
   remove,
   applyTemplate,
   render,

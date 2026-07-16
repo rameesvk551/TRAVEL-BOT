@@ -12,7 +12,8 @@ import BrochureCanvas from '../components/brochure/BrochureCanvas';
 import BrochureInspector from '../components/brochure/BrochureInspector';
 import BrochurePagePreview from '../components/brochure/BrochurePagePreview';
 import {
-  cdnUrl, newIconElement, newImageElement, newPage, newShapeElement, newTextElement, THUMB_IMAGE_WIDTH,
+  cdnUrl, newIconElement, newImageElement, newPage, newShapeElement, newTextElement,
+  PAGE_SIZES, THUMB_IMAGE_WIDTH,
 } from '../utils/brochureDoc';
 
 const AUTOSAVE_MS = 1500;
@@ -214,6 +215,37 @@ export default function BrochureEditor() {
       dirty.current = false;
     } catch (err) {
       toast.error(err.response?.data?.error || 'Could not apply the theme');
+    }
+  };
+
+  /**
+   * Change the page shape. Rebuilt on the server, because the layout kit derives tile and
+   * row sizes from the content box — writing new pageW/pageH alone would leave every
+   * element at its old coordinates, hanging off the edge of a narrower page. The rebuild
+   * regenerates the elements, so hand-edits are lost and we ask first.
+   */
+  const resize = async (size) => {
+    if (size === doc.size) return;
+    const label = PAGE_SIZES[size]?.label || size;
+    if (!window.confirm(
+      `Change the page to ${label}?\n\n`
+      + 'The design is rebuilt at the new shape, so any text you edited or elements you '
+      + 'moved by hand will be regenerated. Your photos, colours and brand details are kept.',
+    )) return;
+
+    clearTimeout(saveTimer.current);
+    if (dirty.current) await save(doc, fields);
+    try {
+      const res = await brochuresApi.resize(id, size);
+      history.current.past.push(doc);
+      history.current.future = [];
+      setDoc(res.data.doc);
+      setPageIndex(0);
+      setSelectedId(null);
+      dirty.current = false;
+      toast.success(`Rebuilt at ${label}`);
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Could not change the page size');
     }
   };
 
@@ -594,6 +626,7 @@ export default function BrochureEditor() {
             onPatchDoc={patchDoc}
             onPatchFields={patchFields}
             onRetheme={retheme}
+            onResize={resize}
             onUploadLogo={uploadLogo}
             onDeleteElement={() => {
               setElements(page.elements.filter((el) => el.id !== selected.id));
