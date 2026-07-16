@@ -43,3 +43,24 @@ describe('optional fields default cleanly', () => {
   equal('no permalink -> null', out.permalink, null);
   equal('an unknown action string -> null, not passed through', svc.normalizeLinkInput({ mediaId: 'm', itemType: 'VISA', itemId: 'v', actionOverride: 'CALL_ME' }).actionOverride, null);
 });
+
+// The permalink lands in an <a href> and the thumbnail in an <img src> in the reel picker, so a
+// `javascript:` URI stored here is a stored XSS that fires on click. Only absolute https URLs are
+// ever persisted — anything else is dropped rather than 400'd, since these two fields are
+// best-effort display metadata copied off the Graph API, not user-entered data worth rejecting on.
+describe('only https URLs are stored (stored-XSS guard)', () => {
+  const base = { mediaId: 'm', itemType: 'PROPERTY', itemId: 'p' };
+  const norm = (patch: any) => svc.normalizeLinkInput({ ...base, ...patch });
+
+  equal('a javascript: permalink -> null', norm({ permalink: 'javascript:alert(1)' }).permalink, null);
+  equal('a JaVaScRiPt: permalink (case dodge) -> null', norm({ permalink: 'JaVaScRiPt:alert(1)' }).permalink, null);
+  equal('a permalink with leading whitespace -> null', norm({ permalink: '  javascript:alert(1)' }).permalink, null);
+  equal('a data: permalink -> null', norm({ permalink: 'data:text/html,<script>alert(1)</script>' }).permalink, null);
+  equal('a plain http: permalink -> null', norm({ permalink: 'http://insecure.example/x' }).permalink, null);
+  equal('a relative/garbage permalink -> null', norm({ permalink: 'not a url' }).permalink, null);
+  equal('a javascript: thumbnailUrl -> null', norm({ thumbnailUrl: 'javascript:alert(1)' }).thumbnailUrl, null);
+  equal('a data: thumbnailUrl -> null', norm({ thumbnailUrl: 'data:image/svg+xml,<svg onload=alert(1)>' }).thumbnailUrl, null);
+
+  equal('a real https permalink survives', norm({ permalink: 'https://instagram.com/reel/x' }).permalink, 'https://instagram.com/reel/x');
+  equal('a real https thumbnail survives', norm({ thumbnailUrl: 'https://cdn/x.jpg' }).thumbnailUrl, 'https://cdn/x.jpg');
+});

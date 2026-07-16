@@ -25,6 +25,10 @@ const ACTION_OPTIONS = [
   { value: 'DM_PDF', label: 'Send PDF in DM' },
 ];
 
+// A `javascript:` permalink in an href executes on click. The service now stores https-only, but
+// rows written before that guard can still hold one, so re-check at the point of render.
+const httpsOnly = (url) => (/^https:\/\//i.test(String(url || '').trim()) ? url : null);
+
 export default function ReelLinkSection({ itemType, itemId }) {
   const qc = useQueryClient();
   const [selectedMediaId, setSelectedMediaId] = useState('');
@@ -122,10 +126,13 @@ export default function ReelLinkSection({ itemType, itemId }) {
       {/* Existing links */}
       {links.length > 0 && (
         <ul className="mt-4 space-y-3">
-          {links.map((link) => (
+          {links.map((link) => {
+            const safeHref = httpsOnly(link.permalink);
+            const safeThumb = httpsOnly(link.thumbnailUrl);
+            return (
             <li key={link.id} className="flex items-center gap-3 rounded-2xl border border-neutral-200 p-3">
-              {link.thumbnailUrl ? (
-                <img src={link.thumbnailUrl} alt="" className="h-12 w-12 rounded-lg object-cover" />
+              {safeThumb ? (
+                <img src={safeThumb} alt="" className="h-12 w-12 rounded-lg object-cover" />
               ) : (
                 <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-neutral-100">
                   <PhotoIcon className="h-6 w-6 text-neutral-400" />
@@ -133,8 +140,8 @@ export default function ReelLinkSection({ itemType, itemId }) {
               )}
               <div className="min-w-0 flex-1">
                 <div className="truncate text-sm font-medium text-neutral-800">
-                  {link.permalink ? (
-                    <a href={link.permalink} target="_blank" rel="noreferrer" className="hover:underline">
+                  {safeHref ? (
+                    <a href={safeHref} target="_blank" rel="noreferrer" className="hover:underline">
                       Reel #{link.code}
                     </a>
                   ) : `Reel #${link.code}`}
@@ -159,7 +166,8 @@ export default function ReelLinkSection({ itemType, itemId }) {
                 <XMarkIcon className="h-5 w-5" />
               </button>
             </li>
-          ))}
+            );
+          })}
         </ul>
       )}
 

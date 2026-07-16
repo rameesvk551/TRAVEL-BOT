@@ -24,10 +24,30 @@ function normalizeLinkInput(payload: any = {}) {
   out.actionOverride = action && ACTIONS.has(action) ? action : null;
 
   out.formSlug = payload.formSlug ? String(payload.formSlug).trim().slice(0, 255) : null;
-  out.permalink = payload.permalink ? String(payload.permalink).trim().slice(0, 2000) : null;
-  out.thumbnailUrl = payload.thumbnailUrl ? String(payload.thumbnailUrl).trim().slice(0, 2000) : null;
+  out.permalink = httpsUrlOrNull(payload.permalink);
+  out.thumbnailUrl = httpsUrlOrNull(payload.thumbnailUrl);
 
   return out;
+}
+
+/**
+ * Absolute https URL, or null.
+ *
+ * The permalink is rendered into an `<a href>` and the thumbnail into an `<img src>`, so a
+ * `javascript:` URI stored here is a stored XSS that fires when staff click the reel. Both fields
+ * are best-effort display metadata copied off the Graph API (which only ever returns https), so a
+ * non-https value is dropped rather than 400'd — rejecting the whole mapping over cosmetic
+ * metadata would be worse than losing the link text. Parsed with `URL` rather than a regex so
+ * scheme tricks (`JaVaScRiPt:`, leading whitespace/control chars) can't slip past.
+ */
+function httpsUrlOrNull(value: any): string | null {
+  if (!value) return null;
+  const raw = String(value).trim().slice(0, 2000);
+  try {
+    return new URL(raw).protocol === 'https:' ? raw : null;
+  } catch {
+    return null;
+  }
 }
 
 function badRequest(message: string, code: string) {
