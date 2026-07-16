@@ -17,10 +17,11 @@ export const brochuresApi = {
   retheme: (id, theme) => client.put(`/brochures/${id}/theme`, { theme }).then((r) => r.data),
 
   /**
-   * Change the page shape. The server REBUILDS the deck at the new size (the layout kit
-   * is responsive), so the elements are regenerated — confirm with the user before calling.
+   * Rebuild this design at a new page shape as a NEW brochure; the original is untouched.
+   * A shape change regenerates every element (the layout kit is responsive), which would
+   * destroy hand-edits if done in place — so this creates a copy and returns it.
    */
-  resize: (id, size) => client.put(`/brochures/${id}/size`, { size }).then((r) => r.data),
+  resize: (id, size) => client.post(`/brochures/${id}/resize`, { size }).then((r) => r.data),
 
   /**
    * Build ONE fresh themed page for the "+ Page → pick a layout" menu. Pure/no-DB: the

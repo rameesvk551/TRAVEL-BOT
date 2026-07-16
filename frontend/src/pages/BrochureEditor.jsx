@@ -98,13 +98,19 @@ export default function BrochureEditor() {
     const fit = () => {
       const el = canvasWrapRef.current;
       if (!el) return;
-      const available = el.clientWidth - 64;
-      setScale(Math.min(1, Math.max(0.15, available / doc.pageW)));
+      // Fit the WHOLE page, not just its width. Scaling to width alone means a portrait A4
+      // (1123px tall) overflows the viewport vertically and the designer can only ever see
+      // a slice of the page — you cannot lay out a page you cannot see. Both axes lose the
+      // wrapper's p-8 padding (32px a side).
+      const byWidth = (el.clientWidth - 64) / doc.pageW;
+      const byHeight = (el.clientHeight - 64) / doc.pageH;
+      setScale(Math.min(1, Math.max(0.15, Math.min(byWidth, byHeight))));
     };
     fit();
     window.addEventListener('resize', fit);
     return () => window.removeEventListener('resize', fit);
-  }, [doc?.pageW]);
+    // pageH matters too: switching shape must re-fit, not keep the old page's zoom.
+  }, [doc?.pageW, doc?.pageH]);
 
   // --- mutation + autosave ---------------------------------------------------
 
@@ -219,33 +225,32 @@ export default function BrochureEditor() {
   };
 
   /**
-   * Change the page shape. Rebuilt on the server, because the layout kit derives tile and
-   * row sizes from the content box — writing new pageW/pageH alone would leave every
-   * element at its old coordinates, hanging off the edge of a narrower page. The rebuild
-   * regenerates the elements, so hand-edits are lost and we ask first.
+   * Rebuild this design at a different page shape.
+   *
+   * The layout kit derives tile and row sizes from the content box, so portrait and
+   * landscape are different coordinates for the same preset — the shape can only change by
+   * regenerating every element, which discards hand-edits and hand-added pages. So this is
+   * non-destructive: the server returns a COPY at the new size and leaves this one alone.
    */
   const resize = async (size) => {
     if (size === doc.size) return;
-    const label = PAGE_SIZES[size]?.label || size;
+    const label = (PAGE_SIZES[size]?.label || size).replace(/\s*\(.*\)$/, '');
     if (!window.confirm(
-      `Change the page to ${label}?\n\n`
-      + 'The design is rebuilt at the new shape, so any text you edited or elements you '
-      + 'moved by hand will be regenerated. Your photos, colours and brand details are kept.',
+      `Create a ${label} copy of this brochure?\n\n`
+      + `A new brochure will be created at ${label}, with your photos, colours and brand `
+      + 'details. This one stays exactly as it is.\n\n'
+      + 'Note: the design is rebuilt for the new shape, so text you retyped and pages you '
+      + 'added by hand are regenerated — you may need to redo those on the copy.',
     )) return;
 
     clearTimeout(saveTimer.current);
     if (dirty.current) await save(doc, fields);
     try {
       const res = await brochuresApi.resize(id, size);
-      history.current.past.push(doc);
-      history.current.future = [];
-      setDoc(res.data.doc);
-      setPageIndex(0);
-      setSelectedId(null);
-      dirty.current = false;
-      toast.success(`Rebuilt at ${label}`);
+      toast.success(`Created "${res.data.title}"`);
+      navigate(`/brochures/${res.data.id}`);
     } catch (err) {
-      toast.error(err.response?.data?.error || 'Could not change the page size');
+      toast.error(err.response?.data?.error || 'Could not create the copy');
     }
   };
 

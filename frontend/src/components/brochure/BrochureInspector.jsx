@@ -407,12 +407,13 @@ export default function BrochureInspector({
           </Section>
 
           <Section title="Page size">
-            {/* Changing a preset size REBUILDS the deck server-side: the layout kit derives
+            {/* A preset size change REBUILDS the deck server-side: the layout kit derives
                 tile and row sizes from the content box, so portrait and landscape are
                 different coordinates, not the same design in a different box. Writing
-                pageW/pageH alone would strand every element off the edge. Custom w/h stays
-                a raw patch — it is a nudge, not a shape change. */}
-            <Field label="Preset" hint="Changing this rebuilds the design at the new shape.">
+                pageW/pageH alone would strand every element off the edge. Because the
+                rebuild regenerates elements, it lands as a COPY and leaves this brochure
+                alone. Custom w/h stays a raw patch — a nudge, not a shape change. */}
+            <Field label="Preset" hint="Picking another shape creates a copy at that size. This brochure is left as it is.">
               <select
                 className={input}
                 value={doc?.size || 'portrait'}

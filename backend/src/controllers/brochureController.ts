@@ -54,12 +54,13 @@ async function retheme(req, res, next) {
   }
 }
 
-// PUT /:id/size — change the page shape by rebuilding the deck at the new size. This
-// regenerates the elements (the layout kit is responsive), so the UI confirms first.
+// POST /:id/resize — rebuild this design at a new page shape as a NEW brochure. Creates
+// rather than mutates: the rebuild regenerates every element, so doing it in place would
+// silently destroy the user's hand-edits. The original is left untouched.
 async function resize(req, res, next) {
   try {
     const brochure = await brochureService.resize(req.agency.id, req.params.id, req.body.size);
-    res.json({ success: true, data: brochure, message: 'Page size changed' });
+    res.status(201).json({ success: true, data: brochure, message: 'Copy created at the new size' });
   } catch (err) {
     next(err);
   }

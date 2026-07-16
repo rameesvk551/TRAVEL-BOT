@@ -238,18 +238,26 @@ async function retheme(agencyId, id, palette = {}) {
   return brochure;
 }
 
+/** 'A4 Portrait (210×297mm)' -> 'A4 Portrait', for a copy's title suffix. */
+function shortSizeLabel(size) {
+  return String(brochureDoc.PAGE_SIZES[size]?.label || size).replace(/\s*\(.*\)$/, '');
+}
+
 /**
- * Change the page shape by REBUILDING the deck at the new size.
+ * Rebuild this brochure's design at a new page shape, as a NEW brochure.
  *
  * The layout kit is responsive: `buildDeck` derives tile and row sizes from the content
- * box, so a preset laid out for A4 landscape is a different set of coordinates from the
- * same preset on portrait. Simply writing new pageW/pageH would strand every element at
- * its old coordinates — off the right edge of a narrower page — which is why this rebuilds
- * rather than patching the page box.
+ * box, so the same preset on A4 landscape and A4 portrait is two different sets of
+ * coordinates, not one design in a different box. Writing new pageW/pageH would strand
+ * every element at its old coordinates — off the right edge of a narrower page. So the
+ * shape can only change by regenerating the elements.
  *
- * The palette and the merge fields survive (they are re-applied to the fresh deck); the
- * per-element edits do not, because the elements themselves are regenerated. The caller
- * is expected to have confirmed that with the user first.
+ * That regeneration necessarily discards hand-edits (retyped text, moved elements, pages
+ * added by hand). Rather than destroy that work in place, this is NON-DESTRUCTIVE: the
+ * original is left exactly as it is and the rebuild is returned as a copy. The worst a
+ * mis-click can cost is a brochure the user deletes.
+ *
+ * Photos, palette and merge fields carry over onto the copy.
  */
 async function resize(agencyId, id, size) {
   if (!brochureDoc.PAGE_SIZES[size] || size === 'custom') {
@@ -258,6 +266,10 @@ async function resize(agencyId, id, size) {
 
   const brochure = await getById(agencyId, id);
   const current = brochureDoc.normalizeDoc(brochure.doc);
+
+  if (current.size === size) {
+    throw fail('This brochure is already that size', 400, 'SAME_SIZE');
+  }
 
   const presetKey = brochureThemes.resolvePresetKey(current);
   if (!presetKey) {
@@ -278,12 +290,19 @@ async function resize(agencyId, id, size) {
 
   const rebuilt = brochureThemes.buildDeck(presetKey, images.length || 1, size);
   // Carry the deck's CURRENT palette onto the fresh one, so a recoloured brochure does
-  // not snap back to the preset's stock colours just because it was resized.
+  // not snap back to the preset's stock colours just because it was rebuilt.
   const themed = brochureDoc.retheme(rebuilt, current.theme || {});
   const doc = brochureDoc.fillDoc(themed, images, fields);
 
-  await brochure.update({ doc });
-  return brochure;
+  return Brochure.create({
+    agencyId,
+    title: `${brochure.title} (${shortSizeLabel(size)})`.slice(0, 255),
+    status: 'DRAFT',
+    propertyId: brochure.propertyId,
+    packageId: brochure.packageId,
+    doc,
+    fields,
+  });
 }
 
 async function remove(agencyId, id) {
