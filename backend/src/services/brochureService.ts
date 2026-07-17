@@ -405,6 +405,45 @@ async function deleteTemplate(agencyId, id) {
   return true;
 }
 
+/**
+ * One template, for editing.
+ *
+ * `agencyId` is in the where clause, exactly as deleteTemplate does it: `listTemplates`
+ * deliberately serves platform presets (agencyId null) alongside the agency's own, but a
+ * preset is SHARED BY EVERY AGENCY — letting one tenant open it for editing would let them
+ * rewrite the shipped designs for all of them. So an agency can only ever fetch its own,
+ * and a preset id simply 404s here.
+ */
+async function getTemplate(agencyId, id) {
+  const template = await BrochureTemplate.findOne({ where: { id, agencyId } });
+  if (!template) throw fail('Template not found', 404, 'TEMPLATE_NOT_FOUND');
+  return template;
+}
+
+/**
+ * Update a saved design in place — rename it, or save a reworked layout back over it.
+ *
+ * The doc is run through toTemplateDoc on the way in, so photos dropped in while editing
+ * are released: a template's whole point is that its slots refill from the next resort's
+ * photos, and baking one resort's pictures into it would quietly break every future reuse.
+ */
+async function updateTemplate(agencyId, id, payload = {}) {
+  const template = await getTemplate(agencyId, id);
+
+  const patch = {};
+  if (payload.name != null) {
+    if (!String(payload.name).trim()) throw fail('Template name is required', 400, 'NAME_REQUIRED');
+    patch.name = String(payload.name).trim();
+  }
+  if (payload.doc) {
+    patch.doc = brochureDoc.toTemplateDoc(brochureDoc.normalizeDoc(payload.doc));
+    patch.slotCount = countSlots(patch.doc);
+  }
+
+  await template.update(patch);
+  return template;
+}
+
 module.exports = {
   countSlots,
   listAssets,
@@ -423,6 +462,8 @@ module.exports = {
   render,
   sendToLead,
   listTemplates,
+  getTemplate,
   saveAsTemplate,
+  updateTemplate,
   deleteTemplate,
 };

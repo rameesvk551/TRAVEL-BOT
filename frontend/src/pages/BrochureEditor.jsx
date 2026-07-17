@@ -33,14 +33,24 @@ const LAYOUT_OPTIONS = [
   { key: 'blank', label: 'Blank' },
 ];
 
-export default function BrochureEditor() {
-  const { id } = useParams();
+/**
+ * The design editor, in one of two modes.
+ *
+ * `mode="template"` edits a saved design in place instead of a brochure. It is the same
+ * canvas and the same doc — a template IS a brochure doc with its photo slots released —
+ * so the only differences are where it loads from, where it saves to, and that the
+ * brochure-only actions (send, PDF, merge fields, apply-a-template) have nothing to act on.
+ */
+export default function BrochureEditor({ mode }) {
+  const { id, templateId } = useParams();
+  const isTemplate = mode === 'template';
   const navigate = useNavigate();
   const fileInputRef = useRef(null);
   const canvasWrapRef = useRef(null);
 
   const [meta, setMeta] = useState(null);
   const [brochure, setBrochure] = useState(null);
+  const [template, setTemplate] = useState(null);
   const [doc, setDoc] = useState(null);
   const [fields, setFields] = useState({});
   const [assets, setAssets] = useState([]);
@@ -83,6 +93,22 @@ export default function BrochureEditor() {
 
     (async () => {
       try {
+        // A template is a bare design: no merge fields, no photos, nothing to send. So in
+        // template mode we load the design alone and skip the brochure-only sources.
+        if (isTemplate) {
+          const [metaRes, templateRes, assetsRes] = await Promise.all([
+            brochuresApi.meta(),
+            brochuresApi.getTemplate(templateId),
+            brochuresApi.listAssets(),
+          ]);
+          if (cancelled) return;
+          setMeta(metaRes.data);
+          setTemplate(templateRes.data);
+          setDoc(templateRes.data.doc);
+          setAssets(assetsRes.data);
+          return;
+        }
+
         const [metaRes, brochureRes, assetsRes, templatesRes] = await Promise.all([
           brochuresApi.meta(),
           brochuresApi.getById(id),
@@ -98,13 +124,13 @@ export default function BrochureEditor() {
         setAssets(assetsRes.data);
         setTemplates(templatesRes.data);
       } catch (err) {
-        toast.error(err.response?.data?.error || 'Could not open this brochure');
+        toast.error(err.response?.data?.error || (isTemplate ? 'Could not open this template' : 'Could not open this brochure'));
         navigate('/brochures');
       }
     })();
 
     return () => { cancelled = true; };
-  }, [id, navigate]);
+  }, [id, templateId, isTemplate, navigate]);
 
   // Fit the page to the available width.
   useEffect(() => {
@@ -143,14 +169,18 @@ export default function BrochureEditor() {
   const save = useCallback(async (docToSave, fieldsToSave) => {
     setSaving(true);
     try {
-      await brochuresApi.update(id, { doc: docToSave, fields: fieldsToSave });
+      // Saving a template writes the design back over itself. The server runs it through
+      // toTemplateDoc, so any photo dropped in while editing is released rather than baked
+      // into a design meant to refill from the next resort's pictures.
+      if (isTemplate) await brochuresApi.updateTemplate(templateId, { doc: docToSave });
+      else await brochuresApi.update(id, { doc: docToSave, fields: fieldsToSave });
       dirty.current = false;
     } catch (err) {
       toast.error(err.response?.data?.error || 'Save failed');
     } finally {
       setSaving(false);
     }
-  }, [id]);
+  }, [id, templateId, isTemplate]);
 
   useEffect(() => {
     if (!doc || !dirty.current) return undefined;
@@ -453,8 +483,9 @@ export default function BrochureEditor() {
     }
   });
 
-  if (!doc || !meta) {
-    return <div className="p-10 text-slate-500">Loading brochure…</div>;
+  // The header reads brochure.title / template.name, so wait for whichever this mode uses.
+  if (!doc || !meta || (isTemplate ? !template : !brochure)) {
+    return <div className="p-10 text-slate-500">Loading {isTemplate ? 'template' : 'brochure'}…</div>;
   }
 
   const thumbScale = 128 / doc.pageW;
@@ -467,12 +498,24 @@ export default function BrochureEditor() {
           <ArrowLeftIcon className="h-5 w-5" />
         </button>
 
-        <input
-          className="min-w-0 flex-1 rounded-md border border-transparent px-2 py-1 text-lg font-semibold hover:border-slate-300 focus:border-blue-500 focus:outline-none"
-          value={brochure.title}
-          onChange={(e) => setBrochure({ ...brochure, title: e.target.value })}
-          onBlur={(e) => brochuresApi.update(id, { title: e.target.value }).catch(() => {})}
-        />
+        {isTemplate ? (
+          <>
+            <span className="rounded-md bg-slate-900 px-2 py-0.5 text-[11px] font-semibold text-white">Template</span>
+            <input
+              className="min-w-0 flex-1 rounded-md border border-transparent px-2 py-1 text-lg font-semibold hover:border-slate-300 focus:border-blue-500 focus:outline-none"
+              value={template.name}
+              onChange={(e) => setTemplate({ ...template, name: e.target.value })}
+              onBlur={(e) => brochuresApi.updateTemplate(templateId, { name: e.target.value }).catch(() => {})}
+            />
+          </>
+        ) : (
+          <input
+            className="min-w-0 flex-1 rounded-md border border-transparent px-2 py-1 text-lg font-semibold hover:border-slate-300 focus:border-blue-500 focus:outline-none"
+            value={brochure.title}
+            onChange={(e) => setBrochure({ ...brochure, title: e.target.value })}
+            onBlur={(e) => brochuresApi.update(id, { title: e.target.value }).catch(() => {})}
+          />
+        )}
 
         <span className="whitespace-nowrap text-xs text-slate-400">
           {saving ? 'Saving…' : (dirty.current ? 'Unsaved' : 'All changes saved')}
@@ -502,35 +545,50 @@ export default function BrochureEditor() {
           </button>
         </div>
 
-        <div className="ml-auto flex items-center gap-2">
-          <select
-            className="rounded-md border border-slate-300 px-2 py-1.5 text-sm"
-            value=""
-            onChange={(e) => applyTemplate(e.target.value)}
-          >
-            <option value="">Apply a template…</option>
-            {templates.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name}{t.agencyId ? '' : ' (preset)'} · {t.slotCount} photos
-              </option>
-            ))}
-          </select>
+        {/* Apply-a-template, save-as-template, PDF and Send all act on a BROCHURE. A
+            template has no photos, no merge fields and no recipient, so there is nothing
+            for them to do here — the design just saves back over itself. */}
+        {isTemplate ? (
+          <div className="ml-auto flex items-center gap-2">
+            <span className="text-xs text-slate-400">Saves back to this template</span>
+            <button
+              onClick={() => flushThenRun(() => navigate('/brochures'))}
+              className="flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
+            >
+              Done
+            </button>
+          </div>
+        ) : (
+          <div className="ml-auto flex items-center gap-2">
+            <select
+              className="rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+              value=""
+              onChange={(e) => applyTemplate(e.target.value)}
+            >
+              <option value="">Apply a template…</option>
+              {templates.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}{t.agencyId ? '' : ' (preset)'} · {t.slotCount} photos
+                </option>
+              ))}
+            </select>
 
-          <button onClick={saveAsTemplate} className="flex items-center gap-1.5 rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50">
-            <Square2StackIcon className="h-4 w-4" /> Save as template
-          </button>
+            <button onClick={saveAsTemplate} className="flex items-center gap-1.5 rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50">
+              <Square2StackIcon className="h-4 w-4" /> Save as template
+            </button>
 
-          <button onClick={downloadPdf} className="flex items-center gap-1.5 rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50">
-            <ArrowDownTrayIcon className="h-4 w-4" /> PDF
-          </button>
+            <button onClick={downloadPdf} className="flex items-center gap-1.5 rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50">
+              <ArrowDownTrayIcon className="h-4 w-4" /> PDF
+            </button>
 
-          <button
-            onClick={() => flushThenRun(() => navigate(`/brochures?send=${id}`))}
-            className="flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
-          >
-            <PaperAirplaneIcon className="h-4 w-4" /> Send
-          </button>
-        </div>
+            <button
+              onClick={() => flushThenRun(() => navigate(`/brochures?send=${id}`))}
+              className="flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
+            >
+              <PaperAirplaneIcon className="h-4 w-4" /> Send
+            </button>
+          </div>
+        )}
       </header>
 
       <div className="flex min-h-0 flex-1">
@@ -664,6 +722,7 @@ export default function BrochureEditor() {
             onPatchElement={patchElement}
             onPatchPage={patchPage}
             selectedCount={selectedIds.length}
+            isTemplate={isTemplate}
             onArrange={arrangeSelection}
             onPatchDoc={patchDoc}
             onPatchFields={patchFields}

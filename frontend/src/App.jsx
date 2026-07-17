@@ -314,6 +314,8 @@ export default function App() {
                     <Route path="/itineraries/new" element={<ModuleRoute modulePath="/itineraries"><ItineraryBuilder /></ModuleRoute>} />
                     <Route path="/itineraries/:id/edit" element={<ModuleRoute modulePath="/itineraries"><ItineraryBuilder /></ModuleRoute>} />
                     <Route path="/brochures" element={<FeatureRoute feature="brochureBuilder"><Brochures /></FeatureRoute>} />
+                    {/* Three segments, so it cannot be shadowed by the two-segment /brochures/:id below. */}
+                    <Route path="/brochures/templates/:templateId" element={<FeatureRoute feature="brochureBuilder"><BrochureEditor mode="template" /></FeatureRoute>} />
                     <Route path="/brochures/:id" element={<FeatureRoute feature="brochureBuilder"><BrochureEditor /></FeatureRoute>} />
                     <Route path="/templates" element={<ModuleRoute modulePath="/templates"><Templates /></ModuleRoute>} />
                     <Route path="/flows" element={<ModuleRoute modulePath="/flows"><Flows /></ModuleRoute>} />

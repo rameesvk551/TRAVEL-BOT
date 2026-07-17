@@ -232,6 +232,27 @@ async function saveAsTemplate(req, res, next) {
   }
 }
 
+// GET /templates/:templateId — one of the agency's OWN saved designs, for the editor.
+// Platform presets are not fetchable here; see brochureService.getTemplate.
+async function getTemplate(req, res, next) {
+  try {
+    const template = await brochureService.getTemplate(req.agency.id, req.params.templateId);
+    res.json({ success: true, data: template });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// PUT /templates/:templateId — rename a saved design, or save a reworked layout back over it.
+async function updateTemplate(req, res, next) {
+  try {
+    const template = await brochureService.updateTemplate(req.agency.id, req.params.templateId, req.body || {});
+    res.json({ success: true, data: template, message: 'Template saved' });
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function deleteTemplate(req, res, next) {
   try {
     await brochureService.deleteTemplate(req.agency.id, req.params.templateId);
@@ -261,6 +282,8 @@ module.exports = {
   reorderAssets,
   deleteAsset,
   listTemplates,
+  getTemplate,
   saveAsTemplate,
+  updateTemplate,
   deleteTemplate,
 };

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import {
-  ArrowDownTrayIcon, CheckIcon, PaperAirplaneIcon, PlusIcon,
+  ArrowDownTrayIcon, CheckIcon, PaperAirplaneIcon, PencilSquareIcon, PlusIcon,
   Square2StackIcon, TrashIcon, XMarkIcon,
 } from '@heroicons/react/24/outline';
 
@@ -360,6 +360,17 @@ export default function Brochures() {
 
   useEffect(() => { load(); }, []);
 
+  const removeTemplate = async (template) => {
+    if (!window.confirm(`Delete the saved design "${template.name}"? Brochures already made from it are not affected.`)) return;
+    try {
+      await brochuresApi.deleteTemplate(template.id);
+      toast.success('Design deleted');
+      load();
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Could not delete this design');
+    }
+  };
+
   const download = async (brochure) => {
     const pending = toast.loading('Rendering PDF…');
     try {
@@ -440,6 +451,16 @@ export default function Brochures() {
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex justify-end gap-1">
+                      {/* The title has always opened the editor, but nothing said so — the
+                          Actions column showed only download/send/delete, so "how do I edit
+                          this?" was a fair question. */}
+                      <button
+                        onClick={() => navigate(`/brochures/${b.id}`)}
+                        className="rounded-md p-2 text-slate-500 hover:bg-slate-100"
+                        title="Edit"
+                      >
+                        <PencilSquareIcon className="h-4 w-4" />
+                      </button>
                       <button
                         onClick={() => download(b)}
                         className="rounded-md p-2 text-slate-500 hover:bg-slate-100"
@@ -467,6 +488,68 @@ export default function Brochures() {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* Saved designs. These were previously write-once — you could save one and apply it,
+          but never change it. Only the agency's OWN are editable; the platform presets are
+          shared by every agency, so they are listed read-only. */}
+      {templates.length > 0 && (
+        <div className="mt-8">
+          <h2 className="text-sm font-bold uppercase tracking-widest text-slate-900">Saved designs</h2>
+          <p className="mb-3 mt-1 text-sm text-slate-500">
+            Reuse these on the next property. Open one to change its layout, type or colours.
+          </p>
+          <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+            <table className="w-full text-sm">
+              <tbody className="divide-y divide-slate-100">
+                {templates.map((t) => (
+                  <tr key={t.id} className="hover:bg-slate-50">
+                    <td className="px-4 py-3">
+                      {t.agencyId ? (
+                        <button
+                          onClick={() => navigate(`/brochures/templates/${t.id}`)}
+                          className="font-medium text-slate-900 hover:text-blue-600"
+                        >
+                          {t.name}
+                        </button>
+                      ) : (
+                        <span className="font-medium text-slate-500">{t.name}</span>
+                      )}
+                      {!t.agencyId && (
+                        <span className="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-500">preset</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-slate-500">{t.slotCount} photos</td>
+                    <td className="px-4 py-3">
+                      <div className="flex justify-end gap-1">
+                        {t.agencyId ? (
+                          <>
+                            <button
+                              onClick={() => navigate(`/brochures/templates/${t.id}`)}
+                              className="rounded-md p-2 text-slate-500 hover:bg-slate-100"
+                              title="Edit this design"
+                            >
+                              <PencilSquareIcon className="h-4 w-4" />
+                            </button>
+                            <button
+                              onClick={() => removeTemplate(t)}
+                              className="rounded-md p-2 text-red-500 hover:bg-red-50"
+                              title="Delete design"
+                            >
+                              <TrashIcon className="h-4 w-4" />
+                            </button>
+                          </>
+                        ) : (
+                          <span className="px-2 text-xs text-slate-400">Shipped design</span>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 

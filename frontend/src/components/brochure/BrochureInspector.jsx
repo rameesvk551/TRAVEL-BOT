@@ -221,7 +221,7 @@ function AlignPanel({ count, onArrange }) {
 }
 
 export default function BrochureInspector({
-  element, selectedCount = 0, page, doc, fields, mergeFields, assets, logoUploading,
+  element, selectedCount = 0, isTemplate = false, page, doc, fields, mergeFields, assets, logoUploading,
   onPatchElement, onPatchPage, onPatchDoc, onPatchFields, onRetheme, onResize, onArrange,
   onDeleteElement, onReorder, onUploadLogo,
 }) {
@@ -538,6 +538,17 @@ export default function BrochureInspector({
       {/* ---------------- Brand ---------------- */}
       {active === 'brand' && (
         <>
+          {/* Logo and Details write merge FIELDS, which live on a brochure — a template is
+              the bare design, so it has none. Palette and typefaces are on the doc itself
+              and are exactly what you would want to change on a saved design. */}
+          {isTemplate && (
+            <p className="mb-5 rounded-lg bg-slate-50 px-3 py-2 text-[11px] text-slate-500">
+              You are editing a saved design. Colours and typefaces are part of it; the
+              logo, photos and property details are filled in per brochure when it is used.
+            </p>
+          )}
+
+          {!isTemplate && (
           <Section title="Logo">
             <div className="mb-3 flex items-center gap-3">
               <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-lg border border-dashed border-slate-300 bg-slate-50">
@@ -570,6 +581,7 @@ export default function BrochureInspector({
               A transparent PNG works best. It appears on the cover and the closing page.
             </p>
           </Section>
+          )}
 
           <Section title="Palette">
             <p className="-mt-2 mb-3 text-[11px] text-slate-400">
@@ -599,6 +611,7 @@ export default function BrochureInspector({
             </Field>
           </Section>
 
+          {!isTemplate && (
           <Section title="Details">
             {mergeFields.map((f) => (
               <Field key={f.key} label={f.label}>
@@ -610,6 +623,7 @@ export default function BrochureInspector({
               </Field>
             ))}
           </Section>
+          )}
         </>
       )}
     </div>

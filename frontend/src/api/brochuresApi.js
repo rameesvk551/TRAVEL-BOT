@@ -50,6 +50,14 @@ export const brochuresApi = {
   send: (id, leadId) => client.post(`/brochures/${id}/send`, { leadId }).then((r) => r.data),
 
   listTemplates: () => client.get('/brochures/templates').then((r) => r.data),
+
+  /** One of the agency's OWN saved designs, for editing. A platform preset 404s. */
+  getTemplate: (templateId) =>
+    client.get(`/brochures/templates/${templateId}`).then((r) => r.data),
+
+  /** Save a reworked layout back over a template, and/or rename it. */
+  updateTemplate: (templateId, payload) =>
+    client.put(`/brochures/templates/${templateId}`, payload).then((r) => r.data),
   deleteTemplate: (templateId) =>
     client.delete(`/brochures/templates/${templateId}`).then((r) => r.data),
 

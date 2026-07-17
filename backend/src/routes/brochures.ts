@@ -64,6 +64,10 @@ router.delete('/assets/:assetId', canManage, controller.deleteAsset);
 
 // Reusable designs
 router.get('/templates', canView, controller.listTemplates);
+// A saved design is editable in place: open it, rework it, save it back. Own templates
+// only — a platform preset is shared by every agency (see brochureService.getTemplate).
+router.get('/templates/:templateId', canView, controller.getTemplate);
+router.put('/templates/:templateId', canManage, controller.updateTemplate);
 router.delete('/templates/:templateId', canManage, controller.deleteTemplate);
 
 // Brochures
