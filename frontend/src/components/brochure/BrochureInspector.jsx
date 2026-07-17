@@ -168,7 +168,7 @@ const THEME_SWATCHES = [
  * grid and the column stops lining up. Nudging twelve boxes back by eye is not realistic,
  * and typing X/Width into each is worse — so these do it exactly, in one click.
  */
-function AlignPanel({ count, onArrange }) {
+function AlignPanel({ count, sameType, refElement, onArrange, onPatchElement, onApplyToAllPages }) {
   const btn = 'rounded-lg border border-slate-200 px-2 py-1.5 text-xs font-medium transition hover:bg-slate-50';
 
   return (
@@ -177,6 +177,7 @@ function AlignPanel({ count, onArrange }) {
         <span className="rounded-md bg-blue-600 px-2 py-0.5 text-[11px] font-semibold text-white">
           {count} selected
         </span>
+        {sameType && <span className="text-[11px] capitalize text-slate-400">all {sameType}s</span>}
       </div>
 
       <Section title="Align">
@@ -213,6 +214,45 @@ function AlignPanel({ count, onArrange }) {
         </div>
       </Section>
 
+      {/* Spacing on a GROUP. The single-element panel has the same controls; the point here
+          is that one entry lands on all of them, so six photos cannot drift to six slightly
+          different paddings. Only offered when the selection is one type — padding means a
+          different thing on a text box than on a photo. */}
+      {(sameType === 'image' || sameType === 'text') && (
+        <Section title="Spacing & border">
+          <p className="-mt-2 mb-3 text-[11px] text-slate-400">
+            Shows the box you picked first; typing applies to all {count} selected.
+          </p>
+          {/* Values read from the FIRST selected element rather than a constant: these are
+              controlled inputs, so a fixed value would snap the field back on every
+              keystroke even though the change had landed. */}
+          <BoxField label="Padding" value={refElement?.padding} onChange={(padding) => onPatchElement({ padding })} />
+          <div className="grid grid-cols-2 gap-x-3">
+            <Num label="Border" value={refElement?.borderWidth ?? 0} min={0} max={40} onChange={(borderWidth) => onPatchElement({ borderWidth })} suffix="px" />
+            <Num label="Radius" value={refElement?.radius ?? 0} min={0} max={9999} onChange={(radius) => onPatchElement({ radius })} suffix="px" />
+          </div>
+          <Color label="Border colour" value={refElement?.borderColor || ''} allowEmpty onChange={(borderColor) => onPatchElement({ borderColor })} />
+        </Section>
+      )}
+
+      {/* The deck-wide escape hatch. Styling every photo in a ten-page brochure by hand is
+          how one page ends up different — and it is always the page the customer opens. */}
+      {(sameType === 'image' || sameType === 'text') && (
+        <Section title="Whole brochure">
+          <p className="-mt-2 mb-3 text-[11px] text-slate-400">
+            Push the padding and corner radius of the <strong>first</strong> selected box onto
+            every {sameType} on every page.
+          </p>
+          <button
+            type="button"
+            className="w-full rounded-lg border border-slate-300 px-2 py-2 text-xs font-semibold transition hover:bg-slate-50"
+            onClick={() => onApplyToAllPages(sameType)}
+          >
+            Apply spacing to all pages
+          </button>
+        </Section>
+      )}
+
       <p className="text-[11px] text-slate-400">
         Shift-click to add or remove a box. Drag any one of them to move the whole group.
       </p>
@@ -221,14 +261,22 @@ function AlignPanel({ count, onArrange }) {
 }
 
 export default function BrochureInspector({
-  element, selectedCount = 0, isTemplate = false, page, doc, fields, mergeFields, assets, logoUploading,
+  element, selectedCount = 0, selectedType = null, refElement = null, isTemplate = false,
+  page, doc, fields, mergeFields, assets, logoUploading,
   onPatchElement, onPatchPage, onPatchDoc, onPatchFields, onRetheme, onResize, onArrange,
-  onDeleteElement, onReorder, onUploadLogo,
+  onSelectAllOfType, onApplyToAllPages, onDeleteElement, onReorder, onUploadLogo,
 }) {
   const [tab, setTab] = useState('element');
   const multi = selectedCount > 1;
   const active = (element || multi) ? tab : (tab === 'element' ? 'brand' : tab);
   const theme = doc?.theme || {};
+
+  // Counts drive the "Select all" buttons — offering "Select all icons" on a page with no
+  // icons is just noise.
+  const counts = (page?.elements || []).reduce((acc, el) => {
+    acc[el.type] = (acc[el.type] || 0) + 1;
+    return acc;
+  }, {});
 
   return (
     <div>
@@ -256,7 +304,14 @@ export default function BrochureInspector({
       {/* Several boxes picked: the per-element controls are meaningless, so this slot
           becomes the Align panel instead. */}
       {active === 'element' && multi && (
-        <AlignPanel count={selectedCount} onArrange={onArrange} />
+        <AlignPanel
+          count={selectedCount}
+          sameType={selectedType}
+          refElement={refElement}
+          onArrange={onArrange}
+          onPatchElement={onPatchElement}
+          onApplyToAllPages={onApplyToAllPages}
+        />
       )}
 
       {active === 'element' && !multi && element && (
@@ -432,6 +487,32 @@ export default function BrochureInspector({
       {/* ---------------- Page ---------------- */}
       {active === 'page' && (
         <>
+          {/* Lives on the Page tab because it is reachable with nothing selected — which is
+              exactly when you need it. Shift-clicking six photos one by one is the chore
+              that makes people stop bothering to line things up. */}
+          <Section title="Select on this page">
+            <div className="grid grid-cols-2 gap-1.5">
+              {[
+                { type: 'image', label: 'All photos' },
+                { type: 'text', label: 'All text' },
+                { type: 'icon', label: 'All icons' },
+                { type: 'shape', label: 'All shapes' },
+              ].filter((o) => counts[o.type]).map((o) => (
+                <button
+                  key={o.type}
+                  type="button"
+                  onClick={() => onSelectAllOfType(o.type)}
+                  className="rounded-lg border border-slate-200 px-2 py-1.5 text-xs font-medium transition hover:bg-slate-50"
+                >
+                  {o.label} ({counts[o.type]})
+                </button>
+              ))}
+            </div>
+            <p className="mt-2 text-[11px] text-slate-400">
+              Then use the Align tab to line them up or set spacing on all of them at once.
+            </p>
+          </Section>
+
           <Section title="Background">
             <Field label="Type">
               <Segmented

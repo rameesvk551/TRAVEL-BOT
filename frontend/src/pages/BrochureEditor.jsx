@@ -77,6 +77,17 @@ export default function BrochureEditor({ mode }) {
   const selected = (selectedIds.length === 1 && page?.elements?.find((el) => el.id === selectedIds[0])) || null;
   const setSelectedId = (id) => setSelectedIds(id ? [id] : []);
 
+  // The type shared by the whole selection, or null if it is mixed. Spacing controls are
+  // only offered on a uniform selection: padding on a photo insets the picture, on a text
+  // box it insets the words, and on a shape it does nothing — one control for all three
+  // would be lying about what it does.
+  const selectedType = (() => {
+    const picked = (page?.elements || []).filter((el) => selectedIds.includes(el.id));
+    if (!picked.length) return null;
+    const first = picked[0].type;
+    return picked.every((el) => el.type === first) ? first : null;
+  })();
+
   /** Click = replace the selection; shift-click = add/remove from it. */
   const select = (id, additive) => {
     if (!id) return setSelectedIds([]);
@@ -84,6 +95,20 @@ export default function BrochureEditor({ mode }) {
     return setSelectedIds((prev) => (
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
     ));
+  };
+
+  /**
+   * Pick every element of one type on this page (or everything, with no type).
+   *
+   * Shift-clicking six photos to give them the same padding is exactly the sort of chore
+   * that makes people give up and leave the deck uneven. Document order, so the first one —
+   * the size reference for "match size" — is the topmost.
+   */
+  const selectAllOfType = (type) => {
+    const ids = (page?.elements || [])
+      .filter((el) => (type ? el.type === type : true) && !el.locked)
+      .map((el) => el.id);
+    setSelectedIds(ids);
   };
 
   // --- load ------------------------------------------------------------------
@@ -221,9 +246,54 @@ export default function BrochureEditor({ mode }) {
     }));
   };
 
+  /**
+   * Patch every selected element.
+   *
+   * With one picked this is the old single-element edit. With several, the same styling
+   * lands on all of them — setting padding on six photos was six trips through the panel,
+   * which is how a deck ends up with six slightly different paddings.
+   */
   const patchElement = (patch) => {
-    if (!selected) return;
-    setElements(page.elements.map((el) => (el.id === selected.id ? { ...el, ...patch } : el)));
+    if (!selectedIds.length) return;
+    setElements(page.elements.map((el) => (selectedIds.includes(el.id) ? { ...el, ...patch } : el)));
+  };
+
+  /**
+   * Copy the FIRST selected element's spacing onto every element of that type, deck-wide.
+   *
+   * Styling every photo in a ten-page brochure by hand is how one page ends up different,
+   * and it is always the page the customer opens. Only padding/border/radius travel:
+   * geometry deliberately does not, because copying one box's x/y onto every page would
+   * stack them all on top of each other.
+   */
+  const applySpacingToAllPages = (type) => {
+    const ref = page.elements.find((el) => el.id === selectedIds[0]);
+    if (!ref) return;
+
+    const patch = {
+      padding: ref.padding,
+      borderWidth: ref.borderWidth,
+      borderColor: ref.borderColor,
+      radius: ref.radius,
+    };
+
+    let count = 0;
+    doc.pages.forEach((p) => p.elements.forEach((el) => { if (el.type === type) count += 1; }));
+
+    if (!window.confirm(
+      `Give all ${count} ${type}s in this brochure the same padding, border and corner radius `
+      + `as the box you picked first?\n\nThis changes all ${doc.pages.length} pages, not just this one.`,
+    )) return;
+
+    commit((current) => ({
+      ...current,
+      pages: current.pages.map((p) => ({
+        ...p,
+        elements: p.elements.map((el) => (el.type === type ? { ...el, ...patch } : el)),
+      })),
+    }));
+    dirty.current = true;
+    toast.success(`Applied to ${count} ${type}s across ${doc.pages.length} pages`);
   };
 
   const patchFields = (patch) => {
@@ -722,8 +792,12 @@ export default function BrochureEditor({ mode }) {
             onPatchElement={patchElement}
             onPatchPage={patchPage}
             selectedCount={selectedIds.length}
+            selectedType={selectedType}
+            refElement={page?.elements?.find((el) => el.id === selectedIds[0]) || null}
             isTemplate={isTemplate}
             onArrange={arrangeSelection}
+            onSelectAllOfType={selectAllOfType}
+            onApplyToAllPages={applySpacingToAllPages}
             onPatchDoc={patchDoc}
             onPatchFields={patchFields}
             onRetheme={retheme}
