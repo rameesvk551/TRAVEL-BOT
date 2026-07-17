@@ -177,9 +177,21 @@ function borderCss(el) {
   return `${width}px solid ${el.borderColor || '#000000'}`;
 }
 
+/**
+ * A text element's height is a MINIMUM, not a cap.
+ *
+ * These boxes are sized by the design for placeholder copy ('Room type'), but the user
+ * retypes them with real names that are longer. A fixed height plus overflow:hidden meant
+ * the extra words were silently cut off — in the editor AND in the printed PDF, where it
+ * is worst. So the box grows downward instead. `valign` still works, because it centres
+ * within whichever is larger: the authored height or the text.
+ */
 function textStyle(el) {
+  const { height, ...box } = elementStyle(el);
   return {
-    ...elementStyle(el),
+    ...box,
+    height: 'auto',
+    minHeight: height,
     fontFamily: fontStack(el.font),
     fontSize: `${num(el.size, 24)}px`,
     fontWeight: String(num(el.weight, 400)),
@@ -198,7 +210,6 @@ function textStyle(el) {
     justifyContent: el.valign === 'center' ? 'center' : (el.valign === 'bottom' ? 'flex-end' : 'flex-start'),
     whiteSpace: 'pre-wrap',
     wordBreak: 'break-word',
-    overflow: 'hidden',
   };
 }
 

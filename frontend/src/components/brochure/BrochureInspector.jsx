@@ -161,20 +161,80 @@ const THEME_SWATCHES = [
  *  - Page:    background, size, margins
  *  - Brand:   merge fields, logo, and a palette that recolours the WHOLE deck at once
  */
+/**
+ * The Align panel, shown instead of the single-element panel when several boxes are picked.
+ *
+ * A design ships its rows on exact shared edges; dragging one by hand snaps it to the 8px
+ * grid and the column stops lining up. Nudging twelve boxes back by eye is not realistic,
+ * and typing X/Width into each is worse — so these do it exactly, in one click.
+ */
+function AlignPanel({ count, onArrange }) {
+  const btn = 'rounded-lg border border-slate-200 px-2 py-1.5 text-xs font-medium transition hover:bg-slate-50';
+
+  return (
+    <>
+      <div className="mb-5 flex items-center justify-between">
+        <span className="rounded-md bg-blue-600 px-2 py-0.5 text-[11px] font-semibold text-white">
+          {count} selected
+        </span>
+      </div>
+
+      <Section title="Align">
+        <div className="mb-2 grid grid-cols-3 gap-1.5">
+          <button type="button" className={btn} onClick={() => onArrange('left')} title="Align left edges">Left</button>
+          <button type="button" className={btn} onClick={() => onArrange('centerH')} title="Centre horizontally">Centre</button>
+          <button type="button" className={btn} onClick={() => onArrange('right')} title="Align right edges">Right</button>
+          <button type="button" className={btn} onClick={() => onArrange('top')} title="Align top edges">Top</button>
+          <button type="button" className={btn} onClick={() => onArrange('middleV')} title="Centre vertically">Middle</button>
+          <button type="button" className={btn} onClick={() => onArrange('bottom')} title="Align bottom edges">Bottom</button>
+        </div>
+      </Section>
+
+      <Section title="Match size">
+        <p className="-mt-2 mb-3 text-[11px] text-slate-400">
+          Copies the box you clicked <strong>first</strong>. Click the one you like, then
+          shift-click the rest.
+        </p>
+        <div className="grid grid-cols-3 gap-1.5">
+          <button type="button" className={btn} onClick={() => onArrange('sameWidth')}>Width</button>
+          <button type="button" className={btn} onClick={() => onArrange('sameHeight')}>Height</button>
+          <button type="button" className={btn} onClick={() => onArrange('sameSize')}>Both</button>
+        </div>
+      </Section>
+
+      <Section title="Even spacing">
+        <p className="-mt-2 mb-3 text-[11px] text-slate-400">
+          Equal gaps between them. The top and bottom (or left and right) stay put. Needs
+          three or more.
+        </p>
+        <div className="grid grid-cols-2 gap-1.5">
+          <button type="button" className={btn} disabled={count < 3} onClick={() => onArrange('distributeV')}>Vertically</button>
+          <button type="button" className={btn} disabled={count < 3} onClick={() => onArrange('distributeH')}>Horizontally</button>
+        </div>
+      </Section>
+
+      <p className="text-[11px] text-slate-400">
+        Shift-click to add or remove a box. Drag any one of them to move the whole group.
+      </p>
+    </>
+  );
+}
+
 export default function BrochureInspector({
-  element, page, doc, fields, mergeFields, assets, logoUploading,
-  onPatchElement, onPatchPage, onPatchDoc, onPatchFields, onRetheme, onResize,
+  element, selectedCount = 0, page, doc, fields, mergeFields, assets, logoUploading,
+  onPatchElement, onPatchPage, onPatchDoc, onPatchFields, onRetheme, onResize, onArrange,
   onDeleteElement, onReorder, onUploadLogo,
 }) {
   const [tab, setTab] = useState('element');
-  const active = element ? tab : (tab === 'element' ? 'brand' : tab);
+  const multi = selectedCount > 1;
+  const active = (element || multi) ? tab : (tab === 'element' ? 'brand' : tab);
   const theme = doc?.theme || {};
 
   return (
     <div>
       <div className="mb-5 flex gap-1 rounded-lg bg-slate-100 p-1">
         {[
-          { key: 'element', label: 'Element', disabled: !element },
+          { key: 'element', label: multi ? 'Align' : 'Element', disabled: !element && !multi },
           { key: 'page', label: 'Page' },
           { key: 'brand', label: 'Brand' },
         ].map((t) => (
@@ -193,7 +253,13 @@ export default function BrochureInspector({
       </div>
 
       {/* ---------------- Element ---------------- */}
-      {active === 'element' && element && (
+      {/* Several boxes picked: the per-element controls are meaningless, so this slot
+          becomes the Align panel instead. */}
+      {active === 'element' && multi && (
+        <AlignPanel count={selectedCount} onArrange={onArrange} />
+      )}
+
+      {active === 'element' && !multi && element && (
         <>
           <div className="mb-5 flex items-center justify-between">
             <span className="rounded-md bg-slate-900 px-2 py-0.5 text-[11px] font-semibold capitalize text-white">

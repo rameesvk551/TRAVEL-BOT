@@ -113,9 +113,19 @@ export function elementStyle(el) {
   return style;
 }
 
+/**
+ * A text element's height is a MINIMUM, not a cap — mirrors the backend rule exactly.
+ *
+ * The design sizes these boxes for placeholder copy ('Room type'); users retype them with
+ * longer real names. A fixed height plus overflow:hidden silently cut the extra words off,
+ * in the editor and in the PDF. The box grows downward instead.
+ */
 export function textStyle(el) {
+  const { height, ...box } = elementStyle(el);
   return {
-    ...elementStyle(el),
+    ...box,
+    height: 'auto',
+    minHeight: height,
     fontFamily: fontStack(el.font),
     fontSize: `${num(el.size, 24)}px`,
     fontWeight: String(num(el.weight, 400)),
@@ -134,7 +144,6 @@ export function textStyle(el) {
     justifyContent: el.valign === 'center' ? 'center' : (el.valign === 'bottom' ? 'flex-end' : 'flex-start'),
     whiteSpace: 'pre-wrap',
     wordBreak: 'break-word',
-    overflow: 'hidden',
   };
 }
 
@@ -239,4 +248,81 @@ export function newIconElement(pageW, pageH) {
 
 export function newPage(bgColor = '#ffffff') {
   return { id: newId('p'), bg: { type: 'color', color: bgColor }, elements: [] };
+}
+
+// --- alignment (editor-only) -----------------------------------------------
+//
+// A design ships its rows perfectly uniform; the moment a user drags one by hand it lands
+// on the 8px grid instead of the original coordinate, and the column stops lining up. These
+// put a selection back onto exact shared edges and sizes, which is not something you can do
+// by eye or by typing numbers into twelve elements.
+
+export const ALIGN_MODES = ['left', 'centerH', 'right', 'top', 'middleV', 'bottom', 'sameWidth', 'sameHeight', 'sameSize'];
+
+/**
+ * Align/size a selection.
+ *
+ * Edges align to the selection's bounding box (what every design tool does). Size-matching
+ * copies the FIRST element in `elements` — the one clicked first — so "click the card you
+ * like, then shift-click the rest" makes them all match the good one, rather than matching
+ * whichever happens to be biggest.
+ *
+ * @param {Array} elements - in SELECTION order; [0] is the size reference
+ * @param {string} mode - one of ALIGN_MODES
+ */
+export function alignElements(elements, mode) {
+  if (!Array.isArray(elements) || elements.length < 2) return elements;
+
+  const left = Math.min(...elements.map((e) => e.x));
+  const right = Math.max(...elements.map((e) => e.x + e.w));
+  const top = Math.min(...elements.map((e) => e.y));
+  const bottom = Math.max(...elements.map((e) => e.y + e.h));
+  const ref = elements[0];
+
+  const move = {
+    left: () => ({ x: left }),
+    centerH: (e) => ({ x: Math.round((left + right) / 2 - e.w / 2) }),
+    right: (e) => ({ x: right - e.w }),
+    top: () => ({ y: top }),
+    middleV: (e) => ({ y: Math.round((top + bottom) / 2 - e.h / 2) }),
+    bottom: (e) => ({ y: bottom - e.h }),
+    sameWidth: () => ({ w: ref.w }),
+    sameHeight: () => ({ h: ref.h }),
+    sameSize: () => ({ w: ref.w, h: ref.h }),
+  }[mode];
+
+  return move ? elements.map((e) => ({ ...e, ...move(e) })) : elements;
+}
+
+/**
+ * Even the gaps between elements along one axis.
+ *
+ * The two outermost elements stay exactly where they are — distributing is about the space
+ * between things, so shifting the anchors would move the whole block and surprise the user.
+ * Needs three: with two there is no gap to even out.
+ *
+ * @param {Array} elements
+ * @param {'x'|'y'} axis
+ */
+export function distributeElements(elements, axis) {
+  if (!Array.isArray(elements) || elements.length < 3) return elements;
+
+  const pos = axis === 'y' ? 'y' : 'x';
+  const size = axis === 'y' ? 'h' : 'w';
+  const sorted = [...elements].sort((a, b) => a[pos] - b[pos]);
+  const first = sorted[0];
+  const last = sorted[sorted.length - 1];
+
+  const span = (last[pos] + last[size]) - first[pos];
+  const filled = sorted.reduce((sum, e) => sum + e[size], 0);
+  const gap = (span - filled) / (sorted.length - 1);
+
+  const moved = new Map();
+  let cursor = first[pos];
+  sorted.forEach((e) => {
+    moved.set(e.id, Math.round(cursor));
+    cursor += e[size] + gap;
+  });
+
+  return elements.map((e) => (moved.has(e.id) ? { ...e, [pos]: moved.get(e.id) } : e));
 }

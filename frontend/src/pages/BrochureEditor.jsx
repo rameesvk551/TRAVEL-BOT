@@ -12,8 +12,8 @@ import BrochureCanvas from '../components/brochure/BrochureCanvas';
 import BrochureInspector from '../components/brochure/BrochureInspector';
 import BrochurePagePreview from '../components/brochure/BrochurePagePreview';
 import {
-  cdnUrl, newIconElement, newImageElement, newPage, newShapeElement, newTextElement,
-  PAGE_SIZES, THUMB_IMAGE_WIDTH,
+  alignElements, cdnUrl, distributeElements, newIconElement, newImageElement, newPage,
+  newShapeElement, newTextElement, PAGE_SIZES, THUMB_IMAGE_WIDTH,
 } from '../utils/brochureDoc';
 
 const AUTOSAVE_MS = 1500;
@@ -47,7 +47,9 @@ export default function BrochureEditor() {
   const [templates, setTemplates] = useState([]);
 
   const [pageIndex, setPageIndex] = useState(0);
-  const [selectedId, setSelectedId] = useState(null);
+  // A LIST, in click order: aligning needs a selection, and the first one clicked is the
+  // reference that "same size" copies from.
+  const [selectedIds, setSelectedIds] = useState([]);
   const [scale, setScale] = useState(0.5);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(0);
@@ -60,7 +62,19 @@ export default function BrochureEditor() {
   const saveTimer = useRef(null);
 
   const page = doc?.pages?.[pageIndex] || null;
-  const selected = page?.elements?.find((el) => el.id === selectedId) || null;
+  // The Element panel edits exactly one box; with a multi-selection the inspector shows the
+  // Align panel instead, so `selected` is deliberately null unless precisely one is picked.
+  const selected = (selectedIds.length === 1 && page?.elements?.find((el) => el.id === selectedIds[0])) || null;
+  const setSelectedId = (id) => setSelectedIds(id ? [id] : []);
+
+  /** Click = replace the selection; shift-click = add/remove from it. */
+  const select = (id, additive) => {
+    if (!id) return setSelectedIds([]);
+    if (!additive) return setSelectedIds([id]);
+    return setSelectedIds((prev) => (
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    ));
+  };
 
   // --- load ------------------------------------------------------------------
 
@@ -272,6 +286,27 @@ export default function BrochureEditor() {
     const topZ = (page.elements || []).reduce((max, el) => Math.max(max, el.z || 1), 0);
     setElements([...(page.elements || []), { ...element, z: topZ + 1 }]);
     setSelectedId(element.id);
+  };
+
+  /**
+   * Align / match-size / distribute the current selection.
+   *
+   * The elements are collected in SELECTION order, not document order, so `sameSize` copies
+   * the box the user clicked first — "click the good card, shift-click the rest" behaves the
+   * way people expect.
+   */
+  const arrangeSelection = (mode) => {
+    const chosen = selectedIds
+      .map((sid) => page.elements.find((el) => el.id === sid))
+      .filter(Boolean);
+    if (chosen.length < 2) return;
+
+    const next = mode === 'distributeV' ? distributeElements(chosen, 'y')
+      : mode === 'distributeH' ? distributeElements(chosen, 'x')
+        : alignElements(chosen, mode);
+
+    const byId = new Map(next.map((el) => [el.id, el]));
+    setElements(page.elements.map((el) => byId.get(el.id) || el));
   };
 
   const reorderSelected = (where) => {
@@ -559,8 +594,8 @@ export default function BrochureEditor() {
               doc={doc}
               page={page}
               scale={scale}
-              selectedId={selectedId}
-              onSelect={setSelectedId}
+              selectedIds={selectedIds}
+              onSelect={select}
               onChangeElements={setElements}
               onChangePage={patchPage}
             />
@@ -628,14 +663,19 @@ export default function BrochureEditor() {
             logoUploading={logoUploading}
             onPatchElement={patchElement}
             onPatchPage={patchPage}
+            selectedCount={selectedIds.length}
+            onArrange={arrangeSelection}
             onPatchDoc={patchDoc}
             onPatchFields={patchFields}
             onRetheme={retheme}
             onResize={resize}
             onUploadLogo={uploadLogo}
             onDeleteElement={() => {
-              setElements(page.elements.filter((el) => el.id !== selected.id));
-              setSelectedId(null);
+              // Keyed off the selection, not `selected` (which is null for a group), so this
+              // can never null-deref and deletes everything that is actually picked.
+              if (!selectedIds.length) return;
+              setElements(page.elements.filter((el) => !selectedIds.includes(el.id)));
+              setSelectedIds([]);
             }}
             onReorder={reorderSelected}
           />

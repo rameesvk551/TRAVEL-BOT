@@ -223,6 +223,16 @@ describe('brochureDoc.renderDocHtml', () => {
   }));
   ok('renders a gradient shape fill', plate.includes('background:linear-gradient(0deg, #000, #fff)'));
 
+  // A text box must GROW rather than clip: a retyped room name longer than the box the
+  // design shipped was silently cut off in both the editor and the PDF. Height becomes a
+  // minimum, not a cap. The editor mirrors this rule, so the two still agree.
+  const grow = brochureDoc.renderDocHtml(brochureDoc.normalizeDoc({
+    pages: [{ elements: [{ type: 'text', text: 'A very long room name that will not fit', h: 40 }] }],
+  }));
+  ok('text height is a minimum, not a fixed cap', grow.includes('min-height:40px'));
+  ok('text box is not height-capped', !/height:40px/.test(grow.replace(/min-height:40px/g, '')));
+  ok('text does not clip its overflow', !/<div style="[^"]*overflow:hidden[^"]*">A very long/.test(grow));
+
   // The doc is user-authored and rendered server-side. Text must never become markup.
   const nasty = brochureDoc.renderDocHtml(brochureDoc.normalizeDoc({
     pages: [{ elements: [{ type: 'text', text: '<script>alert(1)</script>' }] }],

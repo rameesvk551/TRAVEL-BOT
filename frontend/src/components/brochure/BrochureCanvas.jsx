@@ -24,17 +24,24 @@ const snap = (value, enabled) => (enabled ? Math.round(value / GRID) * GRID : Ma
  * coordinates.
  */
 export default function BrochureCanvas({
-  doc, page, scale, selectedId, onSelect, onChangeElements, onChangePage,
+  doc, page, scale, selectedIds = [], onSelect, onChangeElements, onChangePage,
 }) {
   const stageRef = useRef(null);
   const dragRef = useRef(null);
   const [editingId, setEditingId] = useState(null);
 
   const elements = page?.elements || [];
-  const selected = elements.find((el) => el.id === selectedId) || null;
+  // Resize/rotate handles only make sense on ONE box; a multi-selection gets plain outlines
+  // and can be moved as a group.
+  const selected = (selectedIds.length === 1 && elements.find((el) => el.id === selectedIds[0])) || null;
 
   const patchElement = useCallback((id, patch) => {
     onChangeElements(elements.map((el) => (el.id === id ? { ...el, ...patch } : el)));
+  }, [elements, onChangeElements]);
+
+  /** One pass for a whole group, so dragging six cards is one re-render, not six. */
+  const patchMany = useCallback((patches) => {
+    onChangeElements(elements.map((el) => (patches.has(el.id) ? { ...el, ...patches.get(el.id) } : el)));
   }, [elements, onChangeElements]);
 
   // --- pointer drag / resize / rotate ---------------------------------------
@@ -43,7 +50,23 @@ export default function BrochureCanvas({
     if (element.locked) return;
     event.stopPropagation();
     event.preventDefault();
-    onSelect(element.id);
+
+    // Shift-click toggles membership of the selection rather than starting a drag — you are
+    // picking things, not moving them. (Shift held DURING a drag still disables snapping.)
+    if (mode === 'move' && event.shiftKey) {
+      onSelect(element.id, true);
+      return;
+    }
+    // Dragging a box that is already part of a group keeps the group and moves it as one;
+    // dragging anything else selects just that box first.
+    const inGroup = selectedIds.includes(element.id);
+    if (!inGroup) onSelect(element.id, false);
+
+    // Snapshot every element we are about to move, so the group keeps its internal spacing
+    // (each one shifts by the same delta from its OWN origin).
+    const moving = (mode === 'move' && inGroup && selectedIds.length > 1)
+      ? elements.filter((el) => selectedIds.includes(el.id) && !el.locked)
+      : [element];
 
     const stage = stageRef.current.getBoundingClientRect();
     dragRef.current = {
@@ -52,6 +75,7 @@ export default function BrochureCanvas({
       startX: event.clientX,
       startY: event.clientY,
       origin: { ...element },
+      origins: new Map(moving.map((el) => [el.id, { x: el.x, y: el.y }])),
       centre: {
         x: stage.left + (element.x + element.w / 2) * scale,
         y: stage.top + (element.y + element.h / 2) * scale,
@@ -70,7 +94,19 @@ export default function BrochureCanvas({
       const o = drag.origin;
 
       if (drag.mode === 'move') {
-        patchElement(drag.id, { x: snap(o.x + dx, snapping), y: snap(o.y + dy, snapping) });
+        // Snap the DRAGGED box to the grid, then shift the rest of the group by that same
+        // resolved delta — snapping each one independently would pull the group apart.
+        const nx = snap(o.x + dx, snapping);
+        const ny = snap(o.y + dy, snapping);
+        if (drag.origins.size > 1) {
+          const gdx = nx - o.x;
+          const gdy = ny - o.y;
+          const patches = new Map();
+          drag.origins.forEach((from, id) => patches.set(id, { x: from.x + gdx, y: from.y + gdy }));
+          patchMany(patches);
+        } else {
+          patchElement(drag.id, { x: nx, y: ny });
+        }
         return;
       }
 
@@ -108,37 +144,44 @@ export default function BrochureCanvas({
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
     };
-  }, [scale, patchElement]);
+  }, [scale, patchElement, patchMany]);
 
   // --- keyboard -------------------------------------------------------------
 
   useEffect(() => {
     const onKey = (event) => {
-      if (!selected || editingId) return;
+      if (!selectedIds.length || editingId) return;
       const target = event.target;
       if (target instanceof HTMLElement && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
 
+      // Delete/nudge act on the WHOLE selection — having Delete silently remove only one of
+      // six selected boxes would be a nasty surprise.
       if (event.key === 'Delete' || event.key === 'Backspace') {
         event.preventDefault();
-        onChangeElements(elements.filter((el) => el.id !== selected.id));
+        onChangeElements(elements.filter((el) => !selectedIds.includes(el.id)));
         onSelect(null);
         return;
       }
 
       const step = event.shiftKey ? 1 : GRID;
-      const moves = {
-        ArrowLeft: { x: selected.x - step }, ArrowRight: { x: selected.x + step },
-        ArrowUp: { y: selected.y - step }, ArrowDown: { y: selected.y + step },
-      };
-      if (moves[event.key]) {
-        event.preventDefault();
-        patchElement(selected.id, moves[event.key]);
-      }
+      const delta = {
+        ArrowLeft: { x: -step }, ArrowRight: { x: step },
+        ArrowUp: { y: -step }, ArrowDown: { y: step },
+      }[event.key];
+      if (!delta) return;
+
+      event.preventDefault();
+      const patches = new Map();
+      elements.forEach((el) => {
+        if (!selectedIds.includes(el.id) || el.locked) return;
+        patches.set(el.id, { x: el.x + (delta.x || 0), y: el.y + (delta.y || 0) });
+      });
+      patchMany(patches);
     };
 
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [selected, elements, editingId, onSelect, onChangeElements, patchElement]);
+  }, [selectedIds, elements, editingId, onSelect, onChangeElements, patchMany]);
 
   // --- drop a tray photo onto the page --------------------------------------
 
@@ -159,7 +202,7 @@ export default function BrochureCanvas({
 
     if (hit) {
       patchElement(hit.id, { url });
-      onSelect(hit.id);
+      onSelect(hit.id, false);
       return;
     }
 
@@ -171,7 +214,7 @@ export default function BrochureCanvas({
       rotate: 0, z: topZ + 1, opacity: 1, fit: 'cover', radius: 8,
     };
     onChangeElements([...elements, element]);
-    onSelect(element.id);
+    onSelect(element.id, false);
   };
 
   // --- render ---------------------------------------------------------------
@@ -324,6 +367,24 @@ export default function BrochureCanvas({
         })()}
 
         {[...elements].sort((a, b) => (a.z || 1) - (b.z || 1)).map(renderElement)}
+
+        {/* Group selection: outline every member so you can see what Align will act on.
+            The single-selection case below adds the resize/rotate handles on top. */}
+        {selectedIds.length > 1 && elements
+          .filter((el) => selectedIds.includes(el.id))
+          .map((el) => (
+            <div
+              key={`sel-${el.id}`}
+              aria-hidden
+              style={{
+                ...elementStyle(el),
+                zIndex: 996,
+                pointerEvents: 'none',
+                outline: `${2 / scale}px solid #2563eb`,
+                outlineOffset: `${1 / scale}px`,
+              }}
+            />
+          ))}
 
         {selected && !selected.locked && (
           <div
